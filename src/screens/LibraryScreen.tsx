@@ -8,8 +8,11 @@ import {
     Modal,
     TextInput,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    StyleSheet,
+    Alert
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { commonStyles } from '../styles/commonStyles';
@@ -25,13 +28,13 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
     const [libraryTab, setLibraryTab] = useState<'notes' | 'circles'>('notes');
     const [sortBy, setSortBy] = useState<SortOption>('newest');
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
+    const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
 
     const storage = useStorage();
     const security = useSecurity();
 
     useEffect(() => {
         storage.loadAllData();
-        security.unlockNotes(); // Prompt for unlock on mount component
     }, []);
 
     const getGroupedNotes = () => {
@@ -58,87 +61,27 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
         return groups;
     };
 
-    if (!security.isNotesUnlocked) {
-        // Render the Lock Screen / PIN Modal
-        return (
-            <View style={[commonStyles.startContainer, { justifyContent: 'center' }]}>
-                <Text style={[commonStyles.heroTitleDanger, { fontSize: 44, fontWeight: 'bold' }]}>LOCKED</Text>
-                <TouchableOpacity style={commonStyles.backButton} onPress={() => navigation.goBack()}>
-                    <Text style={commonStyles.backButtonText}>Return</Text>
-                </TouchableOpacity>
-
-                <Modal visible={security.showPinEnterModal} transparent animationType="slide">
-                    <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                        <View style={[commonStyles.versionModalContent, { alignItems: 'center' }]}>
-                            <Text style={commonStyles.versionModalTitle}>Enter PIN</Text>
-                            <TextInput
-                                style={commonStyles.addPersonInput}
-                                keyboardType="number-pad"
-                                secureTextEntry
-                                maxLength={4}
-                                placeholder="****"
-                                placeholderTextColor="#333"
-                                value={security.tempPinInput}
-                                onChangeText={security.setTempPinInput}
-                                autoFocus
-                            />
-                            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' }}>
-                                <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => navigation.goBack()}>
-                                    <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
-                                    onPress={security.handlePinEnterSubmit}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>Unlock</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </KeyboardAvoidingView>
-                </Modal>
-
-                <Modal visible={security.showPinSetupModal} transparent animationType="slide">
-                    <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                        <View style={[commonStyles.versionModalContent, { alignItems: 'center' }]}>
-                            <Text style={commonStyles.versionModalTitle}>
-                                {security.pinSetupStep === 1 ? 'Create 4-Digit PIN' : 'Confirm PIN'}
-                            </Text>
-                            <TextInput
-                                style={commonStyles.addPersonInput}
-                                keyboardType="number-pad"
-                                secureTextEntry
-                                maxLength={4}
-                                placeholder="****"
-                                placeholderTextColor="#333"
-                                value={security.tempPinInput}
-                                onChangeText={security.setTempPinInput}
-                                autoFocus
-                            />
-                            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' }}>
-                                <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => navigation.goBack()}>
-                                    <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
-                                    onPress={security.handlePinSetupSubmit}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>
-                                        {security.pinSetupStep === 1 ? 'Next' : 'Save PIN'}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </KeyboardAvoidingView>
-                </Modal>
-            </View>
-        );
-    }
-
-    // Render the actual Library
+    // Render the Library
     return (
         <View style={commonStyles.libraryContainer}>
-            <Text style={commonStyles.libraryTitle}>Library</Text>
-            <Text style={commonStyles.librarySubtitle}>{storage.savedNotes.length} Entries • {storage.persons.length} Circles</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <View>
+                    <Text style={[commonStyles.libraryTitle, { marginBottom: 0 }]}>Library</Text>
+                    <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{storage.savedNotes.length} Entries • {storage.persons.length} Circles</Text>
+                </View>
+                {!security.isNotesUnlocked ? (
+                    <TouchableOpacity style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.primaryAction, borderColor: theme.colors.primaryAction }]} onPress={() => security.unlockNotes()}>
+                        <Text style={{ fontSize: 16, marginRight: 4 }}>🔓</Text>
+                        <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>Unlock View</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]} onPress={() => security.lockInstantly()}>
+                        <Text style={{ fontSize: 16, marginRight: 4 }}>🔒</Text>
+                        <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock View</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+            <View style={{ height: 15 }} />
 
             <View style={commonStyles.tabBar}>
                 <TouchableOpacity style={[commonStyles.tabBtn, libraryTab === 'notes' && commonStyles.tabBtnActive]} onPress={() => setLibraryTab('notes')}>
@@ -177,6 +120,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                                             note={note}
                                             onPress={setViewNoteModal}
                                             personName={note.personId ? storage.persons.find(p => p.id === note.personId)?.name : undefined}
+                                            isLocked={!security.isNotesUnlocked}
                                         />
                                     ))}
                                 </View>
@@ -202,7 +146,6 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                                 </Text>
                             </View>
                             <TouchableOpacity
-                                style={{ padding: 10 }}
                                 onPress={() => {
                                     // Confirm deletion
                                     if (Platform.OS === 'web') {
@@ -211,6 +154,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                                         storage.deletePerson(p.id); // Simple delete for now, or use Alert.alert if available
                                     }
                                 }}
+                                disabled={!security.isNotesUnlocked}
+                                style={{ opacity: security.isNotesUnlocked ? 1 : 0.3, padding: 10 }}
                             >
                                 <Text style={{ color: theme.colors.danger, fontSize: 18 }}>🗑️</Text>
                             </TouchableOpacity>
@@ -219,8 +164,10 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                 />
             )}
 
-            <TouchableOpacity style={commonStyles.backButton} onPress={() => { security.lockInstantly(); navigation.navigate('Start'); }}>
-                <Text style={commonStyles.backButtonText}>Lock & Return to Menu</Text>
+            {/* Blur view removed as per user request to replace with dot rendering instead */}
+
+            <TouchableOpacity style={[commonStyles.backButton, { zIndex: 20 }]} onPress={() => { security.lockInstantly(); navigation.navigate('Start'); }}>
+                <Text style={commonStyles.backButtonText}>Return to Menu</Text>
             </TouchableOpacity>
 
             {/* Note View Modal */}
@@ -236,11 +183,103 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                         <ScrollView style={commonStyles.modalScroll}>
                             <Text style={commonStyles.modalBody}>{viewNoteModal.text}</Text>
                         </ScrollView>
-                        <TouchableOpacity style={[commonStyles.closeModalButton, { backgroundColor: theme.colors.danger, marginTop: 20 }]} onPress={() => storage.deleteNote(viewNoteModal.id).then(() => setViewNoteModal(null))}>
+                        <TouchableOpacity style={[commonStyles.closeModalButton, { backgroundColor: theme.colors.danger, marginTop: 20 }]} onPress={() => setNoteToDelete(viewNoteModal.id)}>
                             <Text style={commonStyles.closeModalText}>Delete Note</Text>
                         </TouchableOpacity>
                     </View>
                 )}
+            </Modal>
+
+            {/* Custom Delete Confirmation Modal */}
+            <Modal visible={!!noteToDelete} transparent animationType="fade">
+                <View style={commonStyles.modalOverlay}>
+                    <View style={commonStyles.versionModalContent}>
+                        <Text style={commonStyles.versionModalTitle}>Delete Entry?</Text>
+                        <Text style={[commonStyles.addPersonSuggestionText, { textAlign: 'center', marginBottom: 20 }]}>
+                            Are you sure you want to permanently delete this writing session? This cannot be undone.
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setNoteToDelete(null)}>
+                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
+                                if (noteToDelete) {
+                                    storage.deleteNote(noteToDelete).then(() => {
+                                        setNoteToDelete(null);
+                                        setViewNoteModal(null);
+                                    });
+                                }
+                            }}>
+                                <Text style={commonStyles.closeVersionBtnText}>Delete</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Lock Modals */}
+            <Modal visible={security.showPinEnterModal} transparent animationType="slide">
+                <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                    <View style={[commonStyles.versionModalContent, { alignItems: 'center' }]}>
+                        <Text style={commonStyles.versionModalTitle}>Enter PIN</Text>
+                        <TextInput
+                            style={commonStyles.addPersonInput}
+                            keyboardType="number-pad"
+                            secureTextEntry
+                            maxLength={4}
+                            placeholder="****"
+                            placeholderTextColor="#333"
+                            value={security.tempPinInput}
+                            onChangeText={security.setTempPinInput}
+                            autoFocus
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' }}>
+                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => { security.setTempPinInput(''); navigation.goBack(); }}>
+                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
+                                onPress={security.handlePinEnterSubmit}
+                            >
+                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>Unlock</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
+
+            <Modal visible={security.showPinSetupModal} transparent animationType="slide">
+                <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                    <View style={[commonStyles.versionModalContent, { alignItems: 'center' }]}>
+                        <Text style={commonStyles.versionModalTitle}>
+                            {security.pinSetupStep === 1 ? 'Create 4-Digit PIN' : 'Confirm PIN'}
+                        </Text>
+                        <TextInput
+                            style={commonStyles.addPersonInput}
+                            keyboardType="number-pad"
+                            secureTextEntry
+                            maxLength={4}
+                            placeholder="****"
+                            placeholderTextColor="#333"
+                            value={security.tempPinInput}
+                            onChangeText={security.setTempPinInput}
+                            autoFocus
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' }}>
+                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => { security.setTempPinInput(''); navigation.goBack(); }}>
+                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
+                                onPress={security.handlePinSetupSubmit}
+                            >
+                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>
+                                    {security.pinSetupStep === 1 ? 'Next' : 'Save PIN'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
             </Modal>
 
         </View>

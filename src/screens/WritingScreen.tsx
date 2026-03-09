@@ -8,7 +8,8 @@ import {
     Platform,
     ScrollView,
     Animated,
-    StyleSheet
+    StyleSheet,
+    Pressable
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -41,6 +42,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     } = useSession(timeIndex, diffIndex);
 
     const { saveNote, fontIndex, sizeIndex, loadAllData } = useStorage();
+    const inputRef = React.useRef<TextInput>(null);
 
     // On mount, start the session immediately and load storage
     useEffect(() => {
@@ -103,10 +105,14 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             showsVerticalScrollIndicator={false}
                         >
                             <TextInput
+                                ref={inputRef}
                                 style={[commonStyles.textInput, {
+                                    flex: 1,
                                     fontSize: currentSize,
                                     lineHeight: currentLineHeight,
-                                    fontFamily: currentFont
+                                    fontFamily: currentFont,
+                                    textAlignVertical: 'top',
+                                    minHeight: 800
                                 }]}
                                 multiline
                                 autoFocus

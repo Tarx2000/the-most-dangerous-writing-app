@@ -7,11 +7,12 @@ interface Props {
     note: SavedNote;
     onPress: (note: SavedNote) => void;
     personName?: string;
+    isLocked?: boolean;
 }
 
-export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, personName }) => {
+export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, personName, isLocked }) => {
     return (
-        <TouchableOpacity style={commonStyles.noteCard} onPress={() => onPress(note)}>
+        <TouchableOpacity style={commonStyles.noteCard} onPress={() => !isLocked && onPress(note)} activeOpacity={isLocked ? 1 : 0.2}>
             <View style={commonStyles.noteCardHeader}>
                 <Text style={commonStyles.noteCardDate}>{note.dateStr}</Text>
                 <Text style={commonStyles.noteCardDuration}>
@@ -19,7 +20,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, personName
                 </Text>
             </View>
             <Text style={commonStyles.noteCardPreview} numberOfLines={3}>
-                {note.text}
+                {isLocked ? '•••• •••••••• ••••• ••• •••' : note.text}
             </Text>
             {personName && (
                 <Text style={{ ...commonStyles.noteCardPreview, marginTop: 8, color: '#aaa', fontStyle: 'italic' }}>

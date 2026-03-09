@@ -18,6 +18,7 @@ import { commonStyles } from '../styles/commonStyles';
 import { CONFIG, APP_VERSION, VERSION_HISTORY } from '../config';
 import { CarouselSelector } from '../components/CarouselSelector';
 import { SwipeableModal } from '../components/SwipeableModal';
+import { CalendarView } from '../components/CalendarView';
 import { useStorage } from '../hooks/useStorage';
 import { useSecurity } from '../hooks/useSecurity';
 import { Person } from '../types';
@@ -76,27 +77,28 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
                     <TouchableOpacity onPress={() => setShowSettings(true)} style={commonStyles.iconButton}>
                         <Text style={commonStyles.iconButtonText}>⚙️</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => security.unlockNotes().then(() => navigation.navigate('Library'))} style={commonStyles.iconButton}>
-                        <Text style={commonStyles.iconButtonText}>📚 Library</Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('Library')} style={commonStyles.iconButton}>
+                        <Text style={{ fontSize: 16, marginRight: 4 }}>📚</Text>
+                        <Text style={commonStyles.iconButtonText}>Library</Text>
                     </TouchableOpacity>
                 </View>
             </View>
 
-            <ScrollView style={{ flex: 1, width: '100%' }} contentContainerStyle={{ paddingBottom: 120 }}>
+            <View style={{ flex: 1, width: '100%', paddingBottom: 80, justifyContent: 'center' }}>
                 {/* Hero Logo / Title */}
-                <View style={commonStyles.heroContainer}>
-                    <Text style={commonStyles.heroTitle}>The Most <Text style={commonStyles.heroTitleDanger}>Dangerous</Text></Text>
+                <View style={[commonStyles.heroContainer, { marginTop: 0, marginBottom: 15 }]}>
+                    <Text style={[commonStyles.heroTitle, { fontSize: 24 }]}>The Most <Text style={commonStyles.heroTitleDanger}>Dangerous</Text></Text>
                     <Text style={commonStyles.heroSubtitle}>Don't stop, or all is lost.</Text>
                 </View>
 
                 {/* Session Type Grid */}
-                <Text style={commonStyles.sectionTitle}>Session Type</Text>
+                <Text style={[commonStyles.sectionTitle, { marginTop: 10, marginBottom: 8 }]}>Session Type</Text>
                 <View style={commonStyles.cardsRow}>
-                    <TouchableOpacity style={[commonStyles.card, sessionMode === 'journal' && commonStyles.cardActive]} onPress={() => { setSessionMode('journal'); setSelectedPersonId(null); }}>
+                    <TouchableOpacity style={[commonStyles.card, { padding: 15 }, sessionMode === 'journal' && commonStyles.cardActive]} onPress={() => { setSessionMode('journal'); setSelectedPersonId(null); }}>
                         <Text style={[commonStyles.cardTitle, sessionMode === 'journal' && commonStyles.cardTitleActive]}>Journal</Text>
-                        <Text style={commonStyles.cardDesc}>Free Practice</Text>
+                        <Text style={commonStyles.cardDesc}>Free Writing</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[commonStyles.card, sessionMode === 'circles' && commonStyles.cardActive]} onPress={() => setSessionMode('circles')}>
+                    <TouchableOpacity style={[commonStyles.card, { padding: 15 }, sessionMode === 'circles' && commonStyles.cardActive]} onPress={() => setSessionMode('circles')}>
                         <Text style={[commonStyles.cardTitle, sessionMode === 'circles' && commonStyles.cardTitleActive]}>Circles</Text>
                         <Text style={commonStyles.cardDesc}>For a Person</Text>
                     </TouchableOpacity>
@@ -104,8 +106,8 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
 
                 {/* Circle Select (Only if active) */}
                 {sessionMode === 'circles' && (
-                    <View style={{ paddingHorizontal: 20, marginTop: 15 }}>
-                        <TouchableOpacity style={commonStyles.personSelectorBtn} onPress={() => setShowPersonSelect(true)}>
+                    <View style={{ paddingHorizontal: 20 }}>
+                        <TouchableOpacity style={[commonStyles.personSelectorBtn, { padding: 12, marginTop: 10 }]} onPress={() => setShowPersonSelect(true)}>
                             <Text style={commonStyles.personSelectorLabel}>Writing target</Text>
                             <View style={commonStyles.personSelectorRow}>
                                 <Text style={commonStyles.personSelectorName}>
@@ -118,37 +120,42 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
                 )}
 
                 {/* Center Dial for Time */}
-                <Text style={[commonStyles.sectionTitle, { marginTop: 40, textAlign: 'center', marginLeft: 0 }]}>Duration</Text>
+                <Text style={[commonStyles.sectionTitle, { marginTop: 15, textAlign: 'center', marginLeft: 0 }]}>Duration</Text>
                 <CarouselSelector
                     label="Goal Timer"
                     data={CONFIG.SESSION_OPTIONS_MINS}
                     selectedIndex={timeIndex}
                     onSelect={setTimeIndex}
-                    renderItemText={(item) => <Text style={commonStyles.carouselValueText}>{item} <Text style={{ fontSize: 24, color: theme.colors.textMuted }}>min</Text></Text>}
+                    renderItemText={(item) => <Text style={[commonStyles.carouselValueText, { fontSize: 40 }]}>{item} <Text style={{ fontSize: 20, color: theme.colors.textMuted }}>min</Text></Text>}
                 />
 
                 {/* Difficulty Grid */}
-                <Text style={commonStyles.sectionTitle}>Difficulty</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 20 }}>
+                <Text style={[commonStyles.sectionTitle, { marginTop: 10 }]}>Difficulty</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 10 }}>
                     {CONFIG.DIFFICULTIES.map((diff, i) => (
-                        <TouchableOpacity key={i} style={[commonStyles.card, diffIndex === i && commonStyles.cardActive]} onPress={() => setDiffIndex(i)}>
+                        <TouchableOpacity key={i} style={[commonStyles.card, { padding: 15 }, diffIndex === i && commonStyles.cardActive]} onPress={() => setDiffIndex(i)}>
                             <Text style={[commonStyles.cardTitle, diffIndex === i && commonStyles.cardTitleActive]}>{diff.label}</Text>
+                            <Text style={commonStyles.cardDesc}>{diff.desc}</Text>
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
-            </ScrollView>
+            </View>
 
             {/* Bottom Docked Start Button */}
             <View style={commonStyles.bottomDock}>
-                <TouchableOpacity style={commonStyles.dockedStartBtn} onPress={handleStart}>
+                <TouchableOpacity style={[commonStyles.dockedStartBtn, { paddingVertical: 14 }]} onPress={handleStart}>
                     <Text style={commonStyles.dockedStartBtnText}>Start</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={{ position: 'absolute', top: -30, right: 20 }} onPress={() => setShowVersionHistory(true)}>
+                <TouchableOpacity style={{ position: 'absolute', top: -20, right: 20 }} onPress={() => setShowVersionHistory(true)}>
                     <Text style={commonStyles.versionText}>v{APP_VERSION}</Text>
                 </TouchableOpacity>
             </View>
 
             {/* Modals */}
+            <SwipeableModal visible={showCalendar} onClose={() => setShowCalendar(false)} title="Writing Streak Log">
+                <CalendarView />
+            </SwipeableModal>
+
             <SwipeableModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History">
                 <ScrollView style={{ maxHeight: 400 }}>
                     {VERSION_HISTORY.map((v, i) => (

@@ -212,7 +212,7 @@ export const commonStyles = StyleSheet.create({
     modeBtnTextActive: { color: theme.colors.textPrimary, fontWeight: theme.typography.weightBold },
 
     personSelectorBtn: {
-        width: '90%',
+        width: '100%',
         backgroundColor: theme.colors.glassBackground,
         borderRadius: theme.borderRadius.lg,
         padding: 18,
