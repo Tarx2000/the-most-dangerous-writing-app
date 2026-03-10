@@ -24,7 +24,7 @@ import { theme } from '../styles/theme';
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 
 export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
-    const { timeIndex, diffIndex, mode, personId } = route.params;
+    const { timeIndex, diffIndex, mode, personId, isQuickNote } = route.params;
 
     const {
         text,
@@ -47,9 +47,9 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     // On mount, start the session immediately and load storage
     useEffect(() => {
         loadAllData();
-        startSession();
+        startSession(isQuickNote);
         return () => clearTimers();
-    }, [startSession, clearTimers, loadAllData]);
+    }, [startSession, clearTimers, loadAllData, isQuickNote]);
 
     const handleSave = async () => {
         if (text.trim().length === 0) {
@@ -63,9 +63,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             text,
             dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             timestamp: Date.now(),
-            durationMin: sessionTimeSelected / 60,
+            durationMin: isQuickNote ? 0 : sessionTimeSelected / 60,
             won: noteWon,
             ...(mode === 'circles' && personId ? { personId } : {}),
+            isQuickNote // We can optionally add this to the note data struct but durationMin=0 essentially serves that purpose
         };
 
         await saveNote(newNote);
@@ -88,13 +89,14 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     hasLost={hasLost}
                     isContinuingAfterLoss={isContinuingAfterLoss}
                     sessionTimeRemaining={sessionTimeRemaining}
+                    isDisabled={isQuickNote}
                 />
 
                 <Animated.View style={[commonStyles.writingContainer, { transform: [{ translateX: shakeAnimation }], zIndex: 3 }]}>
                     <View style={commonStyles.header}>
                         <Text style={commonStyles.wordCount}>{wordCount} Words</Text>
-                        <Text style={hasLost ? commonStyles.lossText : sessionTimeRemaining === 0 ? commonStyles.winText : { color: '#fff', fontSize: 18, fontWeight: 'bold' }}>
-                            {hasLost ? 'YOU DIED' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
+                        <Text style={hasLost ? commonStyles.lossText : (sessionTimeRemaining === 0 && !isQuickNote) ? commonStyles.winText : isQuickNote ? { color: theme.colors.textMuted, fontSize: 14 } : { color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: 'bold' }}>
+                            {hasLost ? 'YOU DIED' : isQuickNote ? 'QUICK NOTE' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
                         </Text>
                     </View>
 
@@ -126,13 +128,13 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </ScrollView>
                     </View>
 
-                    {(sessionTimeRemaining === 0 || isContinuingAfterLoss) && !hasLost && (
+                    {(sessionTimeRemaining === 0 || isContinuingAfterLoss || isQuickNote) && !hasLost && (
                         <View style={commonStyles.finishedActionsContainer}>
-                            <TouchableOpacity style={commonStyles.saveActionBtn} onPress={handleSave}>
+                            <TouchableOpacity style={[commonStyles.saveActionBtn, { opacity: 0.6 }]} onPress={handleSave}>
                                 <Text style={commonStyles.saveActionText}>SAVE ENTRY</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={commonStyles.menuActionBtn} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
-                                <Text style={commonStyles.menuActionText}>Abandon & Return to Menu</Text>
+                            <TouchableOpacity style={[commonStyles.menuActionBtn, { opacity: 0.6 }]} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                                <Text style={commonStyles.menuActionText}>Return to Menu</Text>
                             </TouchableOpacity>
                         </View>
                     )}

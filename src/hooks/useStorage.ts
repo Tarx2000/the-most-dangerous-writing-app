@@ -7,6 +7,7 @@ export function useStorage() {
     const [persons, setPersons] = useState<Person[]>([]);
     const [currentStreak, setCurrentStreak] = useState<number>(0);
     const [lastWinDate, setLastWinDate] = useState<string>('');
+    const [streakHistory, setStreakHistory] = useState<string[]>([]);
 
     const [fontIndex, setFontIndex] = useState(0);
     const [sizeIndex, setSizeIndex] = useState(1);
@@ -21,18 +22,39 @@ export function useStorage() {
                 'USER_SIZE_IDX',
                 'USE_BIOMETRICS',
                 'CURRENT_STREAK',
-                'LAST_WIN_DATE'
+                'LAST_WIN_DATE',
+                'STREAK_HISTORY'
             ];
             const results = await AsyncStorage.multiGet(keys);
             const data: Record<string, string | null> = Object.fromEntries(results);
 
-            if (data['SAVED_NOTES']) setSavedNotes(JSON.parse(data['SAVED_NOTES']));
+            let loadedNotes: SavedNote[] = [];
+            if (data['SAVED_NOTES']) {
+                loadedNotes = JSON.parse(data['SAVED_NOTES']);
+                setSavedNotes(loadedNotes);
+            }
             if (data['SAVED_PERSONS']) setPersons(JSON.parse(data['SAVED_PERSONS']));
             if (data['USER_FONT_IDX'] !== null) setFontIndex(parseInt(data['USER_FONT_IDX'], 10));
             if (data['USER_SIZE_IDX'] !== null) setSizeIndex(parseInt(data['USER_SIZE_IDX'], 10));
             if (data['USE_BIOMETRICS'] !== null) setUseBiometrics(JSON.parse(data['USE_BIOMETRICS']));
             if (data['CURRENT_STREAK'] !== null) setCurrentStreak(parseInt(data['CURRENT_STREAK'], 10));
             if (data['LAST_WIN_DATE']) setLastWinDate(data['LAST_WIN_DATE']);
+
+            if (data['STREAK_HISTORY']) {
+                setStreakHistory(JSON.parse(data['STREAK_HISTORY']));
+            } else {
+                // Backfill from existing won notes >= 3min
+                const historySet = new Set<string>();
+                loadedNotes.forEach(n => {
+                    if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
+                        const d = new Date(n.timestamp);
+                        historySet.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+                    }
+                });
+                const arr = Array.from(historySet);
+                setStreakHistory(arr);
+                AsyncStorage.setItem('STREAK_HISTORY', JSON.stringify(arr));
+            }
 
         } catch (error) {
             console.error('Failed to load storage data', error);
@@ -54,10 +76,21 @@ export function useStorage() {
     const saveNote = async (note: SavedNote) => {
         let updatedStreak = currentStreak;
         let newLastWinDate = lastWinDate;
+        let newHistory = [...streakHistory];
 
         // Process streak logic inline
-        if (note.won) {
+        if (note.won && note.durationMin >= 3 && !note.isQuickNote) {
             const todayStr = new Date().toLocaleDateString();
+
+            // Add to persistent calendar history
+            const d = new Date();
+            const calDateStr = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            if (!newHistory.includes(calDateStr)) {
+                newHistory.push(calDateStr);
+                setStreakHistory(newHistory);
+                await AsyncStorage.setItem('STREAK_HISTORY', JSON.stringify(newHistory));
+            }
+
             if (lastWinDate !== todayStr) {
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
@@ -117,6 +150,7 @@ export function useStorage() {
         persons,
         currentStreak,
         lastWinDate,
+        streakHistory,
         fontIndex,
         sizeIndex,
         useBiometrics,

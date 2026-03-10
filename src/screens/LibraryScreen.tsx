@@ -20,6 +20,7 @@ import { theme } from '../styles/theme';
 import { useStorage } from '../hooks/useStorage';
 import { useSecurity } from '../hooks/useSecurity';
 import { NoteCard } from '../components/NoteCard';
+import { ExpandablePersonCard } from '../components/ExpandablePersonCard';
 import { SortOption, SavedNote } from '../types';
 
 type Props = {
@@ -43,10 +44,12 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
         storage.loadAllData();
     }, []);
 
-    const getGroupedNotes = () => {
+    const getGroupedNotes = (circleId?: string | null) => {
         let notesToGroup = [...storage.savedNotes];
-        if (selectedCircleId) {
-            notesToGroup = notesToGroup.filter(n => n.personId === selectedCircleId);
+        if (circleId) {
+            notesToGroup = notesToGroup.filter(n => n.personId === circleId);
+        } else {
+            notesToGroup = notesToGroup.filter(n => !n.personId);
         }
 
         const sorted = notesToGroup.sort((a, b) => {
@@ -55,15 +58,24 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 case 'oldest': return a.timestamp - b.timestamp;
                 case 'longest': return b.durationMin - a.durationMin;
                 case 'shortest': return a.durationMin - b.durationMin;
+                case 'longest-text': {
+                    const getWordCount = (text: string) => (text || '').split(/\s+/).filter(Boolean).length;
+                    return getWordCount(b.text) - getWordCount(a.text);
+                }
                 default: return b.timestamp - a.timestamp;
             }
         });
 
         const groups: { title: string, data: SavedNote[] }[] = [];
         sorted.forEach(note => {
-            let groupTitle = (sortBy === 'newest' || sortBy === 'oldest')
-                ? new Date(note.timestamp).toLocaleString('default', { month: 'long', year: 'numeric' })
-                : `${note.durationMin} Min Sessions`;
+            let groupTitle = '';
+            if (sortBy === 'newest' || sortBy === 'oldest') {
+                groupTitle = new Date(note.timestamp).toLocaleString('default', { month: 'long', year: 'numeric' });
+            } else if (sortBy === 'longest-text') {
+                groupTitle = 'By Length (Words)';
+            } else {
+                groupTitle = `${note.durationMin} Min Sessions`;
+            }
 
             let group = groups.find(g => g.title === groupTitle);
             if (!group) { group = { title: groupTitle, data: [] }; groups.push(group); }
@@ -105,28 +117,20 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
 
             {libraryTab === 'notes' ? (
                 <>
-                    {selectedCircleId && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, justifyContent: 'space-between', backgroundColor: theme.colors.glassBackground, padding: 12, borderRadius: theme.borderRadius.md, borderWidth: 1, borderColor: theme.colors.glassBorder }}>
-                            <Text style={{ color: theme.colors.textPrimary, fontWeight: theme.typography.weightBold }}>
-                                Filtering by Person: {storage.persons.find(p => p.id === selectedCircleId)?.name}
-                            </Text>
-                            <TouchableOpacity onPress={() => setSelectedCircleId(null)}>
-                                <Text style={{ color: theme.colors.danger, fontWeight: theme.typography.weightBold }}>Clear</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
                     <View style={commonStyles.sortContainer}>
                         <Text style={commonStyles.sortLabel}>Sort By:</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={commonStyles.sortScroll}>
-                            {(['newest', 'oldest', 'longest', 'shortest'] as SortOption[]).map(opt => (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={commonStyles.sortScroll} contentContainerStyle={{ paddingRight: 40 }}>
+                            {(['newest', 'oldest', 'longest', 'shortest', 'longest-text'] as SortOption[]).map(opt => (
                                 <TouchableOpacity key={opt} style={[commonStyles.sortBtn, sortBy === opt && commonStyles.sortBtnActive]} onPress={() => setSortBy(opt)}>
-                                    <Text style={[commonStyles.sortBtnText, sortBy === opt && commonStyles.sortBtnTextActive]}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</Text>
+                                    <Text style={[commonStyles.sortBtnText, sortBy === opt && commonStyles.sortBtnTextActive]}>
+                                        {opt === 'longest-text' ? 'Longest Text' : opt.charAt(0).toUpperCase() + opt.slice(1)}
+                                    </Text>
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
                     </View>
 
-                    {storage.savedNotes.length === 0 ? (
+                    {storage.savedNotes.filter(n => !n.personId).length === 0 ? (
                         <Text style={commonStyles.emptyLibrary}>No saved notes yet.</Text>
                     ) : (
                         <FlatList
@@ -151,46 +155,35 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                     )}
                 </>
             ) : (
-                <FlatList
-                    data={storage.persons}
-                    keyExtractor={p => p.id}
-                    ListEmptyComponent={<Text style={commonStyles.emptyLibrary}>No people in your circles yet.</Text>}
-                    renderItem={({ item: p }) => (
-                        <TouchableOpacity
-                            style={commonStyles.personCard}
-                            onPress={() => {
-                                setSelectedCircleId(p.id);
-                                setLibraryTab('notes');
-                            }}
-                        >
-                            <View style={commonStyles.personAvatar}>
-                                <Text style={commonStyles.personAvatarText}>{p.name.charAt(0)}</Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={commonStyles.personCardName}>{p.name}</Text>
-                                <Text style={commonStyles.personCardMeta}>
-                                    {storage.savedNotes.filter(n => n.personId === p.id).length} Entries
-                                </Text>
-                            </View>
-                            <TouchableOpacity
-                                onPress={() => setPersonToDelete(p.id)}
-                                disabled={!security.isNotesUnlocked}
-                                style={{ opacity: security.isNotesUnlocked ? 1 : 0.3, padding: 10 }}
-                            >
-                                <Text style={{ color: theme.colors.danger, fontSize: 18 }}>🗑️</Text>
-                            </TouchableOpacity>
-                        </TouchableOpacity>
+                <>
+                    {storage.persons.length === 0 ? (
+                        <Text style={commonStyles.emptyLibrary}>No people in your circles yet.</Text>
+                    ) : (
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            {storage.persons.map(p => (
+                                <ExpandablePersonCard
+                                    key={p.id}
+                                    person={p}
+                                    notes={storage.savedNotes.filter(n => n.personId === p.id)}
+                                    isExpanded={selectedCircleId === p.id}
+                                    isLocked={!security.isNotesUnlocked}
+                                    onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
+                                    onNotePress={setViewNoteModal}
+                                    onDelete={() => setPersonToDelete(p.id)}
+                                    canDelete={security.isNotesUnlocked}
+                                />
+                            ))}
+                        </ScrollView>
                     )}
-                />
+                </>
             )}
-
-            {/* Blur view removed as per user request to replace with dot rendering instead */}
 
             {!security.isNotesUnlocked && (
                 <TouchableOpacity style={[commonStyles.backButton, { zIndex: 20 }]} onPress={() => { security.lockInstantly(); onGoToStart(); }}>
                     <Text style={commonStyles.backButtonText}>Return to Menu</Text>
                 </TouchableOpacity>
             )}
+
             {/* Note View Modal */}
             <Modal visible={!!viewNoteModal} animationType="slide">
                 {viewNoteModal && (

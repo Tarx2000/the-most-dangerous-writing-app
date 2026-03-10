@@ -8,18 +8,11 @@ const CALENDAR_WIDTH = width * 0.85;
 const DAY_SIZE = (CALENDAR_WIDTH - 60) / 7;
 
 export const CalendarView: React.FC = () => {
-    const { savedNotes } = useStorage();
+    const { streakHistory } = useStorage();
 
-    // Group notes by date string to determine which days have records
     const recordDays = React.useMemo(() => {
-        const days = new Set<string>();
-        savedNotes.forEach(note => {
-            const dateObj = new Date(note.timestamp);
-            const dateStr = `${dateObj.getFullYear()}-${dateObj.getMonth()}-${dateObj.getDate()}`;
-            days.add(dateStr);
-        });
-        return days;
-    }, [savedNotes]);
+        return new Set<string>(streakHistory);
+    }, [streakHistory]);
 
     const renderMonth = (monthOffset: number) => {
         const now = new Date();
@@ -72,9 +65,7 @@ export const CalendarView: React.FC = () => {
 
     return (
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-            {renderMonth(0)}
-            {renderMonth(1)}
-            {renderMonth(2)}
+            {Array.from({ length: 12 }).map((_, i) => renderMonth(i))}
         </ScrollView>
     );
 };

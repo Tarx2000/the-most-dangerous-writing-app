@@ -6,6 +6,7 @@ export type RootStackParamList = {
         diffIndex: number;
         mode: 'journal' | 'circles';
         personId: string | null;
+        isQuickNote?: boolean;
     };
     Library: undefined;
 };

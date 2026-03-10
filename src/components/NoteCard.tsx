@@ -16,7 +16,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, personName
             <View style={commonStyles.noteCardHeader}>
                 <Text style={commonStyles.noteCardDate}>{note.dateStr}</Text>
                 <Text style={commonStyles.noteCardDuration}>
-                    {note.durationMin} Min {note.won ? '🔥' : '💀'}
+                    {note.durationMin} Min {note.won && note.durationMin >= 3 && !note.isQuickNote ? '🔥' : (!note.won ? '💀' : '')}
                 </Text>
             </View>
             <Text style={commonStyles.noteCardPreview} numberOfLines={3}>

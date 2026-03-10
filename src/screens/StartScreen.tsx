@@ -10,7 +10,8 @@ import {
     Modal,
     KeyboardAvoidingView,
     ImageBackground,
-    PanResponder
+    PanResponder,
+    Dimensions
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -136,6 +137,23 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                                 <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>▼</Text>
                             </View>
                         </TouchableOpacity>
+
+                        {selectedPersonId && (
+                            <TouchableOpacity
+                                style={{ marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }}
+                                onPress={() => {
+                                    navigation.navigate('Writing', {
+                                        timeIndex: 0,
+                                        diffIndex,
+                                        mode: 'circles',
+                                        personId: selectedPersonId,
+                                        isQuickNote: true
+                                    });
+                                }}
+                            >
+                                <Text style={{ color: theme.colors.textPrimary, fontWeight: theme.typography.weightMedium, fontSize: 14 }}>⚡ Quick Note</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 )}
             </View>
@@ -170,8 +188,8 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                     <TouchableOpacity style={[commonStyles.dockedStartBtn, { paddingVertical: 14 }]} onPress={handleStart}>
                         <Text style={commonStyles.dockedStartBtnText}>Start</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={{ position: 'absolute', top: -30, right: 20 }} onPress={() => setShowVersionHistory(true)}>
-                        <Text style={commonStyles.versionText}>v{APP_VERSION}</Text>
+                    <TouchableOpacity style={{ position: 'absolute', bottom: -5, right: 15 }} onPress={() => setShowVersionHistory(true)}>
+                        <Text style={[commonStyles.versionText, { fontSize: 10, opacity: 0.5 }]}>{APP_VERSION}</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -192,38 +210,46 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                 </ScrollView>
             </SwipeableModal>
 
-            <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Settings">
-                <View style={{ paddingBottom: 20 }}>
-                    <Text style={commonStyles.settingsLabel}>Font Family</Text>
-                    <View style={commonStyles.settingsRow}>
-                        {CONFIG.FONTS.map((f, i) => (
-                            <TouchableOpacity
-                                key={i}
-                                style={[commonStyles.sortBtn, storage.fontIndex === i && commonStyles.sortBtnActive]}
-                                onPress={() => storage.savePreferences(i, storage.sizeIndex)}
-                            >
-                                <Text style={[commonStyles.sortBtnText, { fontFamily: f.value }, storage.fontIndex === i && commonStyles.sortBtnTextActive]}>
-                                    {f.label}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
+            <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Preferences">
+                <ScrollView contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+
+                    <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder }}>
+                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Typography Collection</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Choose your preferred writing style</Text>
+                        <View style={commonStyles.settingsRow}>
+                            {CONFIG.FONTS.map((f, i) => (
+                                <TouchableOpacity
+                                    key={i}
+                                    style={[commonStyles.sortBtn, storage.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
+                                    onPress={() => storage.savePreferences(i, storage.sizeIndex)}
+                                >
+                                    <Text style={[commonStyles.sortBtnText, { fontFamily: f.value }, storage.fontIndex === i && commonStyles.sortBtnTextActive]}>
+                                        {f.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <View style={{ height: 1, backgroundColor: theme.colors.glassBorder, marginVertical: 20 }} />
+
+                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Reading Size</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Adjust the text scale</Text>
+                        <View style={commonStyles.settingsRow}>
+                            {CONFIG.SIZES.map((s, i) => (
+                                <TouchableOpacity
+                                    key={i}
+                                    style={[commonStyles.sortBtn, storage.sizeIndex === i && commonStyles.sortBtnActive]}
+                                    onPress={() => storage.savePreferences(storage.fontIndex, i)}
+                                >
+                                    <Text style={[commonStyles.sortBtnText, storage.sizeIndex === i && commonStyles.sortBtnTextActive]}>
+                                        {s.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
                     </View>
 
-                    <Text style={[commonStyles.settingsLabel, { marginTop: 20 }]}>Font Size</Text>
-                    <View style={commonStyles.settingsRow}>
-                        {CONFIG.SIZES.map((s, i) => (
-                            <TouchableOpacity
-                                key={i}
-                                style={[commonStyles.sortBtn, storage.sizeIndex === i && commonStyles.sortBtnActive]}
-                                onPress={() => storage.savePreferences(storage.fontIndex, i)}
-                            >
-                                <Text style={[commonStyles.sortBtnText, storage.sizeIndex === i && commonStyles.sortBtnTextActive]}>
-                                    {s.label}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-
+                    <Text style={[commonStyles.settingsLabel, { marginLeft: 5, color: theme.colors.textPrimary }]}>Live Preview</Text>
                     <View style={commonStyles.previewContainer}>
                         <Text style={[commonStyles.previewText, {
                             fontFamily: CONFIG.FONTS[storage.fontIndex].value,
@@ -233,13 +259,17 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                         </Text>
                     </View>
 
-                    <TouchableOpacity
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.danger }]}
-                        onPress={() => security.changePinWithAuth(() => { })}
-                    >
-                        <Text style={commonStyles.closeVersionBtnText}>Change Security PIN</Text>
-                    </TouchableOpacity>
-                </View>
+                    <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
+                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Security & Privacy</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Protect your dangerous thoughts</Text>
+                        <TouchableOpacity
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.glassHighlight, marginTop: 0 }]}
+                            onPress={() => { setShowSettings(false); security.changePinWithAuth(() => { }); }}
+                        >
+                            <Text style={commonStyles.closeVersionBtnText}>Change Security PIN</Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
             </SwipeableModal>
 
             {/* Person Select Modal */}
@@ -247,6 +277,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                 visible={showPersonSelect}
                 onClose={() => { setShowPersonSelect(false); setCircleSearch(''); }}
                 title="Select Person"
+                height={Dimensions.get('window').height * 0.55}
             >
                 <TextInput
                     style={commonStyles.circleSearchInput}
@@ -256,28 +287,36 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                     onChangeText={setCircleSearch}
                 />
 
-                <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="handled">
-                    {filteredPersons.map(p => (
-                        <TouchableOpacity
-                            key={p.id}
-                            style={[commonStyles.personSelectItem, selectedPersonId === p.id && commonStyles.personSelectItemActive]}
-                            onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); }}
-                        >
-                            <View style={commonStyles.personAvatar}>
-                                <Text style={commonStyles.personAvatarText}>{p.name.charAt(0)}</Text>
-                            </View>
-                            <Text style={commonStyles.personSelectName}>{p.name}</Text>
-                        </TouchableOpacity>
-                    ))}
+                <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                    {circleSearch.length > 0 ? (
+                        <>
+                            {filteredPersons.map(p => (
+                                <TouchableOpacity
+                                    key={p.id}
+                                    style={[commonStyles.personSelectItem, selectedPersonId === p.id && commonStyles.personSelectItemActive]}
+                                    onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); }}
+                                >
+                                    <View style={commonStyles.personAvatar}>
+                                        <Text style={commonStyles.personAvatarText}>{p.name.charAt(0)}</Text>
+                                    </View>
+                                    <Text style={commonStyles.personSelectName}>{p.name}</Text>
+                                </TouchableOpacity>
+                            ))}
 
-                    {filteredPersons.length === 0 && circleSearch.length > 0 && !showAddPerson && (
-                        <TouchableOpacity style={commonStyles.addPersonSuggestion} onPress={() => { setNewPersonName(circleSearch); setShowAddPerson(true); }}>
-                            <Text style={commonStyles.addPersonSuggestionText}>+ Add "{circleSearch}"</Text>
-                        </TouchableOpacity>
+                            {filteredPersons.length === 0 && !showAddPerson && (
+                                <TouchableOpacity style={commonStyles.addPersonSuggestion} onPress={() => { setNewPersonName(circleSearch); setShowAddPerson(true); }}>
+                                    <Text style={commonStyles.addPersonSuggestionText}>+ Add "{circleSearch}"</Text>
+                                </TouchableOpacity>
+                            )}
+                        </>
+                    ) : (
+                        <Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 20 }}>
+                            Start typing to find or create a circle.
+                        </Text>
                     )}
                 </ScrollView>
 
-                <TouchableOpacity style={commonStyles.addPersonFloatBtn} onPress={() => setShowAddPerson(true)}>
+                <TouchableOpacity style={[commonStyles.addPersonFloatBtn, { marginTop: 10, marginBottom: 4 }]} onPress={() => setShowAddPerson(true)}>
                     <Text style={commonStyles.addPersonFloatBtnText}>+ Create New Circle</Text>
                 </TouchableOpacity>
             </SwipeableModal>

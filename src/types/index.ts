@@ -12,6 +12,7 @@ export interface SavedNote {
     durationMin: number;
     won: boolean;
     personId?: string;
+    isQuickNote?: boolean;
 }
 
-export type SortOption = 'newest' | 'oldest' | 'longest' | 'shortest';
+export type SortOption = 'newest' | 'oldest' | 'longest' | 'shortest' | 'longest-text';

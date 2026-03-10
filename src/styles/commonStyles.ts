@@ -107,10 +107,10 @@ export const commonStyles = StyleSheet.create({
     textInput: { color: theme.colors.textPrimary, minHeight: 150 },
 
     finishedActionsContainer: { marginTop: 20, flexDirection: 'column', gap: 10 },
-    saveActionBtn: { backgroundColor: theme.colors.primaryAction, padding: 18, borderRadius: theme.borderRadius.round, alignItems: 'center' },
-    saveActionText: { color: theme.colors.primaryActionText, fontSize: 16, fontWeight: theme.typography.weightBold },
-    menuActionBtn: { backgroundColor: theme.colors.glassBackground, padding: 18, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.glassBorder },
-    menuActionText: { color: theme.colors.textPrimary, fontSize: 16, fontWeight: theme.typography.weightMedium },
+    saveActionBtn: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    saveActionText: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: theme.typography.weightMedium, letterSpacing: 1 },
+    menuActionBtn: { backgroundColor: 'transparent', padding: 16, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+    menuActionText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: theme.typography.weightMedium },
 
     progressBarContainer: { height: 4, backgroundColor: theme.colors.glassBackground, borderRadius: 2, marginBottom: 15, overflow: 'hidden' },
     progressBarFill: { height: '100%', backgroundColor: theme.colors.danger },
@@ -120,7 +120,7 @@ export const commonStyles = StyleSheet.create({
     librarySubtitle: { color: theme.colors.textSecondary, marginBottom: 20, fontSize: 16 },
     sortContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
     sortLabel: { color: theme.colors.textSecondary, marginRight: 10, fontWeight: theme.typography.weightMedium },
-    sortScroll: { flexGrow: 0 },
+    sortScroll: { flex: 1 },
     sortBtn: {
         paddingVertical: 8,
         paddingHorizontal: 16,
@@ -222,7 +222,7 @@ export const commonStyles = StyleSheet.create({
     },
     personSelectorLabel: { color: theme.colors.textSecondary, fontSize: 12, fontWeight: theme.typography.weightMedium, marginBottom: 6 },
     personSelectorRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    personSelectorName: { color: theme.colors.textPrimary, fontSize: 18, fontWeight: theme.typography.weightBold },
+    personSelectorName: { color: theme.colors.textPrimary, fontSize: 15, fontWeight: theme.typography.weightBold },
 
     tabBar: { flexDirection: 'row', backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.round, padding: 4, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder },
     tabBtn: { flex: 1, paddingVertical: 10, borderRadius: theme.borderRadius.round, alignItems: 'center' },

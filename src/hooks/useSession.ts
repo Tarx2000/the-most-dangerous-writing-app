@@ -42,13 +42,13 @@ export function useSession(timeIndex: number, diffIndex: number) {
         setTimeout(() => { setText(''); }, 200);
     }, [clearTimers, shakeAnimation, lossOverlayOpacity]);
 
-    const startSession = useCallback(() => {
+    const startSession = useCallback((isQuickNote?: boolean) => {
         const minutes = CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
         const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
 
         const seconds = minutes * 60;
-        setSessionTimeSelected(seconds);
-        setSessionTimeRemaining(seconds);
+        setSessionTimeSelected(isQuickNote ? 0 : seconds);
+        setSessionTimeRemaining(isQuickNote ? 0 : seconds);
         setIdleTimeMs(0);
         setText('');
         setHasLost(false);
@@ -58,6 +58,10 @@ export function useSession(timeIndex: number, diffIndex: number) {
         shakeAnimation.setValue(0);
         clearTimers();
 
+        // Quick Notes have no timers at all - no countdown, no idle death
+        if (isQuickNote) return;
+
+        // Session countdown timer (ticks every second)
         sessionIntervalRef.current = setInterval(() => {
             setSessionTimeRemaining((prev) => {
                 if (prev <= 1) {
@@ -69,6 +73,7 @@ export function useSession(timeIndex: number, diffIndex: number) {
             });
         }, 1000);
 
+        // Idle death timer (ticks every TICK_RATE_MS)
         idleIntervalRef.current = setInterval(() => {
             setIdleTimeMs((prev) => {
                 const newIdleTime = prev + CONFIG.TICK_RATE_MS;
@@ -83,10 +88,11 @@ export function useSession(timeIndex: number, diffIndex: number) {
 
     const handleTextChange = useCallback((newText: string) => {
         setText(newText);
-        if (sessionTimeRemaining > 0 && !hasLost && !isContinuingAfterLoss) {
+        // Reset idle timer on any typing (works for both timed sessions and quick notes)
+        if (!hasLost && !isContinuingAfterLoss) {
             setIdleTimeMs(0);
         }
-    }, [sessionTimeRemaining, hasLost, isContinuingAfterLoss]);
+    }, [hasLost, isContinuingAfterLoss]);
 
     const resumeWritingFreely = useCallback((onResumed?: () => void) => {
         setIsContinuingAfterLoss(true);

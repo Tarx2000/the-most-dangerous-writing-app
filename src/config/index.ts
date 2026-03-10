@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-export const APP_VERSION = "v6.0.0";
+export const APP_VERSION = "1.1";
 
 export const VERSION_HISTORY = [
     { version: 'v6.0.0', changes: ['Circles: Relationship journal — link writing sessions to people', 'Library tabs: Notes & Circles views with person search', 'Mode toggle on start screen: Journal (default) vs Circles'] },
