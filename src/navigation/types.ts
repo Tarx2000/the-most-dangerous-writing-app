@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+    Home: undefined;
     Start: undefined;
     Writing: {
         timeIndex: number;

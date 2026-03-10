@@ -53,7 +53,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const handleSave = async () => {
         if (text.trim().length === 0) {
-            navigation.navigate('Start');
+            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
             return;
         }
 
@@ -69,7 +69,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         };
 
         await saveNote(newNote);
-        navigation.navigate('Library');
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     };
 
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
@@ -131,7 +131,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <TouchableOpacity style={commonStyles.saveActionBtn} onPress={handleSave}>
                                 <Text style={commonStyles.saveActionText}>SAVE ENTRY</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={commonStyles.menuActionBtn} onPress={() => navigation.navigate('Start')}>
+                            <TouchableOpacity style={commonStyles.menuActionBtn} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                                 <Text style={commonStyles.menuActionText}>Abandon & Return to Menu</Text>
                             </TouchableOpacity>
                         </View>
@@ -139,13 +139,13 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 </Animated.View>
 
                 {/* Death Overlay */}
-                <Animated.View style={[commonStyles.deathOverlayLayer, { opacity: lossOverlayOpacity }]}>
+                <Animated.View pointerEvents={hasLost ? 'auto' : 'none'} style={[commonStyles.deathOverlayLayer, { opacity: lossOverlayOpacity }]}>
                     {hasLost && (
                         <View style={commonStyles.deathContentBox}>
                             <Text style={commonStyles.deathGiant}>YOU DIED</Text>
                             <Text style={commonStyles.deathSub}>You stopped writing for too long.</Text>
 
-                            <TouchableOpacity style={commonStyles.deathBtnMaster} onPress={() => navigation.navigate('Start')}>
+                            <TouchableOpacity style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                                 <Text style={commonStyles.deathBtnMasterText}>Return to Output</Text>
                             </TouchableOpacity>
 
@@ -159,7 +159,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 {/* Floating Buttons on Death Screen */}
                 {hasLost && (
                     <View style={commonStyles.floatingActionRow}>
-                        <TouchableOpacity style={commonStyles.floatHomeBtn} onPress={() => navigation.navigate('Start')}>
+                        <TouchableOpacity style={commonStyles.floatHomeBtn} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                             <Text style={commonStyles.floatBtnText}>🏠 Menu</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={commonStyles.floatSaveBtn} onPress={handleSave}>

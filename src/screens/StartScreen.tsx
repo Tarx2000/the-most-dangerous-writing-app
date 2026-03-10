@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,8 @@ import {
     Platform,
     Modal,
     KeyboardAvoidingView,
-    ImageBackground
+    ImageBackground,
+    PanResponder
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -25,9 +26,14 @@ import { Person } from '../types';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { theme } from '../styles/theme';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Start'>;
+type Props = {
+    navigation: any;
+    route: any;
+    onGoToLibrary: () => void;
+    setHomeScrollEnabled?: (enabled: boolean) => void;
+};
 
-export const StartScreen: React.FC<Props> = ({ navigation }) => {
+export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHomeScrollEnabled }) => {
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
@@ -42,6 +48,20 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
     const [circleSearch, setCircleSearch] = useState('');
     const [showAddPerson, setShowAddPerson] = useState(false);
     const [newPersonName, setNewPersonName] = useState('');
+
+    const panResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (evt, gestureState) => {
+                // Activate on strong left swipe
+                return gestureState.dx < -40 && Math.abs(gestureState.dy) < 40;
+            },
+            onPanResponderRelease: (evt, gestureState) => {
+                if (gestureState.dx < -40) {
+                    onGoToLibrary();
+                }
+            }
+        })
+    ).current;
 
     const storage = useStorage();
     const security = useSecurity();
@@ -64,7 +84,7 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
     );
 
     return (
-        <View style={commonStyles.startContainer}>
+        <View style={commonStyles.startContainer} {...panResponder.panHandlers}>
             <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
             {/* Premium Header */}
@@ -77,14 +97,14 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
                     <TouchableOpacity onPress={() => setShowSettings(true)} style={commonStyles.iconButton}>
                         <Text style={commonStyles.iconButtonText}>⚙️</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => navigation.navigate('Library')} style={commonStyles.iconButton}>
+                    <TouchableOpacity onPress={onGoToLibrary} style={commonStyles.iconButton}>
                         <Text style={{ fontSize: 16, marginRight: 4 }}>📚</Text>
                         <Text style={commonStyles.iconButtonText}>Library</Text>
                     </TouchableOpacity>
                 </View>
             </View>
 
-            <View style={{ flex: 1, width: '100%', paddingBottom: 80, justifyContent: 'center' }}>
+            <View style={{ width: '100%', paddingBottom: 20, paddingTop: 10 }}>
                 {/* Hero Logo / Title */}
                 <View style={[commonStyles.heroContainer, { marginTop: 0, marginBottom: 15 }]}>
                     <Text style={[commonStyles.heroTitle, { fontSize: 24 }]}>The Most <Text style={commonStyles.heroTitleDanger}>Dangerous</Text></Text>
@@ -118,37 +138,42 @@ export const StartScreen: React.FC<Props> = ({ navigation }) => {
                         </TouchableOpacity>
                     </View>
                 )}
+            </View>
 
+            <View style={{ flex: 1, justifyContent: 'flex-start', paddingTop: 20 }}>
                 {/* Center Dial for Time */}
-                <Text style={[commonStyles.sectionTitle, { marginTop: 15, textAlign: 'center', marginLeft: 0 }]}>Duration</Text>
+                <Text style={[commonStyles.sectionTitle, { marginTop: 0, textAlign: 'center', marginLeft: 0 }]}>Duration</Text>
                 <CarouselSelector
                     label="Goal Timer"
                     data={CONFIG.SESSION_OPTIONS_MINS}
                     selectedIndex={timeIndex}
                     onSelect={setTimeIndex}
                     renderItemText={(item) => <Text style={[commonStyles.carouselValueText, { fontSize: 40 }]}>{item} <Text style={{ fontSize: 20, color: theme.colors.textMuted }}>min</Text></Text>}
+                    onInteractionStart={() => setHomeScrollEnabled?.(false)}
+                    onInteractionEnd={() => setHomeScrollEnabled?.(true)}
                 />
+            </View>
 
+            {/* Bottom Docked Anchor */}
+            <View style={[commonStyles.bottomDock, { paddingHorizontal: 0, backgroundColor: theme.colors.background }]}>
                 {/* Difficulty Grid */}
-                <Text style={[commonStyles.sectionTitle, { marginTop: 10 }]}>Difficulty</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 10 }}>
+                <Text style={[commonStyles.sectionTitle, { marginTop: 0, marginBottom: 8 }]}>Difficulty</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, gap: 8, paddingBottom: 15, minWidth: '100%', justifyContent: 'center' }}>
                     {CONFIG.DIFFICULTIES.map((diff, i) => (
-                        <TouchableOpacity key={i} style={[commonStyles.card, { padding: 15 }, diffIndex === i && commonStyles.cardActive]} onPress={() => setDiffIndex(i)}>
-                            <Text style={[commonStyles.cardTitle, diffIndex === i && commonStyles.cardTitleActive]}>{diff.label}</Text>
-                            <Text style={commonStyles.cardDesc}>{diff.desc}</Text>
+                        <TouchableOpacity key={i} style={[commonStyles.card, { padding: 10, flex: 1, alignItems: 'center' }, diffIndex === i && commonStyles.cardActive]} onPress={() => setDiffIndex(i)}>
+                            <Text style={[commonStyles.cardTitle, { fontSize: 13, textAlign: 'center' }, diffIndex === i && commonStyles.cardTitleActive]}>{diff.label}</Text>
+                            <Text style={[commonStyles.cardDesc, { fontSize: 10, textAlign: 'center' }]}>{diff.desc}</Text>
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
-            </View>
-
-            {/* Bottom Docked Start Button */}
-            <View style={commonStyles.bottomDock}>
-                <TouchableOpacity style={[commonStyles.dockedStartBtn, { paddingVertical: 14 }]} onPress={handleStart}>
-                    <Text style={commonStyles.dockedStartBtnText}>Start</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={{ position: 'absolute', top: -20, right: 20 }} onPress={() => setShowVersionHistory(true)}>
-                    <Text style={commonStyles.versionText}>v{APP_VERSION}</Text>
-                </TouchableOpacity>
+                <View style={{ paddingHorizontal: 20 }}>
+                    <TouchableOpacity style={[commonStyles.dockedStartBtn, { paddingVertical: 14 }]} onPress={handleStart}>
+                        <Text style={commonStyles.dockedStartBtnText}>Start</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={{ position: 'absolute', top: -30, right: 20 }} onPress={() => setShowVersionHistory(true)}>
+                        <Text style={commonStyles.versionText}>v{APP_VERSION}</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Modals */}

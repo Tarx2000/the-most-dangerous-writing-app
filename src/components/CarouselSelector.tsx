@@ -12,9 +12,11 @@ interface Props {
     selectedIndex: number;
     onSelect: (index: number) => void;
     renderItemText: (item: any) => React.ReactNode;
+    onInteractionStart?: () => void;
+    onInteractionEnd?: () => void;
 }
 
-export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, selectedIndex, onSelect, renderItemText }) => {
+export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, selectedIndex, onSelect, renderItemText, onInteractionStart, onInteractionEnd }) => {
     const CAROUSEL_WIDTH = Math.min(SCREEN_WIDTH * 0.5, 200);
     const carouselRef = useRef<any>(null);
 
@@ -38,7 +40,12 @@ export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, sele
                     <Text style={commonStyles.carouselArrowText}>{"<"}</Text>
                 </TouchableOpacity>
 
-                <View style={{ width: CAROUSEL_WIDTH, height: 60 }}>
+                <View
+                    style={{ width: CAROUSEL_WIDTH, height: 60 }}
+                    onTouchStart={onInteractionStart}
+                    onTouchEnd={onInteractionEnd}
+                    onTouchCancel={onInteractionEnd}
+                >
                     <Carousel
                         ref={carouselRef}
                         loop={false}

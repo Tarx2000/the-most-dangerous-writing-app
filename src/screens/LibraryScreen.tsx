@@ -22,13 +22,19 @@ import { useSecurity } from '../hooks/useSecurity';
 import { NoteCard } from '../components/NoteCard';
 import { SortOption, SavedNote } from '../types';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
+type Props = {
+    navigation: any;
+    route: any;
+    onGoToStart: () => void;
+};
 
-export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
+export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart }) => {
     const [libraryTab, setLibraryTab] = useState<'notes' | 'circles'>('notes');
     const [sortBy, setSortBy] = useState<SortOption>('newest');
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
+    const [personToDelete, setPersonToDelete] = useState<string | null>(null);
+    const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
 
     const storage = useStorage();
     const security = useSecurity();
@@ -38,7 +44,12 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
     }, []);
 
     const getGroupedNotes = () => {
-        const sorted = [...storage.savedNotes].sort((a, b) => {
+        let notesToGroup = [...storage.savedNotes];
+        if (selectedCircleId) {
+            notesToGroup = notesToGroup.filter(n => n.personId === selectedCircleId);
+        }
+
+        const sorted = notesToGroup.sort((a, b) => {
             switch (sortBy) {
                 case 'newest': return b.timestamp - a.timestamp;
                 case 'oldest': return a.timestamp - b.timestamp;
@@ -94,6 +105,16 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
 
             {libraryTab === 'notes' ? (
                 <>
+                    {selectedCircleId && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, justifyContent: 'space-between', backgroundColor: theme.colors.glassBackground, padding: 12, borderRadius: theme.borderRadius.md, borderWidth: 1, borderColor: theme.colors.glassBorder }}>
+                            <Text style={{ color: theme.colors.textPrimary, fontWeight: theme.typography.weightBold }}>
+                                Filtering by Person: {storage.persons.find(p => p.id === selectedCircleId)?.name}
+                            </Text>
+                            <TouchableOpacity onPress={() => setSelectedCircleId(null)}>
+                                <Text style={{ color: theme.colors.danger, fontWeight: theme.typography.weightBold }}>Clear</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
                     <View style={commonStyles.sortContainer}>
                         <Text style={commonStyles.sortLabel}>Sort By:</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={commonStyles.sortScroll}>
@@ -135,7 +156,13 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                     keyExtractor={p => p.id}
                     ListEmptyComponent={<Text style={commonStyles.emptyLibrary}>No people in your circles yet.</Text>}
                     renderItem={({ item: p }) => (
-                        <View style={commonStyles.personCard}>
+                        <TouchableOpacity
+                            style={commonStyles.personCard}
+                            onPress={() => {
+                                setSelectedCircleId(p.id);
+                                setLibraryTab('notes');
+                            }}
+                        >
                             <View style={commonStyles.personAvatar}>
                                 <Text style={commonStyles.personAvatarText}>{p.name.charAt(0)}</Text>
                             </View>
@@ -146,30 +173,24 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                                 </Text>
                             </View>
                             <TouchableOpacity
-                                onPress={() => {
-                                    // Confirm deletion
-                                    if (Platform.OS === 'web') {
-                                        if (confirm(`Delete ${p.name}? This will unlink related notes.`)) storage.deletePerson(p.id);
-                                    } else {
-                                        storage.deletePerson(p.id); // Simple delete for now, or use Alert.alert if available
-                                    }
-                                }}
+                                onPress={() => setPersonToDelete(p.id)}
                                 disabled={!security.isNotesUnlocked}
                                 style={{ opacity: security.isNotesUnlocked ? 1 : 0.3, padding: 10 }}
                             >
                                 <Text style={{ color: theme.colors.danger, fontSize: 18 }}>🗑️</Text>
                             </TouchableOpacity>
-                        </View>
+                        </TouchableOpacity>
                     )}
                 />
             )}
 
             {/* Blur view removed as per user request to replace with dot rendering instead */}
 
-            <TouchableOpacity style={[commonStyles.backButton, { zIndex: 20 }]} onPress={() => { security.lockInstantly(); navigation.navigate('Start'); }}>
-                <Text style={commonStyles.backButtonText}>Return to Menu</Text>
-            </TouchableOpacity>
-
+            {!security.isNotesUnlocked && (
+                <TouchableOpacity style={[commonStyles.backButton, { zIndex: 20 }]} onPress={() => { security.lockInstantly(); onGoToStart(); }}>
+                    <Text style={commonStyles.backButtonText}>Return to Menu</Text>
+                </TouchableOpacity>
+            )}
             {/* Note View Modal */}
             <Modal visible={!!viewNoteModal} animationType="slide">
                 {viewNoteModal && (
@@ -181,7 +202,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
                         <ScrollView style={commonStyles.modalScroll}>
-                            <Text style={commonStyles.modalBody}>{viewNoteModal.text}</Text>
+                            <Text style={commonStyles.modalBody} selectable={true}>{viewNoteModal.text}</Text>
                         </ScrollView>
                         <TouchableOpacity style={[commonStyles.closeModalButton, { backgroundColor: theme.colors.danger, marginTop: 20 }]} onPress={() => setNoteToDelete(viewNoteModal.id)}>
                             <Text style={commonStyles.closeModalText}>Delete Note</Text>
@@ -211,6 +232,36 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
                                 }
                             }}>
                                 <Text style={commonStyles.closeVersionBtnText}>Delete</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Custom Person Delete Confirmation Modal */}
+            <Modal visible={!!personToDelete} transparent animationType="fade">
+                <View style={commonStyles.modalOverlay}>
+                    <View style={commonStyles.versionModalContent}>
+                        <Text style={commonStyles.versionModalTitle}>Delete Circle?</Text>
+                        <Text style={[commonStyles.addPersonSuggestionText, { textAlign: 'center', marginBottom: 20 }]}>
+                            Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setPersonToDelete(null)}>
+                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
+                                if (personToDelete) {
+                                    storage.deletePerson(personToDelete).then(() => {
+                                        setPersonToDelete(null);
+                                        // If we happen to have this circle actively filtered, clear it.
+                                        if (selectedCircleId === personToDelete) {
+                                            setSelectedCircleId(null);
+                                        }
+                                    });
+                                }
+                            }}>
+                                <Text style={commonStyles.closeVersionBtnText}>Delete All</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
