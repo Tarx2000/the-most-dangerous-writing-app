@@ -12,14 +12,14 @@ import {
     Pressable
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import { commonStyles } from '../styles/commonStyles';
-import { CONFIG } from '../config';
-import { useSession } from '../hooks/useSession';
-import { useStorage } from '../hooks/useStorage';
-import { SavedNote } from '../types';
-import { DangerOverlay } from '../components/DangerOverlay';
-import { theme } from '../styles/theme';
+import { RootStackParamList } from '@/types/navigation.types';;
+import { commonStyles } from '@/styles/commonStyles';
+import { CONFIG } from '@/config';
+import { useSession } from '@/lib/hooks/useSession';
+import { useStorage } from '@/lib/hooks/useStorage';
+import { SavedNote } from '@/types';;
+import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
+import { theme } from '@/styles/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 
@@ -38,10 +38,11 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         startSession,
         handleTextChange,
         resumeWritingFreely,
-        clearTimers
+        clearTimers,
+        skipTimer
     } = useSession(timeIndex, diffIndex);
 
-    const { saveNote, fontIndex, sizeIndex, loadAllData } = useStorage();
+    const { saveNote, fontIndex, sizeIndex, loadAllData, devMode } = useStorage();
     const inputRef = React.useRef<TextInput>(null);
 
     // On mount, start the session immediately and load storage
@@ -69,8 +70,17 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             isQuickNote // We can optionally add this to the note data struct but durationMin=0 essentially serves that purpose
         };
 
-        await saveNote(newNote);
-        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        const result = await saveNote(newNote);
+        navigation.reset({
+            index: 0,
+            routes: [{
+                name: 'Home',
+                params: {
+                    streakIncreased: result.streakIncreased,
+                    newStreak: result.newStreak
+                }
+            }]
+        });
     };
 
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
@@ -98,6 +108,15 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         <Text style={hasLost ? commonStyles.lossText : (sessionTimeRemaining === 0 && !isQuickNote) ? commonStyles.winText : isQuickNote ? { color: theme.colors.textMuted, fontSize: 14 } : { color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: 'bold' }}>
                             {hasLost ? 'YOU DIED' : isQuickNote ? 'QUICK NOTE' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
                         </Text>
+                        {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
+                        {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNote && (
+                            <TouchableOpacity
+                                onPress={skipTimer}
+                                style={{ backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}
+                            >
+                                <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                     <View style={commonStyles.inputWrapper}>

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Animated, Easing } from 'react-native';
-import { CONFIG } from '../config';
+import { CONFIG } from '@/config';
 
 export function useSession(timeIndex: number, diffIndex: number) {
     const [sessionTimeSelected, setSessionTimeSelected] = useState<number>(0);
@@ -107,6 +107,13 @@ export function useSession(timeIndex: number, diffIndex: number) {
         setIdleTimeMs(0);
     }, [lossOverlayOpacity]);
 
+    /** [DEV MODE] Instantly skip the session timer to 0, simulating a completed session */
+    const skipTimer = useCallback(() => {
+        clearTimers();
+        setSessionTimeRemaining(0);
+        setIdleTimeMs(0);
+    }, [clearTimers]);
+
     // Cleanup on unmount
     useEffect(() => {
         return () => clearTimers();
@@ -124,6 +131,7 @@ export function useSession(timeIndex: number, diffIndex: number) {
         startSession,
         handleTextChange,
         resumeWritingFreely,
-        clearTimers
+        clearTimers,
+        skipTimer
     };
 }

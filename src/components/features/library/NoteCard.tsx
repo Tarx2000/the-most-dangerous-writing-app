@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { SavedNote } from '../types';
-import { commonStyles } from '../styles/commonStyles';
+import { SavedNote } from '@/types';;
+import { commonStyles } from '@/styles/commonStyles';
 
 interface Props {
     note: SavedNote;

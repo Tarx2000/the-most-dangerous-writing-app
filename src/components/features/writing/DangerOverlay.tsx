@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
-import { CONFIG } from '../config';
+import { CONFIG } from '@/config';
 
 /**
  * DangerOverlay - Visual feedback overlay for idle danger state.

@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
 import { View, Text, TouchableOpacity, Dimensions } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
-import { commonStyles } from '../styles/commonStyles';
-import { theme } from '../styles/theme';
+import { commonStyles } from '@/styles/commonStyles';
+import { theme } from '@/styles/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

@@ -7,10 +7,10 @@ import {
     Animated,
     StyleSheet,
 } from 'react-native';
-import { SavedNote } from '../types';
-import { NoteCard } from './NoteCard';
-import { commonStyles } from '../styles/commonStyles';
-import { theme } from '../styles/theme';
+import { SavedNote } from '@/types';;
+import { NoteCard } from '@/components/features/library/NoteCard';
+import { commonStyles } from '@/styles/commonStyles';
+import { theme } from '@/styles/theme';
 
 /**
  * CONFIGURABLE: Max height of the embedded notes scroll area.

@@ -4,7 +4,7 @@ import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { WritingScreen } from './src/screens/WritingScreen';
-import { RootStackParamList } from './src/navigation/types';
+import { RootStackParamList } from '@/types/navigation.types';;
 import { StatusBar } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

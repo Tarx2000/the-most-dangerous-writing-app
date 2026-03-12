@@ -10,18 +10,19 @@ import {
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
-    Alert
+    Alert,
+    Vibration
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import { commonStyles } from '../styles/commonStyles';
-import { theme } from '../styles/theme';
-import { useStorage } from '../hooks/useStorage';
-import { useSecurity } from '../hooks/useSecurity';
-import { NoteCard } from '../components/NoteCard';
-import { ExpandablePersonCard } from '../components/ExpandablePersonCard';
-import { SortOption, SavedNote } from '../types';
+import { RootStackParamList } from '@/types/navigation.types';;
+import { commonStyles } from '@/styles/commonStyles';
+import { theme } from '@/styles/theme';
+import { useStorage } from '@/lib/hooks/useStorage';
+import { useSecurity } from '@/lib/hooks/useSecurity';
+import { NoteCard } from '@/components/features/library/NoteCard';
+import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
+import { SortOption, SavedNote } from '@/types';;
 
 type Props = {
     navigation: any;
@@ -29,6 +30,16 @@ type Props = {
     onGoToStart: () => void;
 };
 
+/**
+ * LibraryScreen — Two tabs: Notes and Circles.
+ *
+ * Security stages:
+ *   Stage 0 — Default locked: notes blurred, Circles tab shows 🔒 icon
+ *   Stage 1 — Circles unlocked: Circles tab accessible (biometric)
+ *   Stage 2 — Full unlock: notes readable, delete enabled (biometric via "Unlock View")
+ *
+ * Note: Stage 2 automatically grants Stage 1 access.
+ */
 export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart }) => {
     const [libraryTab, setLibraryTab] = useState<'notes' | 'circles'>('notes');
     const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -44,6 +55,27 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
         storage.loadAllData();
     }, []);
 
+    /**
+     * Handle Circles tab press — requires Stage 1 auth if not yet unlocked.
+     * Only switches tab on successful authentication.
+     */
+    const handleCirclesTabPress = async () => {
+        // Already unlocked (either Stage 1 or Stage 2) — just switch tab
+        if (security.isCirclesUnlocked || security.isNotesUnlocked) {
+            setLibraryTab('circles');
+            return;
+        }
+
+        // Prompt biometric for Stage 1
+        const success = await security.unlockCircles();
+        if (success) {
+            Vibration.vibrate(50);
+            setLibraryTab('circles');
+        }
+        // On cancel/fail — nothing changes, stay on current tab
+    };
+
+    /** Group and sort notes for display */
     const getGroupedNotes = (circleId?: string | null) => {
         let notesToGroup = [...storage.savedNotes];
         if (circleId) {
@@ -84,21 +116,30 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
         return groups;
     };
 
-    // Render the Library
     return (
         <View style={commonStyles.libraryContainer}>
+            {/* Header row: title + unlock/lock button */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                 <View>
                     <Text style={[commonStyles.libraryTitle, { marginBottom: 0 }]}>Library</Text>
                     <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{storage.savedNotes.length} Entries • {storage.persons.length} Circles</Text>
                 </View>
                 {!security.isNotesUnlocked ? (
-                    <TouchableOpacity style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.primaryAction, borderColor: theme.colors.primaryAction }]} onPress={() => security.unlockNotes()}>
+                    <TouchableOpacity
+                        style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.primaryAction, borderColor: theme.colors.primaryAction }]}
+                        onPress={async () => {
+                            const success = await security.unlockNotes();
+                            if (success) Vibration.vibrate(50);
+                        }}
+                    >
                         <Text style={{ fontSize: 16, marginRight: 4 }}>🔓</Text>
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>Unlock View</Text>
                     </TouchableOpacity>
                 ) : (
-                    <TouchableOpacity style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]} onPress={() => security.lockInstantly()}>
+                    <TouchableOpacity
+                        style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]}
+                        onPress={() => { security.lockAll(); setLibraryTab('notes'); }}
+                    >
                         <Text style={{ fontSize: 16, marginRight: 4 }}>🔒</Text>
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock View</Text>
                     </TouchableOpacity>
@@ -106,15 +147,22 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
             </View>
             <View style={{ height: 15 }} />
 
+            {/* Tab bar — Circles shows lock icon when not authenticated */}
             <View style={commonStyles.tabBar}>
                 <TouchableOpacity style={[commonStyles.tabBtn, libraryTab === 'notes' && commonStyles.tabBtnActive]} onPress={() => setLibraryTab('notes')}>
                     <Text style={[commonStyles.tabBtnText, libraryTab === 'notes' && commonStyles.tabBtnTextActive]}>Notes</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[commonStyles.tabBtn, libraryTab === 'circles' && commonStyles.tabBtnActive]} onPress={() => setLibraryTab('circles')}>
-                    <Text style={[commonStyles.tabBtnText, libraryTab === 'circles' && commonStyles.tabBtnTextActive]}>Circles</Text>
+                <TouchableOpacity
+                    style={[commonStyles.tabBtn, libraryTab === 'circles' && commonStyles.tabBtnActive]}
+                    onPress={handleCirclesTabPress}
+                >
+                    <Text style={[commonStyles.tabBtnText, libraryTab === 'circles' && commonStyles.tabBtnTextActive]}>
+                        {(!security.isCirclesUnlocked && !security.isNotesUnlocked) ? '🔒 ' : ''}Circles
+                    </Text>
                 </TouchableOpacity>
             </View>
 
+            {/* Tab content */}
             {libraryTab === 'notes' ? (
                 <>
                     <View style={commonStyles.sortContainer}>
@@ -178,8 +226,9 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 </>
             )}
 
+            {/* Return to Menu button (when locked) */}
             {!security.isNotesUnlocked && (
-                <TouchableOpacity style={[commonStyles.backButton, { zIndex: 20 }]} onPress={() => { security.lockInstantly(); onGoToStart(); }}>
+                <TouchableOpacity style={[commonStyles.backButton, { zIndex: 20 }]} onPress={() => { security.lockAll(); onGoToStart(); }}>
                     <Text style={commonStyles.backButtonText}>Return to Menu</Text>
                 </TouchableOpacity>
             )}
@@ -204,7 +253,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 )}
             </Modal>
 
-            {/* Custom Delete Confirmation Modal */}
+            {/* Delete Note Confirmation */}
             <Modal visible={!!noteToDelete} transparent animationType="fade">
                 <View style={commonStyles.modalOverlay}>
                     <View style={commonStyles.versionModalContent}>
@@ -231,7 +280,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 </View>
             </Modal>
 
-            {/* Custom Person Delete Confirmation Modal */}
+            {/* Delete Person Confirmation */}
             <Modal visible={!!personToDelete} transparent animationType="fade">
                 <View style={commonStyles.modalOverlay}>
                     <View style={commonStyles.versionModalContent}>
@@ -247,7 +296,6 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                                 if (personToDelete) {
                                     storage.deletePerson(personToDelete).then(() => {
                                         setPersonToDelete(null);
-                                        // If we happen to have this circle actively filtered, clear it.
                                         if (selectedCircleId === personToDelete) {
                                             setSelectedCircleId(null);
                                         }
@@ -259,71 +307,6 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                         </View>
                     </View>
                 </View>
-            </Modal>
-
-            {/* Lock Modals */}
-            <Modal visible={security.showPinEnterModal} transparent animationType="slide">
-                <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                    <View style={[commonStyles.versionModalContent, { alignItems: 'center' }]}>
-                        <Text style={commonStyles.versionModalTitle}>Enter PIN</Text>
-                        <TextInput
-                            style={commonStyles.addPersonInput}
-                            keyboardType="number-pad"
-                            secureTextEntry
-                            maxLength={4}
-                            placeholder="****"
-                            placeholderTextColor="#333"
-                            value={security.tempPinInput}
-                            onChangeText={security.setTempPinInput}
-                            autoFocus
-                        />
-                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' }}>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => { security.setTempPinInput(''); navigation.goBack(); }}>
-                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
-                                onPress={security.handlePinEnterSubmit}
-                            >
-                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>Unlock</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </KeyboardAvoidingView>
-            </Modal>
-
-            <Modal visible={security.showPinSetupModal} transparent animationType="slide">
-                <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                    <View style={[commonStyles.versionModalContent, { alignItems: 'center' }]}>
-                        <Text style={commonStyles.versionModalTitle}>
-                            {security.pinSetupStep === 1 ? 'Create 4-Digit PIN' : 'Confirm PIN'}
-                        </Text>
-                        <TextInput
-                            style={commonStyles.addPersonInput}
-                            keyboardType="number-pad"
-                            secureTextEntry
-                            maxLength={4}
-                            placeholder="****"
-                            placeholderTextColor="#333"
-                            value={security.tempPinInput}
-                            onChangeText={security.setTempPinInput}
-                            autoFocus
-                        />
-                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' }}>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => { security.setTempPinInput(''); navigation.goBack(); }}>
-                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
-                                onPress={security.handlePinSetupSubmit}
-                            >
-                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>
-                                    {security.pinSetupStep === 1 ? 'Next' : 'Save PIN'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </KeyboardAvoidingView>
             </Modal>
 
         </View>

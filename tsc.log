@@ -1,0 +1,18 @@
+﻿src/components/features/library/CalendarView.tsx(10,23): error TS2307: Cannot find module '../styles/theme' or its corresponding type declarations.
+src/components/features/library/ExpandablePersonCard.tsx(10,10): error TS2305: Module '"@/types/navigation.types"' has no exported member 'SavedNote'.
+src/components/features/library/ExpandablePersonCard.tsx(12,30): error TS2307: Cannot find module '../styles/commonStyles' or its corresponding type declarations.
+src/components/features/library/ExpandablePersonCard.tsx(13,23): error TS2307: Cannot find module '../styles/theme' or its corresponding type declarations.
+src/components/features/library/NoteCard.tsx(3,10): error TS2305: Module '"@/types/navigation.types"' has no exported member 'SavedNote'.
+src/components/features/library/NoteCard.tsx(4,30): error TS2307: Cannot find module '../styles/commonStyles' or its corresponding type declarations.
+src/components/features/writing/DangerOverlay.tsx(3,24): error TS2307: Cannot find module '../config' or its corresponding type declarations.
+src/components/features/writing/StreakPopup.tsx(10,23): error TS2307: Cannot find module '../styles/theme' or its corresponding type declarations.
+src/components/ui/CarouselSelector.tsx(4,30): error TS2307: Cannot find module '../styles/commonStyles' or its corresponding type declarations.
+src/components/ui/CarouselSelector.tsx(5,23): error TS2307: Cannot find module '../styles/theme' or its corresponding type declarations.
+src/components/ui/TickDial.tsx(12,23): error TS2307: Cannot find module '../styles/theme' or its corresponding type declarations.
+src/lib/hooks/useSession.ts(3,24): error TS2307: Cannot find module '../config' or its corresponding type declarations.
+src/lib/hooks/useStorage.ts(3,10): error TS2305: Module '"@/types/navigation.types"' has no exported member 'SavedNote'.
+src/lib/hooks/useStorage.ts(3,21): error TS2305: Module '"@/types/navigation.types"' has no exported member 'Person'.
+src/screens/LibraryScreen.tsx(25,10): error TS2305: Module '"@/types/navigation.types"' has no exported member 'SortOption'.
+src/screens/LibraryScreen.tsx(25,22): error TS2305: Module '"@/types/navigation.types"' has no exported member 'SavedNote'.
+src/screens/StartScreen.tsx(29,10): error TS2305: Module '"@/types/navigation.types"' has no exported member 'Person'.
+src/screens/WritingScreen.tsx(20,10): error TS2305: Module '"@/types/navigation.types"' has no exported member 'SavedNote'.

@@ -1,5 +1,5 @@
 export type RootStackParamList = {
-    Home: undefined;
+    Home: { streakIncreased?: boolean; newStreak?: number } | undefined;
     Start: undefined;
     Writing: {
         timeIndex: number;

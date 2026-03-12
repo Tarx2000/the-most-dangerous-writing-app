@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, Dimensions, StyleSheet } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
+import { RootStackParamList } from '@/types/navigation.types';;
 import { StartScreen } from './StartScreen';
 import { LibraryScreen } from './LibraryScreen';
 

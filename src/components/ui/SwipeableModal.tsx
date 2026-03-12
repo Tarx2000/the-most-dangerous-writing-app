@@ -14,6 +14,7 @@ import {
     KeyboardAvoidingView,
     Platform
 } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -44,15 +45,19 @@ interface Props {
     children: React.ReactNode;
     title?: string;
     height?: number;
+    /** Pass from HomeScreen to auto-disable background scroll while modal is open */
+    setHomeScrollEnabled?: (enabled: boolean) => void;
 }
 
-export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, children, title, height = SCREEN_HEIGHT * 0.88 }) => {
+export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, children, title, height = SCREEN_HEIGHT * 0.88, setHomeScrollEnabled }) => {
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
     const overlayOpacity = useRef(new Animated.Value(0)).current;
 
     // Animate in when visible becomes true
     useEffect(() => {
         if (visible) {
+            // Disable HomeScreen scroll when ANY modal opens
+            setHomeScrollEnabled?.(false);
             panY.setValue(SCREEN_HEIGHT);
             overlayOpacity.setValue(0);
             Animated.parallel([
@@ -86,8 +91,12 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
                 duration: 280,
                 useNativeDriver: true,
             })
-        ]).start(() => onClose());
-    }, [onClose, panY, overlayOpacity]);
+        ]).start(() => {
+            // Re-enable HomeScreen scroll when modal closes
+            setHomeScrollEnabled?.(true);
+            onClose();
+        });
+    }, [onClose, panY, overlayOpacity, setHomeScrollEnabled]);
 
     /**
      * PanResponder lives ONLY on the drag zone (top bar).
@@ -139,43 +148,45 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
 
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
-            {/* Dark scrim — tap to dismiss */}
-            <TouchableWithoutFeedback onPress={handleClose}>
-                <Animated.View style={[styles.scrim, { opacity: overlayOpacity }]} />
-            </TouchableWithoutFeedback>
+            {/* GestureHandlerRootView is REQUIRED inside Modal because Modal
+                creates a separate native view hierarchy. Without this wrapper,
+                react-native-gesture-handler gestures (like CalendarView's
+                month swipe) won't have a root to register with and will
+                silently fail. */}
+            <GestureHandlerRootView style={{ flex: 1 }}>
+                {/* Dark scrim — tap to dismiss */}
+                <TouchableWithoutFeedback onPress={handleClose}>
+                    <Animated.View style={[styles.scrim, { opacity: overlayOpacity }]} />
+                </TouchableWithoutFeedback>
 
-            {/* Keyboard avoidance wrapper */}
-            <KeyboardAvoidingView
-                style={StyleSheet.absoluteFill}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                pointerEvents="box-none"
-            >
-                {/* Sheet wrapper */}
-                <Animated.View
-                    style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]}
+                {/* Keyboard avoidance wrapper */}
+                <KeyboardAvoidingView
+                    style={StyleSheet.absoluteFill}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     pointerEvents="box-none"
                 >
-                    <Animated.View style={[styles.sheet, { transform: [{ translateY: panY }], height }]}>
+                    {/* Sheet wrapper */}
+                    <Animated.View
+                        style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]}
+                        pointerEvents="box-none"
+                    >
+                        <Animated.View style={[styles.sheet, { transform: [{ translateY: panY }], height }]}>
 
-                        {/* ========== DRAG ZONE ========== */}
-                        {/* This entire area is the swipe target (~80px tall).       */}
-                        {/* Touch anywhere in this zone to grab the sheet.           */}
-                        {/* Drag down to dismiss. It follows your finger 1:1.        */}
-                        <View {...panResponder.panHandlers} style={styles.dragZone}>
-                            <View style={styles.handlePill} />
-                            {title && <Text style={styles.sheetTitle}>{title}</Text>}
-                        </View>
+                            {/* ========== DRAG ZONE ========== */}
+                            <View {...panResponder.panHandlers} style={styles.dragZone}>
+                                <View style={styles.handlePill} />
+                                {title && <Text style={styles.sheetTitle}>{title}</Text>}
+                            </View>
 
-                        {/* ========== CONTENT ZONE ========== */}
-                        {/* Everything below the drag zone is normal interactive UI.  */}
-                        {/* ScrollViews, FlatLists, buttons all work without issues.  */}
-                        <View style={styles.contentArea}>
-                            {children}
-                        </View>
+                            {/* ========== CONTENT ZONE ========== */}
+                            <View style={styles.contentArea}>
+                                {children}
+                            </View>
 
+                        </Animated.View>
                     </Animated.View>
-                </Animated.View>
-            </KeyboardAvoidingView>
+                </KeyboardAvoidingView>
+            </GestureHandlerRootView>
         </Modal>
     );
 });

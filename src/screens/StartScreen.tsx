@@ -11,21 +11,24 @@ import {
     KeyboardAvoidingView,
     ImageBackground,
     PanResponder,
-    Dimensions
+    Dimensions,
+    Vibration
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import { commonStyles } from '../styles/commonStyles';
-import { CONFIG, APP_VERSION, VERSION_HISTORY } from '../config';
-import { CarouselSelector } from '../components/CarouselSelector';
-import { SwipeableModal } from '../components/SwipeableModal';
-import { CalendarView } from '../components/CalendarView';
-import { useStorage } from '../hooks/useStorage';
-import { useSecurity } from '../hooks/useSecurity';
-import { Person } from '../types';
+import { RootStackParamList } from '@/types/navigation.types';;
+import { commonStyles } from '@/styles/commonStyles';
+import { CONFIG, APP_VERSION, VERSION_HISTORY } from '@/config';
+import { CarouselSelector } from '@/components/ui/CarouselSelector';
+import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { CalendarView } from '@/components/features/library/CalendarView';
+import { StreakPopup } from '@/components/features/writing/StreakPopup';
+import { TickDial } from '@/components/ui/TickDial';
+import { useStorage } from '@/lib/hooks/useStorage';
+import { useSecurity } from '@/lib/hooks/useSecurity';
+import { Person } from '@/types';;
 import * as LocalAuthentication from 'expo-local-authentication';
-import { theme } from '../styles/theme';
+import { theme } from '@/styles/theme';
 
 type Props = {
     navigation: any;
@@ -34,7 +37,7 @@ type Props = {
     setHomeScrollEnabled?: (enabled: boolean) => void;
 };
 
-export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHomeScrollEnabled }) => {
+export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled }) => {
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
@@ -45,15 +48,28 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
     const [showCalendar, setShowCalendar] = useState(false);
     const [showVersionHistory, setShowVersionHistory] = useState(false);
     const [showPersonSelect, setShowPersonSelect] = useState(false);
+    const [showStreakPopup, setShowStreakPopup] = useState(false);
+    const [newStreakParam, setNewStreakParam] = useState(0);
+    const [devModeUnlocked, setDevModeUnlocked] = useState(false);
+    /** Toast message for dev mode unlock feedback */
+    const [devToast, setDevToast] = useState<string | null>(null);
+
+    /** Ref for the 5-second long-press timer on the settings button */
+    const settingsLongPressTimer = useRef<NodeJS.Timeout | null>(null);
 
     const [circleSearch, setCircleSearch] = useState('');
     const [showAddPerson, setShowAddPerson] = useState(false);
     const [newPersonName, setNewPersonName] = useState('');
 
+    const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
+    const isModalOpenRef = useRef(isModalOpen);
+    isModalOpenRef.current = isModalOpen;
+
     const panResponder = useRef(
         PanResponder.create({
             onMoveShouldSetPanResponder: (evt, gestureState) => {
-                // Activate on strong left swipe
+                // Activate on strong left swipe ONLY when no modals are open
+                if (isModalOpenRef.current) return false;
                 return gestureState.dx < -40 && Math.abs(gestureState.dy) < 40;
             },
             onPanResponderRelease: (evt, gestureState) => {
@@ -71,6 +87,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
         storage.loadAllData();
     }, []);
 
+    useEffect(() => {
+        if (route.params?.streakIncreased) {
+            setNewStreakParam(route.params.newStreak || storage.currentStreak + 1);
+            setShowStreakPopup(true);
+            navigation.setParams({ streakIncreased: undefined, newStreak: undefined });
+        }
+    }, [route.params?.streakIncreased]);
+
     const handleStart = () => {
         navigation.navigate('Writing', {
             timeIndex,
@@ -84,9 +108,23 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
         p.name.toLowerCase().includes(circleSearch.toLowerCase())
     );
 
+    const activeFont = CONFIG.FONTS[storage.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    const activeSize = CONFIG.SIZES[storage.sizeIndex]?.value || 18;
+
     return (
         <View style={commonStyles.startContainer} {...panResponder.panHandlers}>
             <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+            {/* Dev Mode Toast Notification */}
+            {devToast && (
+                <View style={{
+                    position: 'absolute', top: 50, alignSelf: 'center', zIndex: 9999,
+                    backgroundColor: '#1A1A1A', paddingHorizontal: 20, paddingVertical: 12,
+                    borderRadius: 25, borderWidth: 1, borderColor: 'rgba(255, 215, 0, 0.3)',
+                }}>
+                    <Text style={{ color: '#FFD700', fontSize: 14, fontWeight: '600' }}>{devToast}</Text>
+                </View>
+            )}
 
             {/* Premium Header */}
             <View style={commonStyles.topBar}>
@@ -95,7 +133,29 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                     <Text style={commonStyles.streakText}>{storage.currentStreak}</Text>
                 </TouchableOpacity>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity onPress={() => setShowSettings(true)} style={commonStyles.iconButton}>
+                    <TouchableOpacity
+                        onPress={() => setShowSettings(true)}
+                        onPressIn={() => {
+                            // Start 5s timer to unlock dev tools
+                            settingsLongPressTimer.current = setTimeout(() => {
+                                const newState = !devModeUnlocked;
+                                setDevModeUnlocked(newState);
+                                // Haptic feedback: short vibration
+                                Vibration.vibrate(100);
+                                // Show toast notification
+                                setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
+                                setTimeout(() => setDevToast(null), 2000);
+                            }, 5000);
+                        }}
+                        onPressOut={() => {
+                            // Cancel timer if released early
+                            if (settingsLongPressTimer.current) {
+                                clearTimeout(settingsLongPressTimer.current);
+                                settingsLongPressTimer.current = null;
+                            }
+                        }}
+                        style={commonStyles.iconButton}
+                    >
                         <Text style={commonStyles.iconButtonText}>⚙️</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={onGoToLibrary} style={commonStyles.iconButton}>
@@ -161,14 +221,12 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
             <View style={{ flex: 1, justifyContent: 'flex-start', paddingTop: 20 }}>
                 {/* Center Dial for Time */}
                 <Text style={[commonStyles.sectionTitle, { marginTop: 0, textAlign: 'center', marginLeft: 0 }]}>Duration</Text>
-                <CarouselSelector
-                    label="Goal Timer"
+                <TickDial
                     data={CONFIG.SESSION_OPTIONS_MINS}
                     selectedIndex={timeIndex}
                     onSelect={setTimeIndex}
-                    renderItemText={(item) => <Text style={[commonStyles.carouselValueText, { fontSize: 40 }]}>{item} <Text style={{ fontSize: 20, color: theme.colors.textMuted }}>min</Text></Text>}
-                    onInteractionStart={() => setHomeScrollEnabled?.(false)}
-                    onInteractionEnd={() => setHomeScrollEnabled?.(true)}
+                    unit="min"
+                    setHomeScrollEnabled={setHomeScrollEnabled}
                 />
             </View>
 
@@ -195,11 +253,11 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
             </View>
 
             {/* Modals */}
-            <SwipeableModal visible={showCalendar} onClose={() => setShowCalendar(false)} title="Writing Streak Log">
-                <CalendarView />
+            <SwipeableModal visible={showCalendar} onClose={() => setShowCalendar(false)} setHomeScrollEnabled={setHomeScrollEnabled}>
+                <CalendarView currentStreak={storage.currentStreak} streakHistory={storage.streakHistory} />
             </SwipeableModal>
 
-            <SwipeableModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History">
+            <SwipeableModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History" setHomeScrollEnabled={setHomeScrollEnabled}>
                 <ScrollView style={{ maxHeight: 400 }}>
                     {VERSION_HISTORY.map((v, i) => (
                         <View key={i} style={commonStyles.versionHistoryBlock}>
@@ -210,24 +268,27 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                 </ScrollView>
             </SwipeableModal>
 
-            <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Preferences">
+            <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Preferences" setHomeScrollEnabled={setHomeScrollEnabled}>
                 <ScrollView contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
 
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder }}>
                         <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Typography Collection</Text>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Choose your preferred writing style</Text>
                         <View style={commonStyles.settingsRow}>
-                            {CONFIG.FONTS.map((f, i) => (
-                                <TouchableOpacity
-                                    key={i}
-                                    style={[commonStyles.sortBtn, storage.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
-                                    onPress={() => storage.savePreferences(i, storage.sizeIndex)}
-                                >
-                                    <Text style={[commonStyles.sortBtnText, { fontFamily: f.value }, storage.fontIndex === i && commonStyles.sortBtnTextActive]}>
-                                        {f.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                            {CONFIG.FONTS.map((f, i) => {
+                                const fontValue = f.value;
+                                return (
+                                    <TouchableOpacity
+                                        key={i}
+                                        style={[commonStyles.sortBtn, storage.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
+                                        onPress={() => storage.savePreferences(i, storage.sizeIndex)}
+                                    >
+                                        <Text style={[commonStyles.sortBtnText, { fontFamily: fontValue }, storage.fontIndex === i && commonStyles.sortBtnTextActive]}>
+                                            {f.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
 
                         <View style={{ height: 1, backgroundColor: theme.colors.glassBorder, marginVertical: 20 }} />
@@ -252,8 +313,8 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                     <Text style={[commonStyles.settingsLabel, { marginLeft: 5, color: theme.colors.textPrimary }]}>Live Preview</Text>
                     <View style={commonStyles.previewContainer}>
                         <Text style={[commonStyles.previewText, {
-                            fontFamily: CONFIG.FONTS[storage.fontIndex].value,
-                            fontSize: CONFIG.SIZES[storage.sizeIndex].value
+                            fontFamily: activeFont,
+                            fontSize: activeSize
                         }]}>
                             The quick brown fox jumps over the lazy dog.
                         </Text>
@@ -261,14 +322,64 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
 
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
                         <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Security & Privacy</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Protect your dangerous thoughts</Text>
-                        <TouchableOpacity
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.glassHighlight, marginTop: 0 }]}
-                            onPress={() => { setShowSettings(false); security.changePinWithAuth(() => { }); }}
-                        >
-                            <Text style={commonStyles.closeVersionBtnText}>Change Security PIN</Text>
-                        </TouchableOpacity>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 5 }}>Notes and Circles are protected by biometric authentication (fingerprint / face).</Text>
                     </View>
+
+                    {/* ── Developer Tools Section (only visible after 5s long-press on ⚙️) ── */}
+                    {devModeUnlocked && (
+                    <View style={{ backgroundColor: storage.devMode ? 'rgba(255, 215, 0, 0.08)' : theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: storage.devMode ? 'rgba(255, 215, 0, 0.3)' : theme.colors.glassBorder, marginTop: 10 }}>
+                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: storage.devMode ? '#FFD700' : theme.colors.textPrimary, fontSize: 16 }]}>🛠 Developer Tools</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Debug features for testing</Text>
+
+                        {/* Dev Mode Toggle */}
+                        <TouchableOpacity
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: storage.devMode ? 'rgba(255, 215, 0, 0.2)' : theme.colors.glassHighlight, marginTop: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                            onPress={storage.toggleDevMode}
+                        >
+                            <Text style={[commonStyles.closeVersionBtnText, storage.devMode && { color: '#FFD700' }]}>Dev Mode</Text>
+                            <Text style={{ color: storage.devMode ? '#FFD700' : theme.colors.textMuted, fontSize: 13, fontWeight: 'bold' }}>{storage.devMode ? 'ON' : 'OFF'}</Text>
+                        </TouchableOpacity>
+
+                        {/* Dev Actions (only visible when dev mode is active) */}
+                        {storage.devMode && (
+                            <View style={{ marginTop: 15, gap: 10 }}>
+                                {/* Simulate Streak Popup */}
+                                <TouchableOpacity
+                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 215, 0, 0.15)', marginTop: 0 }]}
+                                    onPress={() => {
+                                        setNewStreakParam(storage.currentStreak || 1);
+                                        setShowStreakPopup(true);
+                                        setShowSettings(false);
+                                    }}
+                                >
+                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#FFD700' }]}>🎯 Simulate Streak Popup</Text>
+                                </TouchableOpacity>
+
+                                {/* Clear All Data */}
+                                <TouchableOpacity
+                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 77, 77, 0.15)', marginTop: 0 }]}
+                                    onPress={() => {
+                                        storage.clearAllData();
+                                        setShowSettings(false);
+                                    }}
+                                >
+                                    <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>🗑 Clear All Data</Text>
+                                </TouchableOpacity>
+
+                                {/* Storage Info */}
+                                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
+                                    <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>📊 Storage Info</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Notes: {storage.savedNotes.length}</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Circles: {storage.persons.length}</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Current Streak: {storage.currentStreak}</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Last Win: {storage.lastWinDate || 'Never'}</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Streak History: {storage.streakHistory.length} days</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Font: {CONFIG.FONTS[storage.fontIndex]?.label || 'Default'} | Size: {CONFIG.SIZES[storage.sizeIndex]?.label || 'Default'}</Text>
+                                </View>
+                            </View>
+                        )}
+                    </View>
+                    )}
                 </ScrollView>
             </SwipeableModal>
 
@@ -278,6 +389,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                 onClose={() => { setShowPersonSelect(false); setCircleSearch(''); }}
                 title="Select Person"
                 height={Dimensions.get('window').height * 0.55}
+                setHomeScrollEnabled={setHomeScrollEnabled}
             >
                 <TextInput
                     style={commonStyles.circleSearchInput}
@@ -355,6 +467,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, onGoToLibrary, setHom
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+
+            {/* Streak Popup Overlay */}
+            <StreakPopup
+                visible={showStreakPopup}
+                streak={newStreakParam}
+                streakHistory={storage.streakHistory}
+                onClose={() => setShowStreakPopup(false)}
+            />
 
         </View>
     );

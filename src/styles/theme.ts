@@ -1,5 +1,5 @@
 // src/styles/theme.ts
-import { CONFIG } from '../config';
+import { CONFIG } from '@/config';
 
 export const theme = {
     colors: {
