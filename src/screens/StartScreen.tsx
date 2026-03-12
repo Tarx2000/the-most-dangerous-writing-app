@@ -14,6 +14,7 @@ import {
     Dimensions,
     Vibration
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';;
@@ -258,14 +259,18 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
             </SwipeableModal>
 
             <SwipeableModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History" setHomeScrollEnabled={setHomeScrollEnabled}>
-                <ScrollView style={{ maxHeight: 400 }}>
-                    {VERSION_HISTORY.map((v, i) => (
-                        <View key={i} style={commonStyles.versionHistoryBlock}>
-                            <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>
-                            {v.changes.map((c, j) => <Text key={j} style={commonStyles.versionHistoryItem}>• {c}</Text>)}
-                        </View>
-                    ))}
-                </ScrollView>
+                <View style={{ height: 400, width: '100%' }}>
+                    <FlashList
+                        data={VERSION_HISTORY}
+                        keyExtractor={(v) => v.version}
+                        renderItem={({ item: v }) => (
+                            <View style={commonStyles.versionHistoryBlock}>
+                                <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>
+                                {v.changes.map((c, j) => <Text key={j} style={commonStyles.versionHistoryItem}>• {c}</Text>)}
+                            </View>
+                        )}
+                    />
+                </View>
             </SwipeableModal>
 
             <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Preferences" setHomeScrollEnabled={setHomeScrollEnabled}>
@@ -399,12 +404,12 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     onChangeText={setCircleSearch}
                 />
 
-                <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                    {circleSearch.length > 0 ? (
-                        <>
-                            {filteredPersons.map(p => (
+                {circleSearch.length > 0 ? (
+                    <View style={{ height: 200, width: '100%' }}>
+                        <FlashList
+                            data={filteredPersons}
+                            renderItem={({ item: p }) => (
                                 <TouchableOpacity
-                                    key={p.id}
                                     style={[commonStyles.personSelectItem, selectedPersonId === p.id && commonStyles.personSelectItemActive]}
                                     onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); }}
                                 >
@@ -413,20 +418,24 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     </View>
                                     <Text style={commonStyles.personSelectName}>{p.name}</Text>
                                 </TouchableOpacity>
-                            ))}
-
-                            {filteredPersons.length === 0 && !showAddPerson && (
-                                <TouchableOpacity style={commonStyles.addPersonSuggestion} onPress={() => { setNewPersonName(circleSearch); setShowAddPerson(true); }}>
-                                    <Text style={commonStyles.addPersonSuggestionText}>+ Add "{circleSearch}"</Text>
-                                </TouchableOpacity>
                             )}
-                        </>
-                    ) : (
-                        <Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 20 }}>
-                            Start typing to find or create a circle.
-                        </Text>
-                    )}
-                </ScrollView>
+                            keyExtractor={(p) => p.id}
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}
+                            ListEmptyComponent={
+                                !showAddPerson ? (
+                                    <TouchableOpacity style={commonStyles.addPersonSuggestion} onPress={() => { setNewPersonName(circleSearch); setShowAddPerson(true); }}>
+                                        <Text style={commonStyles.addPersonSuggestionText}>+ Add "{circleSearch}"</Text>
+                                    </TouchableOpacity>
+                                ) : <></>
+                            }
+                        />
+                    </View>
+                ) : (
+                    <Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 20 }}>
+                        Start typing to find or create a circle.
+                    </Text>
+                )}
 
                 <TouchableOpacity style={[commonStyles.addPersonFloatBtn, { marginTop: 10, marginBottom: 4 }]} onPress={() => setShowAddPerson(true)}>
                     <Text style={commonStyles.addPersonFloatBtnText}>+ Create New Circle</Text>

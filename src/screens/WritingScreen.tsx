@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -7,10 +7,10 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
-    Animated,
     StyleSheet,
     Pressable
 } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';;
 import { commonStyles } from '@/styles/commonStyles';
@@ -26,11 +26,14 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { timeIndex, diffIndex, mode, personId, isQuickNote } = route.params;
 
+    const inputRef = React.useRef<TextInput>(null);
+    const [wordCount, setWordCount] = useState(0);
+
     const {
-        text,
+        textRef,
         sessionTimeSelected,
         sessionTimeRemaining,
-        idleTimeMs,
+        idleTimeMsShared,
         hasLost,
         isContinuingAfterLoss,
         shakeAnimation,
@@ -40,10 +43,9 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         resumeWritingFreely,
         clearTimers,
         skipTimer
-    } = useSession(timeIndex, diffIndex);
+    } = useSession(timeIndex, diffIndex, inputRef);
 
     const { saveNote, fontIndex, sizeIndex, loadAllData, devMode } = useStorage();
-    const inputRef = React.useRef<TextInput>(null);
 
     // On mount, start the session immediately and load storage
     useEffect(() => {
@@ -53,7 +55,8 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     }, [startSession, clearTimers, loadAllData, isQuickNote]);
 
     const handleSave = async () => {
-        if (text.trim().length === 0) {
+        const currentText = textRef.current;
+        if (currentText.trim().length === 0) {
             navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
             return;
         }
@@ -61,7 +64,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         const noteWon = !hasLost && !isContinuingAfterLoss;
         const newNote: SavedNote = {
             id: Date.now().toString(),
-            text,
+            text: currentText,
             dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             timestamp: Date.now(),
             durationMin: isQuickNote ? 0 : sessionTimeSelected / 60,
@@ -84,7 +87,22 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     };
 
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
-    const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+    
+    const handleTextChangeLocal = (newText: string) => {
+        handleTextChange(newText);
+        const newWordCount = newText.trim().split(/\s+/).filter(w => w.length > 0).length;
+        if (newWordCount !== wordCount) {
+            setWordCount(newWordCount);
+        }
+    };
+
+    const animatedShakeStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: shakeAnimation.value }]
+    }));
+
+    const animatedOpacityStyle = useAnimatedStyle(() => ({
+        opacity: lossOverlayOpacity.value
+    }));
 
     const currentFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const currentSize = CONFIG.SIZES[sizeIndex]?.value || 18;
@@ -94,7 +112,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
             <KeyboardAvoidingView style={commonStyles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <DangerOverlay
-                    idleTimeMs={idleTimeMs}
+                    idleTimeMsShared={idleTimeMsShared}
                     difficultyLimit={difficultyLimit}
                     hasLost={hasLost}
                     isContinuingAfterLoss={isContinuingAfterLoss}
@@ -102,7 +120,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     isDisabled={isQuickNote}
                 />
 
-                <Animated.View style={[commonStyles.writingContainer, { transform: [{ translateX: shakeAnimation }], zIndex: 3 }]}>
+                <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
                     <View style={commonStyles.header}>
                         <Text style={commonStyles.wordCount}>{wordCount} Words</Text>
                         <Text style={hasLost ? commonStyles.lossText : (sessionTimeRemaining === 0 && !isQuickNote) ? commonStyles.winText : isQuickNote ? { color: theme.colors.textMuted, fontSize: 14 } : { color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: 'bold' }}>
@@ -137,8 +155,8 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 }]}
                                 multiline
                                 autoFocus
-                                value={text}
-                                onChangeText={handleTextChange}
+                                defaultValue=""
+                                onChangeText={handleTextChangeLocal}
                                 placeholder="Keep typing..."
                                 placeholderTextColor="#555"
                                 selectionColor="#ff4d4d"
@@ -160,7 +178,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 </Animated.View>
 
                 {/* Death Overlay */}
-                <Animated.View pointerEvents={hasLost ? 'auto' : 'none'} style={[commonStyles.deathOverlayLayer, { opacity: lossOverlayOpacity }]}>
+                <Animated.View pointerEvents={hasLost ? 'auto' : 'none'} style={[commonStyles.deathOverlayLayer, animatedOpacityStyle]}>
                     {hasLost && (
                         <View style={commonStyles.deathContentBox}>
                             <Text style={commonStyles.deathGiant}>YOU DIED</Text>

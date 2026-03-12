@@ -13,6 +13,7 @@ import {
     Alert,
     Vibration
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { BlurView } from 'expo-blur';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';;
@@ -207,21 +208,33 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                     {storage.persons.length === 0 ? (
                         <Text style={commonStyles.emptyLibrary}>No people in your circles yet.</Text>
                     ) : (
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            {storage.persons.map(p => (
-                                <ExpandablePersonCard
-                                    key={p.id}
-                                    person={p}
-                                    notes={storage.savedNotes.filter(n => n.personId === p.id)}
-                                    isExpanded={selectedCircleId === p.id}
-                                    isLocked={!security.isNotesUnlocked}
-                                    onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
-                                    onNotePress={setViewNoteModal}
-                                    onDelete={() => setPersonToDelete(p.id)}
-                                    canDelete={security.isNotesUnlocked}
-                                />
-                            ))}
-                        </ScrollView>
+                        <View style={{ flex: 1, width: '100%' }}>
+                            <FlashList
+                                data={storage.persons}
+                                keyExtractor={(p) => p.id}
+                                extraData={{ 
+                                    selectedCircleId, 
+                                    notesLength: storage.savedNotes.length,
+                                    isUnlocked: security.isNotesUnlocked 
+                                }}
+                                renderItem={({ item: p }) => (
+                                    <View style={{ marginBottom: 10 }}>
+                                    <ExpandablePersonCard
+                                        key={p.id}
+                                        person={p}
+                                        notes={storage.savedNotes.filter(n => n.personId === p.id)}
+                                        isExpanded={selectedCircleId === p.id}
+                                        isLocked={!security.isNotesUnlocked}
+                                        onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
+                                        onNotePress={setViewNoteModal}
+                                        onDelete={() => setPersonToDelete(p.id)}
+                                        canDelete={security.isNotesUnlocked}
+                                    />
+                                    </View>
+                                )}
+                                showsVerticalScrollIndicator={false}
+                            />
+                        </View>
                     )}
                 </>
             )}

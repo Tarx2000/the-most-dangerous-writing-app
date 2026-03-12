@@ -1,8 +1,9 @@
 import { Platform } from 'react-native';
 
-export const APP_VERSION = "1.1";
+export const APP_VERSION = "1.2";
 
 export const VERSION_HISTORY = [
+    { version: 'v1.2.0', changes: ['Performance optimizations: Removed input lag, upgraded to 60fps Reanimated UI, and implemented virtualized FlashLists'] },
     { version: 'v6.0.0', changes: ['Circles: Relationship journal — link writing sessions to people', 'Library tabs: Notes & Circles views with person search', 'Mode toggle on start screen: Journal (default) vs Circles'] },
     { version: 'v5.0.0', changes: ['V6 Writing UX: Fixed Android keyboard text-hiding bug via ScrollView wrapper', 'Fixed subpixel text-jumping layout thrashing by detaching danger border from flow', 'Added customizable Settings Menu (Font Size & Type)'] },
     { version: 'v4.0.0', changes: ['Complete mobile UX overhaul: Swipeable selectors for time and difficulty', 'Massive centralized WRITE button', 'Added explicit button to dismiss Game Over screen and resume typing'] },

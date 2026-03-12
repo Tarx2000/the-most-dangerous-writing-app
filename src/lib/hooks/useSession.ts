@@ -1,20 +1,41 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Animated, Easing } from 'react-native';
+import { useSharedValue, withTiming, withSequence, Easing } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { CONFIG } from '@/config';
 
-export function useSession(timeIndex: number, diffIndex: number) {
+/**
+ * useSession — Core hook for managing a writing session.
+ *
+ * Performance strategy:
+ * - `idleTimeMsShared` is a Reanimated SharedValue. The idle timer ticks every
+ *   100ms but updates ONLY this shared value, NOT React state. This prevents
+ *   10Hz re-renders of WritingScreen and all its children.
+ * - `textRef` stores the text in a ref (uncontrolled TextInput pattern) so
+ *   typing does not cause React re-renders.
+ * - Animations (shake, loss overlay) use Reanimated SharedValues + withTiming
+ *   for 60fps UI-thread animations.
+ *
+ * @param timeIndex - Index into CONFIG.SESSION_OPTIONS_MINS
+ * @param diffIndex - Index into CONFIG.DIFFICULTIES
+ * @param inputRefRef - Ref to the TextInput for programmatic control (clear)
+ */
+export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<any>) {
     const [sessionTimeSelected, setSessionTimeSelected] = useState<number>(0);
     const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number>(0);
-    const [idleTimeMs, setIdleTimeMs] = useState<number>(0);
-    const [text, setText] = useState<string>('');
+    const textRef = useRef<string>('');
     const [hasLost, setHasLost] = useState<boolean>(false);
     const [isContinuingAfterLoss, setIsContinuingAfterLoss] = useState<boolean>(false);
 
     const sessionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const idleIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    const shakeAnimation = useRef(new Animated.Value(0)).current;
-    const lossOverlayOpacity = useRef(new Animated.Value(0)).current;
+    /** SharedValue for idle time — updated every TICK_RATE_MS WITHOUT triggering React re-render */
+    const idleTimeMsShared = useSharedValue(0);
+
+    /** Shake animation shared value — runs on UI thread */
+    const shakeAnimation = useSharedValue(0);
+    /** Loss overlay opacity shared value — runs on UI thread */
+    const lossOverlayOpacity = useSharedValue(0);
 
     const clearTimers = useCallback(() => {
         if (sessionIntervalRef.current) clearInterval(sessionIntervalRef.current);
@@ -25,22 +46,25 @@ export function useSession(timeIndex: number, diffIndex: number) {
         setHasLost(true);
         clearTimers();
 
-        Animated.sequence([
-            Animated.timing(shakeAnimation, { toValue: 15, duration: 50, useNativeDriver: true }),
-            Animated.timing(shakeAnimation, { toValue: -15, duration: 50, useNativeDriver: true }),
-            Animated.timing(shakeAnimation, { toValue: 15, duration: 50, useNativeDriver: true }),
-            Animated.timing(shakeAnimation, { toValue: 0, duration: 50, useNativeDriver: true }),
-        ]).start();
+        shakeAnimation.value = withSequence(
+            withTiming(15, { duration: 50 }),
+            withTiming(-15, { duration: 50 }),
+            withTiming(15, { duration: 50 }),
+            withTiming(0, { duration: 50 })
+        );
 
-        Animated.timing(lossOverlayOpacity, {
-            toValue: 1,
+        lossOverlayOpacity.value = withTiming(1, {
             duration: 300,
-            useNativeDriver: true,
             easing: Easing.out(Easing.ease)
-        }).start();
+        });
 
-        setTimeout(() => { setText(''); }, 200);
-    }, [clearTimers, shakeAnimation, lossOverlayOpacity]);
+        setTimeout(() => { 
+            textRef.current = ''; 
+            if (inputRefRef && inputRefRef.current) {
+                inputRefRef.current.clear();
+            }
+        }, 200);
+    }, [clearTimers, shakeAnimation, lossOverlayOpacity, inputRefRef]);
 
     const startSession = useCallback((isQuickNote?: boolean) => {
         const minutes = CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
@@ -49,13 +73,16 @@ export function useSession(timeIndex: number, diffIndex: number) {
         const seconds = minutes * 60;
         setSessionTimeSelected(isQuickNote ? 0 : seconds);
         setSessionTimeRemaining(isQuickNote ? 0 : seconds);
-        setIdleTimeMs(0);
-        setText('');
+        idleTimeMsShared.value = 0;
+        textRef.current = '';
+        if (inputRefRef && inputRefRef.current) {
+            inputRefRef.current.clear();
+        }
         setHasLost(false);
         setIsContinuingAfterLoss(false);
 
-        lossOverlayOpacity.setValue(0);
-        shakeAnimation.setValue(0);
+        lossOverlayOpacity.value = 0;
+        shakeAnimation.value = 0;
         clearTimers();
 
         // Quick Notes have no timers at all - no countdown, no idle death
@@ -66,53 +93,55 @@ export function useSession(timeIndex: number, diffIndex: number) {
             setSessionTimeRemaining((prev) => {
                 if (prev <= 1) {
                     clearTimers();
-                    setIdleTimeMs(0);
+                    idleTimeMsShared.value = 0;
                     return 0;
                 }
                 return prev - 1;
             });
         }, 1000);
 
-        // Idle death timer (ticks every TICK_RATE_MS)
+        // Idle death timer — updates SharedValue only, NO React state update
         idleIntervalRef.current = setInterval(() => {
-            setIdleTimeMs((prev) => {
-                const newIdleTime = prev + CONFIG.TICK_RATE_MS;
-                if (newIdleTime >= difficultyLimit) {
-                    triggerDeathState();
-                    return difficultyLimit;
-                }
-                return newIdleTime;
-            });
+            const newIdleTime = idleTimeMsShared.value + CONFIG.TICK_RATE_MS;
+            if (newIdleTime >= difficultyLimit) {
+                triggerDeathState();
+                idleTimeMsShared.value = difficultyLimit;
+            } else {
+                idleTimeMsShared.value = newIdleTime;
+            }
         }, CONFIG.TICK_RATE_MS);
-    }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation]);
+    }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation, idleTimeMsShared]);
 
     const handleTextChange = useCallback((newText: string) => {
-        setText(newText);
+        textRef.current = newText;
         // Reset idle timer on any typing (works for both timed sessions and quick notes)
         if (!hasLost && !isContinuingAfterLoss) {
-            setIdleTimeMs(0);
+            idleTimeMsShared.value = 0;
         }
-    }, [hasLost, isContinuingAfterLoss]);
+    }, [hasLost, isContinuingAfterLoss, idleTimeMsShared]);
 
     const resumeWritingFreely = useCallback((onResumed?: () => void) => {
         setIsContinuingAfterLoss(true);
-        Animated.timing(lossOverlayOpacity, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-        }).start(() => {
+        
+        const finishResume = () => {
             setHasLost(false);
             if (onResumed) onResumed();
+        };
+
+        lossOverlayOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
+            if (finished) {
+                scheduleOnRN(finishResume);
+            }
         });
-        setIdleTimeMs(0);
-    }, [lossOverlayOpacity]);
+        idleTimeMsShared.value = 0;
+    }, [lossOverlayOpacity, idleTimeMsShared]);
 
     /** [DEV MODE] Instantly skip the session timer to 0, simulating a completed session */
     const skipTimer = useCallback(() => {
         clearTimers();
         setSessionTimeRemaining(0);
-        setIdleTimeMs(0);
-    }, [clearTimers]);
+        idleTimeMsShared.value = 0;
+    }, [clearTimers, idleTimeMsShared]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -120,10 +149,10 @@ export function useSession(timeIndex: number, diffIndex: number) {
     }, [clearTimers]);
 
     return {
-        text,
+        textRef,
         sessionTimeSelected,
         sessionTimeRemaining,
-        idleTimeMs,
+        idleTimeMsShared,
         hasLost,
         isContinuingAfterLoss,
         shakeAnimation,
