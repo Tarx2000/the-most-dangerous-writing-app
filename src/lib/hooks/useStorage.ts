@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SavedNote, Person } from '@/types';;
+import { SavedNote, Person, VisionBoard, AlignmentReflection } from '@/types';
 
 export function useStorage() {
     const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
@@ -13,6 +13,8 @@ export function useStorage() {
     const [sizeIndex, setSizeIndex] = useState(1);
     const [useBiometrics, setUseBiometrics] = useState<boolean>(true);
     const [devMode, setDevMode] = useState<boolean>(false);
+    const [visionBoard, setVisionBoard] = useState<VisionBoard | null>(null);
+    const [lastReflectionDate, setLastReflectionDate] = useState<number | null>(null);
 
     const loadAllData = useCallback(async () => {
         try {
@@ -25,7 +27,9 @@ export function useStorage() {
                 'CURRENT_STREAK',
                 'LAST_WIN_DATE',
                 'STREAK_HISTORY',
-                'DEV_MODE'
+                'DEV_MODE',
+                'VISION_BOARD',
+                'LAST_REFLECTION_DATE'
             ];
             const results = await AsyncStorage.multiGet(keys);
             const data: Record<string, string | null> = Object.fromEntries(results);
@@ -48,6 +52,8 @@ export function useStorage() {
             if (data['DEV_MODE'] !== null) setDevMode(JSON.parse(data['DEV_MODE'] || 'false'));
             if (data['CURRENT_STREAK'] !== null) setCurrentStreak(parseInt(data['CURRENT_STREAK'], 10));
             if (data['LAST_WIN_DATE']) setLastWinDate(data['LAST_WIN_DATE']);
+            if (data['VISION_BOARD']) setVisionBoard(JSON.parse(data['VISION_BOARD']));
+            if (data['LAST_REFLECTION_DATE']) setLastReflectionDate(parseInt(data['LAST_REFLECTION_DATE'], 10));
 
             // Load or backfill streak history
             let loadedHistory: string[] = [];
@@ -113,7 +119,8 @@ export function useStorage() {
     const clearAllData = async () => {
         const allKeys = [
             'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
-            'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY', 'DEV_MODE'
+            'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY', 'DEV_MODE',
+            'VISION_BOARD', 'LAST_REFLECTION_DATE'
         ];
         await AsyncStorage.multiRemove(allKeys);
         setSavedNotes([]);
@@ -125,6 +132,8 @@ export function useStorage() {
         setSizeIndex(1);
         setUseBiometrics(true);
         setDevMode(false);
+        setVisionBoard(null);
+        setLastReflectionDate(null);
     };
 
     const updateBiometricsPref = async (val: boolean) => {
@@ -209,9 +218,24 @@ export function useStorage() {
         await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
     };
 
+    const saveVisionBoard = async (newBoard: VisionBoard) => {
+        setVisionBoard(newBoard);
+        await AsyncStorage.setItem('VISION_BOARD', JSON.stringify(newBoard));
+    };
+
+    const saveAlignmentReflection = async (reflection: AlignmentReflection): Promise<{ streakIncreased: boolean; newStreak: number }> => {
+        const result = await saveNote(reflection);
+        const now = Date.now();
+        setLastReflectionDate(now);
+        await AsyncStorage.setItem('LAST_REFLECTION_DATE', now.toString());
+        return result;
+    };
+
     return {
         savedNotes,
         persons,
+        visionBoard,
+        lastReflectionDate,
         currentStreak,
         lastWinDate,
         streakHistory,
@@ -228,5 +252,7 @@ export function useStorage() {
         deleteNote,
         addPerson,
         deletePerson,
+        saveVisionBoard,
+        saveAlignmentReflection,
     };
 }

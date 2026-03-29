@@ -9,4 +9,10 @@ export type RootStackParamList = {
         isQuickNote?: boolean;
     };
     Library: undefined;
+    VisionBoard: undefined;
+    AlignmentPrompt: undefined;
+    AlignmentWriting: {
+        alignmentScore: number;
+        sessionTimeSelected: number;
+    };
 };
