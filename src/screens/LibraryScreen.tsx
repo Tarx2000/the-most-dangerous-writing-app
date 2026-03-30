@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -11,23 +11,30 @@ import {
     Platform,
     StatusBar,
     Animated,
-    PanResponder
+    PanResponder,
+    Dimensions,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { BlurView } from 'expo-blur';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
-import { SortOption, SavedNote } from '@/types';
+import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
+import { SortOption, SavedNote, Person } from '@/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type Props = {
     navigation: any;
     route: any;
     onGoToStart: () => void;
+    /** Shared session mode from HomeScreen — drives which content tab is shown */
+    sessionMode: 'journal' | 'circles' | 'checkin';
 };
 
 const SORT_OPTIONS: { id: SortOption, label: string, icon: any }[] = [
@@ -38,8 +45,15 @@ const SORT_OPTIONS: { id: SortOption, label: string, icon: any }[] = [
     { id: 'longest-text', label: 'Most Words', icon: 'text-long' },
 ];
 
-export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart }) => {
-    const [libraryTab, setLibraryTab] = useState<'notes' | 'circles' | 'checkins'>('notes');
+export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart, sessionMode }) => {
+    /**
+     * Map shared sessionMode to library tab.
+     * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins'
+     */
+    const libraryTab = sessionMode === 'journal' ? 'notes' 
+                     : sessionMode === 'circles' ? 'circles' 
+                     : 'checkins';
+
     const [sortBy, setSortBy] = useState<SortOption>('newest');
     const [showSortModal, setShowSortModal] = useState(false);
     
@@ -47,6 +61,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [personToDelete, setPersonToDelete] = useState<string | null>(null);
     const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
+    /** Person whose profile modal is currently open */
+    const [profilePerson, setProfilePerson] = useState<Person | null>(null);
 
     const storage = useStorage();
     const security = useSecurity();
@@ -80,19 +96,6 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
     useEffect(() => {
         storage.loadAllData();
     }, []);
-
-    const handleCirclesTabPress = async () => {
-        if (security.isCirclesUnlocked || security.isNotesUnlocked) {
-            setLibraryTab('circles');
-            return;
-        }
-
-        const success = await security.unlockCircles();
-        if (success) {
-            Vibration.vibrate(50);
-            setLibraryTab('circles');
-        }
-    };
 
     const getGroupedNotes = (circleId?: string | null) => {
         let notesToGroup = [...storage.savedNotes];
@@ -168,27 +171,12 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 ) : (
                     <TouchableOpacity
                         style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]}
-                        onPress={() => { security.lockAll(); setLibraryTab('notes'); }}
+                        onPress={() => { security.lockAll(); }}
                     >
                         <MaterialCommunityIcons name="lock" size={16} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock</Text>
                     </TouchableOpacity>
                 )}
-            </View>
-
-            {/* Premium 3-Pill Tab Bar */}
-            <View style={styles.premiumTabBar}>
-                <TouchableOpacity style={[styles.premiumTabBtn, libraryTab === 'notes' && styles.premiumTabBtnActive]} onPress={() => setLibraryTab('notes')}>
-                    <Text style={[styles.premiumTabBtnText, libraryTab === 'notes' && styles.premiumTabBtnTextActive]}>Notes</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.premiumTabBtn, libraryTab === 'circles' && styles.premiumTabBtnActive]} onPress={handleCirclesTabPress}>
-                    <Text style={[styles.premiumTabBtnText, libraryTab === 'circles' && styles.premiumTabBtnTextActive]}>
-                        {(!security.isCirclesUnlocked && !security.isNotesUnlocked) ? '🔒 ' : ''}Circles
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.premiumTabBtn, libraryTab === 'checkins' && styles.premiumTabBtnActive]} onPress={() => setLibraryTab('checkins')}>
-                    <Text style={[styles.premiumTabBtnText, libraryTab === 'checkins' && styles.premiumTabBtnTextActive]}>Check-ins</Text>
-                </TouchableOpacity>
             </View>
 
             {/* Filter Toggle Action Button (Hidden for Circles view where grouping is per person) */}
@@ -250,12 +238,33 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                                 </View>
                             )}
                             showsVerticalScrollIndicator={false}
-                            contentContainerStyle={{ paddingBottom: 100 }}
+                            contentContainerStyle={{ paddingBottom: 120 }}
                         />
                     )}
                 </>
             ) : (
                 <>
+                    {/* Circles Lock Overlay — shown when circles not yet unlocked */}
+                    {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
+                        <View style={styles.circlesLockOverlay}>
+                            <View style={styles.circlesLockCard}>
+                                <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
+                                <Text style={styles.circlesLockTitle}>Circles Protected</Text>
+                                <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
+                                <TouchableOpacity
+                                    style={styles.circlesUnlockBtn}
+                                    onPress={async () => {
+                                        const success = await security.unlockCircles();
+                                        if (success) Vibration.vibrate(50);
+                                    }}
+                                >
+                                    <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={{ marginRight: 10 }} />
+                                    <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    ) : (
+                        <>
                     {storage.persons.length === 0 ? (
                         <View style={styles.emptyStateContainer}>
                             <MaterialCommunityIcons name="account-group-outline" size={48} color={theme.colors.glassBorder} style={{ marginBottom: 15 }} />
@@ -264,7 +273,14 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                     ) : (
                         <View style={{ flex: 1, width: '100%' }}>
                             <FlashList
-                                data={storage.persons}
+                                data={
+                                    /* Sort persons by most written about (highest note count first) */
+                                    [...storage.persons].sort((a, b) => {
+                                        const aCount = storage.savedNotes.filter(n => n.personId === a.id).length;
+                                        const bCount = storage.savedNotes.filter(n => n.personId === b.id).length;
+                                        return bCount - aCount;
+                                    })
+                                }
                                 keyExtractor={(p) => p.id}
                                 extraData={{ 
                                     selectedCircleId, 
@@ -282,24 +298,19 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                                         onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
                                         onNotePress={setViewNoteModal}
                                         onDelete={() => setPersonToDelete(p.id)}
+                                        onProfilePress={() => setProfilePerson(p)}
                                         canDelete={security.isNotesUnlocked}
                                     />
                                     </View>
                                 )}
                                 showsVerticalScrollIndicator={false}
+                                contentContainerStyle={{ paddingBottom: 120 }}
                             />
                         </View>
                     )}
+                        </>
+                    )}
                 </>
-            )}
-
-            {/* Return to Menu button (when locked) */}
-            {!security.isNotesUnlocked && (
-                <View style={styles.floatingFooter}>
-                    <TouchableOpacity style={styles.returnBtn} onPress={() => { security.lockAll(); onGoToStart(); }}>
-                        <Text style={styles.returnBtnText}>Return to Home</Text>
-                    </TouchableOpacity>
-                </View>
             )}
 
             {/* Sort Action Sheet Modal */}
@@ -327,36 +338,49 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 </TouchableOpacity>
             </Modal>
 
-            {/* Premium Note View Modal */}
-            <Modal visible={!!viewNoteModal} animationType="slide" transparent={true} presentationStyle="overFullScreen" onRequestClose={() => setViewNoteModal(null)}>
+            {/* Premium Note View — Liquid Glass Card Popup */}
+            <Modal visible={!!viewNoteModal} animationType="fade" transparent={true} onRequestClose={() => setViewNoteModal(null)}>
                 {viewNoteModal && (
-                    <Animated.View style={[styles.premiumNoteModalContainer, { transform: [{ translateY: panY }] }]}>
-                        <LinearGradient colors={['#1e1e1e', '#000000']} style={StyleSheet.absoluteFillObject} />
-                        
-                        {/* Swipeable Header Zone */}
-                        <View {...notePanResponder.panHandlers} style={styles.premiumNoteHeader}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.premiumNoteDate}>{viewNoteModal.dateStr}</Text>
-                                <Text style={styles.premiumNoteMeta}>
-                                    {viewNoteModal.text.split(/\s+/).filter(Boolean).length} words • {viewNoteModal.durationMin > 0 ? `${viewNoteModal.durationMin} min` : 'Quick Note'}
-                                </Text>
+                    <View style={styles.cardPopupBackdrop}>
+                        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setViewNoteModal(null)} />
+                        <Animated.View style={[styles.cardPopupContainer, { transform: [{ translateY: panY }] }]}>
+                            {/* Glass background */}
+                            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+                            <View style={styles.cardPopupTint} />
+
+                            {/* Swipeable Header Zone */}
+                            <View {...notePanResponder.panHandlers}>
+                                {/* Drag handle */}
+                                <View style={styles.cardPopupHandle} />
+
+                                {/* Header */}
+                                <View style={styles.cardPopupHeader}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.premiumNoteDate}>{viewNoteModal.dateStr}</Text>
+                                        <Text style={styles.premiumNoteMeta}>
+                                            {viewNoteModal.text.split(/\s+/).filter(Boolean).length} words • {viewNoteModal.durationMin > 0 ? `${viewNoteModal.durationMin} min` : 'Quick Note'}
+                                        </Text>
+                                    </View>
+                                    <TouchableOpacity style={styles.premiumNoteCloseBtn} onPress={() => setViewNoteModal(null)}>
+                                        <MaterialCommunityIcons name="close" size={22} color="#FFF" />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
-                            <TouchableOpacity style={styles.premiumNoteCloseBtn} onPress={() => setViewNoteModal(null)}>
-                                <MaterialCommunityIcons name="close" size={24} color="#FFF" />
-                            </TouchableOpacity>
-                        </View>
 
-                        <ScrollView style={styles.premiumNoteScroll} showsVerticalScrollIndicator={false}>
-                            <Text style={styles.premiumNoteBody} selectable={true}>{viewNoteModal.text}</Text>
-                        </ScrollView>
+                            {/* Body */}
+                            <ScrollView style={styles.cardPopupScroll} showsVerticalScrollIndicator={false}>
+                                <Text style={styles.premiumNoteBody} selectable={true}>{viewNoteModal.text}</Text>
+                            </ScrollView>
 
-                        <View style={styles.premiumNoteFooter}>
-                            <TouchableOpacity style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
-                                <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.danger} />
-                                <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </Animated.View>
+                            {/* Footer — Delete */}
+                            <View style={styles.premiumNoteFooter}>
+                                <TouchableOpacity style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
+                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
+                                    <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </Animated.View>
+                    </View>
                 )}
             </Modal>
 
@@ -416,39 +440,25 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart 
                 </View>
             </Modal>
 
+            {/* Person Profile Modal */}
+            <PersonProfileModal
+                visible={!!profilePerson}
+                onClose={() => setProfilePerson(null)}
+                person={profilePerson}
+                notes={profilePerson ? storage.savedNotes.filter(n => n.personId === profilePerson.id) : []}
+                isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
+                onUnlock={security.unlockProfile}
+                onUpdatePerson={storage.updatePerson}
+                onDeletePerson={(id) => { storage.deletePerson(id); setProfilePerson(null); }}
+                onNotePress={setViewNoteModal}
+                isNotesUnlocked={security.isNotesUnlocked}
+            />
+
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    premiumTabBar: {
-        flexDirection: 'row',
-        backgroundColor: theme.colors.glassBackground,
-        borderRadius: 100,
-        padding: 4,
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: theme.colors.glassBorder
-    },
-    premiumTabBtn: {
-        flex: 1,
-        paddingVertical: 12,
-        borderRadius: 100,
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    premiumTabBtnActive: {
-        backgroundColor: 'rgba(255,255,255,0.1)'
-    },
-    premiumTabBtnText: {
-        color: theme.colors.textSecondary,
-        fontSize: 14,
-        fontWeight: '600'
-    },
-    premiumTabBtnTextActive: {
-        color: '#FFF',
-        fontWeight: '800'
-    },
     filterRow: {
         marginBottom: 20
     },
@@ -500,26 +510,7 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 0.5
     },
-    floatingFooter: {
-        position: 'absolute',
-        bottom: 0, left: 0, right: 0,
-        padding: 20,
-        paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-        backgroundColor: theme.colors.background,
-        borderTopWidth: 1,
-        borderTopColor: theme.colors.glassBorder
-    },
-    returnBtn: {
-        backgroundColor: theme.colors.glassHighlight,
-        padding: 18,
-        borderRadius: 100,
-        alignItems: 'center'
-    },
-    returnBtnText: {
-        color: '#FFF',
-        fontWeight: 'bold',
-        fontSize: 16
-    },
+
     modalBackdrop: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.6)',
@@ -563,78 +554,156 @@ const styles = StyleSheet.create({
         color: theme.colors.primaryAction,
         fontWeight: 'bold'
     },
-    premiumNoteModalContainer: {
+    /* ── Circles Lock Overlay ────────────────────────────────────────── */
+    circlesLockOverlay: {
         flex: 1,
-        paddingTop: Platform.OS === 'ios' ? 40 : 20,
-        paddingHorizontal: 20,
-        paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 30,
     },
-    premiumNoteHeader: {
+    circlesLockCard: {
+        backgroundColor: theme.colors.glassBackground,
+        borderRadius: 24,
+        padding: 40,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+        width: '100%',
+    },
+    circlesLockTitle: {
+        color: '#FFF',
+        fontSize: 22,
+        fontWeight: '900',
+        marginBottom: 8,
+    },
+    circlesLockSubtitle: {
+        color: theme.colors.textMuted,
+        fontSize: 15,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 22,
+    },
+    circlesUnlockBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.primaryAction,
+        paddingVertical: 16,
+        paddingHorizontal: 28,
+        borderRadius: 100,
+        shadowColor: theme.colors.primaryAction,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 8,
+    },
+    circlesUnlockBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '800',
+    },
+
+    /* ── Card Popup (Liquid Glass Note Viewer) ────────────────────── */
+    cardPopupBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+    cardPopupContainer: {
+        width: '100%',
+        height: SCREEN_HEIGHT * 0.88,
+        borderRadius: 28,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.5,
+        shadowRadius: 30,
+        elevation: 25,
+    },
+    cardPopupTint: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(18, 18, 18, 0.82)',
+    },
+    cardPopupHandle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        alignSelf: 'center',
+        marginTop: 12,
+        marginBottom: 8,
+    },
+    cardPopupHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingBottom: 20,
-        marginBottom: 10,
+        paddingHorizontal: 24,
+        paddingBottom: 16,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
-        zIndex: 10
+        borderBottomColor: 'rgba(255,255,255,0.06)',
     },
+    cardPopupScroll: {
+        paddingHorizontal: 24,
+        paddingTop: 16,
+        flex: 1,
+    },
+
+    /* ── Note Content Styles ──────────────────────────────────────── */
     premiumNoteDate: {
         color: '#FFF',
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '900',
-        letterSpacing: 0.5,
-        marginBottom: 6
+        letterSpacing: 0.3,
+        marginBottom: 4
     },
     premiumNoteMeta: {
         color: theme.colors.primaryAction,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '700',
         textTransform: 'uppercase',
-        letterSpacing: 1
+        letterSpacing: 0.8
     },
     premiumNoteCloseBtn: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        width: 38,
+        height: 38,
+        borderRadius: 19,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.15)'
-    },
-    premiumNoteScroll: {
-        flex: 1,
-        zIndex: 10
+        borderColor: 'rgba(255,255,255,0.1)'
     },
     premiumNoteBody: {
         color: 'rgba(255,255,255,0.9)',
-        fontSize: 18,
-        lineHeight: 32,
-        fontFamily: theme.typography.fontFamily
+        fontSize: 17,
+        lineHeight: 30,
+        fontFamily: theme.typography.fontFamily,
+        paddingBottom: 20,
     },
     premiumNoteFooter: {
-        marginTop: 20,
-        paddingTop: 20,
+        paddingVertical: 16,
+        paddingHorizontal: 24,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.1)',
+        borderTopColor: 'rgba(255,255,255,0.06)',
         alignItems: 'center',
-        zIndex: 10
     },
     premiumNoteDeleteBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 77, 77, 0.1)',
-        paddingVertical: 12,
-        paddingHorizontal: 20,
+        backgroundColor: 'rgba(255, 77, 77, 0.08)',
+        paddingVertical: 10,
+        paddingHorizontal: 18,
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255, 77, 77, 0.2)'
+        borderColor: 'rgba(255, 77, 77, 0.15)'
     },
     premiumNoteDeleteText: {
         color: theme.colors.danger,
         fontWeight: 'bold',
         marginLeft: 8,
-        fontSize: 15
+        fontSize: 14
     }
 });

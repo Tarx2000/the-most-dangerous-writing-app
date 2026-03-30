@@ -39,13 +39,16 @@ type Props = {
     route: any;
     onGoToLibrary: () => void;
     setHomeScrollEnabled?: (enabled: boolean) => void;
+    /** Shared session mode from HomeScreen (drives LiquidGlassNav) */
+    sessionMode: 'journal' | 'circles' | 'checkin';
+    /** Update shared session mode */
+    setSessionMode: (mode: 'journal' | 'circles' | 'checkin') => void;
 };
 
-export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled }) => {
+export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled, sessionMode, setSessionMode }) => {
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
-    const [sessionMode, setSessionMode] = useState<'journal' | 'circles' | 'checkin'>('journal');
     const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
     const [score, setScore] = useState(5);
 
@@ -157,6 +160,29 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     <Text style={commonStyles.streakText}>{storage.currentStreak}</Text>
                 </TouchableOpacity>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {/* Vision Board button — moved here from footer */}
+                    <TouchableOpacity 
+                        style={commonStyles.iconButton}
+                        onPress={() => {
+                            if (security.isNotesUnlocked) {
+                                navigation.navigate('VisionBoard');
+                            } else {
+                                Vibration.vibrate([0, 50, 100, 50]);
+                            }
+                        }}
+                        onLongPress={async () => {
+                            if (security.isNotesUnlocked) {
+                                security.lockAll();
+                                Vibration.vibrate(50);
+                            } else {
+                                const success = await security.unlockNotes();
+                                if (success) Vibration.vibrate(50);
+                            }
+                        }}
+                    >
+                        <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={16} color={!security.isNotesUnlocked ? "rgba(255,100,100,0.8)" : theme.colors.textPrimary} style={{ marginRight: 4 }} />
+                        <Text style={[commonStyles.iconButtonText, !security.isNotesUnlocked && { color: 'rgba(255,100,100,0.8)' }]}>{!security.isNotesUnlocked ? '🔒' : 'Vision'}</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                         onPress={() => setShowSettings(true)}
                         onPressIn={() => {
@@ -164,15 +190,12 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             settingsLongPressTimer.current = setTimeout(() => {
                                 const newState = !devModeUnlocked;
                                 setDevModeUnlocked(newState);
-                                // Haptic feedback: short vibration
                                 Vibration.vibrate(100);
-                                // Show toast notification
                                 setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
                                 setTimeout(() => setDevToast(null), 2000);
                             }, 5000);
                         }}
                         onPressOut={() => {
-                            // Cancel timer if released early
                             if (settingsLongPressTimer.current) {
                                 clearTimeout(settingsLongPressTimer.current);
                                 settingsLongPressTimer.current = null;
@@ -182,10 +205,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     >
                         <Text style={commonStyles.iconButtonText}>⚙️</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={onGoToLibrary} style={commonStyles.iconButton}>
-                        <Text style={{ fontSize: 16, marginRight: 4 }}>📚</Text>
-                        <Text style={commonStyles.iconButtonText}>Library</Text>
-                    </TouchableOpacity>
+
                 </View>
             </View>
 
@@ -204,7 +224,9 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         <>
                             <MaterialCommunityIcons name="account-group-outline" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
                             <Text style={styles.heroTitle}>Relationship Journal</Text>
-                            <TouchableOpacity style={styles.personSmallSelectBtn} onPress={() => setShowPersonSelect(true)}>
+                            <TouchableOpacity style={styles.personSmallSelectBtn} onPress={() => {
+                                setShowPersonSelect(true);
+                            }}>
                                 <Text style={styles.personSmallSelectText}>
                                     {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
                                     <Text style={{ opacity: 0.5 }}> ▼</Text>
@@ -220,13 +242,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     )}
                     {sessionMode === 'checkin' && (
                         <>
-                            <View style={[styles.glowRing, { backgroundColor: details.glow, shadowColor: details.color, marginTop: 15 }]}>
-                                <View style={styles.iconCircle}>
-                                    <MaterialCommunityIcons name={details.icon} size={64} color={details.color} />
+                            {/* Compact glow ring — pushed down for layout alignment */}
+                            <View style={[styles.glowRing, { backgroundColor: details.glow, shadowColor: details.color, width: 80, height: 80, borderRadius: 40, marginTop: 15 }]}>
+                                <View style={[styles.iconCircle, { width: 68, height: 68, borderRadius: 34 }]}>
+                                    <MaterialCommunityIcons name={details.icon} size={40} color={details.color} />
                                 </View>
                             </View>
-                            <Text style={[styles.scoreText, { color: details.color, fontSize: 16, marginTop: 10 }]}>{details.text.toUpperCase()}</Text>
-                            <View style={{ transform: [{ scale: 1.05 }], marginTop: -20, marginBottom: -40 }}>
+                            <Text style={[styles.scoreText, { color: details.color, fontSize: 14, marginTop: 8, marginBottom: -6 }]}>{details.text.toUpperCase()}</Text>
+                            <View style={{ transform: [{ scale: 0.9 }], marginTop: -14, marginBottom: -40 }}>
                                 <CustomSlider value={score} onValueChange={setScore} />
                             </View>
                         </>
@@ -242,84 +265,33 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         setHomeScrollEnabled={setHomeScrollEnabled}
                     />
 
-                    {/* Difficulty Pill Selector Inline (Hidden for Checkin) */}
-                    {sessionMode !== 'checkin' && (
-                        <View style={styles.diffSelectorContainer}>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.diffScroll}>
-                                {CONFIG.DIFFICULTIES.map((diff, i) => (
-                                    <TouchableOpacity key={i} style={[styles.diffPill, diffIndex === i && styles.diffPillActive]} onPress={() => setDiffIndex(i)}>
-                                        <Text style={[styles.diffPillText, diffIndex === i && styles.diffPillTextActive]}>{diff.label}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                        </View>
-                    )}
+                    {/* Difficulty Pill Selector Inline (Invisible for Checkin to preserve exact layout alignment for TickDial) */}
+                    <View style={[styles.diffSelectorContainer, sessionMode === 'checkin' && { opacity: 0 }]} pointerEvents={sessionMode === 'checkin' ? 'none' : 'auto'}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.diffScroll}>
+                            {CONFIG.DIFFICULTIES.map((diff, i) => (
+                                <TouchableOpacity key={i} style={[styles.diffPill, diffIndex === i && styles.diffPillActive]} onPress={() => setDiffIndex(i)}>
+                                    <Text style={[styles.diffPillText, diffIndex === i && styles.diffPillTextActive]}>{diff.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
                 </View>
             </View>
 
-            {/* Bottom Glass Navigation Dock */}
-            <View style={styles.bottomDockContainer}>
-                {/* Massive Start Pill Overlapping the dock */}
-                <View style={styles.massiveStartContainer}>
-                    <TouchableOpacity style={styles.massiveStartBtn} onPress={handleStart}>
-                        <Text style={styles.massiveStartBtnText}>
-                            Start Writing
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Tide-style NavBar Ribbon */}
-                <View style={styles.navRibbonWrapper}>
-                    <LinearGradient colors={['rgba(30,30,30,0.8)', 'rgba(0,0,0,1)']} style={StyleSheet.absoluteFillObject} />
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navRibbonScroll}>
-                        <TouchableOpacity style={[styles.navItem, sessionMode === 'journal' && styles.navItemActive]} onPress={() => { setSessionMode('journal'); setSelectedPersonId(null); }}>
-                            <MaterialCommunityIcons name="notebook-edit" size={26} color={sessionMode === 'journal' ? theme.colors.primaryAction : 'rgba(255,255,255,0.4)'} />
-                            <Text style={[styles.navText, sessionMode === 'journal' && styles.navTextActive]}>Journal</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={[styles.navItem, sessionMode === 'circles' && styles.navItemActive]} onPress={() => setSessionMode('circles')}>
-                            <MaterialCommunityIcons name="account-group" size={26} color={sessionMode === 'circles' ? theme.colors.primaryAction : 'rgba(255,255,255,0.4)'} />
-                            <Text style={[styles.navText, sessionMode === 'circles' && styles.navTextActive]}>Circles</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={[styles.navItem, sessionMode === 'checkin' && styles.navItemActive]} onPress={() => setSessionMode('checkin')}>
-                            <View style={(!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? styles.urgentGlowContainer : {}}>
-                                {(!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) && (
-                                    <View style={[styles.urgentDot, {top: 6, right: 6}]} />
-                                )}
-                                <MaterialCommunityIcons name="compass-outline" size={26} color={(!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? '#FFD700' : (sessionMode === 'checkin' ? '#FFF' : 'rgba(255,255,255,0.4)')} />
-                            </View>
-                            <Text style={[styles.navText, { color: (!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? '#FFD700' : (sessionMode === 'checkin' ? '#FFF' : 'rgba(255,255,255,0.4)'), marginTop: (!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? 2 : 0 }]}>Check-in</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity 
-                            style={styles.navItem} 
-                            onPress={() => {
-                                if (security.isNotesUnlocked) {
-                                    navigation.navigate('VisionBoard');
-                                } else {
-                                    Vibration.vibrate([0, 50, 100, 50]); // Error feeling buzz
-                                }
-                            }}
-                            onLongPress={async () => {
-                                if (security.isNotesUnlocked) {
-                                    security.lockAll();
-                                    Vibration.vibrate(50);
-                                } else {
-                                    const success = await security.unlockNotes();
-                                    if (success) Vibration.vibrate(50);
-                                }
-                            }}
-                        >
-                            <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={26} color={!security.isNotesUnlocked ? "rgba(255,100,100,0.8)" : "rgba(255,255,255,0.4)"} />
-                            <Text style={[styles.navText, !security.isNotesUnlocked && { color: 'rgba(255,100,100,0.8)' }]}>{!security.isNotesUnlocked ? '🔒 ' : ''}Vision</Text>
-                        </TouchableOpacity>
-                    </ScrollView>
-                    <TouchableOpacity style={{ position: 'absolute', bottom: 10, right: 15 }} onPress={() => setShowVersionHistory(true)}>
-                        <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
-                    </TouchableOpacity>
-                </View>
+            {/* Start Writing Button — now standalone pill above the nav area */}
+            <View style={styles.startBtnContainer}>
+                <TouchableOpacity style={styles.massiveStartBtn} onPress={handleStart}>
+                    <Text style={styles.massiveStartBtnText}>
+                        Start Writing
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
+                    <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
+                </TouchableOpacity>
             </View>
+
+            {/* Bottom spacer for the floating LiquidGlassNav pill */}
+            <View style={{ height: 90 }} />
 
             {/* Modals */}
             <SwipeableModal visible={showCalendar} onClose={() => setShowCalendar(false)} setHomeScrollEnabled={setHomeScrollEnabled}>
@@ -471,7 +443,24 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
                     {/* Content Area with Keyboard avoidance */}
                     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                        
+                        {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
+                            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 60 }}>
+                                <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
+                                <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 8 }}>Circles Protected</Text>
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>Verify your identity to view your circles</Text>
+                                <TouchableOpacity
+                                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 100 }}
+                                    onPress={async () => {
+                                        const success = await security.unlockCircles();
+                                        if (success) Vibration.vibrate(50);
+                                    }}
+                                >
+                                    <MaterialCommunityIcons name="fingerprint" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                                    <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Unlock Circles</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
+                            <>
                         {/* Search Input */}
                         <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
                             <View style={styles.premiumSearchBox}>
@@ -537,6 +526,8 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                 <MaterialCommunityIcons name="plus" size={24} color="#000" />
                                 <Text style={styles.premiumFloatCreateBtnText}>New Circle</Text>
                             </TouchableOpacity>
+                        )}
+                            </>
                         )}
                     </KeyboardAvoidingView>
                 </View>
@@ -666,19 +657,10 @@ const styles = StyleSheet.create({
     diffPillTextActive: {
         color: '#FFF'
     },
-    bottomDockContainer: {
-        position: 'absolute',
-        bottom: 0,
-        width: '100%',
-        height: 140,
-        justifyContent: 'flex-end'
-    },
-    massiveStartContainer: {
-        position: 'absolute',
-        top: -30,
-        width: '100%',
+    /** Container for the standalone Start Writing button */
+    startBtnContainer: {
         alignItems: 'center',
-        zIndex: 10
+        marginBottom: 10,
     },
     massiveStartBtn: {
         backgroundColor: '#FFF',
@@ -696,62 +678,6 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '900',
         letterSpacing: 1
-    },
-    navRibbonWrapper: {
-        width: '100%',
-        height: 100,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.05)'
-    },
-    navRibbonScroll: {
-        flexGrow: 1,
-        paddingHorizontal: 15,
-        justifyContent: 'space-evenly',
-        alignItems: 'center',
-        paddingBottom: 20
-    },
-    navItem: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6
-    },
-    navItemActive: {
-        opacity: 1
-    },
-    navText: {
-        fontSize: 11,
-        color: 'rgba(255,255,255,0.4)',
-        fontWeight: '700'
-    },
-    navTextActive: {
-        color: '#FFF'
-    },
-    urgentDot: {
-        position: 'absolute',
-        top: -2,
-        right: -4,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#FFD700',
-        zIndex: 2,
-        shadowColor: '#FFD700',
-        shadowOpacity: 0.8,
-        shadowRadius: 5
-    },
-    urgentGlowContainer: {
-        backgroundColor: 'rgba(255, 215, 0, 0.1)',
-        borderRadius: 20,
-        padding: 8,
-        shadowColor: '#FFD700',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 15,
-        elevation: 10,
-        marginBottom: -6,
-        marginTop: -8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 215, 0, 0.3)'
     },
     // Inline Checkin specific styles
     glowRing: { width: 110, height: 110, borderRadius: 55, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 30, elevation: 15 },

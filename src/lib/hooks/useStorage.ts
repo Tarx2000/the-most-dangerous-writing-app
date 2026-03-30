@@ -218,6 +218,19 @@ export function useStorage() {
         await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
     };
 
+    /**
+     * Update a person's profile fields (nickname, relationship, birthday, bio, etc.).
+     * Merges the provided updates with the existing person data.
+     * Only non-undefined fields in `updates` are written.
+     */
+    const updatePerson = async (id: string, updates: Partial<Person>) => {
+        const updatedPersons = persons.map(p =>
+            p.id === id ? { ...p, ...updates } : p
+        );
+        setPersons(updatedPersons);
+        await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
+    };
+
     const saveVisionBoard = async (newBoard: VisionBoard) => {
         setVisionBoard(newBoard);
         await AsyncStorage.setItem('VISION_BOARD', JSON.stringify(newBoard));
@@ -252,6 +265,7 @@ export function useStorage() {
         deleteNote,
         addPerson,
         deletePerson,
+        updatePerson,
         saveVisionBoard,
         saveAlignmentReflection,
     };

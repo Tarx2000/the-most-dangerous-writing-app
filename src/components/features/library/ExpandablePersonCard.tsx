@@ -7,7 +7,9 @@ import {
     Animated,
     StyleSheet,
 } from 'react-native';
-import { SavedNote } from '@/types';;
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SavedNote } from '@/types';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
@@ -21,20 +23,23 @@ const EXPANDED_MAX_HEIGHT = 320;
 /**
  * ExpandablePersonCard - An accordion-style person card for the Circles tab.
  *
- * When collapsed: shows person name, avatar, entry count, and delete button.
+ * When collapsed: shows person name, avatar, entry count, word count,
+ *   relationship badge, profile button, and delete button.
  * When expanded: smoothly animates open to reveal their recent notes
- * in an embedded scrollable area (capped at EXPANDED_MAX_HEIGHT).
+ *   in an embedded scrollable area (capped at EXPANDED_MAX_HEIGHT).
  *
  * Only one card should be expanded at a time (controlled by parent).
  */
 interface Props {
-    person: { id: string; name: string };
+    person: { id: string; name: string; relationship?: string; nickname?: string };
     notes: SavedNote[];
     isExpanded: boolean;
     isLocked: boolean;
     onToggle: () => void;
     onNotePress: (note: SavedNote) => void;
     onDelete: () => void;
+    /** Open person profile modal */
+    onProfilePress: () => void;
     canDelete: boolean;
 }
 
@@ -46,6 +51,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
     onToggle,
     onNotePress,
     onDelete,
+    onProfilePress,
     canDelete,
 }) => {
     const animatedHeight = useRef(new Animated.Value(0)).current;
@@ -67,34 +73,65 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
         extrapolate: 'clamp',
     });
 
+    /** Total word count across all notes for this person */
+    const totalWords = notes.reduce((sum, n) => {
+        return sum + (n.text || '').split(/\s+/).filter(Boolean).length;
+    }, 0);
 
     // Sort notes by newest first
     const sortedNotes = [...notes].sort((a, b) => b.timestamp - a.timestamp);
 
     return (
         <View style={styles.cardContainer}>
+            {/* Subtle gradient overlay for depth */}
+            <LinearGradient
+                colors={['rgba(255,255,255,0.03)', 'transparent']}
+                style={StyleSheet.absoluteFillObject}
+            />
+
             {/* Header row — tap to expand/collapse */}
             <TouchableOpacity
                 style={styles.headerRow}
                 onPress={onToggle}
                 activeOpacity={0.7}
             >
-                <View style={commonStyles.personAvatar}>
+                {/* Avatar — tap to open profile (separate touchable to prevent toggle) */}
+                <TouchableOpacity
+                    style={commonStyles.personAvatar}
+                    onPress={(e) => { e.stopPropagation(); onProfilePress(); }}
+                    activeOpacity={0.6}
+                >
                     <Text style={commonStyles.personAvatarText}>
                         {person.name.charAt(0)}
                     </Text>
-                </View>
-                <View style={styles.headerInfo}>
-                    <Text style={commonStyles.personCardName}>{person.name}</Text>
-                </View>
-                <TouchableOpacity
-                    onPress={onDelete}
-                    disabled={!canDelete}
-                    style={{ opacity: canDelete ? 1 : 0.3, padding: 10 }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <Text style={{ color: theme.colors.danger, fontSize: 18 }}>🗑️</Text>
                 </TouchableOpacity>
+
+                {/* Name + meta info */}
+                <View style={styles.headerInfo}>
+                    <View style={styles.nameRow}>
+                        <Text style={commonStyles.personCardName} numberOfLines={1}>
+                            {person.nickname || person.name}
+                        </Text>
+                        {/* Note count badge — visual indicator of how much you've written */}
+                        <View style={styles.countBadge}>
+                            <Text style={styles.countBadgeText}>{notes.length}</Text>
+                        </View>
+                    </View>
+
+                    {/* Meta row: relationship tag + word count */}
+                    <View style={styles.metaRow}>
+                        {person.relationship && (
+                            <Text style={styles.relationshipTag}>{person.relationship}</Text>
+                        )}
+                        {totalWords > 0 && (
+                            <Text style={styles.wordCountText}>
+                                {totalWords.toLocaleString()} words
+                            </Text>
+                        )}
+                    </View>
+                </View>
+
+
             </TouchableOpacity>
 
             {/* Expandable notes area — animated height */}
@@ -147,6 +184,46 @@ const styles = StyleSheet.create({
     /** Name + meta column */
     headerInfo: {
         flex: 1,
+    },
+
+    /** Name + badge row */
+    nameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+
+    /** Note count badge — pill showing entry count */
+    countBadge: {
+        backgroundColor: 'rgba(255, 42, 42, 0.15)',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 100,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 42, 42, 0.25)',
+    },
+    countBadgeText: {
+        color: theme.colors.primaryAction,
+        fontSize: 12,
+        fontWeight: '800',
+    },
+
+    /** Meta row below name (relationship + word count) */
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 4,
+    },
+    relationshipTag: {
+        color: theme.colors.textMuted,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    wordCountText: {
+        color: theme.colors.textMuted,
+        fontSize: 12,
+        fontWeight: '500',
     },
 
 
