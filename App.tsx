@@ -5,7 +5,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { WritingScreen } from './src/screens/WritingScreen';
 import { VisionBoardScreen } from './src/screens/VisionBoardScreen';
-import { AlignmentPromptScreen } from './src/screens/AlignmentPromptScreen';
 import { AlignmentWritingScreen } from './src/screens/AlignmentWritingScreen';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar } from 'react-native';
@@ -21,7 +20,6 @@ export default function App() {
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Writing" component={WritingScreen} />
           <Stack.Screen name="VisionBoard" component={VisionBoardScreen} />
-          <Stack.Screen name="AlignmentPrompt" component={AlignmentPromptScreen} />
           <Stack.Screen name="AlignmentWriting" component={AlignmentWritingScreen} />
         </Stack.Navigator>
       </NavigationContainer>

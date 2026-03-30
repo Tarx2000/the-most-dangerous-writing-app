@@ -140,8 +140,9 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     <View style={commonStyles.inputWrapper}>
                         <ScrollView
                             keyboardShouldPersistTaps="handled"
-                            contentContainerStyle={{ flexGrow: 1 }}
+                            contentContainerStyle={{ flexGrow: 1, paddingBottom: 150 }}
                             showsVerticalScrollIndicator={false}
+                            keyboardDismissMode="interactive"
                         >
                             <TextInput
                                 ref={inputRef}
@@ -151,8 +152,9 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                     lineHeight: currentLineHeight,
                                     fontFamily: currentFont,
                                     textAlignVertical: 'top',
-                                    minHeight: 800
+                                    paddingBottom: 200 // Ensures text doesn't stay hidden under keyboard
                                 }]}
+                                scrollEnabled={false}
                                 multiline
                                 autoFocus
                                 defaultValue=""

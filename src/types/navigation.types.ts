@@ -10,9 +10,8 @@ export type RootStackParamList = {
     };
     Library: undefined;
     VisionBoard: undefined;
-    AlignmentPrompt: undefined;
     AlignmentWriting: {
         alignmentScore: number;
-        sessionTimeSelected: number;
+        timeIndex: number;
     };
 };

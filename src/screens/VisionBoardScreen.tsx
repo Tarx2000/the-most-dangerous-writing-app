@@ -93,7 +93,7 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
                         onChangeText={handleTextChange}
                         placeholder="My vision is..."
                         placeholderTextColor="#666"
-                        selectionColor={theme.colors.primary}
+                        selectionColor={theme.colors.primaryAction}
                     />
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: theme.typography.families.primary,
+        fontFamily: theme.typography.fontFamily,
     },
     doneBtn: {
         paddingVertical: 8,
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#111',
     },
     activeTab: {
-        backgroundColor: theme.colors.primary,
+        backgroundColor: theme.colors.primaryAction,
     },
     tabText: {
         color: '#888',
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         lineHeight: 24,
         marginBottom: 20,
-        fontFamily: theme.typography.families.primary,
+        fontFamily: theme.typography.fontFamily,
     },
     textInput: {
         flex: 1,
@@ -175,6 +175,6 @@ const styles = StyleSheet.create({
         lineHeight: 28,
         minHeight: 300,
         textAlignVertical: 'top',
-        fontFamily: theme.typography.families.primary,
+        fontFamily: theme.typography.fontFamily,
     }
 });

@@ -14,7 +14,7 @@ import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
 type Props = NativeStackScreenProps<RootStackParamList, 'AlignmentWriting'>;
 
 export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) => {
-    const { alignmentScore } = route.params;
+    const { alignmentScore, timeIndex } = route.params;
 
     const stopRef = useRef<TextInput>(null);
     const startRef = useRef<TextInput>(null);
@@ -24,8 +24,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
     const startText = useRef('');
     const continueText = useRef('');
 
-    const TIME_INDEX = 1; // 5 min
-    const DIFF_INDEX = 1; // Mid diff
+    const DIFF_INDEX = 0; // Force Easy rank for Reflections
 
     const {
         sessionTimeSelected,
@@ -40,7 +39,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
         resumeWritingFreely,
         clearTimers,
         skipTimer
-    } = useSession(TIME_INDEX, DIFF_INDEX, stopRef);
+    } = useSession(timeIndex, DIFF_INDEX, stopRef);
 
     const { saveAlignmentReflection, fontIndex, sizeIndex, loadAllData, devMode } = useStorage();
 
@@ -84,7 +83,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
             text: fullText,
             dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             timestamp: Date.now(),
-            durationMin: 5,
+            durationMin: CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5,
             won: noteWon,
             alignmentScore: alignmentScore,
             stopText: stopText.current,
@@ -147,8 +146,9 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                     <View style={commonStyles.inputWrapper}>
                         <ScrollView
                             keyboardShouldPersistTaps="handled"
-                            contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
+                            contentContainerStyle={{ flexGrow: 1, paddingBottom: 250 }}
                             showsVerticalScrollIndicator={false}
+                            keyboardDismissMode="interactive"
                         >
                             <Text style={styles.promptHeader}>STOP</Text>
                             <Text style={styles.promptSub}>What habits or actions pulled you away from your best self this week?</Text>
@@ -160,7 +160,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                                 onChangeText={(t) => handleInput('stop', t)}
                                 placeholder="I need to stop..."
                                 placeholderTextColor="#555"
-                                selectionColor={theme.colors.primary}
+                                selectionColor={theme.colors.primaryAction}
                                 editable={!hasLost}
                             />
 
@@ -173,7 +173,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                                 onChangeText={(t) => handleInput('start', t)}
                                 placeholder="I will start..."
                                 placeholderTextColor="#555"
-                                selectionColor={theme.colors.primary}
+                                selectionColor={theme.colors.primaryAction}
                                 editable={!hasLost}
                             />
 
@@ -186,7 +186,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                                 onChangeText={(t) => handleInput('continue', t)}
                                 placeholder="I will continue..."
                                 placeholderTextColor="#555"
-                                selectionColor={theme.colors.primary}
+                                selectionColor={theme.colors.primaryAction}
                                 editable={!hasLost}
                             />
                         </ScrollView>
@@ -224,6 +224,6 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
 };
 
 const styles = StyleSheet.create({
-    promptHeader: { color: theme.colors.primary, fontSize: 16, fontWeight: 'bold', letterSpacing: 2, marginBottom: 5, fontFamily: theme.typography.families.primary },
-    promptSub: { color: '#888', fontSize: 14, marginBottom: 15, fontFamily: theme.typography.families.primary, lineHeight: 20 }
+    promptHeader: { color: theme.colors.primaryAction, fontSize: 16, fontWeight: 'bold', letterSpacing: 2, marginBottom: 5, fontFamily: theme.typography.fontFamily },
+    promptSub: { color: '#888', fontSize: 14, marginBottom: 15, fontFamily: theme.typography.fontFamily, lineHeight: 20 }
 });

@@ -12,15 +12,18 @@ import {
     ImageBackground,
     PanResponder,
     Dimensions,
-    Vibration
+    Vibration,
+    StyleSheet
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';;
 import { commonStyles } from '@/styles/commonStyles';
 import { CONFIG, APP_VERSION, VERSION_HISTORY } from '@/config';
 import { CarouselSelector } from '@/components/ui/CarouselSelector';
+import { CustomSlider } from '@/components/features/alignment/CustomSlider';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
 import { CalendarView } from '@/components/features/library/CalendarView';
 import { StreakPopup } from '@/components/features/writing/StreakPopup';
@@ -42,8 +45,9 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
-    const [sessionMode, setSessionMode] = useState<'journal' | 'circles'>('journal');
+    const [sessionMode, setSessionMode] = useState<'journal' | 'circles' | 'checkin'>('journal');
     const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+    const [score, setScore] = useState(5);
 
     const [showSettings, setShowSettings] = useState(false);
     const [showCalendar, setShowCalendar] = useState(false);
@@ -97,6 +101,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     }, [route.params?.streakIncreased]);
 
     const handleStart = () => {
+        if (sessionMode === 'checkin') {
+            navigation.navigate('AlignmentWriting', {
+                alignmentScore: score,
+                timeIndex: timeIndex
+            });
+            return;
+        }
+
         navigation.navigate('Writing', {
             timeIndex,
             diffIndex,
@@ -104,6 +116,17 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
             personId: selectedPersonId
         });
     };
+
+    const getScoreDetails = (s: number) => {
+        if (s <= 2) return { icon: 'emoticon-dead-outline' as const, text: 'struggling', color: '#ff4d4d', glow: 'rgba(255, 77, 77, 0.3)' };
+        if (s <= 4) return { icon: 'emoticon-confused-outline' as const, text: 'drifting', color: '#ff9933', glow: 'rgba(255, 153, 51, 0.3)' };
+        if (s === 5) return { icon: 'emoticon-neutral-outline' as const, text: 'okay', color: '#ffcc00', glow: 'rgba(255, 204, 0, 0.3)' };
+        if (s <= 7) return { icon: 'emoticon-happy-outline' as const, text: 'good', color: '#a2ff66', glow: 'rgba(162, 255, 102, 0.3)' };
+        if (s <= 9) return { icon: 'emoticon-excited-outline' as const, text: 'great', color: '#66ffcc', glow: 'rgba(102, 255, 204, 0.3)' };
+        return { icon: 'emoticon-cool-outline' as const, text: 'perfectly aligned', color: '#00ccff', glow: 'rgba(0, 204, 255, 0.3)' };
+    };
+    
+    const details = getScoreDetails(score);
 
     const filteredPersons = storage.persons.filter(p =>
         p.name.toLowerCase().includes(circleSearch.toLowerCase())
@@ -166,89 +189,134 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                 </View>
             </View>
 
-            <View style={{ width: '100%', paddingBottom: 20, paddingTop: 10 }}>
-                {/* Hero Logo / Title */}
-                <View style={[commonStyles.heroContainer, { marginTop: 0, marginBottom: 15 }]}>
-                    <Text style={[commonStyles.heroTitle, { fontSize: 24 }]}>The Most <Text style={commonStyles.heroTitleDanger}>Dangerous</Text></Text>
-                    <Text style={commonStyles.heroSubtitle}>Don't stop, or all is lost.</Text>
-                </View>
-
-                {/* Session Type Grid */}
-                <Text style={[commonStyles.sectionTitle, { marginTop: 10, marginBottom: 8 }]}>Session Type</Text>
-                <View style={commonStyles.cardsRow}>
-                    <TouchableOpacity style={[commonStyles.card, { padding: 15 }, sessionMode === 'journal' && commonStyles.cardActive]} onPress={() => { setSessionMode('journal'); setSelectedPersonId(null); }}>
-                        <Text style={[commonStyles.cardTitle, sessionMode === 'journal' && commonStyles.cardTitleActive]}>Journal</Text>
-                        <Text style={commonStyles.cardDesc}>Free Writing</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[commonStyles.card, { padding: 15 }, sessionMode === 'circles' && commonStyles.cardActive]} onPress={() => setSessionMode('circles')}>
-                        <Text style={[commonStyles.cardTitle, sessionMode === 'circles' && commonStyles.cardTitleActive]}>Circles</Text>
-                        <Text style={commonStyles.cardDesc}>For a Person</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Circle Select (Only if active) */}
-                {sessionMode === 'circles' && (
-                    <View style={{ paddingHorizontal: 20 }}>
-                        <TouchableOpacity style={[commonStyles.personSelectorBtn, { padding: 12, marginTop: 10 }]} onPress={() => setShowPersonSelect(true)}>
-                            <Text style={commonStyles.personSelectorLabel}>Writing target</Text>
-                            <View style={commonStyles.personSelectorRow}>
-                                <Text style={commonStyles.personSelectorName}>
-                                    {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select a Person'}
+            {/* Main Center Content */}
+            <View style={{ flex: 1, paddingVertical: 10 }}>
+                {/* Dynamic Hero Area */}
+                <View style={styles.heroWidgetContainer}>
+                    {sessionMode === 'journal' && (
+                        <>
+                            <MaterialCommunityIcons name="feather" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
+                            <Text style={styles.heroTitle}>Free Writing</Text>
+                            <Text style={styles.heroSubtitle}>Write continuously, or all is lost.</Text>
+                        </>
+                    )}
+                    {sessionMode === 'circles' && (
+                        <>
+                            <MaterialCommunityIcons name="account-group-outline" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
+                            <Text style={styles.heroTitle}>Relationship Journal</Text>
+                            <TouchableOpacity style={styles.personSmallSelectBtn} onPress={() => setShowPersonSelect(true)}>
+                                <Text style={styles.personSmallSelectText}>
+                                    {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
+                                    <Text style={{ opacity: 0.5 }}> ▼</Text>
                                 </Text>
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>▼</Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {selectedPersonId && (
-                            <TouchableOpacity
-                                style={{ marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }}
-                                onPress={() => {
-                                    navigation.navigate('Writing', {
-                                        timeIndex: 0,
-                                        diffIndex,
-                                        mode: 'circles',
-                                        personId: selectedPersonId,
-                                        isQuickNote: true
-                                    });
-                                }}
-                            >
-                                <Text style={{ color: theme.colors.textPrimary, fontWeight: theme.typography.weightMedium, fontSize: 14 }}>⚡ Quick Note</Text>
                             </TouchableOpacity>
-                        )}
-                    </View>
-                )}
+                            {selectedPersonId && (
+                                <TouchableOpacity style={styles.quickNoteBtn} onPress={() => { navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
+                                    <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
+                                    <Text style={styles.quickNoteText}>Quick Note</Text>
+                                </TouchableOpacity>
+                            )}
+                        </>
+                    )}
+                    {sessionMode === 'checkin' && (
+                        <>
+                            <View style={[styles.glowRing, { backgroundColor: details.glow, shadowColor: details.color, marginTop: 15 }]}>
+                                <View style={styles.iconCircle}>
+                                    <MaterialCommunityIcons name={details.icon} size={64} color={details.color} />
+                                </View>
+                            </View>
+                            <Text style={[styles.scoreText, { color: details.color, fontSize: 16, marginTop: 10 }]}>{details.text.toUpperCase()}</Text>
+                            <View style={{ transform: [{ scale: 1.05 }], marginTop: -20, marginBottom: -40 }}>
+                                <CustomSlider value={score} onValueChange={setScore} />
+                            </View>
+                        </>
+                    )}
+                </View>
+
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                    <TickDial
+                        data={CONFIG.SESSION_OPTIONS_MINS}
+                        selectedIndex={timeIndex}
+                        onSelect={setTimeIndex}
+                        unit="min"
+                        setHomeScrollEnabled={setHomeScrollEnabled}
+                    />
+
+                    {/* Difficulty Pill Selector Inline (Hidden for Checkin) */}
+                    {sessionMode !== 'checkin' && (
+                        <View style={styles.diffSelectorContainer}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.diffScroll}>
+                                {CONFIG.DIFFICULTIES.map((diff, i) => (
+                                    <TouchableOpacity key={i} style={[styles.diffPill, diffIndex === i && styles.diffPillActive]} onPress={() => setDiffIndex(i)}>
+                                        <Text style={[styles.diffPillText, diffIndex === i && styles.diffPillTextActive]}>{diff.label}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
+                </View>
             </View>
 
-            <View style={{ flex: 1, justifyContent: 'flex-start', paddingTop: 20 }}>
-                {/* Center Dial for Time */}
-                <Text style={[commonStyles.sectionTitle, { marginTop: 0, textAlign: 'center', marginLeft: 0 }]}>Duration</Text>
-                <TickDial
-                    data={CONFIG.SESSION_OPTIONS_MINS}
-                    selectedIndex={timeIndex}
-                    onSelect={setTimeIndex}
-                    unit="min"
-                    setHomeScrollEnabled={setHomeScrollEnabled}
-                />
-            </View>
-
-            {/* Bottom Docked Anchor */}
-            <View style={[commonStyles.bottomDock, { paddingHorizontal: 0, backgroundColor: theme.colors.background }]}>
-                {/* Difficulty Grid */}
-                <Text style={[commonStyles.sectionTitle, { marginTop: 0, marginBottom: 8 }]}>Difficulty</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, gap: 8, paddingBottom: 15, minWidth: '100%', justifyContent: 'center' }}>
-                    {CONFIG.DIFFICULTIES.map((diff, i) => (
-                        <TouchableOpacity key={i} style={[commonStyles.card, { padding: 10, flex: 1, alignItems: 'center' }, diffIndex === i && commonStyles.cardActive]} onPress={() => setDiffIndex(i)}>
-                            <Text style={[commonStyles.cardTitle, { fontSize: 13, textAlign: 'center' }, diffIndex === i && commonStyles.cardTitleActive]}>{diff.label}</Text>
-                            <Text style={[commonStyles.cardDesc, { fontSize: 10, textAlign: 'center' }]}>{diff.desc}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-                <View style={{ paddingHorizontal: 20 }}>
-                    <TouchableOpacity style={[commonStyles.dockedStartBtn, { paddingVertical: 14 }]} onPress={handleStart}>
-                        <Text style={commonStyles.dockedStartBtnText}>Start</Text>
+            {/* Bottom Glass Navigation Dock */}
+            <View style={styles.bottomDockContainer}>
+                {/* Massive Start Pill Overlapping the dock */}
+                <View style={styles.massiveStartContainer}>
+                    <TouchableOpacity style={styles.massiveStartBtn} onPress={handleStart}>
+                        <Text style={styles.massiveStartBtnText}>
+                            Start Writing
+                        </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={{ position: 'absolute', bottom: -5, right: 15 }} onPress={() => setShowVersionHistory(true)}>
-                        <Text style={[commonStyles.versionText, { fontSize: 10, opacity: 0.5 }]}>{APP_VERSION}</Text>
+                </View>
+
+                {/* Tide-style NavBar Ribbon */}
+                <View style={styles.navRibbonWrapper}>
+                    <LinearGradient colors={['rgba(30,30,30,0.8)', 'rgba(0,0,0,1)']} style={StyleSheet.absoluteFillObject} />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navRibbonScroll}>
+                        <TouchableOpacity style={[styles.navItem, sessionMode === 'journal' && styles.navItemActive]} onPress={() => { setSessionMode('journal'); setSelectedPersonId(null); }}>
+                            <MaterialCommunityIcons name="notebook-edit" size={26} color={sessionMode === 'journal' ? theme.colors.primaryAction : 'rgba(255,255,255,0.4)'} />
+                            <Text style={[styles.navText, sessionMode === 'journal' && styles.navTextActive]}>Journal</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.navItem, sessionMode === 'circles' && styles.navItemActive]} onPress={() => setSessionMode('circles')}>
+                            <MaterialCommunityIcons name="account-group" size={26} color={sessionMode === 'circles' ? theme.colors.primaryAction : 'rgba(255,255,255,0.4)'} />
+                            <Text style={[styles.navText, sessionMode === 'circles' && styles.navTextActive]}>Circles</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.navItem, sessionMode === 'checkin' && styles.navItemActive]} onPress={() => setSessionMode('checkin')}>
+                            <View style={(!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? styles.urgentGlowContainer : {}}>
+                                {(!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) && (
+                                    <View style={[styles.urgentDot, {top: 6, right: 6}]} />
+                                )}
+                                <MaterialCommunityIcons name="compass-outline" size={26} color={(!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? '#FFD700' : (sessionMode === 'checkin' ? '#FFF' : 'rgba(255,255,255,0.4)')} />
+                            </View>
+                            <Text style={[styles.navText, { color: (!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? '#FFD700' : (sessionMode === 'checkin' ? '#FFF' : 'rgba(255,255,255,0.4)'), marginTop: (!storage.lastReflectionDate || (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)) ? 2 : 0 }]}>Check-in</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                            style={styles.navItem} 
+                            onPress={() => {
+                                if (security.isNotesUnlocked) {
+                                    navigation.navigate('VisionBoard');
+                                } else {
+                                    Vibration.vibrate([0, 50, 100, 50]); // Error feeling buzz
+                                }
+                            }}
+                            onLongPress={async () => {
+                                if (security.isNotesUnlocked) {
+                                    security.lockAll();
+                                    Vibration.vibrate(50);
+                                } else {
+                                    const success = await security.unlockNotes();
+                                    if (success) Vibration.vibrate(50);
+                                }
+                            }}
+                        >
+                            <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={26} color={!security.isNotesUnlocked ? "rgba(255,100,100,0.8)" : "rgba(255,255,255,0.4)"} />
+                            <Text style={[styles.navText, !security.isNotesUnlocked && { color: 'rgba(255,100,100,0.8)' }]}>{!security.isNotesUnlocked ? '🔒 ' : ''}Vision</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                    <TouchableOpacity style={{ position: 'absolute', bottom: 10, right: 15 }} onPress={() => setShowVersionHistory(true)}>
+                        <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -388,59 +456,91 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                 </ScrollView>
             </SwipeableModal>
 
-            {/* Person Select Modal */}
-            <SwipeableModal
-                visible={showPersonSelect}
-                onClose={() => { setShowPersonSelect(false); setCircleSearch(''); }}
-                title="Select Person"
-                height={Dimensions.get('window').height * 0.55}
-                setHomeScrollEnabled={setHomeScrollEnabled}
-            >
-                <TextInput
-                    style={commonStyles.circleSearchInput}
-                    placeholder="Search by name..."
-                    placeholderTextColor={theme.colors.textMuted}
-                    value={circleSearch}
-                    onChangeText={setCircleSearch}
-                />
-
-                {circleSearch.length > 0 ? (
-                    <View style={{ height: 200, width: '100%' }}>
-                        <FlashList
-                            data={filteredPersons}
-                            renderItem={({ item: p }) => (
-                                <TouchableOpacity
-                                    style={[commonStyles.personSelectItem, selectedPersonId === p.id && commonStyles.personSelectItemActive]}
-                                    onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); }}
-                                >
-                                    <View style={commonStyles.personAvatar}>
-                                        <Text style={commonStyles.personAvatarText}>{p.name.charAt(0)}</Text>
-                                    </View>
-                                    <Text style={commonStyles.personSelectName}>{p.name}</Text>
-                                </TouchableOpacity>
-                            )}
-                            keyExtractor={(p) => p.id}
-                            keyboardShouldPersistTaps="handled"
-                            showsVerticalScrollIndicator={false}
-                            ListEmptyComponent={
-                                !showAddPerson ? (
-                                    <TouchableOpacity style={commonStyles.addPersonSuggestion} onPress={() => { setNewPersonName(circleSearch); setShowAddPerson(true); }}>
-                                        <Text style={commonStyles.addPersonSuggestionText}>+ Add "{circleSearch}"</Text>
-                                    </TouchableOpacity>
-                                ) : <></>
-                            }
-                        />
+            {/* Premium Full-Screen Person Select Modal */}
+            <Modal visible={showPersonSelect} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowPersonSelect(false); setCircleSearch(''); }}>
+                <View style={[styles.premiumPersonModal, { flex: 1 }]}>
+                    <LinearGradient colors={['#1e1e1e', '#000000']} style={StyleSheet.absoluteFillObject} />
+                    
+                    {/* Header */}
+                    <View style={styles.premiumPersonHeader}>
+                        <Text style={styles.premiumPersonTitle}>Select Circle</Text>
+                        <TouchableOpacity style={styles.premiumPersonCloseBtn} onPress={() => { setShowPersonSelect(false); setCircleSearch(''); }}>
+                            <MaterialCommunityIcons name="close" size={24} color="#FFF" />
+                        </TouchableOpacity>
                     </View>
-                ) : (
-                    <Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 20 }}>
-                        Start typing to find or create a circle.
-                    </Text>
-                )}
 
-                <TouchableOpacity style={[commonStyles.addPersonFloatBtn, { marginTop: 10, marginBottom: 4 }]} onPress={() => setShowAddPerson(true)}>
-                    <Text style={commonStyles.addPersonFloatBtnText}>+ Create New Circle</Text>
-                </TouchableOpacity>
-            </SwipeableModal>
+                    {/* Content Area with Keyboard avoidance */}
+                    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                        
+                        {/* Search Input */}
+                        <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
+                            <View style={styles.premiumSearchBox}>
+                                <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textMuted} style={{ marginRight: 10 }} />
+                                <TextInput
+                                    style={styles.premiumSearchInput}
+                                    placeholder="Search your circles..."
+                                    placeholderTextColor={theme.colors.textMuted}
+                                    value={circleSearch}
+                                    onChangeText={setCircleSearch}
+                                    keyboardAppearance="dark"
+                                    autoCorrect={false}
+                                />
+                                {circleSearch.length > 0 && (
+                                    <TouchableOpacity onPress={() => setCircleSearch('')}>
+                                        <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </View>
+
+                        {/* List */}
+                        <View style={{ flex: 1, width: '100%' }}>
+                            {filteredPersons.length > 0 ? (
+                                <FlashList
+                                    data={filteredPersons}
+                                    renderItem={({ item: p }) => (
+                                        <TouchableOpacity
+                                            style={styles.premiumPersonItem}
+                                            onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); setCircleSearch(''); }}
+                                        >
+                                            <View style={styles.premiumPersonAvatar}>
+                                                <Text style={styles.premiumPersonAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
+                                            </View>
+                                            <Text style={styles.premiumPersonName}>{p.name}</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                    keyExtractor={(p) => p.id}
+                                    keyboardShouldPersistTaps="handled"
+                                    keyboardDismissMode="on-drag"
+                                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+                                />
+                            ) : (
+                                <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' }}>
+                                    <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textMuted} style={{ marginBottom: 15 }} />
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
+                                        {circleSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
+                                    </Text>
+                                    
+                                    {circleSearch.length > 0 && (
+                                        <TouchableOpacity style={styles.premiumCreateBtn} onPress={() => { setNewPersonName(circleSearch); setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
+                                            <MaterialCommunityIcons name="plus" size={20} color="#000" />
+                                            <Text style={styles.premiumCreateBtnText}>Create "{circleSearch}"</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </ScrollView>
+                            )}
+                        </View>
+                        
+                        {/* Always visible float button if empty search query */}
+                        {circleSearch.length === 0 && (
+                            <TouchableOpacity style={styles.premiumFloatCreateBtn} onPress={() => { setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
+                                <MaterialCommunityIcons name="plus" size={24} color="#000" />
+                                <Text style={styles.premiumFloatCreateBtnText}>New Circle</Text>
+                            </TouchableOpacity>
+                        )}
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
 
             {/* Add Person Modal */}
             <Modal visible={showAddPerson} transparent animationType="fade">
@@ -488,3 +588,189 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
         </View>
     );
 };
+
+const styles = StyleSheet.create({
+    heroWidgetContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 200, // Exact height prevents jumps
+        marginTop: 5
+    },
+    heroTitle: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#FFF',
+        fontFamily: theme.typography.fontFamily,
+        letterSpacing: -0.5,
+        marginBottom: 6
+    },
+    heroSubtitle: {
+        fontSize: 16,
+        color: 'rgba(255,255,255,0.6)',
+        fontFamily: theme.typography.fontFamily
+    },
+    personSmallSelectBtn: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 5
+    },
+    personSmallSelectText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '600'
+    },
+    quickNoteBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.primaryAction,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 15,
+        gap: 6
+    },
+    quickNoteText: {
+        color: theme.colors.background,
+        fontWeight: 'bold',
+        fontSize: 13
+    },
+    diffSelectorContainer: {
+        width: '100%',
+        alignItems: 'center',
+        marginTop: 10,
+        marginBottom: 35
+    },
+    diffScroll: {
+        gap: 8,
+        paddingHorizontal: 20
+    },
+    diffPill: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    diffPillActive: {
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderColor: 'rgba(255,255,255,0.4)'
+    },
+    diffPillText: {
+        color: 'rgba(255,255,255,0.5)',
+        fontSize: 13,
+        fontWeight: '600'
+    },
+    diffPillTextActive: {
+        color: '#FFF'
+    },
+    bottomDockContainer: {
+        position: 'absolute',
+        bottom: 0,
+        width: '100%',
+        height: 140,
+        justifyContent: 'flex-end'
+    },
+    massiveStartContainer: {
+        position: 'absolute',
+        top: -30,
+        width: '100%',
+        alignItems: 'center',
+        zIndex: 10
+    },
+    massiveStartBtn: {
+        backgroundColor: '#FFF',
+        paddingHorizontal: 40,
+        paddingVertical: 18,
+        borderRadius: 30,
+        shadowColor: '#FFF',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 15,
+        elevation: 10
+    },
+    massiveStartBtnText: {
+        color: '#000',
+        fontSize: 18,
+        fontWeight: '900',
+        letterSpacing: 1
+    },
+    navRibbonWrapper: {
+        width: '100%',
+        height: 100,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.05)'
+    },
+    navRibbonScroll: {
+        flexGrow: 1,
+        paddingHorizontal: 15,
+        justifyContent: 'space-evenly',
+        alignItems: 'center',
+        paddingBottom: 20
+    },
+    navItem: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6
+    },
+    navItemActive: {
+        opacity: 1
+    },
+    navText: {
+        fontSize: 11,
+        color: 'rgba(255,255,255,0.4)',
+        fontWeight: '700'
+    },
+    navTextActive: {
+        color: '#FFF'
+    },
+    urgentDot: {
+        position: 'absolute',
+        top: -2,
+        right: -4,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#FFD700',
+        zIndex: 2,
+        shadowColor: '#FFD700',
+        shadowOpacity: 0.8,
+        shadowRadius: 5
+    },
+    urgentGlowContainer: {
+        backgroundColor: 'rgba(255, 215, 0, 0.1)',
+        borderRadius: 20,
+        padding: 8,
+        shadowColor: '#FFD700',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 15,
+        elevation: 10,
+        marginBottom: -6,
+        marginTop: -8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 215, 0, 0.3)'
+    },
+    // Inline Checkin specific styles
+    glowRing: { width: 110, height: 110, borderRadius: 55, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 30, elevation: 15 },
+    iconCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)' },
+    scoreText: { fontSize: 16, fontWeight: '900', marginTop: 15, letterSpacing: 2, fontFamily: theme.typography.fontFamily },
+
+    // Premium UI Overrides for Select Person
+    premiumPersonModal: { paddingTop: Platform.OS === 'ios' ? 20 : 0 },
+    premiumPersonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, paddingTop: 20, paddingBottom: 25 },
+    premiumPersonTitle: { color: '#FFF', fontSize: 24, fontWeight: '900', letterSpacing: 0.5 },
+    premiumPersonCloseBtn: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 8, borderRadius: 20 },
+    premiumSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, paddingHorizontal: 15, height: 55, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    premiumSearchInput: { flex: 1, color: '#FFF', fontSize: 16, paddingVertical: 0 },
+    premiumPersonItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+    premiumPersonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    premiumPersonAvatarText: { color: theme.colors.primaryAction, fontSize: 18, fontWeight: '800' },
+    premiumPersonName: { color: '#FFF', fontSize: 17, fontWeight: '600' },
+    premiumCreateBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30 },
+    premiumCreateBtnText: { color: '#000', fontSize: 16, fontWeight: 'bold', marginLeft: 6 },
+    premiumFloatCreateBtn: { position: 'absolute', bottom: Platform.OS === 'ios' ? 40 : 20, right: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingHorizontal: 20, paddingVertical: 14, borderRadius: 30, shadowColor: '#FFF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
+    premiumFloatCreateBtnText: { color: '#000', fontSize: 15, fontWeight: 'bold', marginLeft: 6 }
+});
