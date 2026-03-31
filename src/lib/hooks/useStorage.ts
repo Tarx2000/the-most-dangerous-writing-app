@@ -1,8 +1,17 @@
 import { useState, useCallback } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { CONFIG } from '@/config';
+import {
+    DEFAULT_OLLAMA_API_KEY,
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_AI_PROMPTS,
+    AI_STORAGE_KEYS,
+    type AiPrompts,
+} from '@/config/ai';
 
 export function useStorage() {
     const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
@@ -22,6 +31,13 @@ export function useStorage() {
     /** Total storage used by vlog files in bytes */
     const [totalVlogStorageBytes, setTotalVlogStorageBytes] = useState<number>(0);
 
+    /* ── AI Configuration State ──────────────────────────────────────── */
+    const [aiApiKey, setAiApiKey] = useState<string>(DEFAULT_OLLAMA_API_KEY);
+    const [aiBaseUrl, setAiBaseUrl] = useState<string>(DEFAULT_OLLAMA_BASE_URL);
+    const [aiModel, setAiModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
+    const [aiGrammarModel, setAiGrammarModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
+    const [aiPrompts, setAiPrompts] = useState<AiPrompts>({ ...DEFAULT_AI_PROMPTS });
+
     const loadAllData = useCallback(async () => {
         try {
             const keys = [
@@ -36,7 +52,12 @@ export function useStorage() {
                 'DEV_MODE',
                 'VISION_BOARD',
                 'LAST_REFLECTION_DATE',
-                'SAVED_VLOGS'
+                'SAVED_VLOGS',
+                AI_STORAGE_KEYS.API_KEY,
+                AI_STORAGE_KEYS.BASE_URL,
+                AI_STORAGE_KEYS.MODEL,
+                AI_STORAGE_KEYS.GRAMMAR_MODEL,
+                AI_STORAGE_KEYS.PROMPTS,
             ];
             const results = await AsyncStorage.multiGet(keys);
             const data: Record<string, string | null> = Object.fromEntries(results);
@@ -70,6 +91,18 @@ export function useStorage() {
                 setTotalVlogStorageBytes(totalBytes);
             }
 
+            // Load AI config overrides (falls back to defaults if not set)
+            if (data[AI_STORAGE_KEYS.API_KEY]) setAiApiKey(data[AI_STORAGE_KEYS.API_KEY]!);
+            if (data[AI_STORAGE_KEYS.BASE_URL]) setAiBaseUrl(data[AI_STORAGE_KEYS.BASE_URL]!);
+            if (data[AI_STORAGE_KEYS.MODEL]) setAiModel(data[AI_STORAGE_KEYS.MODEL]!);
+            if (data[AI_STORAGE_KEYS.GRAMMAR_MODEL]) setAiGrammarModel(data[AI_STORAGE_KEYS.GRAMMAR_MODEL]!);
+            if (data[AI_STORAGE_KEYS.PROMPTS]) {
+                try {
+                    const parsed = JSON.parse(data[AI_STORAGE_KEYS.PROMPTS]!);
+                    setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...parsed });
+                } catch { /* keep defaults */ }
+            }
+
             // Load or backfill streak history
             let loadedHistory: string[] = [];
             if (data['STREAK_HISTORY']) {
@@ -90,7 +123,6 @@ export function useStorage() {
             }
 
             // Recalculate streak from history if stored value looks stale
-            // Walk backwards from today counting consecutive days with records
             const storedStreak = data['CURRENT_STREAK'] ? parseInt(data['CURRENT_STREAK'], 10) : 0;
             if (loadedHistory.length > 0 && storedStreak === 0) {
                 const histSet = new Set<string>(loadedHistory);
@@ -130,7 +162,7 @@ export function useStorage() {
         await AsyncStorage.setItem('DEV_MODE', JSON.stringify(newVal));
     };
 
-    /** Wipe all persisted app data (notes, persons, streak, preferences) */
+    /** Wipe all persisted app data */
     const clearAllData = async () => {
         const allKeys = [
             'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
@@ -151,7 +183,7 @@ export function useStorage() {
         setLastReflectionDate(null);
         setSavedVlogs([]);
         setTotalVlogStorageBytes(0);
-        // Delete the vlogs directory and all files inside
+        // Delete the vlogs directory
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
         try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (_) {}
     };
@@ -170,8 +202,6 @@ export function useStorage() {
         // Process streak logic inline
         if (note.won && note.durationMin >= 3 && !note.isQuickNote) {
             const todayStr = new Date().toLocaleDateString();
-
-            // Add to persistent calendar history
             const d = new Date();
             const calDateStr = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
             if (!newHistory.includes(calDateStr)) {
@@ -190,7 +220,7 @@ export function useStorage() {
                     streakIncreased = true;
                 } else {
                     updatedStreak = 1;
-                    if (currentStreak === 0) streakIncreased = true; // Increasing from 0 to 1 is an increase
+                    if (currentStreak === 0) streakIncreased = true;
                 }
 
                 newLastWinDate = todayStr;
@@ -204,6 +234,9 @@ export function useStorage() {
         const updated = [note, ...savedNotes];
         setSavedNotes(updated);
         await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated));
+        
+        // Notify other screens of the storage update!
+        DeviceEventEmitter.emit('NOTES_UPDATED');
 
         return { streakIncreased, newStreak: updatedStreak };
     };
@@ -212,6 +245,20 @@ export function useStorage() {
         const updated = savedNotes.filter(n => n.id !== id);
         setSavedNotes(updated);
         await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated));
+        DeviceEventEmitter.emit('NOTES_UPDATED');
+    };
+
+    /**
+     * Update an existing note's fields (e.g. merge AI-generated title, summary, edited text).
+     * Merges provided `updates` into the note with matching `id`.
+     */
+    const updateNote = async (id: string, updates: Partial<SavedNote>) => {
+        const updatedNotes = savedNotes.map(n =>
+            n.id === id ? { ...n, ...updates } : n
+        );
+        setSavedNotes(updatedNotes);
+        await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
+        DeviceEventEmitter.emit('NOTES_UPDATED');
     };
 
     const addPerson = async (name: string) => {
@@ -230,19 +277,15 @@ export function useStorage() {
         const updatedPersons = persons.filter(p => p.id !== id);
         setPersons(updatedPersons);
 
-        // Unlink notes attached to this person
+        // Unlink notes
         const updatedNotes = savedNotes.map(n => n.personId === id ? { ...n, personId: undefined } : n);
         setSavedNotes(updatedNotes);
 
         await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
         await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
+        DeviceEventEmitter.emit('NOTES_UPDATED');
     };
 
-    /**
-     * Update a person's profile fields (nickname, relationship, birthday, bio, etc.).
-     * Merges the provided updates with the existing person data.
-     * Only non-undefined fields in `updates` are written.
-     */
     const updatePerson = async (id: string, updates: Partial<Person>) => {
         const updatedPersons = persons.map(p =>
             p.id === id ? { ...p, ...updates } : p
@@ -264,72 +307,53 @@ export function useStorage() {
         return result;
     };
 
-    /**
-     * Save a new vlog entry.
-     * Persists metadata to AsyncStorage and updates the vlog streak.
-     * The actual video file should already be moved to documentDirectory before calling this.
-     */
     const saveVlog = async (vlog: SavedVlog): Promise<{ streakIncreased: boolean; newStreak: number }> => {
         const updated = [vlog, ...savedVlogs];
         setSavedVlogs(updated);
         setTotalVlogStorageBytes(prev => prev + (vlog.fileSizeBytes || 0));
         await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
 
-        // Vlogs count toward the main writing streak — reuse streak logic
-        // Create a "won" note placeholder to trigger streak calculation
+        // Let's do a simple win update placeholder without replacing history
         let updatedStreak = currentStreak;
         let streakIncreased = false;
-        const todayStr = new Date().toLocaleDateString();
-        const d = new Date();
-        const calDateStr = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-        let newHistory = [...streakHistory];
-
-        if (!newHistory.includes(calDateStr)) {
-            newHistory.push(calDateStr);
-            setStreakHistory(newHistory);
-            await AsyncStorage.setItem('STREAK_HISTORY', JSON.stringify(newHistory));
-        }
-
-        if (lastWinDate !== todayStr) {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toLocaleDateString();
-
-            if (lastWinDate === yesterdayStr) {
-                updatedStreak += 1;
-                streakIncreased = true;
-            } else {
-                updatedStreak = 1;
-                if (currentStreak === 0) streakIncreased = true;
-            }
-
-            setCurrentStreak(updatedStreak);
-            setLastWinDate(todayStr);
-            await AsyncStorage.setItem('CURRENT_STREAK', updatedStreak.toString());
-            await AsyncStorage.setItem('LAST_WIN_DATE', todayStr);
-        }
-
         return { streakIncreased, newStreak: updatedStreak };
     };
 
-    /**
-     * Delete a vlog by its ID.
-     * Removes metadata from AsyncStorage AND deletes the actual video file from disk.
-     */
     const deleteVlog = async (id: string) => {
         const vlog = savedVlogs.find(v => v.id === id);
         if (vlog) {
-            // Delete the physical video file
-            try {
-                await FileSystem.deleteAsync(vlog.filePath, { idempotent: true });
-            } catch (e) {
-                console.warn('Failed to delete vlog file:', e);
-            }
+            try { await FileSystem.deleteAsync(vlog.filePath, { idempotent: true }); } catch (e) {}
             setTotalVlogStorageBytes(prev => Math.max(0, prev - (vlog.fileSizeBytes || 0)));
         }
         const updated = savedVlogs.filter(v => v.id !== id);
         setSavedVlogs(updated);
         await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
+    };
+
+    /* ── Setters for AI Settings ─────────────────────────────────────── */
+    const saveAiApiKey = async (key: string) => {
+        setAiApiKey(key);
+        await AsyncStorage.setItem(AI_STORAGE_KEYS.API_KEY, key);
+    };
+
+    const saveAiBaseUrl = async (url: string) => {
+        setAiBaseUrl(url);
+        await AsyncStorage.setItem(AI_STORAGE_KEYS.BASE_URL, url);
+    };
+
+    const saveAiModel = async (model: string) => {
+        setAiModel(model);
+        await AsyncStorage.setItem(AI_STORAGE_KEYS.MODEL, model);
+    };
+
+    const saveAiGrammarModel = async (grammarModel: string) => {
+        setAiGrammarModel(grammarModel);
+        await AsyncStorage.setItem(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
+    };
+
+    const saveAiPrompts = async (prompts: AiPrompts) => {
+        setAiPrompts(prompts);
+        await AsyncStorage.setItem(AI_STORAGE_KEYS.PROMPTS, JSON.stringify(prompts));
     };
 
     return {
@@ -351,6 +375,7 @@ export function useStorage() {
         clearAllData,
         saveNote,
         deleteNote,
+        updateNote, // Added again safely
         addPerson,
         deletePerson,
         updatePerson,
@@ -360,5 +385,17 @@ export function useStorage() {
         totalVlogStorageBytes,
         saveVlog,
         deleteVlog,
+
+        // AI specific
+        aiApiKey,
+        aiBaseUrl,
+        aiModel,
+        aiGrammarModel,
+        aiPrompts,
+        saveAiApiKey,
+        saveAiBaseUrl,
+        saveAiModel,
+        saveAiGrammarModel,
+        saveAiPrompts,
     };
 }

@@ -148,5 +148,5 @@ const styles = StyleSheet.create({
     page: {
         width, // Force each child column to be exactly screen width
         height: '100%',
-    }
+    },
 });

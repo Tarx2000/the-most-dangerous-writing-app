@@ -46,6 +46,14 @@ export interface SavedNote {
     won: boolean;
     personId?: string;
     isQuickNote?: boolean;
+    /** AI-generated short title summarizing the entry (5-10 words) */
+    aiTitle?: string;
+    /** AI-generated bullet-point summary (2-5 key takeaways) */
+    aiSummary?: string[];
+    /** The AI model used to generate the summary */
+    aiModelUsed?: string;
+    /** Flag indicating AI processing is currently in progress */
+    aiProcessing?: boolean;
 }
 
 export type SortOption = 'newest' | 'oldest' | 'longest' | 'shortest' | 'longest-text';

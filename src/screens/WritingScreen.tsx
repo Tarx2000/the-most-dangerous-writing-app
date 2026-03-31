@@ -70,19 +70,18 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             durationMin: isQuickNote ? 0 : sessionTimeSelected / 60,
             won: noteWon,
             ...(mode === 'circles' && personId ? { personId } : {}),
-            isQuickNote // We can optionally add this to the note data struct but durationMin=0 essentially serves that purpose
+            isQuickNote
         };
 
         const result = await saveNote(newNote);
-        navigation.reset({
-            index: 0,
-            routes: [{
-                name: 'Home',
-                params: {
-                    streakIncreased: result.streakIncreased,
-                    newStreak: result.newStreak
-                }
-            }]
+
+        // Navigate to PostWriting AI review screen — AI enrichment happens there
+        // We use 'navigate' instead of 'reset' so the WritingScreen stays in the background
+        // beneath the transparent modal presentation of PostWriting.
+        navigation.navigate('PostWriting', {
+            noteId: newNote.id,
+            streakIncreased: result.streakIncreased,
+            newStreak: result.newStreak,
         });
     };
 

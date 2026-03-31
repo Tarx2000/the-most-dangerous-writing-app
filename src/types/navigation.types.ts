@@ -18,4 +18,11 @@ export type RootStackParamList = {
     VlogRecording: {
         timeIndex: number;
     };
+    /** Post-writing AI review screen — enriches a saved note with AI title, summary, grammar */
+    PostWriting: {
+        noteId: string;
+        /** Forward streak params to Home when closing */
+        streakIncreased?: boolean;
+        newStreak?: number;
+    };
 };

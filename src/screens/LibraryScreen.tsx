@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -13,6 +13,8 @@ import {
     Animated,
     PanResponder,
     Dimensions,
+    ActivityIndicator,
+    DeviceEventEmitter,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { BlurView } from 'expo-blur';
@@ -27,6 +29,8 @@ import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarG
 import { SortOption, SavedNote, Person } from '@/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { generateTitle, generateSummary } from '@/lib/aiService';
+import { RichText } from '@/components/ui/RichText';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -65,6 +69,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
     const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
     /** Person whose profile modal is currently open */
     const [profilePerson, setProfilePerson] = useState<Person | null>(null);
+    /** ID of note currently being AI-regenerated (shows loading spinner) */
+    const [aiRegeneratingId, setAiRegeneratingId] = useState<string | null>(null);
 
     const storage = useStorage();
     const security = useSecurity();
@@ -97,6 +103,10 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
 
     useEffect(() => {
         storage.loadAllData();
+        const sub = DeviceEventEmitter.addListener('NOTES_UPDATED', () => {
+            storage.loadAllData();
+        });
+        return () => sub.remove();
     }, []);
 
     const getGroupedNotes = (circleId?: string | null) => {
@@ -150,6 +160,49 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
         if (s <= 9) return { icon: 'emoticon-excited-outline' as const, color: '#66ffcc' };
         return { icon: 'emoticon-cool-outline' as const, color: '#00ccff' };
     };
+
+    /**
+     * Regenerate AI title + summary for a note that doesn't have AI data yet.
+     * Called via the small regenerate button in the note viewer.
+     */
+    const handleRegenerateAi = useCallback(async (note: SavedNote) => {
+        if (aiRegeneratingId) return; // Already regenerating
+        setAiRegeneratingId(note.id);
+        Vibration.vibrate(30);
+
+        const aiConfig = {
+            apiKey: storage.aiApiKey,
+            baseUrl: storage.aiBaseUrl,
+            model: storage.aiModel,
+            prompts: storage.aiPrompts,
+        };
+
+        try {
+            const [title, summary] = await Promise.all([
+                generateTitle(note.text, aiConfig),
+                generateSummary(note.text, aiConfig),
+            ]);
+
+            await storage.updateNote(note.id, { 
+                aiTitle: title, 
+                aiSummary: summary, 
+                aiModelUsed: storage.aiModel,
+                aiProcessing: false 
+            });
+
+            // Update the modal view to reflect changes
+            setViewNoteModal({ 
+                ...note, 
+                aiTitle: title, 
+                aiSummary: summary, 
+                aiModelUsed: storage.aiModel 
+            });
+        } catch (err) {
+            console.warn('[AI] Regeneration failed:', err);
+        } finally {
+            setAiRegeneratingId(null);
+        }
+    }, [aiRegeneratingId, storage]);
 
     return (
         <View style={commonStyles.libraryContainer}>
@@ -357,8 +410,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                     <View style={styles.cardPopupBackdrop}>
                         <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setViewNoteModal(null)} />
                         <Animated.View style={[styles.cardPopupContainer, { transform: [{ translateY: panY }] }]}>
-                            {/* Glass background */}
-                            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+                            {/* Solid background */}
                             <View style={styles.cardPopupTint} />
 
                             {/* Swipeable Header Zone */}
@@ -366,9 +418,13 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 {/* Drag handle */}
                                 <View style={styles.cardPopupHandle} />
 
-                                {/* Header */}
+                                {/* Header — AI Title + Date */}
                                 <View style={styles.cardPopupHeader}>
                                     <View style={{ flex: 1 }}>
+                                        {/* AI Title as primary heading */}
+                                        {viewNoteModal.aiTitle ? (
+                                            <RichText style={styles.premiumNoteAiTitle} numberOfLines={2} text={viewNoteModal.aiTitle} />
+                                        ) : null}
                                         <Text style={styles.premiumNoteDate}>{viewNoteModal.dateStr}</Text>
                                         <Text style={styles.premiumNoteMeta}>
                                             {viewNoteModal.text.split(/\s+/).filter(Boolean).length} words • {viewNoteModal.durationMin > 0 ? `${viewNoteModal.durationMin} min` : 'Quick Note'}
@@ -382,15 +438,69 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
 
                             {/* Body */}
                             <ScrollView style={styles.cardPopupScroll} showsVerticalScrollIndicator={false}>
+                                {/* AI Summary Card */}
+                                {viewNoteModal.aiSummary && viewNoteModal.aiSummary.length > 0 && (
+                                    <View style={styles.aiSummaryCard}>
+                                        <View style={styles.aiSummaryHeader}>
+                                            <MaterialCommunityIcons name="brain" size={16} color={theme.colors.primaryAction} />
+                                            <Text style={styles.aiSummaryHeaderText}>AI Summary</Text>
+                                        </View>
+                                        {viewNoteModal.aiSummary.map((bullet, idx) => (
+                                            <View key={idx} style={styles.aiSummaryBulletRow}>
+                                                <Text style={styles.aiSummaryBulletDot}>•</Text>
+                                                <RichText style={styles.aiSummaryBulletText} text={bullet} />
+                                            </View>
+                                        ))}
+                                        {viewNoteModal.aiModelUsed && (
+                                            <Text style={{ textAlign: 'right', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 8 }}>
+                                                {viewNoteModal.aiModelUsed}
+                                            </Text>
+                                        )}
+                                    </View>
+                                )}
+
+                                {/* Regenerate AI button — shown when note has no AI data */}
+                                {!viewNoteModal.aiTitle && (!viewNoteModal.aiSummary || viewNoteModal.aiSummary.length === 0) && !viewNoteModal.aiProcessing && (
+                                    <TouchableOpacity
+                                        style={styles.regenerateBtn}
+                                        onPress={() => handleRegenerateAi(viewNoteModal)}
+                                        disabled={!!aiRegeneratingId}
+                                    >
+                                        {aiRegeneratingId === viewNoteModal.id ? (
+                                            <ActivityIndicator size="small" color={theme.colors.primaryAction} />
+                                        ) : (
+                                            <>
+                                                <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
+                                                <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+
                                 <Text style={styles.premiumNoteBody} selectable={true}>{viewNoteModal.text}</Text>
                             </ScrollView>
 
-                            {/* Footer — Delete */}
+                            {/* Footer — Delete + Regenerate */}
                             <View style={styles.premiumNoteFooter}>
-                                <TouchableOpacity style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
-                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
-                                    <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
-                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <TouchableOpacity style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
+                                        <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
+                                        <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
+                                    </TouchableOpacity>
+                                    {(viewNoteModal.aiTitle || (viewNoteModal.aiSummary && viewNoteModal.aiSummary.length > 0)) && (
+                                        <TouchableOpacity
+                                            style={styles.regenerateSmallBtn}
+                                            onPress={() => handleRegenerateAi(viewNoteModal)}
+                                            disabled={!!aiRegeneratingId}
+                                        >
+                                            {aiRegeneratingId === viewNoteModal.id ? (
+                                                <ActivityIndicator size="small" color={theme.colors.textMuted} />
+                                            ) : (
+                                                <MaterialCommunityIcons name="refresh" size={16} color={theme.colors.textMuted} />
+                                            )}
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                             </View>
                         </Animated.View>
                     </View>
@@ -638,7 +748,7 @@ const styles = StyleSheet.create({
     },
     cardPopupTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(18, 18, 18, 0.82)',
+        backgroundColor: '#111',
     },
     cardPopupHandle: {
         width: 40,
@@ -718,5 +828,86 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginLeft: 8,
         fontSize: 14
-    }
+    },
+
+    /* ── AI Title in Note Viewer ──────────────────────────────────── */
+    premiumNoteAiTitle: {
+        color: '#FFF',
+        fontSize: 22,
+        fontWeight: '900',
+        lineHeight: 28,
+        marginBottom: 6,
+        letterSpacing: -0.3,
+    },
+
+    /* ── AI Summary Card ─────────────────────────────────────────── */
+    aiSummaryCard: {
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        borderRadius: 18,
+        padding: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    aiSummaryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+    },
+    aiSummaryHeaderText: {
+        color: theme.colors.primaryAction,
+        fontSize: 13,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    aiSummaryBulletRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 8,
+        marginBottom: 6,
+    },
+    aiSummaryBulletDot: {
+        color: theme.colors.primaryAction,
+        fontSize: 16,
+        fontWeight: 'bold',
+        lineHeight: 22,
+    },
+    aiSummaryBulletText: {
+        color: 'rgba(255, 255, 255, 0.85)',
+        fontSize: 14,
+        lineHeight: 22,
+        flex: 1,
+    },
+
+    /* ── Regenerate AI Button ─────────────────────────────────────── */
+    regenerateBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: 'rgba(255, 42, 42, 0.06)',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 42, 42, 0.12)',
+        marginBottom: 16,
+    },
+    regenerateBtnText: {
+        color: theme.colors.primaryAction,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    /** Small icon-only regenerate button for the footer (when AI data already exists) */
+    regenerateSmallBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
 });

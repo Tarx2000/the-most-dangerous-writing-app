@@ -137,7 +137,7 @@ export const commonStyles = StyleSheet.create({
     groupContainer: { marginBottom: 30 },
     groupTitle: { color: theme.colors.textPrimary, fontSize: 18, fontWeight: theme.typography.weightBold, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: theme.colors.glassBorder, paddingBottom: 8 },
     noteCard: {
-        backgroundColor: theme.colors.glassBackground,
+        backgroundColor: '#111',
         padding: 16,
         borderRadius: theme.borderRadius.md,
         marginBottom: 15,

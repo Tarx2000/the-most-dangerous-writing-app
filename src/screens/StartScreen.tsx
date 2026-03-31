@@ -13,13 +13,14 @@ import {
     PanResponder,
     Dimensions,
     Vibration,
-    StyleSheet
+    StyleSheet,
+    ActivityIndicator
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '@/types/navigation.types';;
+import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
 import { CONFIG, APP_VERSION, VERSION_HISTORY } from '@/config';
 import { CarouselSelector } from '@/components/ui/CarouselSelector';
@@ -30,9 +31,13 @@ import { StreakPopup } from '@/components/features/writing/StreakPopup';
 import { TickDial } from '@/components/ui/TickDial';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
-import { Person } from '@/types';;
+import { Person } from '@/types';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { theme } from '@/styles/theme';
+import { pingServer, generateTitle, generateSummary } from '@/lib/aiService';
+import { DEFAULT_AI_PROMPTS } from '@/config/ai';
+import { useAiStatus } from '@/lib/hooks/useAiStatus';
+import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
 
 type Props = {
     navigation: any;
@@ -57,6 +62,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     const [showVersionHistory, setShowVersionHistory] = useState(false);
     const [showPersonSelect, setShowPersonSelect] = useState(false);
     const [showStreakPopup, setShowStreakPopup] = useState(false);
+    const [showBenchmarkModal, setShowBenchmarkModal] = useState(false);
     const [newStreakParam, setNewStreakParam] = useState(0);
     const [devModeUnlocked, setDevModeUnlocked] = useState(false);
     /** Toast message for dev mode unlock feedback */
@@ -65,9 +71,34 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     /** Ref for the 5-second long-press timer on the settings button */
     const settingsLongPressTimer = useRef<NodeJS.Timeout | null>(null);
 
+    // AI Batch Processing State
+    const [batchRunning, setBatchRunning] = useState(false);
+    const batchCancelRef = useRef(false);
+    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+    const [forceBatchOverwrite, setForceBatchOverwrite] = useState(false);
+    const [choosingModelFor, setChoosingModelFor] = useState<'summary' | 'grammar' | null>(null);
+    const [isCancelingBatch, setIsCancelingBatch] = useState(false);
+
+    const AI_MODELS = [
+        'kimi-k2.5:cloud', 
+        'qwen3.5:397b-cloud', 
+        'glm-5:cloud', 
+        'minimax-m2.7:cloud', 
+        'nemotron-3-super:cloud'
+    ];
+
     const [circleSearch, setCircleSearch] = useState('');
     const [showAddPerson, setShowAddPerson] = useState(false);
     const [newPersonName, setNewPersonName] = useState('');
+
+    const storage = useStorage();
+    const security = useSecurity();
+
+    /** AI server health check — green/red indicator */
+    const { isOnline: aiOnline } = useAiStatus({
+        apiKey: storage.aiApiKey,
+        baseUrl: storage.aiBaseUrl,
+    });
 
     const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
     const isModalOpenRef = useRef(isModalOpen);
@@ -87,9 +118,6 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
             }
         })
     ).current;
-
-    const storage = useStorage();
-    const security = useSecurity();
 
     useEffect(() => {
         storage.loadAllData();
@@ -145,6 +173,69 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     const activeFont = CONFIG.FONTS[storage.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[storage.sizeIndex]?.value || 18;
 
+    // --- LOGIC: Handle Batch Processing ---------------------------------------
+    const handleBatchProcess = async () => {
+        if (batchRunning) {
+            setIsCancelingBatch(true);
+            batchCancelRef.current = true;
+            return;
+        }
+
+        const notesToProcess = forceBatchOverwrite 
+            ? storage.savedNotes 
+            : storage.savedNotes.filter(n => !n.aiTitle || (!n.aiSummary || n.aiSummary.length === 0) || !n.aiModelUsed);
+
+        if (notesToProcess.length === 0) {
+            alert('All entries are already fully processed by AI!');
+            return;
+        }
+
+        setBatchRunning(true);
+        batchCancelRef.current = false;
+        setBatchProgress({ current: 0, total: notesToProcess.length });
+
+        const aiConfig = {
+            apiKey: storage.aiApiKey,
+            baseUrl: storage.aiBaseUrl,
+            model: storage.aiModel,
+            prompts: storage.aiPrompts,
+        };
+
+        for (let i = 0; i < notesToProcess.length; i++) {
+            if (batchCancelRef.current) break;
+            const note = notesToProcess[i];
+            
+            try {
+                // Mark note as processing so Library shows the shimmer effect
+                await storage.updateNote(note.id, { aiProcessing: true });
+
+                const [title, summary] = await Promise.all([
+                    generateTitle(note.text, aiConfig),
+                    generateSummary(note.text, aiConfig),
+                ]);
+
+                await storage.updateNote(note.id, {
+                    aiTitle: title,
+                    aiSummary: summary,
+                    aiModelUsed: storage.aiModel,
+                    aiProcessing: false
+                });
+                
+                // Allow UI to breathe
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                setBatchProgress({ current: i + 1, total: notesToProcess.length });
+            } catch (err) {
+                console.warn('[AI Batch] Failed for note', note.id, err);
+                // Ensure note reverts out of processing state if it crashes
+                await storage.updateNote(note.id, { aiProcessing: false });
+            }
+        }
+
+        setBatchRunning(false);
+        setIsCancelingBatch(false);
+    };
+
     return (
         <View style={commonStyles.startContainer} {...panResponder.panHandlers}>
             <StatusBar barStyle="light-content" backgroundColor="#000000" />
@@ -190,28 +281,43 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={16} color={!security.isNotesUnlocked ? "rgba(255,100,100,0.8)" : theme.colors.textPrimary} style={{ marginRight: 4 }} />
                         <Text style={[commonStyles.iconButtonText, !security.isNotesUnlocked && { color: 'rgba(255,100,100,0.8)' }]}>{!security.isNotesUnlocked ? '🔒' : 'Vision'}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => setShowSettings(true)}
-                        onPressIn={() => {
-                            // Start 5s timer to unlock dev tools
-                            settingsLongPressTimer.current = setTimeout(() => {
-                                const newState = !devModeUnlocked;
-                                setDevModeUnlocked(newState);
-                                Vibration.vibrate(100);
-                                setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
-                                setTimeout(() => setDevToast(null), 2000);
-                            }, 5000);
-                        }}
-                        onPressOut={() => {
-                            if (settingsLongPressTimer.current) {
-                                clearTimeout(settingsLongPressTimer.current);
-                                settingsLongPressTimer.current = null;
-                            }
-                        }}
-                        style={commonStyles.iconButton}
-                    >
-                        <Text style={commonStyles.iconButtonText}>⚙️</Text>
-                    </TouchableOpacity>
+                    <View style={{ position: 'relative' }}>
+                        <TouchableOpacity
+                            onPress={() => setShowSettings(true)}
+                            onPressIn={() => {
+                                // Start 5s timer to unlock dev tools
+                                settingsLongPressTimer.current = setTimeout(() => {
+                                    const newState = !devModeUnlocked;
+                                    setDevModeUnlocked(newState);
+                                    Vibration.vibrate(100);
+                                    setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
+                                    setTimeout(() => setDevToast(null), 2000);
+                                }, 5000);
+                            }}
+                            onPressOut={() => {
+                                if (settingsLongPressTimer.current) {
+                                    clearTimeout(settingsLongPressTimer.current);
+                                    settingsLongPressTimer.current = null;
+                                }
+                            }}
+                            style={commonStyles.iconButton}
+                        >
+                            <Text style={commonStyles.iconButtonText}>⚙️</Text>
+                        </TouchableOpacity>
+                        
+                        {/* AI Status Indicator Dot */}
+                        <View style={{
+                            position: 'absolute',
+                            top: 0,
+                            right: 0,
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: aiOnline === null ? '#888' : aiOnline ? '#4ade80' : '#ff4d4d',
+                            borderWidth: 1,
+                            borderColor: '#000',
+                        }} />
+                    </View>
 
                 </View>
             </View>
@@ -395,6 +501,116 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         </View>
                     </View>
 
+                    {/* ── AI Settings Card ────────────────────────────────────── */}
+                    <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
+                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>AI Settings</Text>
+                        </View>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>Ollama Cloud API — KimiK2.5</Text>
+
+                        {/* API Key */}
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>API Key</Text>
+                        <TextInput
+                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: theme.colors.textPrimary, fontSize: 13, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}
+                            value={storage.aiApiKey}
+                            onChangeText={storage.saveAiApiKey}
+                            secureTextEntry
+                            placeholder="Enter API key"
+                            placeholderTextColor={theme.colors.textMuted}
+                            autoCapitalize="none"
+                        />
+
+                        {/* Model Selection (Summary/Title) */}
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>Summary & Title Model</Text>
+                        <TouchableOpacity
+                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                            onPress={() => setChoosingModelFor('summary')}
+                        >
+                            <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>{storage.aiModel}</Text>
+                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
+                        </TouchableOpacity>
+
+                        {/* Grammar Model Selection */}
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>Grammar & Spell Check Model</Text>
+                        <TouchableOpacity
+                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                            onPress={() => setChoosingModelFor('grammar')}
+                        >
+                            <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>{storage.aiGrammarModel}</Text>
+                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
+                        </TouchableOpacity>
+
+                        {/* Batch AI Processing */}
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: 4 }}>Batch Retrospective Processing</Text>
+                        <View style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
+                            <TouchableOpacity 
+                                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, opacity: batchRunning ? 0.5 : 1 }}
+                                onPress={() => !batchRunning && setForceBatchOverwrite(!forceBatchOverwrite)}
+                                disabled={batchRunning}
+                            >
+                                <View style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: forceBatchOverwrite ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: forceBatchOverwrite ? theme.colors.primaryAction : 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                                    {forceBatchOverwrite && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                                </View>
+                                <Text style={{ color: theme.colors.textPrimary, fontSize: 13, flex: 1 }}>Force overwrite ALL entries (Slow)</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={{
+                                    backgroundColor: batchRunning ? 'rgba(255, 77, 77, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                                    paddingVertical: 12,
+                                    borderRadius: 8,
+                                    alignItems: 'center',
+                                    flexDirection: 'row',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    borderWidth: 1,
+                                    borderColor: batchRunning ? 'rgba(255, 77, 77, 0.3)' : 'rgba(74, 222, 128, 0.3)'
+                                }}
+                                onPress={handleBatchProcess}
+                            >
+                                {batchRunning ? (
+                                    <>
+                                        <ActivityIndicator size="small" color={theme.colors.danger} />
+                                        <Text style={{ color: theme.colors.danger, fontWeight: 'bold' }}>
+                                            {isCancelingBatch ? 'Canceling... (finishing current)' : `Cancel (${batchProgress.current} / ${batchProgress.total})`}
+                                        </Text>
+                                    </>
+                                ) : (
+                                    <>
+                                        <MaterialCommunityIcons name="brain" size={16} color="#4ade80" />
+                                        <Text style={{ color: '#4ade80', fontWeight: 'bold' }}>Process {forceBatchOverwrite ? 'All' : 'Missing'} Entries</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Base URL */}
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Base URL</Text>
+                        <TextInput
+                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: theme.colors.textPrimary, fontSize: 13, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 12 }}
+                            value={storage.aiBaseUrl}
+                            onChangeText={storage.saveAiBaseUrl}
+                            placeholder="https://ollama.com"
+                            placeholderTextColor={theme.colors.textMuted}
+                            autoCapitalize="none"
+                            keyboardType="url"
+                        />
+
+                        {/* Test Connection */}
+                        <TouchableOpacity
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 42, 42, 0.1)', marginTop: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
+                            onPress={async () => {
+                                const ok = await pingServer({ apiKey: storage.aiApiKey, baseUrl: storage.aiBaseUrl });
+                                Vibration.vibrate(ok ? 20 : [0, 50, 50, 50]);
+                                alert(ok ? '✅ AI server is reachable!' : '❌ Cannot reach AI server. Check your API key and base URL.');
+                            }}
+                        >
+                            <MaterialCommunityIcons name="connection" size={16} color={theme.colors.primaryAction} />
+                            <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryAction }]}>Test Connection</Text>
+                        </TouchableOpacity>
+                    </View>
+
                     {/* ── Developer Tools Section (only visible after 5s long-press on ⚙️) ── */}
                     {devModeUnlocked && (
                     <View style={{ backgroundColor: storage.devMode ? 'rgba(255, 215, 0, 0.08)' : theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: storage.devMode ? 'rgba(255, 215, 0, 0.3)' : theme.colors.glassBorder, marginTop: 10 }}>
@@ -425,6 +641,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     <Text style={[commonStyles.closeVersionBtnText, { color: '#FFD700' }]}>🎯 Simulate Streak Popup</Text>
                                 </TouchableOpacity>
 
+                                {/* Run AI Benchmark */}
+                                <TouchableOpacity
+                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(74, 222, 128, 0.15)', marginTop: 0 }]}
+                                    onPress={() => setShowBenchmarkModal(true)}
+                                >
+                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#4ade80' }]}>⚡ Run AI Benchmark</Text>
+                                </TouchableOpacity>
+
                                 {/* Clear All Data */}
                                 <TouchableOpacity
                                     style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 77, 77, 0.15)', marginTop: 0 }]}
@@ -446,6 +670,44 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Streak History: {storage.streakHistory.length} days</Text>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Font: {CONFIG.FONTS[storage.fontIndex]?.label || 'Default'} | Size: {CONFIG.SIZES[storage.sizeIndex]?.label || 'Default'}</Text>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Vlogs: {storage.savedVlogs.length} ({(storage.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB)</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Title Coverage: {storage.savedNotes.filter(n => n.aiTitle).length}/{storage.savedNotes.length} notes</Text>
+                                </View>
+
+                                {/* ── Editable AI Prompts ─────────────────────── */}
+                                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
+                                    <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🤖 AI Prompts (editable)</Text>
+
+                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Title Prompt</Text>
+                                    <TextInput
+                                        style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                                        value={storage.aiPrompts.title}
+                                        onChangeText={(v) => storage.saveAiPrompts({ ...storage.aiPrompts, title: v })}
+                                        multiline
+                                    />
+
+                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Summary Prompt</Text>
+                                    <TextInput
+                                        style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                                        value={storage.aiPrompts.summary}
+                                        onChangeText={(v) => storage.saveAiPrompts({ ...storage.aiPrompts, summary: v })}
+                                        multiline
+                                    />
+
+                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Grammar Prompt</Text>
+                                    <TextInput
+                                        style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                                        value={storage.aiPrompts.grammar}
+                                        onChangeText={(v) => storage.saveAiPrompts({ ...storage.aiPrompts, grammar: v })}
+                                        multiline
+                                    />
+
+                                    {/* Reset prompts to defaults */}
+                                    <TouchableOpacity
+                                        style={{ alignSelf: 'flex-end', padding: 6 }}
+                                        onPress={() => storage.saveAiPrompts({ ...DEFAULT_AI_PROMPTS })}
+                                    >
+                                        <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Reset to defaults</Text>
+                                    </TouchableOpacity>
                                 </View>
                             </View>
                         )}
@@ -601,6 +863,51 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                 streakHistory={storage.streakHistory}
                 onClose={() => setShowStreakPopup(false)}
             />
+            
+            <BenchmarkModal
+                visible={showBenchmarkModal}
+                onClose={() => setShowBenchmarkModal(false)}
+            />
+
+            {/* Select AI Model Modal */}
+            <Modal visible={!!choosingModelFor} transparent animationType="fade" onRequestClose={() => setChoosingModelFor(null)}>
+                <TouchableOpacity style={commonStyles.modalOverlay} activeOpacity={1} onPress={() => setChoosingModelFor(null)}>
+                    <View style={commonStyles.versionModalContent}>
+                        <Text style={commonStyles.versionModalTitle}>Select {choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model</Text>
+                        <View style={{ gap: 8, marginTop: 10 }}>
+                            {AI_MODELS.map(m => {
+                                const isSelected = choosingModelFor === 'summary' ? storage.aiModel === m : storage.aiGrammarModel === m;
+                                return (
+                                    <TouchableOpacity 
+                                        key={m}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            paddingVertical: 14,
+                                            paddingHorizontal: 16,
+                                            borderBottomWidth: 1,
+                                            borderBottomColor: 'rgba(255,255,255,0.05)',
+                                            backgroundColor: isSelected ? 'rgba(74, 222, 128, 0.1)' : 'transparent',
+                                            borderRadius: 8
+                                        }}
+                                        onPress={() => {
+                                            if (choosingModelFor === 'summary') storage.saveAiModel(m);
+                                            else storage.saveAiGrammarModel(m);
+                                            setChoosingModelFor(null);
+                                        }}
+                                    >
+                                        <Text style={{ color: isSelected ? '#4ade80' : '#FFF', fontSize: 16, fontWeight: isSelected ? 'bold' : 'normal' }}>{m}</Text>
+                                        {isSelected && <MaterialCommunityIcons name="check" size={20} color="#4ade80" style={{ marginLeft: 'auto' }} />}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                        <TouchableOpacity style={[commonStyles.closeVersionBtn]} onPress={() => setChoosingModelFor(null)}>
+                            <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
         </View>
     );
