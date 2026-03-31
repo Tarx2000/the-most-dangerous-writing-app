@@ -36,5 +36,13 @@ export const CONFIG = {
         { label: 'Normal', value: 18, line: 28 },
         { label: 'Large', value: 24, line: 36 },
         { label: 'Giant', value: 32, line: 48 },
-    ]
+    ],
+
+    /* ── Vlog Recording Settings ─────────────────────────────────────── */
+    /** Shorter timer options for vlogs (in minutes) — video files are much larger than text */
+    VLOG_SESSION_OPTIONS_MINS: [1, 2, 3, 5, 10, 15],
+    /** Video quality for recording — '1080p' is the data-saver sweet spot */
+    VLOG_VIDEO_QUALITY: '1080p' as const,
+    /** Private subdirectory in documentDirectory for storing vlog files */
+    VLOG_STORAGE_DIR: 'vlogs/',
 };

@@ -64,3 +64,24 @@ export interface AlignmentReflection extends SavedNote {
     continueText: string;
     isAlignmentReflection: true;
 }
+
+/**
+ * SavedVlog — Represents a recorded video journal entry.
+ *
+ * The actual video file is stored in the app's private `documentDirectory/vlogs/`
+ * directory (invisible to the device gallery). This metadata object is persisted
+ * in AsyncStorage for quick listing, calendar display, and playback reference.
+ */
+export interface SavedVlog {
+    id: string;
+    /** Absolute path to the video file in the app's private documentDirectory */
+    filePath: string;
+    /** Human-readable date string for display (e.g. "Mar 31, 2026 01:30 AM") */
+    dateStr: string;
+    /** Unix timestamp for sorting and calendar day mapping */
+    timestamp: number;
+    /** Recording duration in seconds */
+    durationSec: number;
+    /** File size in bytes (for storage usage tracking) */
+    fileSizeBytes: number;
+}

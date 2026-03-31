@@ -6,6 +6,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { WritingScreen } from './src/screens/WritingScreen';
 import { VisionBoardScreen } from './src/screens/VisionBoardScreen';
 import { AlignmentWritingScreen } from './src/screens/AlignmentWritingScreen';
+import { VlogRecordingScreen } from './src/screens/VlogRecordingScreen';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar } from 'react-native';
 
@@ -21,6 +22,7 @@ export default function App() {
           <Stack.Screen name="Writing" component={WritingScreen} />
           <Stack.Screen name="VisionBoard" component={VisionBoardScreen} />
           <Stack.Screen name="AlignmentWriting" component={AlignmentWritingScreen} />
+          <Stack.Screen name="VlogRecording" component={VlogRecordingScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

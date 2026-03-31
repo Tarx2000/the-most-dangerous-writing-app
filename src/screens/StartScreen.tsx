@@ -40,9 +40,9 @@ type Props = {
     onGoToLibrary: () => void;
     setHomeScrollEnabled?: (enabled: boolean) => void;
     /** Shared session mode from HomeScreen (drives LiquidGlassNav) */
-    sessionMode: 'journal' | 'circles' | 'checkin';
+    sessionMode: 'journal' | 'circles' | 'checkin' | 'vlog';
     /** Update shared session mode */
-    setSessionMode: (mode: 'journal' | 'circles' | 'checkin') => void;
+    setSessionMode: (mode: 'journal' | 'circles' | 'checkin' | 'vlog') => void;
 };
 
 export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled, sessionMode, setSessionMode }) => {
@@ -104,6 +104,13 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     }, [route.params?.streakIncreased]);
 
     const handleStart = () => {
+        if (sessionMode === 'vlog') {
+            navigation.navigate('VlogRecording', {
+                timeIndex: timeIndex,
+            });
+            return;
+        }
+
         if (sessionMode === 'checkin') {
             navigation.navigate('AlignmentWriting', {
                 alignmentScore: score,
@@ -254,19 +261,26 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             </View>
                         </>
                     )}
+                    {sessionMode === 'vlog' && (
+                        <>
+                            <MaterialCommunityIcons name="video-vintage" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
+                            <Text style={styles.heroTitle}>Video Journal</Text>
+                            <Text style={styles.heroSubtitle}>Record your thoughts on camera.</Text>
+                        </>
+                    )}
                 </View>
 
                 <View style={{ flex: 1, justifyContent: 'center' }}>
                     <TickDial
-                        data={CONFIG.SESSION_OPTIONS_MINS}
+                        data={sessionMode === 'vlog' ? CONFIG.VLOG_SESSION_OPTIONS_MINS : CONFIG.SESSION_OPTIONS_MINS}
                         selectedIndex={timeIndex}
                         onSelect={setTimeIndex}
                         unit="min"
                         setHomeScrollEnabled={setHomeScrollEnabled}
                     />
 
-                    {/* Difficulty Pill Selector Inline (Invisible for Checkin to preserve exact layout alignment for TickDial) */}
-                    <View style={[styles.diffSelectorContainer, sessionMode === 'checkin' && { opacity: 0 }]} pointerEvents={sessionMode === 'checkin' ? 'none' : 'auto'}>
+                    {/* Difficulty Pill Selector Inline (Invisible for Checkin/Vlog to preserve layout alignment) */}
+                    <View style={[styles.diffSelectorContainer, (sessionMode === 'checkin' || sessionMode === 'vlog') && { opacity: 0 }]} pointerEvents={(sessionMode === 'checkin' || sessionMode === 'vlog') ? 'none' : 'auto'}>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.diffScroll}>
                             {CONFIG.DIFFICULTIES.map((diff, i) => (
                                 <TouchableOpacity key={i} style={[styles.diffPill, diffIndex === i && styles.diffPillActive]} onPress={() => setDiffIndex(i)}>
@@ -282,7 +296,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
             <View style={styles.startBtnContainer}>
                 <TouchableOpacity style={styles.massiveStartBtn} onPress={handleStart}>
                     <Text style={styles.massiveStartBtnText}>
-                        Start Writing
+                        {sessionMode === 'vlog' ? 'Start Recording' : 'Start Writing'}
                     </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
@@ -367,7 +381,18 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
                         <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Security & Privacy</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 5 }}>Notes and Circles are protected by biometric authentication (fingerprint / face).</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 10 }}>Notes and Circles are protected by biometric authentication (fingerprint / face).</Text>
+
+                        {/* Vlog Storage Usage Counter */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <MaterialCommunityIcons name="video-outline" size={18} color={theme.colors.textMuted} />
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 13 }}>Vlog Storage</Text>
+                            </View>
+                            <Text style={{ color: theme.colors.primaryAction, fontSize: 13, fontWeight: '800' }}>
+                                {(storage.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB
+                            </Text>
+                        </View>
                     </View>
 
                     {/* ── Developer Tools Section (only visible after 5s long-press on ⚙️) ── */}
@@ -420,6 +445,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Last Win: {storage.lastWinDate || 'Never'}</Text>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Streak History: {storage.streakHistory.length} days</Text>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Font: {CONFIG.FONTS[storage.fontIndex]?.label || 'Default'} | Size: {CONFIG.SIZES[storage.sizeIndex]?.label || 'Default'}</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Vlogs: {storage.savedVlogs.length} ({(storage.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB)</Text>
                                 </View>
                             </View>
                         )}

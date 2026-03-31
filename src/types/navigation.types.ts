@@ -14,4 +14,8 @@ export type RootStackParamList = {
         alignmentScore: number;
         timeIndex: number;
     };
+    /** Vlog recording screen — receives timeIndex for timer duration */
+    VlogRecording: {
+        timeIndex: number;
+    };
 };

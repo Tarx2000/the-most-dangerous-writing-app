@@ -36,7 +36,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * 'circles' = relationship journal / circles tab
      * 'checkin' = alignment check-in / checkins tab
      */
-    const [sessionMode, setSessionMode] = useState<'journal' | 'circles' | 'checkin'>('journal');
+    const [sessionMode, setSessionMode] = useState<'journal' | 'circles' | 'checkin' | 'vlog'>('journal');
 
     /**
      * Track which page is visible (0 = Start, 1 = Library).
@@ -62,7 +62,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * Circles mode is freely navigable — the lock screen is shown on the Library side only.
      */
     const handleModeChange = useCallback((mode: string) => {
-        setSessionMode(mode as 'journal' | 'circles' | 'checkin');
+        setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
     }, []);
 
     /**
@@ -85,6 +85,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     const navItems = [
         { id: 'journal', icon: 'notebook-edit', label: 'Journal' },
         { id: 'circles', icon: 'account-group', label: 'Circles' },
+        { id: 'vlog', icon: 'video-outline', label: 'Vlog' },
         { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
     ];
 

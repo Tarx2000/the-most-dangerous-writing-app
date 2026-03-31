@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SavedNote, Person, VisionBoard, AlignmentReflection } from '@/types';
+import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
+import * as FileSystem from 'expo-file-system/legacy';
+import { CONFIG } from '@/config';
 
 export function useStorage() {
     const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
@@ -15,6 +17,10 @@ export function useStorage() {
     const [devMode, setDevMode] = useState<boolean>(false);
     const [visionBoard, setVisionBoard] = useState<VisionBoard | null>(null);
     const [lastReflectionDate, setLastReflectionDate] = useState<number | null>(null);
+    /** All saved vlog metadata entries */
+    const [savedVlogs, setSavedVlogs] = useState<SavedVlog[]>([]);
+    /** Total storage used by vlog files in bytes */
+    const [totalVlogStorageBytes, setTotalVlogStorageBytes] = useState<number>(0);
 
     const loadAllData = useCallback(async () => {
         try {
@@ -29,7 +35,8 @@ export function useStorage() {
                 'STREAK_HISTORY',
                 'DEV_MODE',
                 'VISION_BOARD',
-                'LAST_REFLECTION_DATE'
+                'LAST_REFLECTION_DATE',
+                'SAVED_VLOGS'
             ];
             const results = await AsyncStorage.multiGet(keys);
             const data: Record<string, string | null> = Object.fromEntries(results);
@@ -54,6 +61,14 @@ export function useStorage() {
             if (data['LAST_WIN_DATE']) setLastWinDate(data['LAST_WIN_DATE']);
             if (data['VISION_BOARD']) setVisionBoard(JSON.parse(data['VISION_BOARD']));
             if (data['LAST_REFLECTION_DATE']) setLastReflectionDate(parseInt(data['LAST_REFLECTION_DATE'], 10));
+
+            // Load saved vlogs and calculate total storage
+            if (data['SAVED_VLOGS']) {
+                const vlogs: SavedVlog[] = JSON.parse(data['SAVED_VLOGS']);
+                setSavedVlogs(vlogs);
+                const totalBytes = vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
+                setTotalVlogStorageBytes(totalBytes);
+            }
 
             // Load or backfill streak history
             let loadedHistory: string[] = [];
@@ -120,7 +135,7 @@ export function useStorage() {
         const allKeys = [
             'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
             'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY', 'DEV_MODE',
-            'VISION_BOARD', 'LAST_REFLECTION_DATE'
+            'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS'
         ];
         await AsyncStorage.multiRemove(allKeys);
         setSavedNotes([]);
@@ -134,6 +149,11 @@ export function useStorage() {
         setDevMode(false);
         setVisionBoard(null);
         setLastReflectionDate(null);
+        setSavedVlogs([]);
+        setTotalVlogStorageBytes(0);
+        // Delete the vlogs directory and all files inside
+        const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
+        try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (_) {}
     };
 
     const updateBiometricsPref = async (val: boolean) => {
@@ -244,6 +264,74 @@ export function useStorage() {
         return result;
     };
 
+    /**
+     * Save a new vlog entry.
+     * Persists metadata to AsyncStorage and updates the vlog streak.
+     * The actual video file should already be moved to documentDirectory before calling this.
+     */
+    const saveVlog = async (vlog: SavedVlog): Promise<{ streakIncreased: boolean; newStreak: number }> => {
+        const updated = [vlog, ...savedVlogs];
+        setSavedVlogs(updated);
+        setTotalVlogStorageBytes(prev => prev + (vlog.fileSizeBytes || 0));
+        await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
+
+        // Vlogs count toward the main writing streak — reuse streak logic
+        // Create a "won" note placeholder to trigger streak calculation
+        let updatedStreak = currentStreak;
+        let streakIncreased = false;
+        const todayStr = new Date().toLocaleDateString();
+        const d = new Date();
+        const calDateStr = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        let newHistory = [...streakHistory];
+
+        if (!newHistory.includes(calDateStr)) {
+            newHistory.push(calDateStr);
+            setStreakHistory(newHistory);
+            await AsyncStorage.setItem('STREAK_HISTORY', JSON.stringify(newHistory));
+        }
+
+        if (lastWinDate !== todayStr) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toLocaleDateString();
+
+            if (lastWinDate === yesterdayStr) {
+                updatedStreak += 1;
+                streakIncreased = true;
+            } else {
+                updatedStreak = 1;
+                if (currentStreak === 0) streakIncreased = true;
+            }
+
+            setCurrentStreak(updatedStreak);
+            setLastWinDate(todayStr);
+            await AsyncStorage.setItem('CURRENT_STREAK', updatedStreak.toString());
+            await AsyncStorage.setItem('LAST_WIN_DATE', todayStr);
+        }
+
+        return { streakIncreased, newStreak: updatedStreak };
+    };
+
+    /**
+     * Delete a vlog by its ID.
+     * Removes metadata from AsyncStorage AND deletes the actual video file from disk.
+     */
+    const deleteVlog = async (id: string) => {
+        const vlog = savedVlogs.find(v => v.id === id);
+        if (vlog) {
+            // Delete the physical video file
+            try {
+                await FileSystem.deleteAsync(vlog.filePath, { idempotent: true });
+            } catch (e) {
+                console.warn('Failed to delete vlog file:', e);
+            }
+            setTotalVlogStorageBytes(prev => Math.max(0, prev - (vlog.fileSizeBytes || 0)));
+        }
+        const updated = savedVlogs.filter(v => v.id !== id);
+        setSavedVlogs(updated);
+        await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
+    };
+
     return {
         savedNotes,
         persons,
@@ -268,5 +356,9 @@ export function useStorage() {
         updatePerson,
         saveVisionBoard,
         saveAlignmentReflection,
+        savedVlogs,
+        totalVlogStorageBytes,
+        saveVlog,
+        deleteVlog,
     };
 }

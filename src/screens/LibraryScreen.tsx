@@ -23,6 +23,7 @@ import { useSecurity } from '@/lib/hooks/useSecurity';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
+import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
 import { SortOption, SavedNote, Person } from '@/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,7 +35,7 @@ type Props = {
     route: any;
     onGoToStart: () => void;
     /** Shared session mode from HomeScreen — drives which content tab is shown */
-    sessionMode: 'journal' | 'circles' | 'checkin';
+    sessionMode: 'journal' | 'circles' | 'checkin' | 'vlog';
 };
 
 const SORT_OPTIONS: { id: SortOption, label: string, icon: any }[] = [
@@ -48,10 +49,11 @@ const SORT_OPTIONS: { id: SortOption, label: string, icon: any }[] = [
 export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart, sessionMode }) => {
     /**
      * Map shared sessionMode to library tab.
-     * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins'
+     * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins', 'vlog' -> 'vlogs'
      */
     const libraryTab = sessionMode === 'journal' ? 'notes' 
                      : sessionMode === 'circles' ? 'circles' 
+                     : sessionMode === 'vlog' ? 'vlogs'
                      : 'checkins';
 
     const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -179,8 +181,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                 )}
             </View>
 
-            {/* Filter Toggle Action Button (Hidden for Circles view where grouping is per person) */}
-            {libraryTab !== 'circles' && (
+            {/* Filter Toggle Action Button (Hidden for Circles/Vlogs view) */}
+            {libraryTab !== 'circles' && libraryTab !== 'vlogs' && (
                 <View style={styles.filterRow}>
                     <TouchableOpacity style={styles.filterDropdownBtn} onPress={() => setShowSortModal(true)}>
                         <MaterialCommunityIcons name="sort" size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
@@ -190,8 +192,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                 </View>
             )}
 
-            {/* Tab content */}
-            {libraryTab === 'notes' || libraryTab === 'checkins' ? (
+            {/* Tab content — Notes & Check-ins */}
+            {(libraryTab === 'notes' || libraryTab === 'checkins') && (
                 <>
                     {storage.savedNotes.filter(n => libraryTab === 'checkins' ? (n as any).isAlignmentReflection : (!n.personId && !(n as any).isAlignmentReflection)).length === 0 ? (
                         <View style={styles.emptyStateContainer}>
@@ -242,9 +244,11 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                         />
                     )}
                 </>
-            ) : (
+            )}
+
+            {/* Tab content — Circles */}
+            {libraryTab === 'circles' && (
                 <>
-                    {/* Circles Lock Overlay — shown when circles not yet unlocked */}
                     {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
                         <View style={styles.circlesLockOverlay}>
                             <View style={styles.circlesLockCard}>
@@ -274,7 +278,6 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                         <View style={{ flex: 1, width: '100%' }}>
                             <FlashList
                                 data={
-                                    /* Sort persons by most written about (highest note count first) */
                                     [...storage.persons].sort((a, b) => {
                                         const aCount = storage.savedNotes.filter(n => n.personId === a.id).length;
                                         const bCount = storage.savedNotes.filter(n => n.personId === b.id).length;
@@ -311,6 +314,16 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                         </>
                     )}
                 </>
+            )}
+
+            {/* Tab content — Vlogs Calendar Gallery */}
+            {libraryTab === 'vlogs' && (
+                <VlogCalendarGallery
+                    vlogs={storage.savedVlogs}
+                    isLocked={!security.isCirclesUnlocked && !security.isNotesUnlocked}
+                    onUnlock={security.unlockCircles}
+                    onDeleteVlog={storage.deleteVlog}
+                />
             )}
 
             {/* Sort Action Sheet Modal */}
