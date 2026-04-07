@@ -1,15 +1,16 @@
 /**
- * PostWritingScreen — AI-enhanced post-session review screen.
+ * PostWritingScreen — Post-session review with background AI processing.
  *
  * Shown after a writing session completes. Provides:
- * 1. Auto-generated AI title (always runs in background)
- * 2. Auto-generated AI summary bullets (always runs in background)
+ * 1. Shimmer-loading AI title (queued in background via AI Queue)
+ * 2. Shimmer-loading AI summary bullets
  * 3. Editable text area for last-chance corrections
- * 4. Optional "Check Grammar" button — AI finds issues, tap-to-accept fixes
- * 5. "Save & Close" — saves edits + AI data (AI continues in background if not done)
+ * 4. Optional "Check Grammar" button — user-triggered, inline
+ * 5. "Save & Close" — saves edits and navigates home; AI continues in background
  *
  * The note is ALREADY saved before arriving here. This screen enriches it.
- * If the user leaves before AI finishes, processing continues in background.
+ * AI processing is delegated entirely to the central AI Queue Manager.
+ * If the user leaves before AI finishes, the queue continues processing.
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -29,18 +30,19 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { useStorage } from '@/lib/hooks/useStorage';
-import { generateTitle, generateSummary, checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
+import { useAiQueue } from '@/lib/hooks/useAiQueue';
+import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
 import { theme } from '@/styles/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { RichText } from '@/components/ui/RichText';
+import type { AiJobCategory } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PostWriting'>;
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-/* ── Shimmer Loading Animation Component ─────────────────────────────── */
+/* ── Shimmer Loading Animation ───────────────────────────────────────── */
 
 /** Simple shimmer placeholder for loading states */
 const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: any }> = ({ width, height = 16, style }) => {
@@ -68,14 +70,20 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
     const storage = useStorage();
 
+    /** AI Queue hook — all AI processing goes through here */
+    const { enqueueNote, isNoteActive, isNoteQueued } = useAiQueue({
+        aiApiKey: storage.aiApiKey,
+        aiBaseUrl: storage.aiBaseUrl,
+        aiModel: storage.aiModel,
+        aiPrompts: storage.aiPrompts,
+        savedNotes: storage.savedNotes,
+        updateNote: storage.updateNote,
+    });
+
     /* ── State ──────────────────────────────────────────────────────── */
     const [editableText, setEditableText] = useState('');
-    const [aiTitle, setAiTitle] = useState<string | null>(null);
-    const [aiSummary, setAiSummary] = useState<string[] | null>(null);
-    const [titleLoading, setTitleLoading] = useState(true);
-    const [summaryLoading, setSummaryLoading] = useState(true);
 
-    /** Grammar check state */
+    /** Grammar check state (user-triggered, not through queue) */
     const [grammarSuggestions, setGrammarSuggestions] = useState<GrammarSuggestion[]>([]);
     const [grammarLoading, setGrammarLoading] = useState(false);
     const [grammarChecked, setGrammarChecked] = useState(false);
@@ -83,8 +91,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /** Track if user is in text edit mode */
     const [isEditing, setIsEditing] = useState(false);
 
-    /** Track if AI background processing was already started */
-    const aiStartedRef = useRef(false);
+    /** Track if AI processing was already enqueued */
+    const aiEnqueuedRef = useRef(false);
     const noteSavedRef = useRef(false);
 
     /* ── Load note data on mount ────────────────────────────────────── */
@@ -95,6 +103,13 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /** Find the note once data is loaded */
     const note = storage.savedNotes.find(n => n.id === noteId);
 
+    /** Whether AI is currently processing this note */
+    const aiProcessing = isNoteActive(noteId) || isNoteQueued(noteId);
+
+    /** Whether AI has finished (we have results) */
+    const hasAiTitle = !!note?.aiTitle;
+    const hasAiSummary = !!(note?.aiSummary && note.aiSummary.length > 0);
+
     /** Initialize editable text when note is found */
     useEffect(() => {
         if (note && !editableText) {
@@ -102,59 +117,23 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         }
     }, [note]);
 
-    /* ── AI Processing (runs automatically in background) ───────────── */
+    /* ── Enqueue AI processing (once, on mount) ────────────────────── */
     useEffect(() => {
-        if (!note || aiStartedRef.current) return;
-        aiStartedRef.current = true;
+        if (!note || aiEnqueuedRef.current) return;
+        aiEnqueuedRef.current = true;
 
-        const aiConfig = {
-            apiKey: storage.aiApiKey,
-            baseUrl: storage.aiBaseUrl,
-            model: storage.aiModel,
-            prompts: storage.aiPrompts,
-        };
+        // Determine category based on note properties
+        const category: AiJobCategory = (note as any).isAlignmentReflection
+            ? 'checkin'
+            : note.personId
+                ? 'circle'
+                : 'journal';
 
-        // Mark note as processing
-        storage.updateNote(noteId, { aiProcessing: true });
-
-        // Generate title (background)
-        generateTitle(note.text, aiConfig, chunk => {
-            setAiTitle(chunk.replace(/^["']+|["']+$/g, '').trim());
-        })
-            .then(title => {
-                setAiTitle(title);
-                setTitleLoading(false);
-                storage.updateNote(noteId, { aiTitle: title });
-            })
-            .catch(err => {
-                console.warn('[AI] Title generation failed:', err);
-                setTitleLoading(false);
-            });
-
-        // Generate summary (background)
-        generateSummary(note.text, aiConfig, chunk => {
-            const tempBullets = chunk
-                .split('\n')
-                .map(line => line.replace(/^[\s•\-*]+/, '').trim())
-                .filter(line => line.length > 0)
-                .slice(0, 5);
-            setAiSummary(tempBullets);
-        })
-            .then(summary => {
-                setAiSummary(summary);
-                setSummaryLoading(false);
-                storage.updateNote(noteId, { 
-                    aiSummary: summary, 
-                    aiModelUsed: storage.aiModel,
-                    aiProcessing: false 
-                });
-            })
-            .catch(err => {
-                console.warn('[AI] Summary generation failed:', err);
-                setSummaryLoading(false);
-                storage.updateNote(noteId, { aiProcessing: false });
-            });
-    }, [note, storage.aiApiKey]);
+        // Only enqueue if the note doesn't already have AI data
+        if (!note.aiTitle || !note.aiSummary || note.aiSummary.length === 0) {
+            enqueueNote(noteId, category);
+        }
+    }, [note, noteId, enqueueNote]);
 
     /* ── Grammar Check (user-triggered) ─────────────────────────────── */
     const handleGrammarCheck = useCallback(async () => {
@@ -182,7 +161,6 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const applySuggestion = useCallback((suggestion: GrammarSuggestion) => {
         const newText = editableText.replace(suggestion.original, suggestion.suggestion);
         setEditableText(newText);
-        // Remove the applied suggestion from the list
         setGrammarSuggestions(prev => prev.filter(s => s !== suggestion));
         Vibration.vibrate(20);
     }, [editableText]);
@@ -192,13 +170,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         if (noteSavedRef.current) return;
         noteSavedRef.current = true;
 
-        // Save any text edits + AI data that's available so far
-        const updates: any = { text: editableText };
-        if (aiTitle) updates.aiTitle = aiTitle;
-        if (aiSummary) updates.aiSummary = aiSummary;
-        // Leave aiProcessing true if AI isn't done — it was already persisted in background
-
-        await storage.updateNote(noteId, updates);
+        // Save any text edits (AI results are saved directly by the queue)
+        await storage.updateNote(noteId, { text: editableText });
 
         navigation.reset({
             index: 0,
@@ -209,7 +182,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     : undefined,
             }],
         });
-    }, [editableText, aiTitle, aiSummary, noteId, navigation, route.params]);
+    }, [editableText, noteId, navigation, route.params]);
 
     /* ── Render ──────────────────────────────────────────────────────── */
 
@@ -242,12 +215,12 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     <Text style={styles.sectionLabel}>
                         <MaterialCommunityIcons name="format-title" size={14} color={theme.colors.textMuted} /> AI TITLE
                     </Text>
-                    {titleLoading ? (
+                    {!hasAiTitle ? (
                         <View style={styles.shimmerContainer}>
                             <ShimmerLine width="75%" height={24} />
                         </View>
                     ) : (
-                        <RichText style={styles.aiTitleText} text={aiTitle || 'Untitled Entry'} />
+                        <RichText style={styles.aiTitleText} text={note!.aiTitle || 'Untitled Entry'} />
                     )}
                 </View>
 
@@ -256,8 +229,11 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     <View style={styles.summaryHeader}>
                         <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
                         <Text style={styles.summaryHeaderText}>AI Summary</Text>
+                        {aiProcessing && (
+                            <ActivityIndicator size="small" color={theme.colors.primaryAction} style={{ marginLeft: 'auto' }} />
+                        )}
                     </View>
-                    {summaryLoading ? (
+                    {!hasAiSummary ? (
                         <View style={styles.shimmerContainer}>
                             <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
                             <ShimmerLine width="80%" style={{ marginBottom: 10 }} />
@@ -265,15 +241,12 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </View>
                     ) : (
                         <View style={styles.bulletsContainer}>
-                            {(aiSummary || []).map((bullet, i) => (
+                            {(note!.aiSummary || []).map((bullet, i) => (
                                 <View key={i} style={styles.bulletRow}>
                                     <Text style={styles.bulletDot}>•</Text>
                                     <RichText style={styles.bulletText} text={bullet} />
                                 </View>
                             ))}
-                            {(!aiSummary || aiSummary.length === 0) && (
-                                <Text style={styles.noDataText}>Summary could not be generated</Text>
-                            )}
                         </View>
                     )}
                 </View>
@@ -315,7 +288,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     )}
                 </View>
 
-                {/* ── Grammar Check ───────────────────────────────── */}
+                {/* ── Grammar Check (user-triggered only) ─────────── */}
                 <View style={styles.grammarSection}>
                     {!grammarChecked ? (
                         <TouchableOpacity
@@ -498,11 +471,6 @@ const styles = StyleSheet.create({
         fontSize: 15,
         lineHeight: 24,
         flex: 1,
-    },
-    noDataText: {
-        color: theme.colors.textMuted,
-        fontSize: 14,
-        fontStyle: 'italic',
     },
 
     /* Editable Text */

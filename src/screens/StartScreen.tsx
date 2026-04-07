@@ -14,7 +14,8 @@ import {
     Dimensions,
     Vibration,
     StyleSheet,
-    ActivityIndicator
+    ActivityIndicator,
+    DeviceEventEmitter
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -34,10 +35,12 @@ import { useSecurity } from '@/lib/hooks/useSecurity';
 import { Person } from '@/types';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { theme } from '@/styles/theme';
-import { pingServer, generateTitle, generateSummary } from '@/lib/aiService';
-import { DEFAULT_AI_PROMPTS } from '@/config/ai';
-import { useAiStatus } from '@/lib/hooks/useAiStatus';
+import { pingServer } from '@/lib/aiService';
+import { DEFAULT_AI_PROMPTS, AI_AVAILABLE_MODELS } from '@/config/ai';
+import { useAiQueue } from '@/lib/hooks/useAiQueue';
+import { getAiLog, clearAiLog } from '@/lib/aiLogger';
 import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
+import type { AiLogEntry } from '@/types';
 
 type Props = {
     navigation: any;
@@ -71,33 +74,29 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     /** Ref for the 5-second long-press timer on the settings button */
     const settingsLongPressTimer = useRef<NodeJS.Timeout | null>(null);
 
-    // AI Batch Processing State
-    const [batchRunning, setBatchRunning] = useState(false);
-    const batchCancelRef = useRef(false);
-    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+    // AI Batch UI State (processing is handled by the queue)
     const [forceBatchOverwrite, setForceBatchOverwrite] = useState(false);
     const [choosingModelFor, setChoosingModelFor] = useState<'summary' | 'grammar' | null>(null);
-    const [isCancelingBatch, setIsCancelingBatch] = useState(false);
-
-    const AI_MODELS = [
-        'kimi-k2.5:cloud', 
-        'qwen3.5:397b-cloud', 
-        'glm-5:cloud', 
-        'minimax-m2.7:cloud', 
-        'nemotron-3-super:cloud'
-    ];
+    /** AI log entries for the Dev Tools panel */
+    const [aiLogEntries, setAiLogEntries] = useState<AiLogEntry[]>([]);
+    const [showAiLog, setShowAiLog] = useState(false);
 
     const [circleSearch, setCircleSearch] = useState('');
     const [showAddPerson, setShowAddPerson] = useState(false);
     const [newPersonName, setNewPersonName] = useState('');
+    const [newPersonRelationship, setNewPersonRelationship] = useState('');
 
     const storage = useStorage();
     const security = useSecurity();
 
-    /** AI server health check — green/red indicator */
-    const { isOnline: aiOnline } = useAiStatus({
-        apiKey: storage.aiApiKey,
-        baseUrl: storage.aiBaseUrl,
+    /** Central AI Queue — all batch processing goes through here */
+    const { queueState, startBatch, cancelBatch } = useAiQueue({
+        aiApiKey: storage.aiApiKey,
+        aiBaseUrl: storage.aiBaseUrl,
+        aiModel: storage.aiModel,
+        aiPrompts: storage.aiPrompts,
+        savedNotes: storage.savedNotes,
+        updateNote: storage.updateNote,
     });
 
     const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
@@ -121,6 +120,10 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
     useEffect(() => {
         storage.loadAllData();
+        const sub = DeviceEventEmitter.addListener('NOTES_UPDATED', () => {
+            storage.loadAllData();
+        });
+        return () => sub.remove();
     }, []);
 
     useEffect(() => {
@@ -173,67 +176,23 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     const activeFont = CONFIG.FONTS[storage.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[storage.sizeIndex]?.value || 18;
 
-    // --- LOGIC: Handle Batch Processing ---------------------------------------
+    // --- LOGIC: Handle Batch Processing via AI Queue -------------------------
     const handleBatchProcess = async () => {
-        if (batchRunning) {
-            setIsCancelingBatch(true);
-            batchCancelRef.current = true;
+        if (queueState.isProcessing) {
+            await cancelBatch();
             return;
         }
 
-        const notesToProcess = forceBatchOverwrite 
-            ? storage.savedNotes 
-            : storage.savedNotes.filter(n => !n.aiTitle || (!n.aiSummary || n.aiSummary.length === 0) || !n.aiModelUsed);
-
-        if (notesToProcess.length === 0) {
+        const count = await startBatch(forceBatchOverwrite);
+        if (count === 0) {
             alert('All entries are already fully processed by AI!');
-            return;
         }
+    };
 
-        setBatchRunning(true);
-        batchCancelRef.current = false;
-        setBatchProgress({ current: 0, total: notesToProcess.length });
-
-        const aiConfig = {
-            apiKey: storage.aiApiKey,
-            baseUrl: storage.aiBaseUrl,
-            model: storage.aiModel,
-            prompts: storage.aiPrompts,
-        };
-
-        for (let i = 0; i < notesToProcess.length; i++) {
-            if (batchCancelRef.current) break;
-            const note = notesToProcess[i];
-            
-            try {
-                // Mark note as processing so Library shows the shimmer effect
-                await storage.updateNote(note.id, { aiProcessing: true });
-
-                const [title, summary] = await Promise.all([
-                    generateTitle(note.text, aiConfig),
-                    generateSummary(note.text, aiConfig),
-                ]);
-
-                await storage.updateNote(note.id, {
-                    aiTitle: title,
-                    aiSummary: summary,
-                    aiModelUsed: storage.aiModel,
-                    aiProcessing: false
-                });
-                
-                // Allow UI to breathe
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                setBatchProgress({ current: i + 1, total: notesToProcess.length });
-            } catch (err) {
-                console.warn('[AI Batch] Failed for note', note.id, err);
-                // Ensure note reverts out of processing state if it crashes
-                await storage.updateNote(note.id, { aiProcessing: false });
-            }
-        }
-
-        setBatchRunning(false);
-        setIsCancelingBatch(false);
+    /** Load AI log entries for the Dev Tools panel */
+    const loadAiLog = async () => {
+        const entries = await getAiLog();
+        setAiLogEntries(entries.slice(-50).reverse()); // Show last 50, newest first
     };
 
     return (
@@ -305,7 +264,6 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             <Text style={commonStyles.iconButtonText}>⚙️</Text>
                         </TouchableOpacity>
                         
-                        {/* AI Status Indicator Dot */}
                         <View style={{
                             position: 'absolute',
                             top: 0,
@@ -313,7 +271,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             width: 8,
                             height: 8,
                             borderRadius: 4,
-                            backgroundColor: aiOnline === null ? '#888' : aiOnline ? '#4ade80' : '#ff4d4d',
+                            backgroundColor: queueState.serverOnline === null ? '#888' : queueState.serverOnline ? '#4ade80' : '#ff4d4d',
                             borderWidth: 1,
                             borderColor: '#000',
                         }} />
@@ -541,13 +499,13 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
                         </TouchableOpacity>
 
-                        {/* Batch AI Processing */}
+                        {/* Batch AI Processing — via central AI Queue */}
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: 4 }}>Batch Retrospective Processing</Text>
                         <View style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
                             <TouchableOpacity 
-                                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, opacity: batchRunning ? 0.5 : 1 }}
-                                onPress={() => !batchRunning && setForceBatchOverwrite(!forceBatchOverwrite)}
-                                disabled={batchRunning}
+                                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, opacity: queueState.isProcessing ? 0.5 : 1 }}
+                                onPress={() => !queueState.isProcessing && setForceBatchOverwrite(!forceBatchOverwrite)}
+                                disabled={queueState.isProcessing}
                             >
                                 <View style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: forceBatchOverwrite ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: forceBatchOverwrite ? theme.colors.primaryAction : 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
                                     {forceBatchOverwrite && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
@@ -557,7 +515,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
                             <TouchableOpacity
                                 style={{
-                                    backgroundColor: batchRunning ? 'rgba(255, 77, 77, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                                    backgroundColor: queueState.isProcessing ? 'rgba(255, 77, 77, 0.15)' : 'rgba(74, 222, 128, 0.15)',
                                     paddingVertical: 12,
                                     borderRadius: 8,
                                     alignItems: 'center',
@@ -565,16 +523,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     justifyContent: 'center',
                                     gap: 8,
                                     borderWidth: 1,
-                                    borderColor: batchRunning ? 'rgba(255, 77, 77, 0.3)' : 'rgba(74, 222, 128, 0.3)'
+                                    borderColor: queueState.isProcessing ? 'rgba(255, 77, 77, 0.3)' : 'rgba(74, 222, 128, 0.3)'
                                 }}
                                 onPress={handleBatchProcess}
                             >
-                                {batchRunning ? (
+                                {queueState.isProcessing ? (
                                     <>
                                         <ActivityIndicator size="small" color={theme.colors.danger} />
-                                        <Text style={{ color: theme.colors.danger, fontWeight: 'bold' }}>
-                                            {isCancelingBatch ? 'Canceling... (finishing current)' : `Cancel (${batchProgress.current} / ${batchProgress.total})`}
-                                        </Text>
+                                        <Text style={{ color: theme.colors.danger, fontWeight: 'bold' }}>Cancel Processing</Text>
                                     </>
                                 ) : (
                                     <>
@@ -583,6 +539,78 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     </>
                                 )}
                             </TouchableOpacity>
+
+                            {/* Granular batch progress UI */}
+                            {queueState.isProcessing && (
+                                <View style={{ marginTop: 12 }}>
+                                    {/* Progress bar */}
+                                    {queueState.batchProgress && (
+                                        <View style={{ marginBottom: 8 }}>
+                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontWeight: '600' }}>
+                                                    {queueState.currentCategory === 'journal' ? '📓 Journals' : queueState.currentCategory === 'circle' ? '👥 Circles' : '🧭 Check-ins'}
+                                                </Text>
+                                                <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>
+                                                    {queueState.batchProgress.current}/{queueState.batchProgress.total}
+                                                </Text>
+                                            </View>
+                                            <View style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                                                <View style={{ height: 4, borderRadius: 2, backgroundColor: theme.colors.primaryAction, width: `${Math.round((queueState.batchProgress.current / Math.max(queueState.batchProgress.total, 1)) * 100)}%` }} />
+                                            </View>
+                                        </View>
+                                    )}
+
+                                    {/* Currently processing note preview */}
+                                    {queueState.currentJob && (() => {
+                                        const currentNote = storage.savedNotes.find(n => n.id === queueState.currentJob?.noteId);
+                                        return currentNote ? (
+                                            <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }} numberOfLines={1}>
+                                                Now: "{currentNote.text.slice(0, 60)}..."
+                                            </Text>
+                                        ) : null;
+                                    })()}
+                                </View>
+                            )}
+                        </View>
+
+                        {/* ── AI Status Panel — always-visible queue state ───── */}
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: 4 }}>AI Status</Text>
+                        <View style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: queueState.serverOnline ? '#4ade80' : queueState.serverOnline === false ? theme.colors.danger : theme.colors.textMuted }} />
+                                <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>
+                                    Server: {queueState.serverOnline ? 'Online' : queueState.serverOnline === false ? 'Offline' : 'Checking...'}
+                                </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                <MaterialCommunityIcons name={queueState.isProcessing ? 'loading' : 'check-circle-outline'} size={14} color={queueState.isProcessing ? theme.colors.primaryAction : '#4ade80'} />
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>
+                                    {queueState.isProcessing
+                                        ? `Processing (${queueState.pendingCount} queued)`
+                                        : queueState.pendingCount > 0
+                                            ? `${queueState.pendingCount} jobs waiting (server offline)`
+                                            : 'All done — no pending jobs'
+                                    }
+                                </Text>
+                            </View>
+                            <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 4 }}>
+                                AI Coverage: {storage.savedNotes.filter(n => n.aiTitle).length}/{storage.savedNotes.length} entries
+                            </Text>
+
+                            {/* Error Feedback */}
+                            {queueState.serverOnline === false && queueState.lastError && (
+                                <View style={{ marginTop: 12, backgroundColor: 'rgba(255, 42, 42, 0.15)', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255, 42, 42, 0.3)' }}>
+                                    <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: 'bold', marginBottom: 4 }}>
+                                        <MaterialCommunityIcons name="alert-circle-outline" size={12} /> Connection Error
+                                    </Text>
+                                    <Text style={{ color: theme.colors.danger, fontSize: 11 }}>
+                                        {queueState.lastError}
+                                    </Text>
+                                    <Text style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
+                                        Queue is paused and will auto-resume when reachable.
+                                    </Text>
+                                </View>
+                            )}
                         </View>
 
                         {/* Base URL */}
@@ -601,9 +629,9 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         <TouchableOpacity
                             style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 42, 42, 0.1)', marginTop: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
                             onPress={async () => {
-                                const ok = await pingServer({ apiKey: storage.aiApiKey, baseUrl: storage.aiBaseUrl });
-                                Vibration.vibrate(ok ? 20 : [0, 50, 50, 50]);
-                                alert(ok ? '✅ AI server is reachable!' : '❌ Cannot reach AI server. Check your API key and base URL.');
+                                const result = await pingServer({ apiKey: storage.aiApiKey, baseUrl: storage.aiBaseUrl });
+                                Vibration.vibrate(result.online ? 20 : [0, 50, 50, 50]);
+                                alert(result.online ? '✅ AI server is reachable!' : `❌ Cannot reach AI server.\n\nError: ${result.error}`);
                             }}
                         >
                             <MaterialCommunityIcons name="connection" size={16} color={theme.colors.primaryAction} />
@@ -660,6 +688,17 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>🗑 Clear All Data</Text>
                                 </TouchableOpacity>
 
+                                {/* Clear AI Metadata */}
+                                <TouchableOpacity
+                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 165, 0, 0.15)', marginTop: 0 }]}
+                                    onPress={() => {
+                                        storage.clearAllAiMetadata();
+                                        Vibration.vibrate(50);
+                                    }}
+                                >
+                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#FFA500' }]}>🗑 Reset all AI Entries</Text>
+                                </TouchableOpacity>
+
                                 {/* Storage Info */}
                                 <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
                                     <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>📊 Storage Info</Text>
@@ -671,7 +710,41 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Font: {CONFIG.FONTS[storage.fontIndex]?.label || 'Default'} | Size: {CONFIG.SIZES[storage.sizeIndex]?.label || 'Default'}</Text>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Vlogs: {storage.savedVlogs.length} ({(storage.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB)</Text>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Title Coverage: {storage.savedNotes.filter(n => n.aiTitle).length}/{storage.savedNotes.length} notes</Text>
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Queue: {queueState.pendingCount} pending, {queueState.isProcessing ? 'active' : 'idle'}</Text>
                                 </View>
+
+                                {/* ── AI Processing Log Viewer ─────────────────── */}
+                                <TouchableOpacity
+                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 215, 0, 0.15)', marginTop: 10 }]}
+                                    onPress={async () => { await loadAiLog(); setShowAiLog(!showAiLog); }}
+                                >
+                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#FFD700' }]}>{showAiLog ? '🔽 Hide' : '📋 Show'} AI Processing Log</Text>
+                                </TouchableOpacity>
+
+                                {showAiLog && (
+                                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 300 }}>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                            <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold' }}>📋 AI Log ({aiLogEntries.length} entries)</Text>
+                                            <TouchableOpacity onPress={async () => { await clearAiLog(); setAiLogEntries([]); }}>
+                                                <Text style={{ color: theme.colors.danger, fontSize: 11, fontWeight: '600' }}>Clear</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                        <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
+                                            {aiLogEntries.length === 0 ? (
+                                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>No log entries yet</Text>
+                                            ) : (
+                                                aiLogEntries.map((entry, i) => (
+                                                    <View key={i} style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', paddingVertical: 4 }}>
+                                                        <Text style={{ color: theme.colors.textMuted, fontSize: 10 }}>
+                                                            {new Date(entry.timestamp).toLocaleTimeString()} | {entry.action.toUpperCase()} | {entry.phase}{entry.durationMs ? ` | ${entry.durationMs}ms` : ''}
+                                                        </Text>
+                                                        {entry.error && <Text style={{ color: theme.colors.danger, fontSize: 10 }}>{entry.error}</Text>}
+                                                    </View>
+                                                ))
+                                            )}
+                                        </ScrollView>
+                                    </View>
+                                )}
 
                                 {/* ── Editable AI Prompts ─────────────────────── */}
                                 <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
@@ -875,7 +948,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     <View style={commonStyles.versionModalContent}>
                         <Text style={commonStyles.versionModalTitle}>Select {choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model</Text>
                         <View style={{ gap: 8, marginTop: 10 }}>
-                            {AI_MODELS.map(m => {
+                        {AI_AVAILABLE_MODELS.map(m => {
                                 const isSelected = choosingModelFor === 'summary' ? storage.aiModel === m : storage.aiGrammarModel === m;
                                 return (
                                     <TouchableOpacity 

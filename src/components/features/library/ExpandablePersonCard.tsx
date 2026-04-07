@@ -41,6 +41,8 @@ interface Props {
     /** Open person profile modal */
     onProfilePress: () => void;
     canDelete: boolean;
+    isNoteActive?: (id: string) => boolean;
+    isNoteQueued?: (id: string) => boolean;
 }
 
 export const ExpandablePersonCard: React.FC<Props> = React.memo(({
@@ -53,6 +55,8 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
     onDelete,
     onProfilePress,
     canDelete,
+    isNoteActive,
+    isNoteQueued,
 }) => {
     const animatedHeight = useRef(new Animated.Value(0)).current;
 
@@ -152,6 +156,8 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
                                 note={note}
                                 onPress={onNotePress}
                                 isLocked={isLocked}
+                                isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
+                                isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
                             />
                         ))}
                         {/* Bottom padding to avoid last card being cut off */}

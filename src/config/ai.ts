@@ -1,13 +1,15 @@
 /**
- * AI Configuration — Ollama Cloud API with KimiK2.5
+ * AI Configuration — Ollama Cloud API
  *
- * This file holds all AI-related configuration constants.
- * The API key is hardcoded here as a default, but users can override it
- * at runtime via Settings → AI Settings. Overrides are persisted in AsyncStorage.
+ * Central configuration for all AI-related constants.
+ * Users can override API key, model, and prompts at runtime via Settings.
+ * Overrides are persisted in AsyncStorage.
  *
- * Endpoint reference: https://docs.ollama.com/cloud#cloud-api-access
- * Auth: Bearer token via "Authorization" header
- * Model: kimi-k2.5:cloud (Moonshot AI's KimiK2.5 served via Ollama Cloud)
+ * Key concepts:
+ * - AI_AVAILABLE_MODELS: All selectable models (shown in Settings picker)
+ * - AI_STORAGE_KEYS: AsyncStorage keys for persisted AI state
+ * - DEFAULT_AI_PROMPTS: System prompts for title/summary/grammar tasks
+ * - RATE_LIMIT_DELAY_MS: Pause between sequential AI requests
  */
 
 /* ── Customizable Config Variables ───────────────────────────────────── */
@@ -24,6 +26,29 @@ export const DEFAULT_OLLAMA_MODEL = 'kimi-k2.5:cloud';
 /** How often to ping Ollama to check connectivity (milliseconds) */
 export const AI_HEALTH_CHECK_INTERVAL_MS = 10_000;
 
+/** Delay between sequential AI requests to prevent API rate limiting */
+export const RATE_LIMIT_DELAY_MS = 500;
+
+/** Max retry attempts before moving a failed job to the end of the queue */
+export const AI_MAX_RETRIES = 2;
+
+/** Maximum number of AI log entries to keep in storage (FIFO) */
+export const AI_LOG_MAX_ENTRIES = 200;
+
+/** Timeout for a single AI request in milliseconds */
+export const AI_REQUEST_TIMEOUT_MS = 60_000;
+
+/* ── Available AI Models (shown in Settings picker) ──────────────────── */
+
+export const AI_AVAILABLE_MODELS = [
+    'kimi-k2.5:cloud',
+    'qwen3.5:397b-cloud',
+    'glm-5:cloud',
+    'minimax-m2.7:cloud',
+    'nemotron-3-super:cloud',
+    'gemma4:31b-cloud',
+] as const;
+
 /* ── AsyncStorage Keys for User Overrides ────────────────────────────── */
 
 export const AI_STORAGE_KEYS = {
@@ -33,6 +58,10 @@ export const AI_STORAGE_KEYS = {
     GRAMMAR_MODEL: 'AI_OLLAMA_GRAMMAR_MODEL',
     /** JSON-serialized AI_PROMPTS override */
     PROMPTS: 'AI_CUSTOM_PROMPTS',
+    /** Persisted AI job queue (JSON array of AiJob) */
+    QUEUE: 'AI_JOB_QUEUE',
+    /** Structured AI operation log (JSON array of AiLogEntry) */
+    LOG: 'AI_PROCESSING_LOG',
 } as const;
 
 /* ── Default AI Prompts ──────────────────────────────────────────────── */
@@ -43,16 +72,24 @@ export const AI_STORAGE_KEYS = {
  */
 export const DEFAULT_AI_PROMPTS = {
     /**
-     * TITLE — Generate a concise, fitting title for a journal entry.
-     * The AI receives the full journal text as the user message.
+     * TITLE — Generate a short headline for a journal entry.
+     * Capitalized like a book title, 3 to 6 words max, matching user's language.
      */
-    title: `You are a journal assistant. Given a journal entry, generate a single short title (5-10 words max) that captures the main theme or emotion. Reply with ONLY the title, no quotes, no explanation, no punctuation at the end.`,
+    title: `You are a minimalist title generator. Read the following journal entry and generate a title of EXACTLY 3 to 6 words. Capitalize it like a book title. Do not use punctuation. Do not use quotes. Capture the exact emotional or factual essence of the text using words closely matching the entry. Reply with ONLY the title, nothing else.`,
 
     /**
-     * SUMMARY — Generate 2-5 bullet-point key takeaways.
-     * Response format: one bullet per line, starting with "• ".
+     * SUMMARY — highly personal, scales from 1-8 bullet points based on length.
+     * Empathetic yet logical, pointing out reflections (in 1st person) and CTAs.
      */
-    summary: `You are a journal assistant. Given a journal entry, create 2 to 5 concise bullet points summarizing the most important ideas, emotions, or events mentioned. Each bullet should be one sentence max. Use bold (**text**) to highlight key words. Format: start each bullet with "• ". Reply with ONLY the bullet points, nothing else.`,
+    summary: `You are the empathetic, reflective, yet logical inner voice of the writer. Summarize the following journal entry.
+Rules:
+- Scale length with the input: 1-2 bullet points for short texts, up to 6-8 for long entries.
+- Explicitly point out any actionable items ("Calls to Action").
+- Highlight important reflections in the first-person perspective ("I realized...", "I felt...").
+- Organize chaotic "brain dumps" into coherent, logical points but retain the raw emotional vibe.
+- NEVER refer to "the author" or "the writer".
+- Use bold (**text**) to highlight key words.
+Format: start each bullet with "• ". Reply with ONLY the bullet points, nothing else.`,
 
     /**
      * GRAMMAR — Find grammar and spelling issues and suggest corrections.

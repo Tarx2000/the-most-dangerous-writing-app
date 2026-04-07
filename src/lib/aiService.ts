@@ -2,11 +2,12 @@
  * AI Service — Ollama Cloud API Client
  *
  * Pure service module (no React) that communicates with the Ollama Cloud API.
- * Uses `fetch()` (available in React Native) to call the `/api/chat` endpoint.
+ * Uses XMLHttpRequest for streaming support in React Native.
  *
- * Three main functions:
- * - generateTitle()  → short title for a journal entry
+ * Functions:
+ * - generateTitle()  → short headline for a journal entry (max 8 words)
  * - generateSummary() → 2-5 bullet points of key takeaways
+ * - processNote()    → runs title + summary sequentially, returns both
  * - checkGrammar()   → array of grammar/spelling corrections
  * - pingServer()     → health check (is the AI reachable?)
  *
@@ -18,6 +19,7 @@ import {
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_AI_PROMPTS,
+    AI_REQUEST_TIMEOUT_MS,
     type AiPrompts,
 } from '@/config/ai';
 
@@ -136,8 +138,27 @@ async function ollamaChat(
                 }
             }
         };
-        
-        xhr.onerror = () => reject(new Error('Network request failed'));
+        xhr.onerror = () => {
+            console.warn('[AI] XHR Error occurred. ReadyState:', xhr.readyState, 'Status:', xhr.status);
+            reject(new Error(`Network request failed (connection dropped or unreachable)`));
+        };
+
+        // Abort after timeout to prevent hanging requests
+        const timeoutId = setTimeout(() => {
+            xhr.abort();
+            reject(new Error(`AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s`));
+        }, AI_REQUEST_TIMEOUT_MS);
+
+        // Clear timeout on completion — wraps the existing handler
+        const originalOnReady = xhr.onreadystatechange;
+        xhr.onreadystatechange = function (this: XMLHttpRequest, ev: Event) {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                clearTimeout(timeoutId);
+            }
+            if (typeof originalOnReady === 'function') {
+                originalOnReady.call(this, ev);
+            }
+        };
         
         xhr.send(JSON.stringify({
             model,
@@ -145,7 +166,7 @@ async function ollamaChat(
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userMessage },
             ],
-            stream: !!onChunk,
+            stream: true, // ALWAYS stream to prevent silent idle connection timeouts
             options: mergedOptions,
         }));
     });
@@ -154,11 +175,11 @@ async function ollamaChat(
 /* ── Public API ───────────────────────────────────────────────────────── */
 
 /**
- * Generate a short, fitting title for a journal entry.
+ * Generate a short, fitting headline for a journal entry (max 8 words).
  *
  * @param text - The full journal entry text
  * @param config - Optional config overrides (apiKey, model, prompts)
- * @returns A title string (5-10 words)
+ * @returns A headline string (max 8 words)
  */
 export async function generateTitle(
     text: string,
@@ -210,7 +231,7 @@ export async function checkGrammar(
     onChunk?: (text: string) => void
 ): Promise<GrammarSuggestion[]> {
     const prompt = config.prompts?.grammar || DEFAULT_AI_PROMPTS.grammar;
-    const raw = await ollamaChat(prompt, text, config, { num_predict: 250 }, onChunk);
+    const raw = await ollamaChat(prompt, text, config, {}, onChunk);
 
     try {
         // Try to extract JSON from the response (model might wrap in code fences)
@@ -233,15 +254,13 @@ export async function checkGrammar(
 }
 
 /**
- * Ping the Ollama server to check if the API is reachable.
- *
- * Sends a minimal request to the /api/version endpoint.
- * Returns true if the server responds without throwing a network error.
+ * Health check — ping the server to verify it's reachable and properly configured.
+ * Returns { online: true } if the server responds without throwing a network error.
  *
  * @param config - Optional config overrides
- * @returns boolean — true if server is reachable
+ * @returns Object with online status and any error message
  */
-export async function pingServer(config: AiConfig = {}): Promise<boolean> {
+export async function pingServer(config: AiConfig = {}): Promise<{ online: boolean; error?: string }> {
     const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
     const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
 
@@ -260,9 +279,31 @@ export async function pingServer(config: AiConfig = {}): Promise<boolean> {
         clearTimeout(timeoutId);
 
         // If we get a response (even 401/404), the server is reachable at this URL
-        return response.ok || response.status === 401 || response.status === 404;
-    } catch (err) {
+        const isOk = response.ok || response.status === 401 || response.status === 404;
+        if (!isOk) {
+            return { online: false, error: `Server connected but returned HTTP ${response.status}` };
+        }
+        return { online: true };
+    } catch (err: any) {
         console.warn('[AI] Ping failed:', err);
-        return false;
+        return { online: false, error: err.message || 'Network request failed' };
     }
+}
+
+/**
+ * Process a single note: generate title then summary, sequentially.
+ * This is the main entry point used by the AI Queue Manager.
+ * Runs title first, then summary (sequential to be kind to the API).
+ *
+ * @param text - The full journal entry text
+ * @param config - Optional config overrides
+ * @returns Object with title string and summary bullet array
+ */
+export async function processNote(
+    text: string,
+    config: AiConfig = {},
+): Promise<{ title: string; summary: string[] }> {
+    const title = await generateTitle(text, config);
+    const summary = await generateSummary(text, config);
+    return { title, summary };
 }

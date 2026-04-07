@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, Dimensions, StyleSheet, Vibration, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import { LibraryScreen } from './LibraryScreen';
 import { LiquidGlassNav } from '@/components/ui/LiquidGlassNav';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
+import { useAiQueue } from '@/lib/hooks/useAiQueue';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -46,6 +47,29 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const storage = useStorage();
     const security = useSecurity();
+
+    /**
+     * Initialize the AI Queue Manager on app startup.
+     * This loads persisted queue, recovers orphaned jobs,
+     * and auto-resumes processing. Only runs once.
+     */
+    const { initializeQueue } = useAiQueue({
+        aiApiKey: storage.aiApiKey,
+        aiBaseUrl: storage.aiBaseUrl,
+        aiModel: storage.aiModel,
+        aiPrompts: storage.aiPrompts,
+        savedNotes: storage.savedNotes,
+        updateNote: storage.updateNote,
+    });
+
+    /** Initialize queue once on mount (after storage loads) */
+    const queueInitedRef = useRef(false);
+    useEffect(() => {
+        if (storage.savedNotes.length > 0 && !queueInitedRef.current) {
+            queueInitedRef.current = true;
+            initializeQueue();
+        }
+    }, [storage.savedNotes.length, initializeQueue]);
 
     /** Navigate to Library page (scroll right) */
     const goToLibrary = useCallback(() => {

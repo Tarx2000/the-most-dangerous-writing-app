@@ -61,6 +61,8 @@ interface Props {
     isNotesUnlocked: boolean;
     /** Pass to SwipeableModal for scroll control */
     setHomeScrollEnabled?: (enabled: boolean) => void;
+    isNoteActive?: (id: string) => boolean;
+    isNoteQueued?: (id: string) => boolean;
 }
 
 export const PersonProfileModal: React.FC<Props> = ({
@@ -75,6 +77,8 @@ export const PersonProfileModal: React.FC<Props> = ({
     onNotePress,
     isNotesUnlocked,
     setHomeScrollEnabled,
+    isNoteActive,
+    isNoteQueued,
 }) => {
     /* ── Edit mode state ──────────────────────────────────────────────── */
     const [isEditing, setIsEditing] = useState(false);
@@ -409,6 +413,8 @@ export const PersonProfileModal: React.FC<Props> = ({
                             note={note}
                             onPress={onNotePress}
                             isLocked={!isNotesUnlocked}
+                            isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
+                            isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
                         />
                     ))}
                 </View>

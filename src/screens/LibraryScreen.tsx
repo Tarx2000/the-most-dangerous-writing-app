@@ -22,14 +22,14 @@ import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
+import { useAiQueue } from '@/lib/hooks/useAiQueue';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
-import { SortOption, SavedNote, Person } from '@/types';
+import { SortOption, SavedNote, Person, AiJobCategory } from '@/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { generateTitle, generateSummary } from '@/lib/aiService';
 import { RichText } from '@/components/ui/RichText';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -69,11 +69,19 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
     const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
     /** Person whose profile modal is currently open */
     const [profilePerson, setProfilePerson] = useState<Person | null>(null);
-    /** ID of note currently being AI-regenerated (shows loading spinner) */
-    const [aiRegeneratingId, setAiRegeneratingId] = useState<string | null>(null);
 
     const storage = useStorage();
     const security = useSecurity();
+
+    /** Central AI Queue — replaces all direct aiService calls */
+    const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueue({
+        aiApiKey: storage.aiApiKey,
+        aiBaseUrl: storage.aiBaseUrl,
+        aiModel: storage.aiModel,
+        aiPrompts: storage.aiPrompts,
+        savedNotes: storage.savedNotes,
+        updateNote: storage.updateNote,
+    });
 
     // Custom PanResponder for Android wipe-to-dismiss on the fullscreen modal
     const panY = useRef(new Animated.Value(0)).current;
@@ -162,54 +170,39 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
     };
 
     /**
-     * Regenerate AI title + summary for a note that doesn't have AI data yet.
-     * Called via the small regenerate button in the note viewer.
+     * Enqueue a note for AI processing via the central queue.
+     * Replaces the old direct generateTitle/generateSummary calls.
      */
     const handleRegenerateAi = useCallback(async (note: SavedNote) => {
-        if (aiRegeneratingId) return; // Already regenerating
-        setAiRegeneratingId(note.id);
         Vibration.vibrate(30);
-
-        const aiConfig = {
-            apiKey: storage.aiApiKey,
-            baseUrl: storage.aiBaseUrl,
-            model: storage.aiModel,
-            prompts: storage.aiPrompts,
-        };
-
-        try {
-            const [title, summary] = await Promise.all([
-                generateTitle(note.text, aiConfig),
-                generateSummary(note.text, aiConfig),
-            ]);
-
-            await storage.updateNote(note.id, { 
-                aiTitle: title, 
-                aiSummary: summary, 
-                aiModelUsed: storage.aiModel,
-                aiProcessing: false 
-            });
-
-            // Update the modal view to reflect changes
-            setViewNoteModal({ 
-                ...note, 
-                aiTitle: title, 
-                aiSummary: summary, 
-                aiModelUsed: storage.aiModel 
-            });
-        } catch (err) {
-            console.warn('[AI] Regeneration failed:', err);
-        } finally {
-            setAiRegeneratingId(null);
-        }
-    }, [aiRegeneratingId, storage]);
+        const category: AiJobCategory = (note as any).isAlignmentReflection
+            ? 'checkin'
+            : note.personId
+                ? 'circle'
+                : 'journal';
+        await enqueueNote(note.id, category);
+    }, [enqueueNote]);
 
     return (
         <View style={commonStyles.libraryContainer}>
             {/* Header row */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
                 <View>
-                    <Text style={[commonStyles.libraryTitle, { marginBottom: 0 }]}>Library</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={[commonStyles.libraryTitle, { marginBottom: 0 }]}>Library</Text>
+                        {/* AI Processing badge — compact indicator */}
+                        {queueState.isProcessing && (
+                            <View style={styles.aiBadge}>
+                                <ActivityIndicator size={10} color={theme.colors.primaryAction} />
+                                <Text style={styles.aiBadgeText}>
+                                    {queueState.batchProgress
+                                        ? `${queueState.batchProgress.current}/${queueState.batchProgress.total}`
+                                        : 'AI'
+                                    }
+                                </Text>
+                            </View>
+                        )}
+                    </View>
                     <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{storage.savedNotes.length} Entries • {storage.persons.length} Circles</Text>
                 </View>
                 {!security.isNotesUnlocked ? (
@@ -286,6 +279,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                                     onPress={setViewNoteModal}
                                                     personName={note.personId ? storage.persons.find(p => p.id === note.personId)?.name : undefined}
                                                     isLocked={!security.isNotesUnlocked}
+                                                    isProcessing={isNoteActive(note.id)}
+                                                    isQueued={isNoteQueued(note.id)}
                                                 />
                                             )}
                                         </View>
@@ -356,6 +351,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                         onDelete={() => setPersonToDelete(p.id)}
                                         onProfilePress={() => setProfilePerson(p)}
                                         canDelete={security.isNotesUnlocked}
+                                        isNoteActive={isNoteActive}
+                                        isNoteQueued={isNoteQueued}
                                     />
                                     </View>
                                 )}
@@ -460,21 +457,21 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 )}
 
                                 {/* Regenerate AI button — shown when note has no AI data */}
-                                {!viewNoteModal.aiTitle && (!viewNoteModal.aiSummary || viewNoteModal.aiSummary.length === 0) && !viewNoteModal.aiProcessing && (
+                                {!viewNoteModal.aiTitle && (!viewNoteModal.aiSummary || viewNoteModal.aiSummary.length === 0) && !isNoteActive(viewNoteModal.id) && (
                                     <TouchableOpacity
                                         style={styles.regenerateBtn}
                                         onPress={() => handleRegenerateAi(viewNoteModal)}
-                                        disabled={!!aiRegeneratingId}
                                     >
-                                        {aiRegeneratingId === viewNoteModal.id ? (
-                                            <ActivityIndicator size="small" color={theme.colors.primaryAction} />
-                                        ) : (
-                                            <>
-                                                <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
-                                                <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
-                                            </>
-                                        )}
+                                        <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
+                                        <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
                                     </TouchableOpacity>
+                                )}
+
+                                {isNoteActive(viewNoteModal.id) && (
+                                    <View style={[styles.regenerateBtn, { borderColor: 'rgba(255, 42, 42, 0.2)' }]}>
+                                        <ActivityIndicator size="small" color={theme.colors.primaryAction} />
+                                        <Text style={styles.regenerateBtnText}>Processing...</Text>
+                                    </View>
                                 )}
 
                                 <Text style={styles.premiumNoteBody} selectable={true}>{viewNoteModal.text}</Text>
@@ -491,9 +488,9 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                         <TouchableOpacity
                                             style={styles.regenerateSmallBtn}
                                             onPress={() => handleRegenerateAi(viewNoteModal)}
-                                            disabled={!!aiRegeneratingId}
+                                            disabled={isNoteActive(viewNoteModal.id)}
                                         >
-                                            {aiRegeneratingId === viewNoteModal.id ? (
+                                            {isNoteActive(viewNoteModal.id) ? (
                                                 <ActivityIndicator size="small" color={theme.colors.textMuted} />
                                             ) : (
                                                 <MaterialCommunityIcons name="refresh" size={16} color={theme.colors.textMuted} />
@@ -575,6 +572,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                 onDeletePerson={(id) => { storage.deletePerson(id); setProfilePerson(null); }}
                 onNotePress={setViewNoteModal}
                 isNotesUnlocked={security.isNotesUnlocked}
+                isNoteActive={isNoteActive}
+                isNoteQueued={isNoteQueued}
             />
 
         </View>
@@ -582,6 +581,23 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
 };
 
 const styles = StyleSheet.create({
+    /** Compact AI processing badge next to Library title */
+    aiBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(255, 42, 42, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 42, 42, 0.2)',
+    },
+    aiBadgeText: {
+        color: theme.colors.primaryAction,
+        fontSize: 10,
+        fontWeight: '800',
+    },
     filterRow: {
         marginBottom: 20
     },

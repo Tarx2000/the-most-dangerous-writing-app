@@ -65,6 +65,16 @@ export function useStorage() {
             let loadedNotes: SavedNote[] = [];
             if (data['SAVED_NOTES']) {
                 loadedNotes = JSON.parse(data['SAVED_NOTES']);
+
+                // Migration: clear stale aiProcessing flags from the old system.
+                // Processing state is now derived from the AI Queue, not stored on notes.
+                const hadStale = loadedNotes.some(n => n.aiProcessing === true);
+                if (hadStale) {
+                    loadedNotes = loadedNotes.map(n => n.aiProcessing ? { ...n, aiProcessing: false } : n);
+                    await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(loadedNotes));
+                    console.log('[Storage] Cleaned up stale aiProcessing flags');
+                }
+
                 setSavedNotes(loadedNotes);
             }
             if (data['SAVED_PERSONS']) setPersons(JSON.parse(data['SAVED_PERSONS']));
@@ -231,21 +241,23 @@ export function useStorage() {
             }
         }
 
-        const updated = [note, ...savedNotes];
-        setSavedNotes(updated);
-        await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated));
-        
-        // Notify other screens of the storage update!
-        DeviceEventEmitter.emit('NOTES_UPDATED');
+        setSavedNotes(prev => {
+            const updated = [note, ...prev];
+            AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated))
+                .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
+            return updated;
+        });
 
         return { streakIncreased, newStreak: updatedStreak };
     };
 
     const deleteNote = async (id: string) => {
-        const updated = savedNotes.filter(n => n.id !== id);
-        setSavedNotes(updated);
-        await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated));
-        DeviceEventEmitter.emit('NOTES_UPDATED');
+        setSavedNotes(prev => {
+            const updated = prev.filter(n => n.id !== id);
+            AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated))
+                .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
+            return updated;
+        });
     };
 
     /**
@@ -253,12 +265,29 @@ export function useStorage() {
      * Merges provided `updates` into the note with matching `id`.
      */
     const updateNote = async (id: string, updates: Partial<SavedNote>) => {
-        const updatedNotes = savedNotes.map(n =>
-            n.id === id ? { ...n, ...updates } : n
-        );
-        setSavedNotes(updatedNotes);
-        await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
-        DeviceEventEmitter.emit('NOTES_UPDATED');
+        setSavedNotes(prev => {
+            const updatedNotes = prev.map(n =>
+                n.id === id ? { ...n, ...updates } : n
+            );
+            AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes))
+                .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
+            return updatedNotes;
+        });
+    };
+
+    /** Removes AI generated titles, summaries, and overrides from all notes */
+    const clearAllAiMetadata = async () => {
+        setSavedNotes(prev => {
+            const updatedNotes = prev.map(n => ({
+                ...n,
+                aiTitle: undefined,
+                aiSummary: undefined,
+                aiModelUsed: undefined,
+            }));
+            AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes))
+                .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
+            return updatedNotes;
+        });
     };
 
     const addPerson = async (name: string) => {
@@ -268,9 +297,11 @@ export function useStorage() {
             name: name.trim(),
             createdAt: Date.now(),
         };
-        const updated = [newPerson, ...persons];
-        setPersons(updated);
-        await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updated));
+        setPersons(prev => {
+            const updated = [newPerson, ...prev];
+            AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updated));
+            return updated;
+        });
     };
 
     const deletePerson = async (id: string) => {
@@ -373,6 +404,7 @@ export function useStorage() {
         updateBiometricsPref,
         toggleDevMode,
         clearAllData,
+        clearAllAiMetadata,
         saveNote,
         deleteNote,
         updateNote, // Added again safely
