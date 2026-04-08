@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     StatusBar,
     TextInput,
     ScrollView,
@@ -10,36 +9,40 @@ import {
     Modal,
     KeyboardAvoidingView,
     ImageBackground,
-    PanResponder,
     Dimensions,
     Vibration,
     StyleSheet,
-    ActivityIndicator,
-    DeviceEventEmitter
+    DeviceEventEmitter,
+    Pressable,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '@/types/navigation.types';
-import { commonStyles } from '@/styles/commonStyles';
-import { CONFIG, APP_VERSION, VERSION_HISTORY } from '@/config';
-import { CarouselSelector } from '@/components/ui/CarouselSelector';
-import { CustomSlider } from '@/components/features/alignment/CustomSlider';
-import { SwipeableModal } from '@/components/ui/SwipeableModal';
-import { CalendarView } from '@/components/features/library/CalendarView';
-import { StreakPopup } from '@/components/features/writing/StreakPopup';
-import { TickDial } from '@/components/ui/TickDial';
-import { useStorage } from '@/lib/hooks/useStorage';
-import { useSecurity } from '@/lib/hooks/useSecurity';
-import { Person } from '@/types';
-import * as LocalAuthentication from 'expo-local-authentication';
-import { theme } from '@/styles/theme';
-import { pingServer } from '@/lib/aiService';
-import { DEFAULT_AI_PROMPTS, AI_AVAILABLE_MODELS } from '@/config/ai';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import Animated, { FadeInUp, FadeOutUp, FadeIn } from 'react-native-reanimated';
+import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
+import { clearAiLog, getAiLog } from '@/lib/aiLogger';
 import { useAiQueue } from '@/lib/hooks/useAiQueue';
-import { getAiLog, clearAiLog } from '@/lib/aiLogger';
+import { pingServer } from '@/lib/aiService';
+import { theme } from '@/styles/theme';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { Person } from '@/types';
+import { useSecurity } from '@/lib/hooks/useSecurity';
+import { useStorage } from '@/lib/hooks/useStorage';
+import { TickDial } from '@/components/ui/TickDial';
+import { StreakPopup } from '@/components/features/writing/StreakPopup';
+import { CalendarView } from '@/components/features/library/CalendarView';
+import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { CustomSlider } from '@/components/features/alignment/CustomSlider';
+import { CarouselSelector } from '@/components/ui/CarouselSelector';
+import { APP_VERSION, CONFIG, VERSION_HISTORY } from '@/config';
+import { DEFAULT_AI_PROMPTS, AI_AVAILABLE_MODELS } from '@/config/ai';
+import { commonStyles } from '@/styles/commonStyles';
+import { RootStackParamList } from '@/types/navigation.types';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
+import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel';
+import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToolsPanel';
 import type { AiLogEntry } from '@/types';
 
 type Props = {
@@ -53,7 +56,7 @@ type Props = {
     setSessionMode: (mode: 'journal' | 'circles' | 'checkin' | 'vlog') => void;
 };
 
-export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled, sessionMode, setSessionMode }) => {
+const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled, sessionMode, setSessionMode }) => {
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
@@ -81,10 +84,12 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     const [aiLogEntries, setAiLogEntries] = useState<AiLogEntry[]>([]);
     const [showAiLog, setShowAiLog] = useState(false);
 
-    const [circleSearch, setCircleSearch] = useState('');
+    const circleSearchRef = useRef('');
+    const [debouncedCircleSearch, setDebouncedCircleSearch] = useState('');
+    const circleSearchDebounceTimeout = useRef<NodeJS.Timeout | null>(null);
+
     const [showAddPerson, setShowAddPerson] = useState(false);
-    const [newPersonName, setNewPersonName] = useState('');
-    const [newPersonRelationship, setNewPersonRelationship] = useState('');
+    const newPersonNameRef = useRef('');
 
     const storage = useStorage();
     const security = useSecurity();
@@ -102,29 +107,6 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
     const isModalOpenRef = useRef(isModalOpen);
     isModalOpenRef.current = isModalOpen;
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onMoveShouldSetPanResponder: (evt, gestureState) => {
-                // Activate on strong left swipe ONLY when no modals are open
-                if (isModalOpenRef.current) return false;
-                return gestureState.dx < -40 && Math.abs(gestureState.dy) < 40;
-            },
-            onPanResponderRelease: (evt, gestureState) => {
-                if (gestureState.dx < -40) {
-                    onGoToLibrary();
-                }
-            }
-        })
-    ).current;
-
-    useEffect(() => {
-        storage.loadAllData();
-        const sub = DeviceEventEmitter.addListener('NOTES_UPDATED', () => {
-            storage.loadAllData();
-        });
-        return () => sub.remove();
-    }, []);
 
     useEffect(() => {
         if (route.params?.streakIncreased) {
@@ -169,9 +151,19 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     
     const details = getScoreDetails(score);
 
-    const filteredPersons = storage.persons.filter(p =>
-        p.name.toLowerCase().includes(circleSearch.toLowerCase())
-    );
+    const filteredPersons = useMemo(() => {
+        return storage.persons.filter(p =>
+            p.name.toLowerCase().includes(debouncedCircleSearch.toLowerCase())
+        );
+    }, [storage.persons, debouncedCircleSearch]);
+
+    const handleCircleSearchChange = (text: string) => {
+        circleSearchRef.current = text;
+        if (circleSearchDebounceTimeout.current) clearTimeout(circleSearchDebounceTimeout.current);
+        circleSearchDebounceTimeout.current = setTimeout(() => setDebouncedCircleSearch(text), 150);
+        // Force a synchronous UI update to show/hide the clear button, but avoid re-rendering entire screen if possible?
+        // Actually, just standard debounce is enough.
+    };
 
     const activeFont = CONFIG.FONTS[storage.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[storage.sizeIndex]?.value || 18;
@@ -196,7 +188,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
     };
 
     return (
-        <View style={commonStyles.startContainer} {...panResponder.panHandlers}>
+        <View style={commonStyles.startContainer}>
             <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
             {/* Dev Mode Toast Notification */}
@@ -212,13 +204,13 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
             {/* Premium Header */}
             <View style={commonStyles.topBar}>
-                <TouchableOpacity onPress={() => setShowCalendar(true)} style={commonStyles.iconButton}>
+                <AnimatedScaleButton onPress={() => setShowCalendar(true)} style={commonStyles.iconButton}>
                     <Text style={{ color: theme.colors.danger, fontSize: 16 }}>🔥</Text>
                     <Text style={commonStyles.streakText}>{storage.currentStreak}</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                     {/* Vision Board button — moved here from footer */}
-                    <TouchableOpacity 
+                    <AnimatedScaleButton 
                         style={commonStyles.iconButton}
                         onPress={() => {
                             if (security.isNotesUnlocked) {
@@ -239,9 +231,9 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     >
                         <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={16} color={!security.isNotesUnlocked ? "rgba(255,100,100,0.8)" : theme.colors.textPrimary} style={{ marginRight: 4 }} />
                         <Text style={[commonStyles.iconButtonText, !security.isNotesUnlocked && { color: 'rgba(255,100,100,0.8)' }]}>{!security.isNotesUnlocked ? '🔒' : 'Vision'}</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                     <View style={{ position: 'relative' }}>
-                        <TouchableOpacity
+                        <AnimatedScaleButton
                             onPress={() => setShowSettings(true)}
                             onPressIn={() => {
                                 // Start 5s timer to unlock dev tools
@@ -262,7 +254,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             style={commonStyles.iconButton}
                         >
                             <Text style={commonStyles.iconButtonText}>⚙️</Text>
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                         
                         <View style={{
                             position: 'absolute',
@@ -284,53 +276,63 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
             <View style={{ flex: 1, paddingVertical: 10 }}>
                 {/* Dynamic Hero Area */}
                 <View style={styles.heroWidgetContainer}>
+                    {/* The Morphing Vector Icon - Always Mounted */}
+                    <View style={{ position: 'relative', marginBottom: sessionMode === 'checkin' ? 0 : 12, marginTop: sessionMode === 'checkin' ? 15 : 0, width: 80, height: 80, justifyContent: 'center', alignItems: 'center' }}>
+                        {/* Glow ring - behind the icon, only visible on checkin */}
+                        {sessionMode === 'checkin' && (
+                            <View style={[styles.glowRing, { position: 'absolute', backgroundColor: details.glow, shadowColor: details.color, width: 80, height: 80, borderRadius: 40 }]} />
+                        )}
+                        {/* Inner Circle - behind the icon, only visible on checkin */}
+                        {sessionMode === 'checkin' && (
+                            <View style={[styles.iconCircle, { position: 'absolute', width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: theme.colors.background }]} />
+                        )}
+                        
+                        {/* The Icon itself - permanently mounted so it can morph */}
+                        <LiquidMorphIcon 
+                            mode={sessionMode} 
+                            size={sessionMode === 'checkin' ? 40 : 42} 
+                            color={sessionMode === 'checkin' ? details.color : theme.colors.primaryAction} 
+                        />
+                    </View>
+
                     {sessionMode === 'journal' && (
-                        <>
-                            <MaterialCommunityIcons name="feather" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
+                        <Animated.View entering={FadeInUp.duration(400).springify()} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
                             <Text style={styles.heroTitle}>Free Writing</Text>
                             <Text style={styles.heroSubtitle}>Write continuously, or all is lost.</Text>
-                        </>
+                        </Animated.View>
                     )}
                     {sessionMode === 'circles' && (
-                        <>
-                            <MaterialCommunityIcons name="account-group-outline" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
+                        <Animated.View entering={FadeInUp.duration(400).springify()} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
                             <Text style={styles.heroTitle}>Relationship Journal</Text>
-                            <TouchableOpacity style={styles.personSmallSelectBtn} onPress={() => {
+                            <AnimatedScaleButton style={styles.personSmallSelectBtn} onPress={() => {
                                 setShowPersonSelect(true);
                             }}>
                                 <Text style={styles.personSmallSelectText}>
                                     {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
                                     <Text style={{ opacity: 0.5 }}> ▼</Text>
                                 </Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                             {selectedPersonId && (
-                                <TouchableOpacity style={styles.quickNoteBtn} onPress={() => { navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
+                                <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
                                     <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
                                     <Text style={styles.quickNoteText}>Quick Note</Text>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             )}
-                        </>
+                        </Animated.View>
                     )}
                     {sessionMode === 'checkin' && (
-                        <>
-                            {/* Compact glow ring — pushed down for layout alignment */}
-                            <View style={[styles.glowRing, { backgroundColor: details.glow, shadowColor: details.color, width: 80, height: 80, borderRadius: 40, marginTop: 15 }]}>
-                                <View style={[styles.iconCircle, { width: 68, height: 68, borderRadius: 34 }]}>
-                                    <MaterialCommunityIcons name={details.icon} size={40} color={details.color} />
-                                </View>
-                            </View>
+                        <Animated.View entering={FadeIn.duration(400)} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
                             <Text style={[styles.scoreText, { color: details.color, fontSize: 14, marginTop: 8, marginBottom: -6 }]}>{details.text.toUpperCase()}</Text>
                             <View style={{ transform: [{ scale: 0.9 }], marginTop: -14, marginBottom: -40 }}>
                                 <CustomSlider value={score} onValueChange={setScore} />
                             </View>
-                        </>
+                        </Animated.View>
                     )}
                     {sessionMode === 'vlog' && (
-                        <>
-                            <MaterialCommunityIcons name="video-vintage" size={42} color={theme.colors.primaryAction} style={{ marginBottom: 12 }} />
+                        <Animated.View entering={FadeInUp.duration(400).springify()} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
                             <Text style={styles.heroTitle}>Video Journal</Text>
                             <Text style={styles.heroSubtitle}>Record your thoughts on camera.</Text>
-                        </>
+                        </Animated.View>
                     )}
                 </View>
 
@@ -347,9 +349,9 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                     <View style={[styles.diffSelectorContainer, (sessionMode === 'checkin' || sessionMode === 'vlog') && { opacity: 0 }]} pointerEvents={(sessionMode === 'checkin' || sessionMode === 'vlog') ? 'none' : 'auto'}>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.diffScroll}>
                             {CONFIG.DIFFICULTIES.map((diff, i) => (
-                                <TouchableOpacity key={i} style={[styles.diffPill, diffIndex === i && styles.diffPillActive]} onPress={() => setDiffIndex(i)}>
+                                <AnimatedScaleButton key={i} style={[styles.diffPill, diffIndex === i && styles.diffPillActive]} onPress={() => setDiffIndex(i)}>
                                     <Text style={[styles.diffPillText, diffIndex === i && styles.diffPillTextActive]}>{diff.label}</Text>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             ))}
                         </ScrollView>
                     </View>
@@ -358,14 +360,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
             {/* Start Writing Button — now standalone pill above the nav area */}
             <View style={styles.startBtnContainer}>
-                <TouchableOpacity style={styles.massiveStartBtn} onPress={handleStart}>
+                <AnimatedScaleButton style={styles.massiveStartBtn} onPress={handleStart}>
                     <Text style={styles.massiveStartBtnText}>
                         {sessionMode === 'vlog' ? 'Start Recording' : 'Start Writing'}
                     </Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
+                </AnimatedScaleButton>
+                <AnimatedScaleButton style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
                     <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             </View>
 
             {/* Bottom spacer for the floating LiquidGlassNav pill */}
@@ -401,7 +403,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             {CONFIG.FONTS.map((f, i) => {
                                 const fontValue = f.value;
                                 return (
-                                    <TouchableOpacity
+                                    <AnimatedScaleButton
                                         key={i}
                                         style={[commonStyles.sortBtn, storage.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
                                         onPress={() => storage.savePreferences(i, storage.sizeIndex)}
@@ -409,7 +411,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                         <Text style={[commonStyles.sortBtnText, { fontFamily: fontValue }, storage.fontIndex === i && commonStyles.sortBtnTextActive]}>
                                             {f.label}
                                         </Text>
-                                    </TouchableOpacity>
+                                    </AnimatedScaleButton>
                                 );
                             })}
                         </View>
@@ -420,7 +422,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Adjust the text scale</Text>
                         <View style={commonStyles.settingsRow}>
                             {CONFIG.SIZES.map((s, i) => (
-                                <TouchableOpacity
+                                <AnimatedScaleButton
                                     key={i}
                                     style={[commonStyles.sortBtn, storage.sizeIndex === i && commonStyles.sortBtnActive]}
                                     onPress={() => storage.savePreferences(storage.fontIndex, i)}
@@ -428,7 +430,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     <Text style={[commonStyles.sortBtnText, storage.sizeIndex === i && commonStyles.sortBtnTextActive]}>
                                         {s.label}
                                     </Text>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             ))}
                         </View>
                     </View>
@@ -459,347 +461,44 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                         </View>
                     </View>
 
-                    {/* ── AI Settings Card ────────────────────────────────────── */}
-                    <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                            <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
-                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>AI Settings</Text>
-                        </View>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>Ollama Cloud API — KimiK2.5</Text>
+                    <AiSettingsPanel 
+                        storage={storage} 
+                        queueState={queueState} 
+                        forceBatchOverwrite={forceBatchOverwrite} 
+                        setForceBatchOverwrite={setForceBatchOverwrite} 
+                        handleBatchProcess={handleBatchProcess} 
+                        setChoosingModelFor={setChoosingModelFor} 
+                    />
 
-                        {/* API Key */}
-                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>API Key</Text>
-                        <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: theme.colors.textPrimary, fontSize: 13, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}
-                            value={storage.aiApiKey}
-                            onChangeText={storage.saveAiApiKey}
-                            secureTextEntry
-                            placeholder="Enter API key"
-                            placeholderTextColor={theme.colors.textMuted}
-                            autoCapitalize="none"
-                        />
-
-                        {/* Model Selection (Summary/Title) */}
-                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>Summary & Title Model</Text>
-                        <TouchableOpacity
-                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-                            onPress={() => setChoosingModelFor('summary')}
-                        >
-                            <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>{storage.aiModel}</Text>
-                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
-                        </TouchableOpacity>
-
-                        {/* Grammar Model Selection */}
-                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>Grammar & Spell Check Model</Text>
-                        <TouchableOpacity
-                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-                            onPress={() => setChoosingModelFor('grammar')}
-                        >
-                            <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>{storage.aiGrammarModel}</Text>
-                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
-                        </TouchableOpacity>
-
-                        {/* Batch AI Processing — via central AI Queue */}
-                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: 4 }}>Batch Retrospective Processing</Text>
-                        <View style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
-                            <TouchableOpacity 
-                                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, opacity: queueState.isProcessing ? 0.5 : 1 }}
-                                onPress={() => !queueState.isProcessing && setForceBatchOverwrite(!forceBatchOverwrite)}
-                                disabled={queueState.isProcessing}
-                            >
-                                <View style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: forceBatchOverwrite ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: forceBatchOverwrite ? theme.colors.primaryAction : 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                                    {forceBatchOverwrite && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
-                                </View>
-                                <Text style={{ color: theme.colors.textPrimary, fontSize: 13, flex: 1 }}>Force overwrite ALL entries (Slow)</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={{
-                                    backgroundColor: queueState.isProcessing ? 'rgba(255, 77, 77, 0.15)' : 'rgba(74, 222, 128, 0.15)',
-                                    paddingVertical: 12,
-                                    borderRadius: 8,
-                                    alignItems: 'center',
-                                    flexDirection: 'row',
-                                    justifyContent: 'center',
-                                    gap: 8,
-                                    borderWidth: 1,
-                                    borderColor: queueState.isProcessing ? 'rgba(255, 77, 77, 0.3)' : 'rgba(74, 222, 128, 0.3)'
-                                }}
-                                onPress={handleBatchProcess}
-                            >
-                                {queueState.isProcessing ? (
-                                    <>
-                                        <ActivityIndicator size="small" color={theme.colors.danger} />
-                                        <Text style={{ color: theme.colors.danger, fontWeight: 'bold' }}>Cancel Processing</Text>
-                                    </>
-                                ) : (
-                                    <>
-                                        <MaterialCommunityIcons name="brain" size={16} color="#4ade80" />
-                                        <Text style={{ color: '#4ade80', fontWeight: 'bold' }}>Process {forceBatchOverwrite ? 'All' : 'Missing'} Entries</Text>
-                                    </>
-                                )}
-                            </TouchableOpacity>
-
-                            {/* Granular batch progress UI */}
-                            {queueState.isProcessing && (
-                                <View style={{ marginTop: 12 }}>
-                                    {/* Progress bar */}
-                                    {queueState.batchProgress && (
-                                        <View style={{ marginBottom: 8 }}>
-                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontWeight: '600' }}>
-                                                    {queueState.currentCategory === 'journal' ? '📓 Journals' : queueState.currentCategory === 'circle' ? '👥 Circles' : '🧭 Check-ins'}
-                                                </Text>
-                                                <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>
-                                                    {queueState.batchProgress.current}/{queueState.batchProgress.total}
-                                                </Text>
-                                            </View>
-                                            <View style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                                                <View style={{ height: 4, borderRadius: 2, backgroundColor: theme.colors.primaryAction, width: `${Math.round((queueState.batchProgress.current / Math.max(queueState.batchProgress.total, 1)) * 100)}%` }} />
-                                            </View>
-                                        </View>
-                                    )}
-
-                                    {/* Currently processing note preview */}
-                                    {queueState.currentJob && (() => {
-                                        const currentNote = storage.savedNotes.find(n => n.id === queueState.currentJob?.noteId);
-                                        return currentNote ? (
-                                            <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }} numberOfLines={1}>
-                                                Now: "{currentNote.text.slice(0, 60)}..."
-                                            </Text>
-                                        ) : null;
-                                    })()}
-                                </View>
-                            )}
-                        </View>
-
-                        {/* ── AI Status Panel — always-visible queue state ───── */}
-                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: 4 }}>AI Status</Text>
-                        <View style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: queueState.serverOnline ? '#4ade80' : queueState.serverOnline === false ? theme.colors.danger : theme.colors.textMuted }} />
-                                <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>
-                                    Server: {queueState.serverOnline ? 'Online' : queueState.serverOnline === false ? 'Offline' : 'Checking...'}
-                                </Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                <MaterialCommunityIcons name={queueState.isProcessing ? 'loading' : 'check-circle-outline'} size={14} color={queueState.isProcessing ? theme.colors.primaryAction : '#4ade80'} />
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>
-                                    {queueState.isProcessing
-                                        ? `Processing (${queueState.pendingCount} queued)`
-                                        : queueState.pendingCount > 0
-                                            ? `${queueState.pendingCount} jobs waiting (server offline)`
-                                            : 'All done — no pending jobs'
-                                    }
-                                </Text>
-                            </View>
-                            <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 4 }}>
-                                AI Coverage: {storage.savedNotes.filter(n => n.aiTitle).length}/{storage.savedNotes.length} entries
-                            </Text>
-
-                            {/* Error Feedback */}
-                            {queueState.serverOnline === false && queueState.lastError && (
-                                <View style={{ marginTop: 12, backgroundColor: 'rgba(255, 42, 42, 0.15)', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255, 42, 42, 0.3)' }}>
-                                    <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: 'bold', marginBottom: 4 }}>
-                                        <MaterialCommunityIcons name="alert-circle-outline" size={12} /> Connection Error
-                                    </Text>
-                                    <Text style={{ color: theme.colors.danger, fontSize: 11 }}>
-                                        {queueState.lastError}
-                                    </Text>
-                                    <Text style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
-                                        Queue is paused and will auto-resume when reachable.
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
-
-                        {/* Base URL */}
-                        <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Base URL</Text>
-                        <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: theme.colors.textPrimary, fontSize: 13, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 12 }}
-                            value={storage.aiBaseUrl}
-                            onChangeText={storage.saveAiBaseUrl}
-                            placeholder="https://ollama.com"
-                            placeholderTextColor={theme.colors.textMuted}
-                            autoCapitalize="none"
-                            keyboardType="url"
-                        />
-
-                        {/* Test Connection */}
-                        <TouchableOpacity
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 42, 42, 0.1)', marginTop: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
-                            onPress={async () => {
-                                const result = await pingServer({ apiKey: storage.aiApiKey, baseUrl: storage.aiBaseUrl });
-                                Vibration.vibrate(result.online ? 20 : [0, 50, 50, 50]);
-                                alert(result.online ? '✅ AI server is reachable!' : `❌ Cannot reach AI server.\n\nError: ${result.error}`);
-                            }}
-                        >
-                            <MaterialCommunityIcons name="connection" size={16} color={theme.colors.primaryAction} />
-                            <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryAction }]}>Test Connection</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* ── Developer Tools Section (only visible after 5s long-press on ⚙️) ── */}
-                    {devModeUnlocked && (
-                    <View style={{ backgroundColor: storage.devMode ? 'rgba(255, 215, 0, 0.08)' : theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: storage.devMode ? 'rgba(255, 215, 0, 0.3)' : theme.colors.glassBorder, marginTop: 10 }}>
-                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: storage.devMode ? '#FFD700' : theme.colors.textPrimary, fontSize: 16 }]}>🛠 Developer Tools</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Debug features for testing</Text>
-
-                        {/* Dev Mode Toggle */}
-                        <TouchableOpacity
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: storage.devMode ? 'rgba(255, 215, 0, 0.2)' : theme.colors.glassHighlight, marginTop: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
-                            onPress={storage.toggleDevMode}
-                        >
-                            <Text style={[commonStyles.closeVersionBtnText, storage.devMode && { color: '#FFD700' }]}>Dev Mode</Text>
-                            <Text style={{ color: storage.devMode ? '#FFD700' : theme.colors.textMuted, fontSize: 13, fontWeight: 'bold' }}>{storage.devMode ? 'ON' : 'OFF'}</Text>
-                        </TouchableOpacity>
-
-                        {/* Dev Actions (only visible when dev mode is active) */}
-                        {storage.devMode && (
-                            <View style={{ marginTop: 15, gap: 10 }}>
-                                {/* Simulate Streak Popup */}
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 215, 0, 0.15)', marginTop: 0 }]}
-                                    onPress={() => {
-                                        setNewStreakParam(storage.currentStreak || 1);
-                                        setShowStreakPopup(true);
-                                        setShowSettings(false);
-                                    }}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#FFD700' }]}>🎯 Simulate Streak Popup</Text>
-                                </TouchableOpacity>
-
-                                {/* Run AI Benchmark */}
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(74, 222, 128, 0.15)', marginTop: 0 }]}
-                                    onPress={() => setShowBenchmarkModal(true)}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#4ade80' }]}>⚡ Run AI Benchmark</Text>
-                                </TouchableOpacity>
-
-                                {/* Clear All Data */}
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 77, 77, 0.15)', marginTop: 0 }]}
-                                    onPress={() => {
-                                        storage.clearAllData();
-                                        setShowSettings(false);
-                                    }}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>🗑 Clear All Data</Text>
-                                </TouchableOpacity>
-
-                                {/* Clear AI Metadata */}
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 165, 0, 0.15)', marginTop: 0 }]}
-                                    onPress={() => {
-                                        storage.clearAllAiMetadata();
-                                        Vibration.vibrate(50);
-                                    }}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#FFA500' }]}>🗑 Reset all AI Entries</Text>
-                                </TouchableOpacity>
-
-                                {/* Storage Info */}
-                                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
-                                    <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>📊 Storage Info</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Notes: {storage.savedNotes.length}</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Circles: {storage.persons.length}</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Current Streak: {storage.currentStreak}</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Last Win: {storage.lastWinDate || 'Never'}</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Streak History: {storage.streakHistory.length} days</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Font: {CONFIG.FONTS[storage.fontIndex]?.label || 'Default'} | Size: {CONFIG.SIZES[storage.sizeIndex]?.label || 'Default'}</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Vlogs: {storage.savedVlogs.length} ({(storage.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB)</Text>
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Title Coverage: {storage.savedNotes.filter(n => n.aiTitle).length}/{storage.savedNotes.length} notes</Text>
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Queue: {queueState.pendingCount} pending, {queueState.isProcessing ? 'active' : 'idle'}</Text>
-                                </View>
-
-                                {/* ── AI Processing Log Viewer ─────────────────── */}
-                                <TouchableOpacity
-                                    style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 215, 0, 0.15)', marginTop: 10 }]}
-                                    onPress={async () => { await loadAiLog(); setShowAiLog(!showAiLog); }}
-                                >
-                                    <Text style={[commonStyles.closeVersionBtnText, { color: '#FFD700' }]}>{showAiLog ? '🔽 Hide' : '📋 Show'} AI Processing Log</Text>
-                                </TouchableOpacity>
-
-                                {showAiLog && (
-                                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 300 }}>
-                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                            <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold' }}>📋 AI Log ({aiLogEntries.length} entries)</Text>
-                                            <TouchableOpacity onPress={async () => { await clearAiLog(); setAiLogEntries([]); }}>
-                                                <Text style={{ color: theme.colors.danger, fontSize: 11, fontWeight: '600' }}>Clear</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                        <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
-                                            {aiLogEntries.length === 0 ? (
-                                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>No log entries yet</Text>
-                                            ) : (
-                                                aiLogEntries.map((entry, i) => (
-                                                    <View key={i} style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', paddingVertical: 4 }}>
-                                                        <Text style={{ color: theme.colors.textMuted, fontSize: 10 }}>
-                                                            {new Date(entry.timestamp).toLocaleTimeString()} | {entry.action.toUpperCase()} | {entry.phase}{entry.durationMs ? ` | ${entry.durationMs}ms` : ''}
-                                                        </Text>
-                                                        {entry.error && <Text style={{ color: theme.colors.danger, fontSize: 10 }}>{entry.error}</Text>}
-                                                    </View>
-                                                ))
-                                            )}
-                                        </ScrollView>
-                                    </View>
-                                )}
-
-                                {/* ── Editable AI Prompts ─────────────────────── */}
-                                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
-                                    <Text style={{ color: '#FFD700', fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🤖 AI Prompts (editable)</Text>
-
-                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Title Prompt</Text>
-                                    <TextInput
-                                        style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
-                                        value={storage.aiPrompts.title}
-                                        onChangeText={(v) => storage.saveAiPrompts({ ...storage.aiPrompts, title: v })}
-                                        multiline
-                                    />
-
-                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Summary Prompt</Text>
-                                    <TextInput
-                                        style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
-                                        value={storage.aiPrompts.summary}
-                                        onChangeText={(v) => storage.saveAiPrompts({ ...storage.aiPrompts, summary: v })}
-                                        multiline
-                                    />
-
-                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Grammar Prompt</Text>
-                                    <TextInput
-                                        style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
-                                        value={storage.aiPrompts.grammar}
-                                        onChangeText={(v) => storage.saveAiPrompts({ ...storage.aiPrompts, grammar: v })}
-                                        multiline
-                                    />
-
-                                    {/* Reset prompts to defaults */}
-                                    <TouchableOpacity
-                                        style={{ alignSelf: 'flex-end', padding: 6 }}
-                                        onPress={() => storage.saveAiPrompts({ ...DEFAULT_AI_PROMPTS })}
-                                    >
-                                        <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Reset to defaults</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-                    )}
+                    <DeveloperToolsPanel 
+                        storage={storage} 
+                        queueState={queueState} 
+                        devModeUnlocked={devModeUnlocked} 
+                        setNewStreakParam={setNewStreakParam} 
+                        setShowStreakPopup={setShowStreakPopup} 
+                        setShowSettings={setShowSettings} 
+                        setShowBenchmarkModal={setShowBenchmarkModal} 
+                        loadAiLog={loadAiLog} 
+                        showAiLog={showAiLog} 
+                        setShowAiLog={setShowAiLog} 
+                        aiLogEntries={aiLogEntries} 
+                        setAiLogEntries={setAiLogEntries}
+                        clearAiLog={clearAiLog} 
+                    />
                 </ScrollView>
             </SwipeableModal>
 
             {/* Premium Full-Screen Person Select Modal */}
-            <Modal visible={showPersonSelect} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowPersonSelect(false); setCircleSearch(''); }}>
+            <Modal visible={showPersonSelect} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowPersonSelect(false); circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
                 <View style={[styles.premiumPersonModal, { flex: 1 }]}>
                     <LinearGradient colors={['#1e1e1e', '#000000']} style={StyleSheet.absoluteFillObject} />
                     
                     {/* Header */}
                     <View style={styles.premiumPersonHeader}>
                         <Text style={styles.premiumPersonTitle}>Select Circle</Text>
-                        <TouchableOpacity style={styles.premiumPersonCloseBtn} onPress={() => { setShowPersonSelect(false); setCircleSearch(''); }}>
+                        <AnimatedScaleButton style={styles.premiumPersonCloseBtn} onPress={() => { setShowPersonSelect(false); circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
                             <MaterialCommunityIcons name="close" size={24} color="#FFF" />
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     </View>
 
                     {/* Content Area with Keyboard avoidance */}
@@ -809,7 +508,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                 <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
                                 <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 8 }}>Circles Protected</Text>
                                 <Text style={{ color: theme.colors.textMuted, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>Verify your identity to view your circles</Text>
-                                <TouchableOpacity
+                                <AnimatedScaleButton
                                     style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 100 }}
                                     onPress={async () => {
                                         const success = await security.unlockCircles();
@@ -818,7 +517,7 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                 >
                                     <MaterialCommunityIcons name="fingerprint" size={20} color="#FFF" style={{ marginRight: 8 }} />
                                     <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Unlock Circles</Text>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             </View>
                         ) : (
                             <>
@@ -830,15 +529,15 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                     style={styles.premiumSearchInput}
                                     placeholder="Search your circles..."
                                     placeholderTextColor={theme.colors.textMuted}
-                                    value={circleSearch}
-                                    onChangeText={setCircleSearch}
+                                    defaultValue={circleSearchRef.current}
+                                    onChangeText={handleCircleSearchChange}
                                     keyboardAppearance="dark"
                                     autoCorrect={false}
                                 />
-                                {circleSearch.length > 0 && (
-                                    <TouchableOpacity onPress={() => setCircleSearch('')}>
+                                {circleSearchRef.current.length > 0 && (
+                                    <AnimatedScaleButton onPress={() => { circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
                                         <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
-                                    </TouchableOpacity>
+                                    </AnimatedScaleButton>
                                 )}
                             </View>
                         </View>
@@ -848,16 +547,16 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             {filteredPersons.length > 0 ? (
                                 <FlashList
                                     data={filteredPersons}
-                                    renderItem={({ item: p }) => (
-                                        <TouchableOpacity
+                                    renderItem={({ item: p }: { item: Person }) => (
+                                        <AnimatedScaleButton
                                             style={styles.premiumPersonItem}
-                                            onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); setCircleSearch(''); }}
+                                            onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); handleCircleSearchChange(''); }}
                                         >
                                             <View style={styles.premiumPersonAvatar}>
                                                 <Text style={styles.premiumPersonAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
                                             </View>
                                             <Text style={styles.premiumPersonName}>{p.name}</Text>
-                                        </TouchableOpacity>
+                                        </AnimatedScaleButton>
                                     )}
                                     keyExtractor={(p) => p.id}
                                     keyboardShouldPersistTaps="handled"
@@ -868,25 +567,25 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                 <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' }}>
                                     <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textMuted} style={{ marginBottom: 15 }} />
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
-                                        {circleSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
+                                        {debouncedCircleSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
                                     </Text>
                                     
-                                    {circleSearch.length > 0 && (
-                                        <TouchableOpacity style={styles.premiumCreateBtn} onPress={() => { setNewPersonName(circleSearch); setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
+                                    {debouncedCircleSearch.length > 0 && (
+                                        <AnimatedScaleButton style={styles.premiumCreateBtn} onPress={() => { newPersonNameRef.current = debouncedCircleSearch; setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
                                             <MaterialCommunityIcons name="plus" size={20} color="#000" />
-                                            <Text style={styles.premiumCreateBtnText}>Create "{circleSearch}"</Text>
-                                        </TouchableOpacity>
+                                            <Text style={styles.premiumCreateBtnText}>Create "{debouncedCircleSearch}"</Text>
+                                        </AnimatedScaleButton>
                                     )}
                                 </ScrollView>
                             )}
                         </View>
                         
                         {/* Always visible float button if empty search query */}
-                        {circleSearch.length === 0 && (
-                            <TouchableOpacity style={styles.premiumFloatCreateBtn} onPress={() => { setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
+                        {debouncedCircleSearch.length === 0 && (
+                            <AnimatedScaleButton style={styles.premiumFloatCreateBtn} onPress={() => { setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
                                 <MaterialCommunityIcons name="plus" size={24} color="#000" />
                                 <Text style={styles.premiumFloatCreateBtnText}>New Circle</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         )}
                             </>
                         )}
@@ -903,27 +602,28 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                             style={commonStyles.addPersonInput}
                             placeholder="Person's Name"
                             placeholderTextColor={theme.colors.textMuted}
-                            value={newPersonName}
-                            onChangeText={setNewPersonName}
+                            defaultValue={newPersonNameRef.current}
+                            onChangeText={(text) => newPersonNameRef.current = text}
                             autoFocus
                         />
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setShowAddPerson(false)}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setShowAddPerson(false)}>
                                 <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton
                                 style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
                                 onPress={async () => {
-                                    if (newPersonName.trim()) {
-                                        await storage.addPerson(newPersonName);
-                                        setNewPersonName('');
+                                    if (newPersonNameRef.current.trim()) {
+                                        await storage.addPerson(newPersonNameRef.current);
+                                        newPersonNameRef.current = '';
                                         setShowAddPerson(false);
-                                        setCircleSearch('');
+                                        circleSearchRef.current = '';
+                                        handleCircleSearchChange('');
                                     }
                                 }}
                             >
                                 <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>Save</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     </View>
                 </KeyboardAvoidingView>
@@ -944,14 +644,14 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
 
             {/* Select AI Model Modal */}
             <Modal visible={!!choosingModelFor} transparent animationType="fade" onRequestClose={() => setChoosingModelFor(null)}>
-                <TouchableOpacity style={commonStyles.modalOverlay} activeOpacity={1} onPress={() => setChoosingModelFor(null)}>
+                <Pressable style={commonStyles.modalOverlay} onPress={() => setChoosingModelFor(null)}>
                     <View style={commonStyles.versionModalContent}>
                         <Text style={commonStyles.versionModalTitle}>Select {choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model</Text>
                         <View style={{ gap: 8, marginTop: 10 }}>
                         {AI_AVAILABLE_MODELS.map(m => {
                                 const isSelected = choosingModelFor === 'summary' ? storage.aiModel === m : storage.aiGrammarModel === m;
                                 return (
-                                    <TouchableOpacity 
+                                    <AnimatedScaleButton 
                                         key={m}
                                         style={{
                                             flexDirection: 'row',
@@ -969,17 +669,17 @@ export const StartScreen: React.FC<Props> = ({ navigation, route, onGoToLibrary,
                                             setChoosingModelFor(null);
                                         }}
                                     >
-                                        <Text style={{ color: isSelected ? '#4ade80' : '#FFF', fontSize: 16, fontWeight: isSelected ? 'bold' : 'normal' }}>{m}</Text>
+                                        <Text style={{ color: isSelected ? '#4ade80' : theme.colors.textPrimary, fontSize: 16, fontWeight: isSelected ? 'bold' : 'normal' }}>{m}</Text>
                                         {isSelected && <MaterialCommunityIcons name="check" size={20} color="#4ade80" style={{ marginLeft: 'auto' }} />}
-                                    </TouchableOpacity>
+                                    </AnimatedScaleButton>
                                 );
                             })}
                         </View>
-                        <TouchableOpacity style={[commonStyles.closeVersionBtn]} onPress={() => setChoosingModelFor(null)}>
+                        <AnimatedScaleButton style={[commonStyles.closeVersionBtn]} onPress={() => setChoosingModelFor(null)}>
                             <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     </View>
-                </TouchableOpacity>
+                </Pressable>
             </Modal>
 
         </View>
@@ -1106,3 +806,9 @@ const styles = StyleSheet.create({
     premiumFloatCreateBtn: { position: 'absolute', bottom: Platform.OS === 'ios' ? 40 : 20, right: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingHorizontal: 20, paddingVertical: 14, borderRadius: 30, shadowColor: '#FFF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
     premiumFloatCreateBtnText: { color: '#000', fontSize: 15, fontWeight: 'bold', marginLeft: 6 }
 });
+
+/**
+ * Memoized export — prevents re-renders from HomeScreen scroll events
+ * and useTransition-deferred updates from causing layout thrashing.
+ */
+export const StartScreen = React.memo(StartScreenInner);
