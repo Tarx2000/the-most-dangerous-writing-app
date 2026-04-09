@@ -7,11 +7,12 @@ import {
     StatusBar,
     Vibration,
     Pressable,
+    Dimensions,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
@@ -23,6 +24,7 @@ import type { SavedNote, SavedVlog, Person } from '@/types';
 
 /** Word count threshold for tweet vs story classification */
 const TWEET_THRESHOLD = 100;
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
 
@@ -56,6 +58,8 @@ interface Props {
     onOpenVlog?: (vlog: SavedVlog) => void;
     /** Callback to return to HomeScreen (swipe up / close) */
     onClose: () => void;
+    /** Shared value from HomeScreen driving feed translation */
+    feedProgress?: SharedValue<number>;
 }
 
 const FeedScreenInner: React.FC<Props> = ({
@@ -64,6 +68,7 @@ const FeedScreenInner: React.FC<Props> = ({
     onOpenNote,
     onOpenVlog,
     onClose,
+    feedProgress,
 }) => {
     const storage = useStorage();
     const [filterBookmarked, setFilterBookmarked] = useState(false);
@@ -123,13 +128,25 @@ const FeedScreenInner: React.FC<Props> = ({
         });
     }, [feedItems, filterBookmarked, storage.bookmarkedNoteIds]);
 
-    /** Over-scroll logic to close feed when pulling down at the top */
-    const handleScroll = useCallback((e: any) => {
-        // If user pulls down (negative offset Y) heavily while at top, trigger close
-        if (e.nativeEvent.contentOffset.y < -40) {
-            onClose();
+    /** Over-scroll continuous integration: pull down interactively closes the feed */
+    const handleScroll = Animated.useAnimatedScrollHandler({
+        onScroll: (e) => {
+            if (feedProgress && e.contentOffset.y < 0) {
+                // Determine feed drag percentage based on natural screen height
+                const overscrollFactor = Math.abs(e.contentOffset.y) / 250;
+                feedProgress.value = Math.max(0, 1 - overscrollFactor);
+            }
+        },
+        onEndDrag: (e) => {
+            if (feedProgress && e.contentOffset.y < 0) {
+                if (e.contentOffset.y < -60) {
+                    runOnJS(onClose)();
+                } else {
+                    feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
+                }
+            }
         }
-    }, [onClose]);
+    });
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
     const lockPanGesture = useMemo(() => Gesture.Pan()
@@ -141,11 +158,19 @@ const FeedScreenInner: React.FC<Props> = ({
 
     const headerPanGesture = useMemo(() => Gesture.Pan()
         .activeOffsetY([-10000, 20])
-        .onEnd((e) => {
-            if (e.translationY > 50 || e.velocityY > 500) {
-                runOnJS(onClose)();
+        .onUpdate((e) => {
+            if (feedProgress && e.translationY > 0) {
+                const overscrollFactor = e.translationY / SCREEN_HEIGHT;
+                feedProgress.value = Math.max(0, 1 - overscrollFactor);
             }
-        }), [onClose]);
+        })
+        .onEnd((e) => {
+            if (e.translationY > 80 || e.velocityY > 500) {
+                runOnJS(onClose)();
+            } else if (feedProgress) {
+                feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
+            }
+        }), [onClose, feedProgress]);
 
     if (!isUnlocked) {
         return (
@@ -247,9 +272,11 @@ const FeedScreenInner: React.FC<Props> = ({
         </View>
     );
 
+    const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
+
     return (
         <View style={styles.container}>
-            <FlashList
+            <AnimatedFlashList
                 ref={listRef}
                 data={displayItems}
                 ListHeaderComponent={renderHeader}

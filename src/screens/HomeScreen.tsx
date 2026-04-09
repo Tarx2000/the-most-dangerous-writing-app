@@ -246,6 +246,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         // TODO: Open vlog player
                     }}
                     onClose={handleCloseFeed}
+                    feedProgress={feedProgress}
                 />
             </Animated.View>
 

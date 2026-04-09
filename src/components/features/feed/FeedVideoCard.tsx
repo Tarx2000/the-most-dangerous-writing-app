@@ -144,11 +144,9 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = ({
                 </View>
 
                 {/* Video Player Area */}
-                <AnimatedScaleButton
-                    style={styles.videoContainer}
-                    activeScale={0.99}
-                    onPress={() => onOpenVlog(vlog)}
-                >
+                <View style={[styles.videoContainer, { position: 'relative' }]}>
+                    {/* Background tap-to-open interceptor */}
+                    <Pressable style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]} onPress={() => onOpenVlog(vlog)} />
                     {/* Thumbnail fallback when paused and thumbnail exists */}
                     {!isPlaying && vlog.thumbnailPath ? (
                         <Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} />
@@ -162,9 +160,8 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = ({
 
                     {/* Mute/Unmute Toggle Top-Right Overlay */}
                     <AnimatedScaleButton
-                        style={styles.muteToggleArea}
-                        onPress={(e) => {
-                            e?.stopPropagation?.();
+                        style={[styles.muteToggleArea, { zIndex: 10, position: 'absolute', top: 5, right: 5 }]}
+                        onPress={() => {
                             setIsMuted(!isMuted);
                             Vibration.vibrate(10);
                         }}
@@ -178,7 +175,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = ({
                     <View style={styles.durationBadge}>
                         <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
                     </View>
-                </AnimatedScaleButton>
+                </View>
 
                 {/* Footer — actions */}
                 <View style={styles.footer}>
@@ -200,8 +197,11 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = ({
                             />
                         </AnimatedScaleButton>
                         <AnimatedScaleButton
-                            onPress={() => onOpenVlog(vlog)}
-                            style={styles.actionBtn}
+                            onPress={() => {
+                                onOpenVlog(vlog);
+                                Vibration.vibrate(10);
+                            }}
+                            style={[styles.actionBtn, { zIndex: 10 }]}
                         >
                             <MaterialCommunityIcons name="arrow-expand" size={16} color={theme.colors.textMuted} />
                         </AnimatedScaleButton>
