@@ -128,7 +128,7 @@ interface FeedCardProps {
  * Each card has a thin left border accent in its type color
  * for fast visual scanning of the feed.
  */
-export const FeedCard: React.FC<FeedCardProps> = ({
+export const FeedCard: React.FC<FeedCardProps> = React.memo(({
     item,
     isBookmarked,
     comment,
@@ -373,7 +373,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             </View>
         </AnimatedScaleButton>
     );
-};
+});
 
 /* ── STYLES ───────────────────────────────────────────────────────────────── */
 

@@ -5,6 +5,7 @@ import {
     Image,
     StyleSheet,
     Vibration,
+    Pressable,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -82,7 +83,7 @@ const formatRelativeTime = (timestamp: number): string => {
     return new Date(timestamp).toLocaleDateString('default', { month: 'short', day: 'numeric' });
 };
 
-export const FeedVideoCard: React.FC<FeedVideoCardProps> = ({
+export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     item,
     isBookmarked,
     comment,
@@ -210,7 +211,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = ({
             </View>
         </View>
     );
-};
+});
 
 /* ── STYLES ───────────────────────────────────────────────────────────────── */
 

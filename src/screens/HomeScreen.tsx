@@ -232,6 +232,28 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         closeFeed();
     }, [closeFeed]);
 
+    /** Stable references for Modals to prevent re-renders */
+    const handleOpenNoteModal = useCallback((note: any) => {
+        setViewNoteModal(note);
+    }, []);
+
+    const handleOpenVlogModal = useCallback((vlog: any) => {
+        // TODO: Open vlog player
+    }, []);
+
+    const handleCloseNoteModal = useCallback(() => {
+        setViewNoteModal(null);
+    }, []);
+
+    const handleDeleteNoteModal = useCallback((id: string) => {
+        setViewNoteModal(null);
+        setNoteToDelete(id);
+    }, []);
+
+    const handleRegenerateAi = useCallback((note: any, category: any) => {
+        enqueueNote(note.id, category);
+    }, [enqueueNote]);
+
     return (
         <View style={styles.container}>
             {/* Feed Page — positioned below viewport, slides up when revealed */}
@@ -239,12 +261,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 <FeedScreen
                     isUnlocked={security.isFeedUnlocked}
                     onUnlock={security.unlockNotes}
-                    onOpenNote={(note) => {
-                        setViewNoteModal(note);
-                    }}
-                    onOpenVlog={(vlog) => {
-                        // TODO: Open vlog player
-                    }}
+                    onOpenNote={handleOpenNoteModal}
+                    onOpenVlog={handleOpenVlogModal}
                     onClose={handleCloseFeed}
                     feedProgress={feedProgress}
                 />
@@ -254,13 +272,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
             <NoteViewerModal
                 note={viewNoteModal}
                 visible={!!viewNoteModal}
-                onClose={() => setViewNoteModal(null)}
-                onDelete={(id) => {
-                    setViewNoteModal(null);
-                    setNoteToDelete(id);
-                }}
+                onClose={handleCloseNoteModal}
+                onDelete={handleDeleteNoteModal}
                 isNoteActive={isNoteActive}
-                onRegenerateAi={(note, category) => enqueueNote(note.id, category)}
+                onRegenerateAi={handleRegenerateAi}
             />
 
             {/* Main Content — Start + Library horizontal scroll */}

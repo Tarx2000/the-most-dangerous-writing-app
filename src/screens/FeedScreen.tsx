@@ -12,7 +12,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
@@ -25,6 +25,13 @@ import type { SavedNote, SavedVlog, Person } from '@/types';
 /** Word count threshold for tweet vs story classification */
 const TWEET_THRESHOLD = 100;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/**
+ * Hoisted outside component to prevent React from unmounting/remounting
+ * the list on every parent re-render. Creating animated components inside
+ * render is a critical performance anti-pattern (rerender-no-inline-components).
+ */
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
 
@@ -129,15 +136,15 @@ const FeedScreenInner: React.FC<Props> = ({
     }, [feedItems, filterBookmarked, storage.bookmarkedNoteIds]);
 
     /** Over-scroll continuous integration: pull down interactively closes the feed */
-    const handleScroll = Animated.useAnimatedScrollHandler({
-        onScroll: (e) => {
+    const handleScroll = useAnimatedScrollHandler({
+        onScroll: (e: any) => {
             if (feedProgress && e.contentOffset.y < 0) {
                 // Determine feed drag percentage based on natural screen height
                 const overscrollFactor = Math.abs(e.contentOffset.y) / 250;
                 feedProgress.value = Math.max(0, 1 - overscrollFactor);
             }
         },
-        onEndDrag: (e) => {
+        onEndDrag: (e: any) => {
             if (feedProgress && e.contentOffset.y < 0) {
                 if (e.contentOffset.y < -60) {
                     runOnJS(onClose)();
@@ -272,22 +279,21 @@ const FeedScreenInner: React.FC<Props> = ({
         </View>
     );
 
-    const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
-
     return (
         <View style={styles.container}>
             <AnimatedFlashList
                 ref={listRef}
                 data={displayItems}
                 ListHeaderComponent={renderHeader}
+                ListFooterComponent={renderFooter}
                 ListEmptyComponent={renderEmpty}
-                ListFooterComponent={displayItems.length > 5 ? renderFooter : null}
-                keyExtractor={(item) => item.note?.id || item.vlog?.id || String(item.timestamp)}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
+                estimatedItemSize={250}
+                keyExtractor={(item: any) => item.note?.id || item.vlog?.id || String(item.timestamp)}
                 bounces={true}
                 overScrollMode="always"
-                renderItem={({ item }) => (
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                renderItem={({ item }: { item: any }) => (
                     <View style={styles.cardWrapper}>
                         {/* Use FeedVideoCard for clips, FeedCard for everything else */}
                         {item.type === 'clip' && item.vlog && onOpenVlog ? (

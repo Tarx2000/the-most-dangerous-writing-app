@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext, ReactNode, useEffect } from 'react';
+import { useState, useCallback, useMemo, createContext, useContext, ReactNode, useEffect } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
@@ -176,22 +176,24 @@ function useStorageInternal() {
         }
     }, []);
 
-    const savePreferences = async (fIdx: number, sIdx: number) => {
+    const savePreferences = useCallback(async (fIdx: number, sIdx: number) => {
         setFontIndex(fIdx);
         setSizeIndex(sIdx);
         await AsyncStorage.setItem('USER_FONT_IDX', fIdx.toString());
         await AsyncStorage.setItem('USER_SIZE_IDX', sIdx.toString());
-    };
+    }, []);
 
     /** Toggle developer/debug mode on or off */
-    const toggleDevMode = async () => {
-        const newVal = !devMode;
-        setDevMode(newVal);
-        await AsyncStorage.setItem('DEV_MODE', JSON.stringify(newVal));
-    };
+    const toggleDevMode = useCallback(async () => {
+        setDevMode(prev => {
+            const newVal = !prev;
+            AsyncStorage.setItem('DEV_MODE', JSON.stringify(newVal));
+            return newVal;
+        });
+    }, []);
 
     /** Wipe all persisted app data */
-    const clearAllData = async () => {
+    const clearAllData = useCallback(async () => {
         const allKeys = [
             'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
             'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY', 'DEV_MODE',
@@ -217,12 +219,12 @@ function useStorageInternal() {
         // Delete the vlogs directory
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
         try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (_) {}
-    };
+    }, []);
 
-    const updateBiometricsPref = async (val: boolean) => {
+    const updateBiometricsPref = useCallback(async (val: boolean) => {
         setUseBiometrics(val);
         await AsyncStorage.setItem('USE_BIOMETRICS', JSON.stringify(val));
-    };
+    }, []);
 
     const saveNote = async (note: SavedNote): Promise<{ streakIncreased: boolean; newStreak: number }> => {
         let updatedStreak = currentStreak;
@@ -272,20 +274,20 @@ function useStorageInternal() {
         return { streakIncreased, newStreak: updatedStreak };
     };
 
-    const deleteNote = async (id: string) => {
+    const deleteNote = useCallback(async (id: string) => {
         setSavedNotes(prev => {
             const updated = prev.filter(n => n.id !== id);
             AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated))
                 .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
             return updated;
         });
-    };
+    }, []);
 
     /**
      * Update an existing note's fields (e.g. merge AI-generated title, summary, edited text).
      * Merges provided `updates` into the note with matching `id`.
      */
-    const updateNote = async (id: string, updates: Partial<SavedNote>) => {
+    const updateNote = useCallback(async (id: string, updates: Partial<SavedNote>) => {
         setSavedNotes(prev => {
             const updatedNotes = prev.map(n =>
                 n.id === id ? { ...n, ...updates } : n
@@ -294,10 +296,10 @@ function useStorageInternal() {
                 .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
             return updatedNotes;
         });
-    };
+    }, []);
 
     /** Removes AI generated titles, summaries, and overrides from all notes */
-    const clearAllAiMetadata = async () => {
+    const clearAllAiMetadata = useCallback(async () => {
         setSavedNotes(prev => {
             const updatedNotes = prev.map(n => ({
                 ...n,
@@ -309,9 +311,9 @@ function useStorageInternal() {
                 .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
             return updatedNotes;
         });
-    };
+    }, []);
 
-    const addPerson = async (name: string) => {
+    const addPerson = useCallback(async (name: string) => {
         if (name.trim().length === 0) return;
         const newPerson: Person = {
             id: Date.now().toString(),
@@ -323,9 +325,9 @@ function useStorageInternal() {
             AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updated));
             return updated;
         });
-    };
+    }, []);
 
-    const deletePerson = async (id: string) => {
+    const deletePerson = useCallback(async (id: string) => {
         setPersons(prev => {
             const updated = prev.filter(p => p.id !== id);
             AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updated));
@@ -339,20 +341,22 @@ function useStorageInternal() {
                 .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
             return updated;
         });
-    };
+    }, []);
 
-    const updatePerson = async (id: string, updates: Partial<Person>) => {
-        const updatedPersons = persons.map(p =>
-            p.id === id ? { ...p, ...updates } : p
-        );
-        setPersons(updatedPersons);
-        await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
-    };
+    const updatePerson = useCallback(async (id: string, updates: Partial<Person>) => {
+        setPersons(prev => {
+            const updatedPersons = prev.map(p =>
+                p.id === id ? { ...p, ...updates } : p
+            );
+            AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
+            return updatedPersons;
+        });
+    }, []);
 
-    const saveVisionBoard = async (newBoard: VisionBoard) => {
+    const saveVisionBoard = useCallback(async (newBoard: VisionBoard) => {
         setVisionBoard(newBoard);
         await AsyncStorage.setItem('VISION_BOARD', JSON.stringify(newBoard));
-    };
+    }, []);
 
     const saveAlignmentReflection = async (reflection: AlignmentReflection): Promise<{ streakIncreased: boolean; newStreak: number }> => {
         const result = await saveNote(reflection);
@@ -374,48 +378,81 @@ function useStorageInternal() {
         return { streakIncreased, newStreak: updatedStreak };
     };
 
-    const deleteVlog = async (id: string) => {
-        const vlog = savedVlogs.find(v => v.id === id);
-        if (vlog) {
-            try { await FileSystem.deleteAsync(vlog.filePath, { idempotent: true }); } catch (e) {}
-            setTotalVlogStorageBytes(prev => Math.max(0, prev - (vlog.fileSizeBytes || 0)));
-        }
-        const updated = savedVlogs.filter(v => v.id !== id);
-        setSavedVlogs(updated);
-        await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
-    };
+    const deleteVlog = useCallback(async (id: string) => {
+        setSavedVlogs(prev => {
+            const vlog = prev.find(v => v.id === id);
+            if (vlog) {
+                FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch(() => {});
+                setTotalVlogStorageBytes(b => Math.max(0, b - (vlog.fileSizeBytes || 0)));
+            }
+            const updated = prev.filter(v => v.id !== id);
+            AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
 
-    const updateVlog = async (id: string, patch: Partial<SavedVlog>) => {
-        const updated = savedVlogs.map(v => v.id === id ? { ...v, ...patch } : v);
-        setSavedVlogs(updated);
-        await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
-    };
+    const updateVlog = useCallback(async (id: string, patch: Partial<SavedVlog>) => {
+        setSavedVlogs(prev => {
+            const updated = prev.map(v => v.id === id ? { ...v, ...patch } : v);
+            AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
 
     /* ── Setters for AI Settings ─────────────────────────────────────── */
-    const saveAiApiKey = async (key: string) => {
+    const saveAiApiKey = useCallback(async (key: string) => {
         setAiApiKey(key);
         await AsyncStorage.setItem(AI_STORAGE_KEYS.API_KEY, key);
-    };
+    }, []);
 
-    const saveAiBaseUrl = async (url: string) => {
+    const saveAiBaseUrl = useCallback(async (url: string) => {
         setAiBaseUrl(url);
         await AsyncStorage.setItem(AI_STORAGE_KEYS.BASE_URL, url);
-    };
+    }, []);
 
-    const saveAiModel = async (model: string) => {
+    const saveAiModel = useCallback(async (model: string) => {
         setAiModel(model);
         await AsyncStorage.setItem(AI_STORAGE_KEYS.MODEL, model);
-    };
+    }, []);
 
-    const saveAiGrammarModel = async (grammarModel: string) => {
+    const saveAiGrammarModel = useCallback(async (grammarModel: string) => {
         setAiGrammarModel(grammarModel);
         await AsyncStorage.setItem(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
-    };
+    }, []);
 
-    const saveAiPrompts = async (prompts: AiPrompts) => {
+    const saveAiPrompts = useCallback(async (prompts: AiPrompts) => {
         setAiPrompts(prompts);
         await AsyncStorage.setItem(AI_STORAGE_KEYS.PROMPTS, JSON.stringify(prompts));
-    };
+    }, []);
+
+    /* ── Feed Feature Callbacks (stable references) ────────────────── */
+
+    /** Toggle bookmark on/off for a note ID */
+    const toggleBookmark = useCallback(async (noteId: string) => {
+        setBookmarkedNoteIds(prev => {
+            const updated = prev.includes(noteId)
+                ? prev.filter(id => id !== noteId)
+                : [...prev, noteId];
+            AsyncStorage.setItem('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
+
+    /** Save a personal annotation/comment on an entry */
+    const saveFeedComment = useCallback(async (noteId: string, comment: string) => {
+        setFeedComments(prev => {
+            const updated = { ...prev, [noteId]: comment };
+            if (!comment.trim()) delete updated[noteId];
+            AsyncStorage.setItem('FEED_COMMENTS', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
+
+    /** Toggle auto-play videos in Feed */
+    const toggleAutoPlayFeedVideos = useCallback(async (enabled: boolean) => {
+        setAutoPlayFeedVideos(enabled);
+        await AsyncStorage.setItem('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
+    }, []);
 
     return {
         savedNotes,
@@ -465,30 +502,9 @@ function useStorageInternal() {
         bookmarkedNoteIds,
         feedComments,
         autoPlayFeedVideos,
-        /** Toggle bookmark on/off for a note ID */
-        toggleBookmark: async (noteId: string) => {
-            setBookmarkedNoteIds(prev => {
-                const updated = prev.includes(noteId)
-                    ? prev.filter(id => id !== noteId)
-                    : [...prev, noteId];
-                AsyncStorage.setItem('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
-                return updated;
-            });
-        },
-        /** Save a personal annotation/comment on an entry */
-        saveFeedComment: async (noteId: string, comment: string) => {
-            setFeedComments(prev => {
-                const updated = { ...prev, [noteId]: comment };
-                if (!comment.trim()) delete updated[noteId];
-                AsyncStorage.setItem('FEED_COMMENTS', JSON.stringify(updated));
-                return updated;
-            });
-        },
-        /** Toggle auto-play videos in Feed */
-        setAutoPlayFeedVideos: async (enabled: boolean) => {
-            setAutoPlayFeedVideos(enabled);
-            await AsyncStorage.setItem('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
-        },
+        toggleBookmark,
+        saveFeedComment,
+        setAutoPlayFeedVideos: toggleAutoPlayFeedVideos,
     };
 }
 
