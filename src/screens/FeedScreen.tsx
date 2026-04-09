@@ -167,15 +167,22 @@ const FeedScreenInner: React.FC<Props> = ({
             isOverscrolling.value = false;
         })
         .onUpdate((e) => {
-            if (feedProgress && listScrollY.value <= 0 && e.velocityY > 0) {
-                if (!isOverscrolling.value) {
+            if (feedProgress && listScrollY.value <= 0) {
+                // Determine initiation: only start bounding if physically swiping down
+                if (!isOverscrolling.value && e.velocityY > 0) {
                     isOverscrolling.value = true;
                     overscrollStartY.value = e.absoluteY;
                 }
-                const draggedDistance = e.absoluteY - overscrollStartY.value;
-                if (draggedDistance > 0) {
-                    const overscrollFactor = draggedDistance / SCREEN_HEIGHT;
-                    feedProgress.value = Math.max(0, 1 - overscrollFactor);
+                
+                // Track absolutely seamlessly in both directions organically once caught
+                if (isOverscrolling.value) {
+                    const draggedDistance = e.absoluteY - overscrollStartY.value;
+                    if (draggedDistance > 0) {
+                        const overscrollFactor = draggedDistance / SCREEN_HEIGHT;
+                        feedProgress.value = Math.max(0, 1 - overscrollFactor);
+                    } else {
+                        feedProgress.value = 1;
+                    }
                 }
             } else if (listScrollY.value > 0) {
                 isOverscrolling.value = false;
