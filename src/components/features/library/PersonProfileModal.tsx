@@ -8,6 +8,7 @@ import {
     Vibration,
     Platform,
     Dimensions,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -82,16 +83,27 @@ export const PersonProfileModal: React.FC<Props> = ({
 }) => {
     /* ── Edit mode state ──────────────────────────────────────────────── */
     const [isEditing, setIsEditing] = useState(false);
-    
-    // We keep relationship in state still because of the custom dropdown picker logic,
-    // which requires rapid re-renders to show/hide the checkmarks properly.
+
+    /**
+     * Controlled edit fields — using useState (not useRef) so the keyboard
+     * never fights with stale defaultValues during parent re-renders.
+     * This eliminates the flickering bug when the keyboard opens/closes.
+     */
+    const [editNickname, setEditNickname] = useState('');
     const [editRelationship, setEditRelationship] = useState('');
+    const [editBirthday, setEditBirthday] = useState('');
+    const [editBio, setEditBio] = useState('');
     const [showRelationshipPicker, setShowRelationshipPicker] = useState(false);
-    
-    const editNicknameRef = useRef('');
-    const editBirthdayRef = useRef('');
-    const editBioRef = useRef('');
+
+    /** Ref for the custom relationship input (doesn't need re-renders) */
     const customRelInputRef = useRef('');
+
+    /**
+     * Prevents the sync useEffect from overwriting a just-saved value.
+     * Without this, the person prop hasn't updated yet when the effect fires,
+     * causing the old value to flash momentarily.
+     */
+    const justSavedRef = useRef(false);
 
     /* ── Derived: all available relationship options (predefined + custom) */
     const allRelationshipOptions = useMemo(() => {
@@ -99,15 +111,21 @@ export const PersonProfileModal: React.FC<Props> = ({
         return [...RELATIONSHIP_OPTIONS, ...custom];
     }, [person?.customRelationships]);
 
-    /* ── Sync edit fields when person changes or edit mode starts ───── */
-    useEffect(() => {
-        if (person && isEditing) {
-            editNicknameRef.current = person.nickname || '';
-            setEditRelationship(person.relationship || '');
-            editBirthdayRef.current = person.birthday || '';
-            editBioRef.current = person.bio || '';
-        }
-    }, [isEditing, person]);
+    /**
+     * Initialize edit fields ONLY when entering edit mode.
+     * Values are set atomically from the current person prop,
+     * never re-synced mid-edit (which caused the stale-data bug).
+     */
+    const startEditing = () => {
+        if (!person) return;
+        setEditNickname(person.nickname || '');
+        setEditRelationship(person.relationship || '');
+        setEditBirthday(person.birthday || '');
+        setEditBio(person.bio || '');
+        setShowRelationshipPicker(false);
+        justSavedRef.current = false;
+        setIsEditing(true);
+    };
 
     /* ── Reset edit mode when modal closes ─────────────────────────── */
     useEffect(() => {
@@ -145,11 +163,12 @@ export const PersonProfileModal: React.FC<Props> = ({
 
     /* ── Save profile edits ────────────────────────────────────────── */
     const handleSave = async () => {
+        justSavedRef.current = true;
         await onUpdatePerson(person.id, {
-            nickname: editNicknameRef.current.trim() || undefined,
+            nickname: editNickname.trim() || undefined,
             relationship: editRelationship.trim() || undefined,
-            birthday: editBirthdayRef.current.trim() || undefined,
-            bio: editBioRef.current.trim() || undefined,
+            birthday: editBirthday.trim() || undefined,
+            bio: editBio.trim() || undefined,
         });
         Vibration.vibrate(30);
         setIsEditing(false);
@@ -210,133 +229,144 @@ export const PersonProfileModal: React.FC<Props> = ({
 
     /* ── Render: Edit mode ─────────────────────────────────────────── */
     const renderEditMode = () => (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-            {/* Section: Nickname */}
-            <Text style={styles.editLabel}>Nickname</Text>
-            <TextInput
-                style={styles.editInput}
-                defaultValue={editNicknameRef.current}
-                onChangeText={(text) => editNicknameRef.current = text}
-                placeholder="Optional display name..."
-                placeholderTextColor={theme.colors.textMuted}
-                keyboardAppearance="dark"
-            />
-
-            {/* Section: Relationship */}
-            <Text style={styles.editLabel}>Relationship</Text>
-            <AnimatedScaleButton
-                style={styles.editDropdown}
-                onPress={() => setShowRelationshipPicker(!showRelationshipPicker)}
+        <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+        >
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 60 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
             >
-                <Text style={[styles.editDropdownText, !editRelationship && { color: theme.colors.textMuted }]}>
-                    {editRelationship || 'Select relationship...'}
-                </Text>
-                <MaterialCommunityIcons
-                    name={showRelationshipPicker ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={theme.colors.textSecondary}
+                {/* Section: Nickname */}
+                <Text style={styles.editLabel}>Nickname</Text>
+                <TextInput
+                    style={styles.editInput}
+                    value={editNickname}
+                    onChangeText={setEditNickname}
+                    placeholder="Optional display name..."
+                    placeholderTextColor={theme.colors.textMuted}
+                    keyboardAppearance="dark"
                 />
-            </AnimatedScaleButton>
 
-            {showRelationshipPicker && (
-                <View style={styles.relPickerContainer}>
-                    {allRelationshipOptions.map((rel) => (
-                        <AnimatedScaleButton
-                            key={rel}
-                            style={[styles.relOption, editRelationship === rel && styles.relOptionActive]}
-                            onPress={() => {
-                                setEditRelationship(rel);
-                                setShowRelationshipPicker(false);
-                            }}
-                        >
-                            <Text style={[styles.relOptionText, editRelationship === rel && styles.relOptionTextActive]}>
-                                {rel}
-                            </Text>
-                            {editRelationship === rel && (
-                                <MaterialCommunityIcons name="check" size={18} color={theme.colors.primaryAction} />
-                            )}
-                        </AnimatedScaleButton>
-                    ))}
+                {/* Section: Relationship */}
+                <Text style={styles.editLabel}>Relationship</Text>
+                <AnimatedScaleButton
+                    style={styles.editDropdown}
+                    onPress={() => setShowRelationshipPicker(!showRelationshipPicker)}
+                >
+                    <Text style={[styles.editDropdownText, !editRelationship && { color: theme.colors.textMuted }]}>
+                        {editRelationship || 'Select relationship...'}
+                    </Text>
+                    <MaterialCommunityIcons
+                        name={showRelationshipPicker ? 'chevron-up' : 'chevron-down'}
+                        size={20}
+                        color={theme.colors.textSecondary}
+                    />
+                </AnimatedScaleButton>
 
-                    {/* Add custom relationship */}
-                    <View style={styles.addCustomRelRow}>
-                        <TextInput
-                            style={styles.addCustomRelInput}
-                            defaultValue={customRelInputRef.current}
-                            onChangeText={(text) => customRelInputRef.current = text}
-                            placeholder="Add custom..."
-                            placeholderTextColor={theme.colors.textMuted}
-                            keyboardAppearance="dark"
-                        />
-                        <AnimatedScaleButton
-                            style={[styles.addCustomRelBtn, !customRelInputRef.current.trim() && { opacity: 0.3 }]}
-                            onPress={handleAddCustomRelationship}
-                            disabled={!customRelInputRef.current.trim()}
-                        >
-                            <MaterialCommunityIcons name="plus" size={20} color="#000" />
-                        </AnimatedScaleButton>
+                {showRelationshipPicker && (
+                    <View style={styles.relPickerContainer}>
+                        {allRelationshipOptions.map((rel) => (
+                            <AnimatedScaleButton
+                                key={rel}
+                                style={[styles.relOption, editRelationship === rel && styles.relOptionActive]}
+                                onPress={() => {
+                                    setEditRelationship(rel);
+                                    setShowRelationshipPicker(false);
+                                }}
+                            >
+                                <Text style={[styles.relOptionText, editRelationship === rel && styles.relOptionTextActive]}>
+                                    {rel}
+                                </Text>
+                                {editRelationship === rel && (
+                                    <MaterialCommunityIcons name="check" size={18} color={theme.colors.primaryAction} />
+                                )}
+                            </AnimatedScaleButton>
+                        ))}
+
+                        {/* Add custom relationship */}
+                        <View style={styles.addCustomRelRow}>
+                            <TextInput
+                                style={styles.addCustomRelInput}
+                                defaultValue={customRelInputRef.current}
+                                onChangeText={(text) => customRelInputRef.current = text}
+                                placeholder="Add custom..."
+                                placeholderTextColor={theme.colors.textMuted}
+                                keyboardAppearance="dark"
+                            />
+                            <AnimatedScaleButton
+                                style={[styles.addCustomRelBtn, !customRelInputRef.current.trim() && { opacity: 0.3 }]}
+                                onPress={handleAddCustomRelationship}
+                                disabled={!customRelInputRef.current.trim()}
+                            >
+                                <MaterialCommunityIcons name="plus" size={20} color="#000" />
+                            </AnimatedScaleButton>
+                        </View>
                     </View>
+                )}
+
+                {/* Section: Birthday */}
+                <Text style={styles.editLabel}>Birthday</Text>
+                <TextInput
+                    style={styles.editInput}
+                    value={editBirthday}
+                    onChangeText={setEditBirthday}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={theme.colors.textMuted}
+                    keyboardAppearance="dark"
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={10}
+                />
+                <Text style={styles.editHint}>Format: 2000-05-15</Text>
+
+                {/* Section: Bio / Notes */}
+                <Text style={styles.editLabel}>Personal Notes</Text>
+                <TextInput
+                    style={[styles.editInput, styles.editTextArea]}
+                    value={editBio}
+                    onChangeText={setEditBio}
+                    placeholder="Write personal notes about this person..."
+                    placeholderTextColor={theme.colors.textMuted}
+                    keyboardAppearance="dark"
+                    multiline
+                    textAlignVertical="top"
+                />
+
+                {/* Action buttons — full-width stacked: Save on top, Cancel below */}
+                <View style={styles.editActions}>
+                    <AnimatedScaleButton
+                        style={styles.editSaveBtn}
+                        onPress={handleSave}
+                    >
+                        <MaterialCommunityIcons name="check" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.editSaveBtnText}>Save Changes</Text>
+                    </AnimatedScaleButton>
+                    <AnimatedScaleButton
+                        style={styles.editCancelBtn}
+                        onPress={() => setIsEditing(false)}
+                    >
+                        <Text style={styles.editCancelBtnText}>Cancel</Text>
+                    </AnimatedScaleButton>
                 </View>
-            )}
 
-            {/* Section: Birthday */}
-            <Text style={styles.editLabel}>Birthday</Text>
-            <TextInput
-                style={styles.editInput}
-                defaultValue={editBirthdayRef.current}
-                onChangeText={(text) => editBirthdayRef.current = text}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={theme.colors.textMuted}
-                keyboardAppearance="dark"
-                keyboardType="numbers-and-punctuation"
-                maxLength={10}
-            />
-            <Text style={styles.editHint}>Format: 2000-05-15</Text>
-
-            {/* Section: Bio / Notes */}
-            <Text style={styles.editLabel}>Personal Notes</Text>
-            <TextInput
-                style={[styles.editInput, styles.editTextArea]}
-                defaultValue={editBioRef.current}
-                onChangeText={(text) => editBioRef.current = text}
-                placeholder="Write personal notes about this person..."
-                placeholderTextColor={theme.colors.textMuted}
-                keyboardAppearance="dark"
-                multiline
-                textAlignVertical="top"
-            />
-
-            {/* Action buttons */}
-            <View style={styles.editActions}>
-                <AnimatedScaleButton
-                    style={[styles.editActionBtn, styles.editCancelBtn]}
-                    onPress={() => setIsEditing(false)}
-                >
-                    <Text style={styles.editCancelBtnText}>Cancel</Text>
-                </AnimatedScaleButton>
-                <AnimatedScaleButton
-                    style={[styles.editActionBtn, styles.editSaveBtn]}
-                    onPress={handleSave}
-                >
-                    <MaterialCommunityIcons name="check" size={18} color="#000" style={{ marginRight: 6 }} />
-                    <Text style={styles.editSaveBtnText}>Save</Text>
-                </AnimatedScaleButton>
-            </View>
-
-            {/* Delete Person — danger zone, only in edit mode */}
-            {onDeletePerson && (
-                <AnimatedScaleButton
-                    style={styles.deleteDangerBtn}
-                    onPress={() => {
-                        onDeletePerson(person.id);
-                        onClose();
-                    }}
-                >
-                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} style={{ marginRight: 8 }} />
-                    <Text style={styles.deleteDangerBtnText}>Delete Person</Text>
-                </AnimatedScaleButton>
-            )}
-        </ScrollView>
+                {/* Delete Person — danger zone, only in edit mode */}
+                {onDeletePerson && (
+                    <AnimatedScaleButton
+                        style={styles.deleteDangerBtn}
+                        onPress={() => {
+                            onDeletePerson(person.id);
+                            onClose();
+                        }}
+                    >
+                        <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} style={{ marginRight: 8 }} />
+                        <Text style={styles.deleteDangerBtnText}>Delete Person</Text>
+                    </AnimatedScaleButton>
+                )}
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 
     /* ── Render: Full unlocked profile view ─────────────────────────── */
@@ -402,7 +432,7 @@ export const PersonProfileModal: React.FC<Props> = ({
             )}
 
             {/* Edit Profile button */}
-            <AnimatedScaleButton style={styles.editProfileBtn} onPress={() => setIsEditing(true)}>
+            <AnimatedScaleButton style={styles.editProfileBtn} onPress={startEditing}>
                 <MaterialCommunityIcons name="pencil-outline" size={18} color={theme.colors.primaryAction} style={{ marginRight: 8 }} />
                 <Text style={styles.editProfileBtnText}>Edit Profile</Text>
             </AnimatedScaleButton>
@@ -760,21 +790,35 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
 
-    /* ── Edit action buttons ───────────────────────────────────────── */
+    /* ── Edit action buttons — full-width stacked layout ────────────── */
     editActions: {
-        flexDirection: 'row',
-        gap: 10,
         marginTop: 30,
+        gap: 10,
     },
-    editActionBtn: {
-        flex: 1,
+    editSaveBtn: {
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
         paddingVertical: 16,
         borderRadius: 100,
+        backgroundColor: theme.colors.primaryAction,
+        shadowColor: theme.colors.primaryAction,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 8,
+    },
+    editSaveBtnText: {
+        color: '#FFF',
+        fontWeight: '800',
+        fontSize: 16,
     },
     editCancelBtn: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderRadius: 100,
         backgroundColor: theme.colors.glassBackground,
         borderWidth: 1,
         borderColor: theme.colors.glassBorder,
@@ -782,14 +826,6 @@ const styles = StyleSheet.create({
     editCancelBtnText: {
         color: theme.colors.textPrimary,
         fontWeight: '700',
-        fontSize: 15,
-    },
-    editSaveBtn: {
-        backgroundColor: theme.colors.primaryAction,
-    },
-    editSaveBtnText: {
-        color: '#000',
-        fontWeight: '800',
         fontSize: 15,
     },
 

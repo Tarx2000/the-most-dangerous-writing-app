@@ -95,6 +95,8 @@ export interface SavedVlog {
     durationSec: number;
     /** File size in bytes (for storage usage tracking) */
     fileSizeBytes: number;
+    /** Cached thumbnail image path (generated on first view via expo-video-thumbnails) */
+    thumbnailPath?: string;
 }
 
 /* ── AI Queue Types ──────────────────────────────────────────────────── */

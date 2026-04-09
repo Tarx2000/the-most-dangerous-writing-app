@@ -89,7 +89,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const [debouncedCircleSearch, setDebouncedCircleSearch] = useState('');
     const circleSearchDebounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
-    const [showAddPerson, setShowAddPerson] = useState(false);
+    /** Controls inline creation form inside the Select Circle sheet */
+    const [creatingNewCircle, setCreatingNewCircle] = useState(false);
     const newPersonNameRef = useRef('');
 
     const storage = useStorage();
@@ -465,6 +466,35 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         </View>
                     </View>
 
+                    {/* Feed Settings */}
+                    <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <MaterialCommunityIcons name="newspaper-variant-outline" size={18} color={theme.colors.primaryAction} />
+                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Feed Settings</Text>
+                        </View>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>Control how your feed behaves</Text>
+
+                        {/* Auto-play videos toggle */}
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14 }}
+                            onPress={() => {
+                                storage.setAutoPlayFeedVideos(!storage.autoPlayFeedVideos);
+                                Vibration.vibrate(10);
+                            }}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                                <MaterialCommunityIcons name="play-circle-outline" size={20} color={theme.colors.textSecondary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Auto-play Videos</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Videos play muted while scrolling</Text>
+                                </View>
+                            </View>
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: storage.autoPlayFeedVideos ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: storage.autoPlayFeedVideos ? 'flex-end' : 'flex-start' }} />
+                            </View>
+                        </AnimatedScaleButton>
+                    </View>
+
                     <AiSettingsPanel 
                         storage={storage} 
                         queueState={queueState} 
@@ -492,116 +522,32 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                 </ScrollView>
             </SwipeableModal>
 
-            {/* Premium Full-Screen Person Select Modal */}
-            <Modal visible={showPersonSelect} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowPersonSelect(false); circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
-                <View style={[styles.premiumPersonModal, { flex: 1 }]}>
-                    <LinearGradient colors={['#1e1e1e', '#000000']} style={StyleSheet.absoluteFillObject} />
-                    
-                    {/* Header */}
-                    <View style={styles.premiumPersonHeader}>
-                        <Text style={styles.premiumPersonTitle}>Select Circle</Text>
-                        <AnimatedScaleButton style={styles.premiumPersonCloseBtn} onPress={() => { setShowPersonSelect(false); circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
-                            <MaterialCommunityIcons name="close" size={24} color="#FFF" />
+            {/* Select Circle — Slide-up SwipeableModal (replaces old full-screen Modal) */}
+            <SwipeableModal
+                visible={showPersonSelect}
+                onClose={() => { setShowPersonSelect(false); circleSearchRef.current = ''; handleCircleSearchChange(''); setCreatingNewCircle(false); }}
+                title={creatingNewCircle ? 'New Circle' : 'Select Circle'}
+                setHomeScrollEnabled={setHomeScrollEnabled}
+            >
+                {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 60 }}>
+                        <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
+                        <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 8 }}>Circles Protected</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>Verify your identity to view your circles</Text>
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 100 }}
+                            onPress={async () => {
+                                const success = await security.unlockCircles();
+                                if (success) Vibration.vibrate(50);
+                            }}
+                        >
+                            <MaterialCommunityIcons name="fingerprint" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                            <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Unlock Circles</Text>
                         </AnimatedScaleButton>
                     </View>
-
-                    {/* Content Area with Keyboard avoidance */}
-                    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                        {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
-                            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 60 }}>
-                                <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
-                                <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 8 }}>Circles Protected</Text>
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>Verify your identity to view your circles</Text>
-                                <AnimatedScaleButton
-                                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 100 }}
-                                    onPress={async () => {
-                                        const success = await security.unlockCircles();
-                                        if (success) Vibration.vibrate(50);
-                                    }}
-                                >
-                                    <MaterialCommunityIcons name="fingerprint" size={20} color="#FFF" style={{ marginRight: 8 }} />
-                                    <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Unlock Circles</Text>
-                                </AnimatedScaleButton>
-                            </View>
-                        ) : (
-                            <>
-                        {/* Search Input */}
-                        <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
-                            <View style={styles.premiumSearchBox}>
-                                <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textMuted} style={{ marginRight: 10 }} />
-                                <TextInput
-                                    style={styles.premiumSearchInput}
-                                    placeholder="Search your circles..."
-                                    placeholderTextColor={theme.colors.textMuted}
-                                    defaultValue={circleSearchRef.current}
-                                    onChangeText={handleCircleSearchChange}
-                                    keyboardAppearance="dark"
-                                    autoCorrect={false}
-                                />
-                                {circleSearchRef.current.length > 0 && (
-                                    <AnimatedScaleButton onPress={() => { circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
-                                        <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
-                                    </AnimatedScaleButton>
-                                )}
-                            </View>
-                        </View>
-
-                        {/* List */}
-                        <View style={{ flex: 1, width: '100%' }}>
-                            {filteredPersons.length > 0 ? (
-                                <FlashList
-                                    data={filteredPersons}
-                                    renderItem={({ item: p }: { item: Person }) => (
-                                        <AnimatedScaleButton
-                                            style={styles.premiumPersonItem}
-                                            onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); handleCircleSearchChange(''); }}
-                                        >
-                                            <View style={styles.premiumPersonAvatar}>
-                                                <Text style={styles.premiumPersonAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
-                                            </View>
-                                            <Text style={styles.premiumPersonName}>{p.name}</Text>
-                                        </AnimatedScaleButton>
-                                    )}
-                                    keyExtractor={(p) => p.id}
-                                    keyboardShouldPersistTaps="handled"
-                                    keyboardDismissMode="on-drag"
-                                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-                                />
-                            ) : (
-                                <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' }}>
-                                    <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textMuted} style={{ marginBottom: 15 }} />
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
-                                        {debouncedCircleSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
-                                    </Text>
-                                    
-                                    {debouncedCircleSearch.length > 0 && (
-                                        <AnimatedScaleButton style={styles.premiumCreateBtn} onPress={() => { newPersonNameRef.current = debouncedCircleSearch; setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
-                                            <MaterialCommunityIcons name="plus" size={20} color="#000" />
-                                            <Text style={styles.premiumCreateBtnText}>Create "{debouncedCircleSearch}"</Text>
-                                        </AnimatedScaleButton>
-                                    )}
-                                </ScrollView>
-                            )}
-                        </View>
-                        
-                        {/* Always visible float button if empty search query */}
-                        {debouncedCircleSearch.length === 0 && (
-                            <AnimatedScaleButton style={styles.premiumFloatCreateBtn} onPress={() => { setShowPersonSelect(false); setTimeout(() => setShowAddPerson(true), 300); }}>
-                                <MaterialCommunityIcons name="plus" size={24} color="#000" />
-                                <Text style={styles.premiumFloatCreateBtnText}>New Circle</Text>
-                            </AnimatedScaleButton>
-                        )}
-                            </>
-                        )}
-                    </KeyboardAvoidingView>
-                </View>
-            </Modal>
-
-            {/* Add Person Modal */}
-            <Modal visible={showAddPerson} transparent animationType="fade">
-                <KeyboardAvoidingView style={commonStyles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                    <View style={commonStyles.versionModalContent}>
-                        <Text style={commonStyles.versionModalTitle}>New Circle</Text>
+                ) : creatingNewCircle ? (
+                    /* ── Inline Create Form ─────────────────────────────────── */
+                    <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
                         <TextInput
                             style={commonStyles.addPersonInput}
                             placeholder="Person's Name"
@@ -609,29 +555,108 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             defaultValue={newPersonNameRef.current}
                             onChangeText={(text) => newPersonNameRef.current = text}
                             autoFocus
+                            keyboardAppearance="dark"
                         />
-                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setShowAddPerson(false)}>
-                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                            </AnimatedScaleButton>
+                        <View style={{ gap: 10, marginTop: 20 }}>
                             <AnimatedScaleButton
-                                style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.primaryAction }]}
+                                style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 16, borderRadius: 100, shadowColor: theme.colors.primaryAction, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}
                                 onPress={async () => {
                                     if (newPersonNameRef.current.trim()) {
                                         await storage.addPerson(newPersonNameRef.current);
                                         newPersonNameRef.current = '';
-                                        setShowAddPerson(false);
+                                        setCreatingNewCircle(false);
                                         circleSearchRef.current = '';
                                         handleCircleSearchChange('');
+                                        // Auto-select the newly created person (it's at index 0 after addPerson)
+                                        setTimeout(() => {
+                                            const newest = storage.persons[0];
+                                            if (newest) setSelectedPersonId(newest.id);
+                                        }, 100);
                                     }
                                 }}
                             >
-                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.primaryActionText }]}>Save</Text>
+                                <MaterialCommunityIcons name="check" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>Create Circle</Text>
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton
+                                style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.glassBackground, paddingVertical: 16, borderRadius: 100, borderWidth: 1, borderColor: theme.colors.glassBorder }}
+                                onPress={() => setCreatingNewCircle(false)}
+                            >
+                                <Text style={{ color: theme.colors.textPrimary, fontWeight: '700', fontSize: 15 }}>Back to List</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
-                </KeyboardAvoidingView>
-            </Modal>
+                ) : (
+                    <>
+                    {/* Search Input */}
+                    <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
+                        <View style={styles.premiumSearchBox}>
+                            <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textMuted} style={{ marginRight: 10 }} />
+                            <TextInput
+                                style={styles.premiumSearchInput}
+                                placeholder="Search your circles..."
+                                placeholderTextColor={theme.colors.textMuted}
+                                defaultValue={circleSearchRef.current}
+                                onChangeText={handleCircleSearchChange}
+                                keyboardAppearance="dark"
+                                autoCorrect={false}
+                            />
+                            {circleSearchRef.current.length > 0 && (
+                                <AnimatedScaleButton onPress={() => { circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
+                                    <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
+                                </AnimatedScaleButton>
+                            )}
+                        </View>
+                    </View>
+
+                    {/* List */}
+                    <View style={{ flex: 1, width: '100%' }}>
+                        {filteredPersons.length > 0 ? (
+                            <FlashList
+                                data={filteredPersons}
+                                renderItem={({ item: p }: { item: Person }) => (
+                                    <AnimatedScaleButton
+                                        style={styles.premiumPersonItem}
+                                        onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); handleCircleSearchChange(''); }}
+                                    >
+                                        <View style={styles.premiumPersonAvatar}>
+                                            <Text style={styles.premiumPersonAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
+                                        </View>
+                                        <Text style={styles.premiumPersonName}>{p.name}</Text>
+                                    </AnimatedScaleButton>
+                                )}
+                                keyExtractor={(p) => p.id}
+                                keyboardShouldPersistTaps="handled"
+                                keyboardDismissMode="on-drag"
+                                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+                            />
+                        ) : (
+                            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' }}>
+                                <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textMuted} style={{ marginBottom: 15 }} />
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
+                                    {debouncedCircleSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
+                                </Text>
+                                
+                                {debouncedCircleSearch.length > 0 && (
+                                    <AnimatedScaleButton style={styles.premiumCreateBtn} onPress={() => { newPersonNameRef.current = debouncedCircleSearch; setCreatingNewCircle(true); }}>
+                                        <MaterialCommunityIcons name="plus" size={20} color="#000" />
+                                        <Text style={styles.premiumCreateBtnText}>Create "{debouncedCircleSearch}"</Text>
+                                    </AnimatedScaleButton>
+                                )}
+                            </ScrollView>
+                        )}
+                    </View>
+                    
+                    {/* Float create button — opens inline creation form */}
+                    {debouncedCircleSearch.length === 0 && (
+                        <AnimatedScaleButton style={styles.premiumFloatCreateBtn} onPress={() => { newPersonNameRef.current = ''; setCreatingNewCircle(true); }}>
+                            <MaterialCommunityIcons name="plus" size={24} color="#000" />
+                            <Text style={styles.premiumFloatCreateBtnText}>New Circle</Text>
+                        </AnimatedScaleButton>
+                    )}
+                    </>
+                )}
+            </SwipeableModal>
 
             {/* Streak Popup Overlay */}
             <StreakPopup

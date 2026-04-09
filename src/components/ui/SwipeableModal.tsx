@@ -60,6 +60,8 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
 
     /** Memoize gesture to avoid recreating on every render */
     const panGesture = useMemo(() => Gesture.Pan()
+        // Only activate if pulled DOWN > 20px (prevents swallowing button taps)
+        .activeOffsetY([-10000, 20])
         .onUpdate((e) => {
             if (e.translationY > 0) {
                 translateY.value = e.translationY;

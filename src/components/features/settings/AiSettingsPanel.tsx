@@ -32,7 +32,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
                 <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>AI Settings</Text>
             </View>
-            <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>Ollama Cloud API — KimiK2.5</Text>
+            <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>Ollama Cloud API</Text>
 
             {/* API Key */}
             <Text style={{ color: theme.colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>API Key</Text>

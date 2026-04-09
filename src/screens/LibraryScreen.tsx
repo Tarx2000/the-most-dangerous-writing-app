@@ -27,6 +27,7 @@ import { useAiQueue } from '@/lib/hooks/useAiQueue';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
+import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
 import { SortOption, SavedNote, Person, AiJobCategory } from '@/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -434,110 +435,18 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 </View>
             </Modal>
 
-            {/* Premium Note View — Liquid Glass Card Popup */}
-            <Modal visible={!!viewNoteModal} animationType="fade" transparent={true} onRequestClose={() => setViewNoteModal(null)}>
-                {viewNoteModal && (
-                    <View style={styles.cardPopupBackdrop}>
-                        <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setViewNoteModal(null)} />
-                        <Animated.View style={[styles.cardPopupContainer, animatedCardStyle]}>
-                            {/* Solid background */}
-                            <View style={styles.cardPopupTint} />
-
-                            {/* Swipeable Header Zone */}
-                            <GestureDetector gesture={notePanGesture}>
-                                <Animated.View>
-                                    {/* Drag handle */}
-                                <View style={styles.cardPopupHandle} />
-
-                                {/* Header — AI Title + Date */}
-                                <View style={styles.cardPopupHeader}>
-                                    <View style={{ flex: 1 }}>
-                                        {/* AI Title as primary heading */}
-                                        {viewNoteModal.aiTitle ? (
-                                            <RichText style={styles.premiumNoteAiTitle} numberOfLines={2} text={viewNoteModal.aiTitle} />
-                                        ) : null}
-                                        <Text style={styles.premiumNoteDate}>{viewNoteModal.dateStr}</Text>
-                                        <Text style={styles.premiumNoteMeta}>
-                                            {viewNoteModal.text.split(/\s+/).filter(Boolean).length} words • {viewNoteModal.durationMin > 0 ? `${viewNoteModal.durationMin} min` : 'Quick Note'}
-                                        </Text>
-                                    </View>
-                                    <AnimatedScaleButton style={styles.premiumNoteCloseBtn} onPress={() => setViewNoteModal(null)}>
-                                        <MaterialCommunityIcons name="close" size={22} color="#FFF" />
-                                    </AnimatedScaleButton>
-                                </View>
-                                </Animated.View>
-                            </GestureDetector>
-
-                            {/* Body */}
-                            <ScrollView style={styles.cardPopupScroll} showsVerticalScrollIndicator={false}>
-                                {/* AI Summary Card */}
-                                {viewNoteModal.aiSummary && viewNoteModal.aiSummary.length > 0 && (
-                                    <View style={styles.aiSummaryCard}>
-                                        <View style={styles.aiSummaryHeader}>
-                                            <MaterialCommunityIcons name="brain" size={16} color={theme.colors.primaryAction} />
-                                            <Text style={styles.aiSummaryHeaderText}>AI Summary</Text>
-                                        </View>
-                                        {viewNoteModal.aiSummary.map((bullet, idx) => (
-                                            <View key={idx} style={styles.aiSummaryBulletRow}>
-                                                <Text style={styles.aiSummaryBulletDot}>•</Text>
-                                                <RichText style={styles.aiSummaryBulletText} text={bullet} />
-                                            </View>
-                                        ))}
-                                        {viewNoteModal.aiModelUsed && (
-                                            <Text style={{ textAlign: 'right', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 8 }}>
-                                                {viewNoteModal.aiModelUsed}
-                                            </Text>
-                                        )}
-                                    </View>
-                                )}
-
-                                {/* Regenerate AI button — shown when note has no AI data */}
-                                {!viewNoteModal.aiTitle && (!viewNoteModal.aiSummary || viewNoteModal.aiSummary.length === 0) && !isNoteActive(viewNoteModal.id) && (
-                                    <AnimatedScaleButton
-                                        style={styles.regenerateBtn}
-                                        onPress={() => handleRegenerateAi(viewNoteModal)}
-                                    >
-                                        <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
-                                        <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
-                                    </AnimatedScaleButton>
-                                )}
-
-                                {isNoteActive(viewNoteModal.id) && (
-                                    <View style={[styles.regenerateBtn, { borderColor: 'rgba(255, 42, 42, 0.2)' }]}>
-                                        <ActivityIndicator size="small" color={theme.colors.primaryAction} />
-                                        <Text style={styles.regenerateBtnText}>Processing...</Text>
-                                    </View>
-                                )}
-
-                                <Text style={styles.premiumNoteBody} selectable={true}>{viewNoteModal.text}</Text>
-                            </ScrollView>
-
-                            {/* Footer — Delete + Regenerate */}
-                            <View style={styles.premiumNoteFooter}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                    <AnimatedScaleButton style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
-                                        <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
-                                        <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
-                                    </AnimatedScaleButton>
-                                    {(viewNoteModal.aiTitle || (viewNoteModal.aiSummary && viewNoteModal.aiSummary.length > 0)) && (
-                                        <AnimatedScaleButton
-                                            style={styles.regenerateSmallBtn}
-                                            onPress={() => handleRegenerateAi(viewNoteModal)}
-                                            disabled={isNoteActive(viewNoteModal.id)}
-                                        >
-                                            {isNoteActive(viewNoteModal.id) ? (
-                                                <ActivityIndicator size="small" color={theme.colors.textMuted} />
-                                            ) : (
-                                                <MaterialCommunityIcons name="refresh" size={16} color={theme.colors.textMuted} />
-                                            )}
-                                        </AnimatedScaleButton>
-                                    )}
-                                </View>
-                            </View>
-                        </Animated.View>
-                    </View>
-                )}
-            </Modal>
+            {/* Premium Note View — Reusable Modal */}
+            <NoteViewerModal
+                note={viewNoteModal}
+                visible={!!viewNoteModal}
+                onClose={() => setViewNoteModal(null)}
+                onDelete={(id) => {
+                    setViewNoteModal(null);
+                    setNoteToDelete(id);
+                }}
+                isNoteActive={isNoteActive}
+                onRegenerateAi={(note) => handleRegenerateAi(note)}
+            />
 
             {/* Delete Note Confirmation */}
             <Modal visible={!!noteToDelete} transparent animationType="fade">
@@ -548,18 +457,19 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             Are you sure you want to permanently delete this session? This cannot be undone.
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setNoteToDelete(null)}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setNoteToDelete(null)}>
+                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
                                 <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
                                 if (noteToDelete) {
                                     storage.deleteNote(noteToDelete).then(() => {
                                         setNoteToDelete(null);
-                                        setViewNoteModal(null);
                                     });
                                 }
                             }}>
-                                <Text style={commonStyles.closeVersionBtnText}>Delete</Text>
+                                <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
+                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF' }]}>Delete</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
@@ -575,10 +485,11 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setPersonToDelete(null)}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setPersonToDelete(null)}>
+                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
                                 <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
                                 if (personToDelete) {
                                     storage.deletePerson(personToDelete).then(() => {
                                         setPersonToDelete(null);
@@ -588,7 +499,8 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                     });
                                 }
                             }}>
-                                <Text style={commonStyles.closeVersionBtnText}>Delete All</Text>
+                                <MaterialCommunityIcons name="delete-alert-outline" size={18} color="#FFF" />
+                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF' }]}>Delete All</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
@@ -604,7 +516,10 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
                 onUnlock={security.unlockProfile}
                 onUpdatePerson={storage.updatePerson}
-                onDeletePerson={(id) => { storage.deletePerson(id); setProfilePerson(null); }}
+                onDeletePerson={(id) => {
+                    setProfilePerson(null);
+                    setPersonToDelete(id);
+                }}
                 onNotePress={setViewNoteModal}
                 isNotesUnlocked={security.isNotesUnlocked}
                 isNoteActive={isNoteActive}

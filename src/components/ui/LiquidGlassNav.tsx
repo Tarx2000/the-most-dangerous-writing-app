@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
     View,
     Pressable,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 
@@ -35,15 +36,15 @@ const INDICATOR_SPRING = {
  * LiquidGlassNav — Premium floating pill navigation bar (icon-only).
  *
  * Design:
- * - Thicker, more opaque glass for a stronger "liquid" feel
+ * - Multi-layer glass effect: BlurView + dark tint + specular highlight
  * - Icon-only tabs (no labels) for a cleaner, more modern look
  * - Larger pill height (72px) with bigger icons (26px)
- * - Perfectly centered icons via flexbox (no gap offset)
+ * - Top-edge specular gradient simulates light refraction on glass
  *
  * Performance:
  * - Wrapped in React.memo to skip scroll-event re-renders
  * - Uses raw Pressable for instant tap response (<16ms)
- * - Sliding indicator uses spring animation for premium feel
+ * - Indicator animation in useEffect (not render-time) for stutter-free sliding
  */
 interface NavItem {
     id: string;
@@ -70,13 +71,14 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
     const indicatorX = useSharedValue(activeIndex * tabWidth);
 
     /**
-     * Drive indicator to the new position on activeId change.
-     * Since the component is memoized, this only fires when activeId changes.
+     * Drive indicator to the new position AFTER render commits.
+     * Previously this ran during render (side-effect), causing stale
+     * shared-value reads and animation queue conflicts on rapid taps.
      */
-    const targetX = activeIndex * tabWidth;
-    if (indicatorX.value !== targetX) {
+    useEffect(() => {
+        const targetX = activeIndex * tabWidth;
         indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
-    }
+    }, [activeIndex, tabWidth]);
 
     /** Indicator padding from edges */
     const INDICATOR_PADDING = 7;
@@ -88,15 +90,21 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
     return (
         <View style={styles.wrapper}>
             <View style={[styles.pill, { width: PILL_WIDTH }]}>
-                {/* Frosted glass — higher intensity for more opaque "liquid" feel */}
+                {/* Layer 1: Frosted glass blur */}
                 <BlurView
                     intensity={60}
                     tint="dark"
                     style={StyleSheet.absoluteFillObject}
                 />
 
-                {/* Dense tint overlay — darker and more opaque for liquid glass effect */}
+                {/* Layer 2: Dense dark tint for depth */}
                 <View style={styles.tintOverlay} />
+
+                {/* Layer 3: Specular highlight — top-edge gradient simulating glass refraction */}
+                <LinearGradient
+                    colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)', 'transparent']}
+                    style={styles.specularHighlight}
+                />
 
                 {/* Sliding active indicator — vertically centered */}
                 <Animated.View
@@ -171,12 +179,25 @@ const styles = StyleSheet.create({
     },
 
     /**
-     * Denser tint overlay — more opaque for a solid "liquid glass" look
+     * Layer 2: Dense tint overlay — more opaque for a solid "liquid glass" look
      * rather than a thin barely-visible frosted effect.
      */
     tintOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(10, 10, 10, 0.75)',
+    },
+
+    /**
+     * Layer 3: Specular highlight on the top edge.
+     * Simulates the way light refracts through real glass surfaces,
+     * creating a subtle bright strip along the top of the pill.
+     */
+    specularHighlight: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: PILL_HEIGHT * 0.4,
     },
 
     /** Sliding highlight — vertically centered with equal padding top/bottom */

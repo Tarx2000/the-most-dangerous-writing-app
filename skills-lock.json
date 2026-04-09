@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "expo-liquid-glass": {
+      "source": "devanshudesai/agent-skills",
+      "sourceType": "github",
+      "computedHash": "4790cfaf88398ac44a8ea677ac651498a11cd0cad29c820bf71805f33101d22f"
+    },
     "git-commit": {
       "source": "github/awesome-copilot",
       "sourceType": "github",

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
+    Image,
     StyleSheet,
     Dimensions,
     Modal,
@@ -21,8 +22,22 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { useStorage } from '@/lib/hooks/useStorage';
+import { useThumbnails } from '@/lib/hooks/useThumbnails';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/** Mini component to asynchronously fetch missing thumbnails without causing entire calendar re-renders */
+const ThumbnailFetcher: React.FC<{ vlog: SavedVlog }> = ({ vlog }) => {
+    const { updateVlog } = useStorage();
+    const { getThumbnail } = useThumbnails(updateVlog);
+    
+    useEffect(() => {
+        if (!vlog.thumbnailPath) getThumbnail(vlog);
+    }, [vlog, getThumbnail]);
+    
+    return null;
+};
 
 /* ────────────────────────────────────────────────────────────────────────────
  * CONFIGURABLE: Calendar layout
@@ -255,15 +270,24 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                 {cell.day !== null && (
                                     <>
                                         {hasVlogs ? (
-                                            /* Day with vlog — gradient thumbnail card */
+                                            /* Day with vlog — gradient or thumbnail */
                                             <View style={[
                                                 styles.vlogThumb,
                                                 isToday(cell.day) && styles.vlogThumbToday,
                                             ]}>
-                                                {/* Gradient background as placeholder */}
-                                                <View style={styles.vlogThumbGradient}>
-                                                    <MaterialCommunityIcons name="play-circle-outline" size={20} color="rgba(255,255,255,0.7)" />
-                                                </View>
+                                                {/* Image Thumbnail or Gradient background as placeholder */}
+                                                {dayVlogs![0].thumbnailPath ? (
+                                                    <Image source={{ uri: dayVlogs![0].thumbnailPath }} style={styles.vlogThumbGradient} />
+                                                ) : (
+                                                    <View style={styles.vlogThumbGradient}>
+                                                        <MaterialCommunityIcons name="play-circle-outline" size={20} color="rgba(255,255,255,0.7)" />
+                                                    </View>
+                                                )}
+
+                                                {/* Overlay trigger for missing thumbnail */}
+                                                {!dayVlogs![0].thumbnailPath && (
+                                                    <ThumbnailFetcher vlog={dayVlogs![0]} />
+                                                )}
 
                                                 {/* Day number */}
                                                 <Text style={styles.vlogThumbDay}>{cell.day}</Text>
@@ -403,6 +427,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                 style={[styles.deleteModalBtn, { backgroundColor: theme.colors.glassBackground }]}
                                 onPress={() => setShowDeleteConfirm(null)}
                             >
+                                <MaterialCommunityIcons name="close" size={18} color="#FFF" style={{ marginRight: 6 }} />
                                 <Text style={styles.deleteModalBtnText}>Cancel</Text>
                             </AnimatedScaleButton>
                             <AnimatedScaleButton
@@ -420,6 +445,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                     }
                                 }}
                             >
+                                <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
                                 <Text style={styles.deleteModalBtnText}>Delete</Text>
                             </AnimatedScaleButton>
                         </View>
@@ -778,12 +804,12 @@ const styles = StyleSheet.create({
         padding: 30,
     },
     deleteModalCard: {
-        backgroundColor: '#1A1A1A',
+        backgroundColor: '#0A0A0A',
         borderRadius: 20,
         padding: 25,
         width: '100%',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: 'rgba(255,255,255,0.12)',
     },
     deleteModalTitle: {
         color: '#FFF',
@@ -798,9 +824,11 @@ const styles = StyleSheet.create({
     },
     deleteModalBtn: {
         flex: 1,
-        paddingVertical: 14,
-        borderRadius: 14,
+        flexDirection: 'row',
+        justifyContent: 'center',
         alignItems: 'center',
+        paddingVertical: 16,
+        borderRadius: 100,
     },
     deleteModalBtnText: {
         color: '#FFF',

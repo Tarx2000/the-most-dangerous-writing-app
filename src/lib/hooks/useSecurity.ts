@@ -4,18 +4,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 /**
- * useSecurity — Biometric-only security hook with two-tier unlock.
+ * useSecurity — Biometric-only security hook with central unlock.
+ *
+ * Central Unlock Pattern:
+ * The Vision button (★) acts as the master lock/unlock for the ENTIRE app.
+ * When unlocked (Stage 2), everything is accessible: notes, circles,
+ * profiles, and feed. When locked, everything is hidden.
  *
  * Security Stages:
  * ┌─────────────────────────────┬──────────────────────────────────────────────┐
- * │ Stage 0 (locked)            │ Notes are blurred, Circles tab is locked     │
+ * │ Stage 0 (locked)            │ Notes blurred, Circles locked, Feed locked   │
  * │ Stage 1 (circlesUnlocked)   │ Circles tab visible, notes still blurred     │
  * │ Stage 1.5 (profileUnlocked) │ Full person profile visible (bio, details)   │
- * │ Stage 2 (notesUnlocked)     │ Full access: read notes, delete, etc.        │
+ * │ Stage 2 (notesUnlocked)     │ Full access: notes, circles, feed, delete    │
  * └─────────────────────────────┴──────────────────────────────────────────────┘
  *
  * All stages use biometric auth (fingerprint/face). No PIN fallback.
- * Stage 2 automatically includes Stage 1 + 1.5 access.
+ * Stage 2 automatically includes ALL lower stages.
  */
 export function useSecurity() {
     /** Stage 2: full unlock — notes readable, delete available */
@@ -24,6 +29,8 @@ export function useSecurity() {
     const [isProfileUnlocked, setIsProfileUnlocked] = useState<boolean>(false);
     /** Stage 1: circles tab content visible */
     const [isCirclesUnlocked, setIsCirclesUnlocked] = useState<boolean>(false);
+    /** Feed access: controlled by the central unlock (Stage 2) */
+    const [isFeedUnlocked, setIsFeedUnlocked] = useState<boolean>(false);
 
     /** Auto-lock timer ref (10 min timeout for full unlock) */
     const lockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -35,6 +42,7 @@ export function useSecurity() {
             setIsNotesUnlocked(false);
             setIsProfileUnlocked(false);
             setIsCirclesUnlocked(false);
+            setIsFeedUnlocked(false);
         }, 600000); // 10 minutes
     }, []);
 
@@ -43,6 +51,7 @@ export function useSecurity() {
         setIsNotesUnlocked(false);
         setIsProfileUnlocked(false);
         setIsCirclesUnlocked(false);
+        setIsFeedUnlocked(false);
         if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
     }, []);
 
@@ -89,9 +98,9 @@ export function useSecurity() {
     }, [authenticate]);
 
     /**
-     * Stage 2: Unlock everything (notes readable + circles visible).
+     * Stage 2: Unlock everything (notes + circles + profile + feed).
+     * This is the CENTRAL unlock — triggered by the Vision ★ button.
      * Prompts biometric auth. On success, grants full access + starts timer.
-     * On cancel/fail, nothing changes.
      */
     const unlockNotes = useCallback(async (): Promise<boolean> => {
         const success = await authenticate('Unlock your notes');
@@ -99,6 +108,7 @@ export function useSecurity() {
             setIsNotesUnlocked(true);
             setIsProfileUnlocked(true); // Stage 2 includes Stage 1.5
             setIsCirclesUnlocked(true); // Stage 2 includes Stage 1
+            setIsFeedUnlocked(true);    // Stage 2 includes Feed
             resetLockTimeout();
             return true;
         }
@@ -136,11 +146,13 @@ export function useSecurity() {
         isProfileUnlocked,
         /** Stage 1: circles tab content visible */
         isCirclesUnlocked,
+        /** Feed access: controlled by central Stage 2 unlock */
+        isFeedUnlocked,
         /** Prompt biometric to unlock Circles tab only */
         unlockCircles,
         /** Prompt biometric to unlock person profile details */
         unlockProfile,
-        /** Prompt biometric to unlock everything */
+        /** Prompt biometric to unlock EVERYTHING (central unlock) */
         unlockNotes,
         /** Lock all tiers instantly */
         lockAll,

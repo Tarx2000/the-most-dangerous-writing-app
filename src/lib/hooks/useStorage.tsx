@@ -31,6 +31,14 @@ function useStorageInternal() {
     /** Total storage used by vlog files in bytes */
     const [totalVlogStorageBytes, setTotalVlogStorageBytes] = useState<number>(0);
 
+    /* ── Feed Feature State ──────────────────────────────────────── */
+    /** IDs of entries the user has bookmarked in the Feed */
+    const [bookmarkedNoteIds, setBookmarkedNoteIds] = useState<string[]>([]);
+    /** Personal annotations/comments per entry (noteId → comment text) */
+    const [feedComments, setFeedComments] = useState<Record<string, string>>({});
+    /** Whether videos auto-play muted in the Feed (default: true) */
+    const [autoPlayFeedVideos, setAutoPlayFeedVideos] = useState<boolean>(true);
+
     /* ── AI Configuration State ──────────────────────────────────────── */
     const [aiApiKey, setAiApiKey] = useState<string>(DEFAULT_OLLAMA_API_KEY);
     const [aiBaseUrl, setAiBaseUrl] = useState<string>(DEFAULT_OLLAMA_BASE_URL);
@@ -53,6 +61,9 @@ function useStorageInternal() {
                 'VISION_BOARD',
                 'LAST_REFLECTION_DATE',
                 'SAVED_VLOGS',
+                'BOOKMARKED_NOTE_IDS',
+                'FEED_COMMENTS',
+                'AUTO_PLAY_FEED_VIDEOS',
                 AI_STORAGE_KEYS.API_KEY,
                 AI_STORAGE_KEYS.BASE_URL,
                 AI_STORAGE_KEYS.MODEL,
@@ -111,6 +122,13 @@ function useStorageInternal() {
                     const parsed = JSON.parse(data[AI_STORAGE_KEYS.PROMPTS]!);
                     setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...parsed });
                 } catch { /* keep defaults */ }
+            }
+
+            // Load Feed feature data
+            if (data['BOOKMARKED_NOTE_IDS']) setBookmarkedNoteIds(JSON.parse(data['BOOKMARKED_NOTE_IDS']));
+            if (data['FEED_COMMENTS']) setFeedComments(JSON.parse(data['FEED_COMMENTS']));
+            if (data['AUTO_PLAY_FEED_VIDEOS'] !== null && data['AUTO_PLAY_FEED_VIDEOS'] !== undefined) {
+                setAutoPlayFeedVideos(JSON.parse(data['AUTO_PLAY_FEED_VIDEOS']));
             }
 
             // Load or backfill streak history
@@ -193,6 +211,9 @@ function useStorageInternal() {
         setLastReflectionDate(null);
         setSavedVlogs([]);
         setTotalVlogStorageBytes(0);
+        setBookmarkedNoteIds([]);
+        setFeedComments({});
+        setAutoPlayFeedVideos(true);
         // Delete the vlogs directory
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
         try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (_) {}
@@ -364,6 +385,12 @@ function useStorageInternal() {
         await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
     };
 
+    const updateVlog = async (id: string, patch: Partial<SavedVlog>) => {
+        const updated = savedVlogs.map(v => v.id === id ? { ...v, ...patch } : v);
+        setSavedVlogs(updated);
+        await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updated));
+    };
+
     /* ── Setters for AI Settings ─────────────────────────────────────── */
     const saveAiApiKey = async (key: string) => {
         setAiApiKey(key);
@@ -419,6 +446,7 @@ function useStorageInternal() {
         savedVlogs,
         totalVlogStorageBytes,
         saveVlog,
+        updateVlog,
         deleteVlog,
 
         // AI specific
@@ -432,6 +460,35 @@ function useStorageInternal() {
         saveAiModel,
         saveAiGrammarModel,
         saveAiPrompts,
+
+        // Feed feature
+        bookmarkedNoteIds,
+        feedComments,
+        autoPlayFeedVideos,
+        /** Toggle bookmark on/off for a note ID */
+        toggleBookmark: async (noteId: string) => {
+            setBookmarkedNoteIds(prev => {
+                const updated = prev.includes(noteId)
+                    ? prev.filter(id => id !== noteId)
+                    : [...prev, noteId];
+                AsyncStorage.setItem('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
+                return updated;
+            });
+        },
+        /** Save a personal annotation/comment on an entry */
+        saveFeedComment: async (noteId: string, comment: string) => {
+            setFeedComments(prev => {
+                const updated = { ...prev, [noteId]: comment };
+                if (!comment.trim()) delete updated[noteId];
+                AsyncStorage.setItem('FEED_COMMENTS', JSON.stringify(updated));
+                return updated;
+            });
+        },
+        /** Toggle auto-play videos in Feed */
+        setAutoPlayFeedVideos: async (enabled: boolean) => {
+            setAutoPlayFeedVideos(enabled);
+            await AsyncStorage.setItem('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
+        },
     };
 }
 
