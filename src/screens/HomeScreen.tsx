@@ -206,7 +206,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
             }
         })
         .onEnd((e) => {
-            if (e.translationY < -FEED_SNAP_THRESHOLD) {
+            if (feedProgress.value > 0.5 || e.translationY < -500) {
                 // Snap open
                 feedProgress.value = withSpring(1, FEED_SPRING);
                 runOnJS(openFeed)();

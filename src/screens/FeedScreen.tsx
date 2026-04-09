@@ -139,28 +139,12 @@ const FeedScreenInner: React.FC<Props> = ({
         });
     }, [feedItems, filterBookmarked, storage.bookmarkedNoteIds]);
 
-    /** Over-scroll continuous integration: pull down interactively closes the feed */
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e: any) => {
             listScrollY.value = e.contentOffset.y;
-            // Track feedProgress for scroll-lock: only enable scrolling when fully snapped
             if (feedProgress) {
                 const isFullyOpen = feedProgress.value >= 0.99;
                 runOnJS(setFeedScrollEnabled)(isFullyOpen);
-            }
-            // Native overscroll for iOS
-            if (feedProgress && e.contentOffset.y < 0 && !isOverscrolling.value) {
-                const overscrollFactor = Math.abs(e.contentOffset.y) / 250;
-                feedProgress.value = Math.max(0, 1 - overscrollFactor);
-            }
-        },
-        onEndDrag: (e: any) => {
-            if (feedProgress && e.contentOffset.y < 0 && !isOverscrolling.value) {
-                if (e.contentOffset.y < -60) {
-                    runOnJS(onClose)();
-                } else {
-                    feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
-                }
             }
         }
     });
@@ -189,11 +173,12 @@ const FeedScreenInner: React.FC<Props> = ({
             }
         })
         .onEnd((e) => {
-            if (isOverscrolling.value && feedProgress) {
-                const draggedDistance = e.absoluteY - overscrollStartY.value;
-                if (draggedDistance > 80 || e.velocityY > 500) {
+            if (feedProgress && feedProgress.value < 1) {
+                // If main menu shows more than feed (feedProgress < 0.5), snap to main
+                if (feedProgress.value < 0.5 || e.velocityY > 500) {
                     runOnJS(onClose)();
                 } else {
+                    // Snap back to feed
                     feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
                 }
             }
@@ -316,8 +301,8 @@ const FeedScreenInner: React.FC<Props> = ({
                 ListEmptyComponent={renderEmpty}
                 estimatedItemSize={250}
                 keyExtractor={(item: any) => item.note?.id || item.vlog?.id || String(item.timestamp)}
-                bounces={true}
-                overScrollMode="always"
+                bounces={false}
+                overScrollMode="never"
                 scrollEnabled={feedScrollEnabled}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
