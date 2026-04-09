@@ -64,6 +64,13 @@ export const NoteViewerModal: React.FC<Props> = ({
             }
         });
 
+    /** Overscroll logic: allow pulling down the scrollview itself to close */
+    const handleScroll = useCallback((e: any) => {
+        if (e.nativeEvent.contentOffset.y < -50) {
+            onClose();
+        }
+    }, [onClose]);
+
     const animatedCardStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: panY.value }],
     }));
@@ -122,7 +129,14 @@ export const NoteViewerModal: React.FC<Props> = ({
                         </GestureHandlerRootView>
 
                         {/* Body */}
-                        <ScrollView style={styles.cardPopupScroll} showsVerticalScrollIndicator={false}>
+                        <ScrollView 
+                            style={styles.cardPopupScroll} 
+                            showsVerticalScrollIndicator={false}
+                            bounces={true}
+                            overScrollMode="always"
+                            onScroll={handleScroll}
+                            scrollEventThrottle={16}
+                        >
                             {note.aiSummary && note.aiSummary.length > 0 && (
                                 <View style={styles.aiSummaryCard}>
                                     <View style={styles.aiSummaryHeader}>
@@ -198,14 +212,14 @@ export const NoteViewerModal: React.FC<Props> = ({
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                             <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setConfirmDelete(false)}>
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                                <Text style={[{ color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }]}>Cancel</Text>
                             </AnimatedScaleButton>
                             <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
                                 onDelete(note.id);
                                 setConfirmDelete(false);
                             }}>
                                 <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
-                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF' }]}>Delete</Text>
+                                <Text style={[{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }]}>Delete</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>

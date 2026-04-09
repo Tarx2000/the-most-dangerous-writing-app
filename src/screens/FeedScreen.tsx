@@ -139,6 +139,14 @@ const FeedScreenInner: React.FC<Props> = ({
             if (e.translationY > 80) runOnJS(onClose)();
         }), [onClose]);
 
+    const headerPanGesture = useMemo(() => Gesture.Pan()
+        .activeOffsetY([-10000, 20])
+        .onEnd((e) => {
+            if (e.translationY > 50 || e.velocityY > 500) {
+                runOnJS(onClose)();
+            }
+        }), [onClose]);
+
     if (!isUnlocked) {
         return (
             <GestureDetector gesture={lockPanGesture}>
@@ -162,14 +170,6 @@ const FeedScreenInner: React.FC<Props> = ({
             </GestureDetector>
         );
     }
-
-    const headerPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 20])
-        .onEnd((e) => {
-            if (e.translationY > 50 || e.velocityY > 500) {
-                runOnJS(onClose)();
-            }
-        }), [onClose]);
 
     /* ── Render: Feed header ────────────────────────────────────────── */
     const renderHeader = () => (

@@ -459,7 +459,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                             <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setNoteToDelete(null)}>
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }]}>Cancel</Text>
                             </AnimatedScaleButton>
                             <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
                                 if (noteToDelete) {
@@ -469,7 +469,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                 }
                             }}>
                                 <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
-                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF' }]}>Delete</Text>
+                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF', fontWeight: 'bold', fontSize: 15 }]}>Delete</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
@@ -487,7 +487,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                             <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setPersonToDelete(null)}>
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
+                                <Text style={{ color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }}>Cancel</Text>
                             </AnimatedScaleButton>
                             <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
                                 if (personToDelete) {
@@ -500,7 +500,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                 }
                             }}>
                                 <MaterialCommunityIcons name="delete-alert-outline" size={18} color="#FFF" />
-                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF' }]}>Delete All</Text>
+                                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Delete All</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
