@@ -23,7 +23,7 @@ import type { SavedNote, SavedVlog, Person } from '@/types';
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
 /** Word count threshold for tweet vs story classification */
-const TWEET_THRESHOLD = 100;
+const TWEET_THRESHOLD = 50;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
@@ -80,6 +80,9 @@ const FeedScreenInner: React.FC<Props> = ({
     const storage = useStorage();
     const [filterBookmarked, setFilterBookmarked] = useState(false);
     const listRef = useRef<any>(null);
+    const listScrollY = useSharedValue(0);
+    const overscrollStartY = useSharedValue(0);
+    const isOverscrolling = useSharedValue(false);
 
     /**
      * Merge all content types into a single chronological feed.
@@ -138,14 +141,15 @@ const FeedScreenInner: React.FC<Props> = ({
     /** Over-scroll continuous integration: pull down interactively closes the feed */
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e: any) => {
-            if (feedProgress && e.contentOffset.y < 0) {
-                // Determine feed drag percentage based on natural screen height
+            listScrollY.value = e.contentOffset.y;
+            // Native overscroll for iOS
+            if (feedProgress && e.contentOffset.y < 0 && !isOverscrolling.value) {
                 const overscrollFactor = Math.abs(e.contentOffset.y) / 250;
                 feedProgress.value = Math.max(0, 1 - overscrollFactor);
             }
         },
         onEndDrag: (e: any) => {
-            if (feedProgress && e.contentOffset.y < 0) {
+            if (feedProgress && e.contentOffset.y < 0 && !isOverscrolling.value) {
                 if (e.contentOffset.y < -60) {
                     runOnJS(onClose)();
                 } else {
@@ -155,6 +159,39 @@ const FeedScreenInner: React.FC<Props> = ({
         }
     });
 
+    /** Universal drag-down to close (works seamlessly on Android and iOS alongside ScrollView) */
+    const feedPanGesture = useMemo(() => Gesture.Pan()
+        .simultaneousWithExternalGesture(listRef)
+        .onStart(() => {
+            isOverscrolling.value = false;
+        })
+        .onUpdate((e) => {
+            if (feedProgress && listScrollY.value <= 0 && e.velocityY > 0) {
+                if (!isOverscrolling.value) {
+                    isOverscrolling.value = true;
+                    overscrollStartY.value = e.absoluteY;
+                }
+                const draggedDistance = e.absoluteY - overscrollStartY.value;
+                if (draggedDistance > 0) {
+                    const overscrollFactor = draggedDistance / SCREEN_HEIGHT;
+                    feedProgress.value = Math.max(0, 1 - overscrollFactor);
+                }
+            } else if (listScrollY.value > 0) {
+                isOverscrolling.value = false;
+            }
+        })
+        .onEnd((e) => {
+            if (isOverscrolling.value && feedProgress) {
+                const draggedDistance = e.absoluteY - overscrollStartY.value;
+                if (draggedDistance > 80 || e.velocityY > 500) {
+                    runOnJS(onClose)();
+                } else {
+                    feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
+                }
+            }
+            isOverscrolling.value = false;
+        }), [onClose, feedProgress]);
+
     /* ── Render: Lock screen ───────────────────────────────────────── */
     const lockPanGesture = useMemo(() => Gesture.Pan()
         // Activate if pulled DOWN past 20px, or UP past 10000px (never)
@@ -163,21 +200,6 @@ const FeedScreenInner: React.FC<Props> = ({
             if (e.translationY > 80) runOnJS(onClose)();
         }), [onClose]);
 
-    const headerPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 20])
-        .onUpdate((e) => {
-            if (feedProgress && e.translationY > 0) {
-                const overscrollFactor = e.translationY / SCREEN_HEIGHT;
-                feedProgress.value = Math.max(0, 1 - overscrollFactor);
-            }
-        })
-        .onEnd((e) => {
-            if (e.translationY > 80 || e.velocityY > 500) {
-                runOnJS(onClose)();
-            } else if (feedProgress) {
-                feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
-            }
-        }), [onClose, feedProgress]);
 
     if (!isUnlocked) {
         return (
@@ -205,11 +227,7 @@ const FeedScreenInner: React.FC<Props> = ({
 
     /* ── Render: Feed header ────────────────────────────────────────── */
     const renderHeader = () => (
-        <GestureDetector gesture={headerPanGesture}>
-            <Animated.View style={styles.headerContainer}>
-                {/* Drag handle (visual hint to swipe down to close) */}
-                <View style={styles.dragHandle} />
-
+        <Animated.View style={styles.headerContainer}>
                 {/* Title row */}
                 <View style={styles.titleRow}>
                     <View>
@@ -253,7 +271,6 @@ const FeedScreenInner: React.FC<Props> = ({
                     <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
                 </View>
             </Animated.View>
-        </GestureDetector>
     );
 
     /* ── Render: Empty state ────────────────────────────────────────── */
@@ -280,8 +297,9 @@ const FeedScreenInner: React.FC<Props> = ({
     );
 
     return (
-        <View style={styles.container}>
-            <AnimatedFlashList
+        <GestureDetector gesture={feedPanGesture}>
+            <View style={styles.container}>
+                <AnimatedFlashList
                 ref={listRef}
                 data={displayItems}
                 ListHeaderComponent={renderHeader}
@@ -325,6 +343,7 @@ const FeedScreenInner: React.FC<Props> = ({
                 showsVerticalScrollIndicator={false}
             />
         </View>
+        </GestureDetector>
     );
 };
 

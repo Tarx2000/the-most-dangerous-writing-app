@@ -319,13 +319,11 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                     </ScrollView>
 
                     {/* Persistent Liquid Glass Navigation — floats above both pages */}
-                    {!feedVisible && (
-                        <LiquidGlassNav
-                            items={navItems}
-                            activeId={sessionMode}
-                            onSelect={handleModeChange}
-                        />
-                    )}
+                    <LiquidGlassNav
+                        items={navItems}
+                        activeId={sessionMode}
+                        onSelect={handleModeChange}
+                    />
                 </Animated.View>
             </GestureDetector>
         </View>
