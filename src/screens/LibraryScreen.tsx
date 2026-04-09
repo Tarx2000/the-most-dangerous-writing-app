@@ -200,14 +200,15 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
         return flatData;
     }, [storage.savedNotes, libraryTab, sortBy]);
 
-    const getScoreDetails = (s: number) => {
+    /** Pure function — score to icon/color mapping. Memoized to avoid recreation. */
+    const getScoreDetails = useCallback((s: number) => {
         if (s <= 2) return { icon: 'emoticon-dead-outline' as const, color: '#ff4d4d' };
         if (s <= 4) return { icon: 'emoticon-confused-outline' as const, color: '#ff9933' };
         if (s === 5) return { icon: 'emoticon-neutral-outline' as const, color: '#ffcc00' };
         if (s <= 7) return { icon: 'emoticon-happy-outline' as const, color: '#a2ff66' };
         if (s <= 9) return { icon: 'emoticon-excited-outline' as const, color: '#66ffcc' };
         return { icon: 'emoticon-cool-outline' as const, color: '#00ccff' };
-    };
+    }, []);
 
     /**
      * Enqueue a note for AI processing via the central queue.
@@ -222,6 +223,33 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 : 'journal';
         await enqueueNote(note.id, category);
     }, [enqueueNote]);
+
+    /* ── Stable modal callbacks (prevents child re-renders) ────────── */
+    const handleCloseViewNote = useCallback(() => setViewNoteModal(null), []);
+    const handleDeleteFromViewer = useCallback((id: string) => {
+        setViewNoteModal(null);
+        setNoteToDelete(id);
+    }, []);
+    const handleCloseProfile = useCallback(() => setProfilePerson(null), []);
+    const handleDeleteFromProfile = useCallback((id: string) => {
+        setProfilePerson(null);
+        setPersonToDelete(id);
+    }, []);
+    const handleConfirmDeleteNote = useCallback(() => {
+        setNoteToDelete(prev => {
+            if (prev) storage.deleteNote(prev);
+            return null;
+        });
+    }, [storage.deleteNote]);
+    const handleConfirmDeletePerson = useCallback(() => {
+        setPersonToDelete(prev => {
+            if (prev) {
+                storage.deletePerson(prev);
+                setSelectedCircleId(current => current === prev ? null : current);
+            }
+            return null;
+        });
+    }, [storage.deletePerson]);
 
     return (
         <View style={commonStyles.libraryContainer}>
@@ -439,11 +467,8 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             <NoteViewerModal
                 note={viewNoteModal}
                 visible={!!viewNoteModal}
-                onClose={() => setViewNoteModal(null)}
-                onDelete={(id) => {
-                    setViewNoteModal(null);
-                    setNoteToDelete(id);
-                }}
+                onClose={handleCloseViewNote}
+                onDelete={handleDeleteFromViewer}
                 isNoteActive={isNoteActive}
                 onRegenerateAi={(note) => handleRegenerateAi(note)}
             />
@@ -461,13 +486,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
                                 <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }]}>Cancel</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
-                                if (noteToDelete) {
-                                    storage.deleteNote(noteToDelete).then(() => {
-                                        setNoteToDelete(null);
-                                    });
-                                }
-                            }}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={handleConfirmDeleteNote}>
                                 <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
                                 <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF', fontWeight: 'bold', fontSize: 15 }]}>Delete</Text>
                             </AnimatedScaleButton>
@@ -489,16 +508,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
                                 <Text style={{ color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }}>Cancel</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
-                                if (personToDelete) {
-                                    storage.deletePerson(personToDelete).then(() => {
-                                        setPersonToDelete(null);
-                                        if (selectedCircleId === personToDelete) {
-                                            setSelectedCircleId(null);
-                                        }
-                                    });
-                                }
-                            }}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={handleConfirmDeletePerson}>
                                 <MaterialCommunityIcons name="delete-alert-outline" size={18} color="#FFF" />
                                 <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Delete All</Text>
                             </AnimatedScaleButton>
@@ -516,10 +526,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
                 onUnlock={security.unlockProfile}
                 onUpdatePerson={storage.updatePerson}
-                onDeletePerson={(id) => {
-                    setProfilePerson(null);
-                    setPersonToDelete(id);
-                }}
+                onDeletePerson={handleDeleteFromProfile}
                 onNotePress={setViewNoteModal}
                 isNotesUnlocked={security.isNotesUnlocked}
                 isNoteActive={isNoteActive}

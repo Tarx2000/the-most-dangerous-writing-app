@@ -66,7 +66,7 @@ interface Props {
     isNoteQueued?: (id: string) => boolean;
 }
 
-export const PersonProfileModal: React.FC<Props> = ({
+export const PersonProfileModal: React.FC<Props> = React.memo(({
     visible,
     onClose,
     person,
@@ -474,7 +474,7 @@ export const PersonProfileModal: React.FC<Props> = ({
             {!isUnlocked ? renderLockedView() : (isEditing ? renderEditMode() : renderProfileView())}
         </SwipeableModal>
     );
-};
+});
 
 /* ═══════════════════════════════════════════════════════════════════
    STYLES — Premium dark UI matching the app's AMOLED aesthetic

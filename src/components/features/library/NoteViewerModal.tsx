@@ -36,7 +36,7 @@ interface Props {
     onRegenerateAi: (note: SavedNote, category: AiJobCategory) => void;
 }
 
-export const NoteViewerModal: React.FC<Props> = ({
+export const NoteViewerModal: React.FC<Props> = React.memo(({
     note,
     visible,
     onClose,
@@ -227,7 +227,7 @@ export const NoteViewerModal: React.FC<Props> = ({
             </Modal>
         </>
     );
-};
+});
 
 /* ── STYLES ── */
 const styles = StyleSheet.create({
