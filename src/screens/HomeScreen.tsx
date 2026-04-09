@@ -27,8 +27,8 @@ const FEED_SNAP_THRESHOLD = 120;
 
 /** Spring physics for the feed reveal/dismiss animation */
 const FEED_SPRING = {
-    damping: 22,
-    stiffness: 180,
+    damping: 30,
+    stiffness: 220,
     mass: 0.8,
 };
 

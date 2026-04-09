@@ -72,7 +72,7 @@ export const NoteViewerModal: React.FC<Props> = ({
     React.useEffect(() => {
         if (visible) {
             panY.value = SCREEN_HEIGHT;
-            panY.value = withSpring(0, { damping: 25, stiffness: 200 });
+            panY.value = withSpring(0, { damping: 30, stiffness: 220, mass: 0.8 });
         }
     }, [visible, note, panY]);
 
@@ -192,7 +192,7 @@ export const NoteViewerModal: React.FC<Props> = ({
                 <View style={commonStyles.modalOverlay}>
                     <View style={commonStyles.versionModalContent}>
                         <Text style={commonStyles.versionModalTitle}>Delete Entry?</Text>
-                        <Text style={[commonStyles.addPersonSuggestionText, { textAlign: 'center', marginBottom: 20 }]}>
+                        <Text style={{ textAlign: 'center', marginBottom: 20, color: 'rgba(255,255,255,0.7)', fontSize: 16, lineHeight: 22 }}>
                             Are you sure you want to permanently delete this session? This cannot be undone.
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10 }}>

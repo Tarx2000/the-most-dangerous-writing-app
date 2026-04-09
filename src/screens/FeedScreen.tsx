@@ -163,55 +163,65 @@ const FeedScreenInner: React.FC<Props> = ({
         );
     }
 
+    const headerPanGesture = useMemo(() => Gesture.Pan()
+        .activeOffsetY([-10000, 20])
+        .onEnd((e) => {
+            if (e.translationY > 50 || e.velocityY > 500) {
+                runOnJS(onClose)();
+            }
+        }), [onClose]);
+
     /* ── Render: Feed header ────────────────────────────────────────── */
     const renderHeader = () => (
-        <View style={styles.headerContainer}>
-            {/* Drag handle (visual hint to swipe up to close) */}
-            <View style={styles.dragHandle} />
+        <GestureDetector gesture={headerPanGesture}>
+            <Animated.View style={styles.headerContainer}>
+                {/* Drag handle (visual hint to swipe down to close) */}
+                <View style={styles.dragHandle} />
 
-            {/* Title row */}
-            <View style={styles.titleRow}>
-                <View>
-                    <Text style={styles.feedTitle}>Feed</Text>
-                    <Text style={styles.feedSubtitle}>
-                        {feedItems.length} {feedItems.length === 1 ? 'entry' : 'entries'}
-                    </Text>
+                {/* Title row */}
+                <View style={styles.titleRow}>
+                    <View>
+                        <Text style={styles.feedTitle}>Feed</Text>
+                        <Text style={styles.feedSubtitle}>
+                            {feedItems.length} {feedItems.length === 1 ? 'entry' : 'entries'}
+                        </Text>
+                    </View>
+                    <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
+                        <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
+                    </AnimatedScaleButton>
                 </View>
-                <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
-                    <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
-                </AnimatedScaleButton>
-            </View>
 
-            {/* Filter toggle: All / Bookmarked */}
-            <View style={styles.filterRow}>
-                <AnimatedScaleButton
-                    style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
-                    onPress={() => setFilterBookmarked(false)}
-                >
-                    <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
-                </AnimatedScaleButton>
-                <AnimatedScaleButton
-                    style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
-                    onPress={() => setFilterBookmarked(true)}
-                >
-                    <MaterialCommunityIcons
-                        name="bookmark"
-                        size={14}
-                        color={filterBookmarked ? '#FFF' : theme.colors.textMuted}
-                        style={{ marginRight: 4 }}
-                    />
-                    <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
-                        Bookmarked
-                    </Text>
-                </AnimatedScaleButton>
-            </View>
+                {/* Filter toggle: All / Bookmarked */}
+                <View style={styles.filterRow}>
+                    <AnimatedScaleButton
+                        style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
+                        onPress={() => setFilterBookmarked(false)}
+                    >
+                        <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
+                    </AnimatedScaleButton>
+                    <AnimatedScaleButton
+                        style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
+                        onPress={() => setFilterBookmarked(true)}
+                    >
+                        <MaterialCommunityIcons
+                            name="bookmark"
+                            size={14}
+                            color={filterBookmarked ? '#FFF' : theme.colors.textMuted}
+                            style={{ marginRight: 4 }}
+                        />
+                        <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
+                            Bookmarked
+                        </Text>
+                    </AnimatedScaleButton>
+                </View>
 
-            {/* Newest first notice */}
-            <View style={styles.chronoNotice}>
-                <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
-                <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
-            </View>
-        </View>
+                {/* Newest first notice */}
+                <View style={styles.chronoNotice}>
+                    <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
+                    <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
+                </View>
+            </Animated.View>
+        </GestureDetector>
     );
 
     /* ── Render: Empty state ────────────────────────────────────────── */
@@ -248,6 +258,8 @@ const FeedScreenInner: React.FC<Props> = ({
                 keyExtractor={(item) => item.note?.id || item.vlog?.id || String(item.timestamp)}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
+                bounces={true}
+                overScrollMode="always"
                 renderItem={({ item }) => (
                     <View style={styles.cardWrapper}>
                         {/* Use FeedVideoCard for clips, FeedCard for everything else */}

@@ -481,7 +481,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 <View style={commonStyles.modalOverlay}>
                     <View style={commonStyles.versionModalContent}>
                         <Text style={commonStyles.versionModalTitle}>Delete Circle?</Text>
-                        <Text style={[commonStyles.addPersonSuggestionText, { textAlign: 'center', marginBottom: 20 }]}>
+                        <Text style={{ textAlign: 'center', marginBottom: 20, color: 'rgba(255,255,255,0.7)', fontSize: 16, lineHeight: 22 }}>
                             Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10 }}>
