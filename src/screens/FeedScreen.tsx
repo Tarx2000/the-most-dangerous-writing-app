@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
@@ -162,6 +162,8 @@ const FeedScreenInner: React.FC<Props> = ({
     /** Universal drag-down to close (works seamlessly on Android and iOS alongside ScrollView) */
     const feedPanGesture = useMemo(() => Gesture.Pan()
         .simultaneousWithExternalGesture(listRef)
+        .activeOffsetY([-10000, 10]) // Only trigger Pan capture if dragged DOWN natively
+        .failOffsetY([-10, 10000])   // Fail Pan capture entirely if dragging UP (let ScrollView fly)
         .onStart(() => {
             isOverscrolling.value = false;
         })
@@ -301,6 +303,7 @@ const FeedScreenInner: React.FC<Props> = ({
             <View style={styles.container}>
                 <AnimatedFlashList
                 ref={listRef}
+                renderScrollComponent={RNGHScrollView}
                 data={displayItems}
                 ListHeaderComponent={renderHeader}
                 ListFooterComponent={renderFooter}

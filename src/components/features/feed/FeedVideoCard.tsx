@@ -145,9 +145,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                 </View>
 
                 {/* Video Player Area */}
-                <View style={[styles.videoContainer, { position: 'relative' }]}>
-                    {/* Background tap-to-open interceptor */}
-                    <Pressable style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]} onPress={() => onOpenVlog(vlog)} />
+                <Pressable style={[styles.videoContainer, { position: 'relative' }]} onPress={() => onOpenVlog(vlog)}>
                     {/* Thumbnail fallback when paused and thumbnail exists */}
                     {!isPlaying && vlog.thumbnailPath ? (
                         <Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} />
@@ -176,7 +174,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                     <View style={styles.durationBadge}>
                         <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
                     </View>
-                </View>
+                </Pressable>
 
                 {/* Footer — actions */}
                 <View style={styles.footer}>
