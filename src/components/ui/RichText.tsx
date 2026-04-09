@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Text, TextStyle, StyleProp } from 'react-native';
 
 interface RichTextProps {
@@ -7,12 +7,24 @@ interface RichTextProps {
     numberOfLines?: number;
 }
 
-export const RichText: React.FC<RichTextProps> = ({ text, style, numberOfLines }) => {
+/**
+ * RichText — Renders markdown-style bold/italic text.
+ *
+ * Splits text on **bold**, __bold__, *italic*, _italic_ patterns
+ * and wraps matches in styled <Text> nodes.
+ *
+ * Memoized to avoid expensive regex splits on every render,
+ * especially important inside NoteCard within FlashList.
+ */
+export const RichText: React.FC<RichTextProps> = React.memo(({ text, style, numberOfLines }) => {
     if (!text) return null;
-    
-    // Split by **bold**, __bold__, *italic*, _italic_
-    const parts = text.split(/(\*\*.*?\*\*|__.*?__|\*.*?\*|_[^_]+?_)/g);
-    
+
+    /** Memoize the regex split so it only recalculates when text changes */
+    const parts = useMemo(
+        () => text.split(/(\*\*.*?\*\*|__.*?__|\*.*?\*|_[^_]+?_)/g),
+        [text]
+    );
+
     return (
         <Text style={style} numberOfLines={numberOfLines}>
             {parts.map((part, i) => {
@@ -26,4 +38,4 @@ export const RichText: React.FC<RichTextProps> = ({ text, style, numberOfLines }
             })}
         </Text>
     );
-};
+});

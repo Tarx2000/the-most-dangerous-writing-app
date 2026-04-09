@@ -44,6 +44,7 @@ import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
 import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel';
 import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToolsPanel';
 import type { AiLogEntry } from '@/types';
+import { Easing } from 'react-native-reanimated';
 
 type Props = {
     navigation: any;
@@ -287,7 +288,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             <View style={[styles.iconCircle, { position: 'absolute', width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: theme.colors.background }]} />
                         )}
                         
-                        {/* The Icon itself - permanently mounted so it can morph */}
+                    {/* The Icon itself - permanently mounted so it can morph */}
                         <LiquidMorphIcon 
                             mode={sessionMode} 
                             size={sessionMode === 'checkin' ? 40 : 42} 
@@ -295,45 +296,48 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         />
                     </View>
 
-                    {sessionMode === 'journal' && (
-                        <Animated.View entering={FadeInUp.duration(400).springify()} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
-                            <Text style={styles.heroTitle}>Free Writing</Text>
-                            <Text style={styles.heroSubtitle}>Write continuously, or all is lost.</Text>
-                        </Animated.View>
-                    )}
-                    {sessionMode === 'circles' && (
-                        <Animated.View entering={FadeInUp.duration(400).springify()} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
-                            <Text style={styles.heroTitle}>Relationship Journal</Text>
-                            <AnimatedScaleButton style={styles.personSmallSelectBtn} onPress={() => {
-                                setShowPersonSelect(true);
-                            }}>
-                                <Text style={styles.personSmallSelectText}>
-                                    {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
-                                    <Text style={{ opacity: 0.5 }}> ▼</Text>
-                                </Text>
-                            </AnimatedScaleButton>
-                            {selectedPersonId && (
-                                <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
-                                    <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
-                                    <Text style={styles.quickNoteText}>Quick Note</Text>
+                    {/* Mode Content Container - absolute position elements so they fade smoothly without stacking */}
+                    <View style={{ width: '100%', height: 80, alignItems: 'center' }}>
+                        {sessionMode === 'journal' && (
+                            <Animated.View entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)} exiting={FadeOutUp.duration(200)} style={{ position: 'absolute', alignItems: 'center', width: '100%' }}>
+                                <Text style={styles.heroTitle}>Free Writing</Text>
+                                <Text style={styles.heroSubtitle}>Write continuously, or all is lost.</Text>
+                            </Animated.View>
+                        )}
+                        {sessionMode === 'circles' && (
+                            <Animated.View entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)} exiting={FadeOutUp.duration(200)} style={{ position: 'absolute', alignItems: 'center', width: '100%' }}>
+                                <Text style={styles.heroTitle}>Relationship Journal</Text>
+                                <AnimatedScaleButton style={styles.personSmallSelectBtn} onPress={() => {
+                                    setShowPersonSelect(true);
+                                }}>
+                                    <Text style={styles.personSmallSelectText}>
+                                        {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
+                                        <Text style={{ opacity: 0.5 }}> ▼</Text>
+                                    </Text>
                                 </AnimatedScaleButton>
-                            )}
-                        </Animated.View>
-                    )}
-                    {sessionMode === 'checkin' && (
-                        <Animated.View entering={FadeIn.duration(400)} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
-                            <Text style={[styles.scoreText, { color: details.color, fontSize: 14, marginTop: 8, marginBottom: -6 }]}>{details.text.toUpperCase()}</Text>
-                            <View style={{ transform: [{ scale: 0.9 }], marginTop: -14, marginBottom: -40 }}>
-                                <CustomSlider value={score} onValueChange={setScore} />
-                            </View>
-                        </Animated.View>
-                    )}
-                    {sessionMode === 'vlog' && (
-                        <Animated.View entering={FadeInUp.duration(400).springify()} exiting={FadeOutUp.duration(200)} style={{ alignItems: 'center' }}>
-                            <Text style={styles.heroTitle}>Video Journal</Text>
-                            <Text style={styles.heroSubtitle}>Record your thoughts on camera.</Text>
-                        </Animated.View>
-                    )}
+                                {selectedPersonId && (
+                                    <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
+                                        <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
+                                        <Text style={styles.quickNoteText}>Quick Note</Text>
+                                    </AnimatedScaleButton>
+                                )}
+                            </Animated.View>
+                        )}
+                        {sessionMode === 'checkin' && (
+                            <Animated.View entering={FadeIn.duration(400)} exiting={FadeOutUp.duration(200)} style={{ position: 'absolute', alignItems: 'center', width: '100%' }}>
+                                <Text style={[styles.scoreText, { color: details.color, fontSize: 14, marginTop: 8, marginBottom: -6 }]}>{details.text.toUpperCase()}</Text>
+                                <View style={{ transform: [{ scale: 0.9 }], marginTop: -14, marginBottom: -40, width: '100%' }}>
+                                    <CustomSlider value={score} onValueChange={setScore} />
+                                </View>
+                            </Animated.View>
+                        )}
+                        {sessionMode === 'vlog' && (
+                            <Animated.View entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)} exiting={FadeOutUp.duration(200)} style={{ position: 'absolute', alignItems: 'center', width: '100%' }}>
+                                <Text style={styles.heroTitle}>Video Journal</Text>
+                                <Text style={styles.heroSubtitle}>Record your thoughts on camera.</Text>
+                            </Animated.View>
+                        )}
+                    </View>
                 </View>
 
                 <View style={{ flex: 1, justifyContent: 'center' }}>

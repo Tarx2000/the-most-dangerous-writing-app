@@ -65,13 +65,21 @@ For testing native modules locally without EAS cloud:
 npx expo run:android
 ```
 
-### Generating Local Release APK
-To build a local release APK quickly without using the cloud (useful for rapid testing):
+### Generating Local Release APK (Optimized)
+To build a local release APK quickly, targeting only 64-bit modern devices (significant time reduction):
 // turbo
 ```bash
-cd android && ./gradlew assembleRelease
+cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
 The resulting APK will be located at `android/app/build/outputs/apk/release/app-release.apk`.
+
+### Hardware Acceleration & Parallelization
+To fully utilize PC performance (e.g. bundling 1500+ modules in seconds), ensure `android/gradle.properties` contains:
+```properties
+org.gradle.parallel=true
+org.gradle.daemon=true
+org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
+```
 
 ## Common Issues
 - **"App not installed as package conflicts with an existing package"**: When installing a locally built APK over an EAS Cloud build (or vice-versa), Android blocks the installation because the cryptographic signing keys do not match. **Fix:** Simply uninstall the existing version of the app from your smartphone first, then install the new APK.

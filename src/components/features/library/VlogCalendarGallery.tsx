@@ -1,21 +1,26 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     StyleSheet,
     Dimensions,
     Modal,
-    Animated,
     ScrollView,
     Platform,
     Vibration,
 } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -64,9 +69,19 @@ export const VlogCalendarGallery: React.FC<Props> = ({
     const [expandedIndex, setExpandedIndex] = useState(0);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
-    /* ── Animations ────────────────────────────────────────────────────── */
-    const expandScale = useRef(new Animated.Value(0.8)).current;
-    const expandOpacity = useRef(new Animated.Value(0)).current;
+    /* ── Animations (Reanimated — runs on UI thread) ──────────────────── */
+    const expandScale = useSharedValue(0.8);
+    const expandOpacity = useSharedValue(0);
+
+    /** Animated style for the expanded backdrop (opacity) */
+    const backdropAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: expandOpacity.value,
+    }));
+
+    /** Animated style for the expanded card (scale) */
+    const cardAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: expandScale.value }],
+    }));
 
     /**
      * Group vlogs by calendar date key (YYYY-MM-DD) for quick lookup.
@@ -127,44 +142,25 @@ export const VlogCalendarGallery: React.FC<Props> = ({
         setExpandedDayVlogs(dayVlogs);
         setExpandedIndex(0);
 
-        // Animate in
-        expandScale.setValue(0.85);
-        expandOpacity.setValue(0);
-        Animated.parallel([
-            Animated.spring(expandScale, {
-                toValue: 1,
-                useNativeDriver: true,
-                damping: 18,
-                stiffness: 180,
-            }),
-            Animated.timing(expandOpacity, {
-                toValue: 1,
-                duration: 250,
-                useNativeDriver: true,
-            }),
-        ]).start();
+        // Animate in with Reanimated
+        expandScale.value = 0.85;
+        expandOpacity.value = 0;
+        expandScale.value = withSpring(1, { damping: 18, stiffness: 180 });
+        expandOpacity.value = withTiming(1, { duration: 250 });
 
         Vibration.vibrate(20);
-    }, [vlogsByDate]);
+    }, [vlogsByDate, expandScale, expandOpacity]);
 
     /* ── Close expanded view ───────────────────────────────────────────── */
     const closeExpanded = useCallback(() => {
-        Animated.parallel([
-            Animated.timing(expandScale, {
-                toValue: 0.85,
-                duration: 200,
-                useNativeDriver: true,
-            }),
-            Animated.timing(expandOpacity, {
-                toValue: 0,
-                duration: 200,
-                useNativeDriver: true,
-            }),
-        ]).start(() => {
+        expandScale.value = withTiming(0.85, { duration: 200 });
+        expandOpacity.value = withTiming(0, { duration: 200 });
+        // Delay state cleanup to allow animation to finish
+        setTimeout(() => {
             setExpandedDayVlogs(null);
             setExpandedIndex(0);
-        });
-    }, []);
+        }, 220);
+    }, [expandScale, expandOpacity]);
 
     /* ── Swipe between vlogs on same day ───────────────────────────────── */
     const swipeVlog = useCallback((direction: number) => {
@@ -202,16 +198,16 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                     <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
                     <Text style={styles.lockTitle}>Vlogs Protected</Text>
                     <Text style={styles.lockSubtitle}>Verify your identity to view your video journals</Text>
-                    <TouchableOpacity
+                    <AnimatedScaleButton
                         style={styles.unlockBtn}
                         onPress={async () => {
                             const success = await onUnlock();
                             if (success) Vibration.vibrate(50);
                         }}
                     >
-                        <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={{ marginRight: 10 }} />
+                        <MaterialCommunityIcons name="fingerprint" size={22} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
                         <Text style={styles.unlockBtnText}>Unlock Vlogs</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </View>
             </View>
         );
@@ -223,13 +219,13 @@ export const VlogCalendarGallery: React.FC<Props> = ({
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
                 {/* Month navigation header */}
                 <View style={styles.monthHeader}>
-                    <TouchableOpacity onPress={() => goToMonth(-1)} style={styles.monthArrow}>
+                    <AnimatedScaleButton onPress={() => goToMonth(-1)} style={styles.monthArrow}>
                         <MaterialCommunityIcons name="chevron-left" size={24} color={theme.colors.textSecondary} />
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                     <Text style={styles.monthLabel}>{monthLabel}</Text>
-                    <TouchableOpacity onPress={() => goToMonth(1)} style={styles.monthArrow}>
+                    <AnimatedScaleButton onPress={() => goToMonth(1)} style={styles.monthArrow}>
                         <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textSecondary} />
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </View>
 
                 {/* Weekday header row */}
@@ -249,7 +245,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                         const multiVlogs = dayVlogs && dayVlogs.length > 1;
 
                         return (
-                            <TouchableOpacity
+                            <AnimatedScaleButton
                                 key={idx}
                                 style={styles.dayCell}
                                 onPress={() => hasVlogs ? openDay(cell.dateKey) : null}
@@ -298,7 +294,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                         )}
                                     </>
                                 )}
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         );
                     })}
                 </View>
@@ -326,15 +322,13 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                 {expandedDayVlogs && expandedDayVlogs[expandedIndex] && (
                     <Animated.View style={[
                         styles.expandedBackdrop,
-                        {
-                            opacity: expandOpacity,
-                        },
+                        backdropAnimatedStyle,
                     ]}>
-                        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={closeExpanded} />
+                        <AnimatedScaleButton style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={closeExpanded} />
 
                         <Animated.View style={[
                             styles.expandedCard,
-                            { transform: [{ scale: expandScale }] },
+                            cardAnimatedStyle,
                         ]}>
                             <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
                             <View style={styles.expandedTint} />
@@ -356,40 +350,40 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                 {/* Swipe navigation (if multiple vlogs on this day) */}
                                 {expandedDayVlogs.length > 1 && (
                                     <View style={styles.swipeNav}>
-                                        <TouchableOpacity
+                                        <AnimatedScaleButton
                                             onPress={() => swipeVlog(-1)}
                                             disabled={expandedIndex === 0}
                                             style={[styles.swipeBtn, expandedIndex === 0 && { opacity: 0.3 }]}
                                         >
-                                            <MaterialCommunityIcons name="chevron-left" size={24} color="#FFF" />
-                                        </TouchableOpacity>
+                                            <MaterialCommunityIcons name="chevron-left" size={24} color={theme.colors.textPrimary} />
+                                        </AnimatedScaleButton>
                                         <Text style={styles.swipeCounter}>
                                             {expandedIndex + 1}/{expandedDayVlogs.length}
                                         </Text>
-                                        <TouchableOpacity
+                                        <AnimatedScaleButton
                                             onPress={() => swipeVlog(1)}
                                             disabled={expandedIndex === expandedDayVlogs.length - 1}
                                             style={[styles.swipeBtn, expandedIndex === expandedDayVlogs.length - 1 && { opacity: 0.3 }]}
                                         >
-                                            <MaterialCommunityIcons name="chevron-right" size={24} color="#FFF" />
-                                        </TouchableOpacity>
+                                            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textPrimary} />
+                                        </AnimatedScaleButton>
                                     </View>
                                 )}
                             </View>
 
                             {/* Actions */}
                             <View style={styles.expandedActions}>
-                                <TouchableOpacity style={styles.closeBtn} onPress={closeExpanded}>
-                                    <MaterialCommunityIcons name="close" size={20} color="#FFF" />
+                                <AnimatedScaleButton style={styles.closeBtn} onPress={closeExpanded}>
+                                    <MaterialCommunityIcons name="close" size={20} color={theme.colors.textPrimary} />
                                     <Text style={styles.closeBtnText}>Close</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
+                                </AnimatedScaleButton>
+                                <AnimatedScaleButton
                                     style={styles.deleteBtn}
                                     onPress={() => setShowDeleteConfirm(expandedDayVlogs[expandedIndex].id)}
                                 >
                                     <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
                                     <Text style={styles.deleteBtnText}>Delete</Text>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             </View>
                         </Animated.View>
                     </Animated.View>
@@ -405,13 +399,13 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                             This will permanently delete this video. This cannot be undone.
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                            <TouchableOpacity
+                            <AnimatedScaleButton
                                 style={[styles.deleteModalBtn, { backgroundColor: theme.colors.glassBackground }]}
                                 onPress={() => setShowDeleteConfirm(null)}
                             >
                                 <Text style={styles.deleteModalBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton
                                 style={[styles.deleteModalBtn, { backgroundColor: theme.colors.danger }]}
                                 onPress={async () => {
                                     if (showDeleteConfirm) {
@@ -427,7 +421,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                 }}
                             >
                                 <Text style={styles.deleteModalBtnText}>Delete</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     </View>
                 </View>

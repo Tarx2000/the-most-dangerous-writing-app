@@ -1,18 +1,18 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     ScrollView,
-    Animated,
     StyleSheet,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SavedNote } from '@/types';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
 /**
  * CONFIGURABLE: Max height of the embedded notes scroll area.
@@ -58,23 +58,20 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
     isNoteActive,
     isNoteQueued,
 }) => {
-    const animatedHeight = useRef(new Animated.Value(0)).current;
+    const expandHeight = useSharedValue(isExpanded ? EXPANDED_MAX_HEIGHT : 0);
 
     useEffect(() => {
-        Animated.spring(animatedHeight, {
-            toValue: isExpanded ? 1 : 0,
-            useNativeDriver: false, // height can't use native driver
+        expandHeight.value = withSpring(isExpanded ? EXPANDED_MAX_HEIGHT : 0, {
             damping: 18,
             stiffness: 180,
             mass: 0.8,
-        }).start();
-    }, [isExpanded]);
+        });
+    }, [isExpanded, expandHeight]);
 
-    // Interpolate height from 0 to max
-    const expandHeight = animatedHeight.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, EXPANDED_MAX_HEIGHT],
-        extrapolate: 'clamp',
+    const animatedStyle = useAnimatedStyle(() => {
+        return {
+            maxHeight: expandHeight.value,
+        };
     });
 
     /** Total word count across all notes for this person */
@@ -83,7 +80,9 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
     }, 0);
 
     // Sort notes by newest first
-    const sortedNotes = [...notes].sort((a, b) => b.timestamp - a.timestamp);
+    const sortedNotes = useMemo(() => {
+        return [...notes].sort((a, b) => b.timestamp - a.timestamp);
+    }, [notes]);
 
     return (
         <View style={styles.cardContainer}>
@@ -94,21 +93,19 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
             />
 
             {/* Header row — tap to expand/collapse */}
-            <TouchableOpacity
+            <AnimatedScaleButton
                 style={styles.headerRow}
                 onPress={onToggle}
-                activeOpacity={0.7}
             >
                 {/* Avatar — tap to open profile (separate touchable to prevent toggle) */}
-                <TouchableOpacity
+                <AnimatedScaleButton
                     style={commonStyles.personAvatar}
-                    onPress={(e) => { e.stopPropagation(); onProfilePress(); }}
-                    activeOpacity={0.6}
+                    onPress={(e) => { e?.stopPropagation?.(); onProfilePress(); }}
                 >
                     <Text style={commonStyles.personAvatarText}>
                         {person.name.charAt(0)}
                     </Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
 
                 {/* Name + meta info */}
                 <View style={styles.headerInfo}>
@@ -136,10 +133,10 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
                 </View>
 
 
-            </TouchableOpacity>
+            </AnimatedScaleButton>
 
             {/* Expandable notes area — animated height */}
-            <Animated.View style={[styles.expandArea, { maxHeight: expandHeight }]}>
+            <Animated.View style={[styles.expandArea, animatedStyle]}>
                 {notes.length === 0 ? (
                     <View style={styles.emptyState}>
                         <Text style={styles.emptyText}>No notes yet</Text>

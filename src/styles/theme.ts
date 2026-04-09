@@ -5,8 +5,6 @@ export const theme = {
     colors: {
         // AMOLED True Black Background
         background: '#000000',
-        backgroundStart: '#000000', // Kept for backwards compatibility with gradient
-        backgroundEnd: '#000000',
 
         // Typography
         textPrimary: '#FFFFFF',
@@ -50,5 +48,7 @@ export const theme = {
         weightRegular: '400' as const,
         weightMedium: '500' as const,
         weightBold: '600' as const,
+        weightExtraBold: '800' as const,
+        weightBlack: '900' as const,
     }
 };

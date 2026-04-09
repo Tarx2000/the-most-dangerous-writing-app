@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, Modal, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { commonStyles } from '@/styles/commonStyles';
@@ -169,9 +170,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
             <View style={styles.container}>
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>Parallel AI Benchmark</Text>
-                    <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                    <AnimatedScaleButton onPress={onClose} style={styles.closeBtn}>
                         <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </View>
                 
                 <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -179,7 +180,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                         This tests title, summary, and grammar generation across ALL models IN PARALLEL using your longest journal entry ({testInput.length} chars).
                     </Text>
 
-                    <TouchableOpacity 
+                    <AnimatedScaleButton 
                         style={[styles.runBtn, running && { opacity: 0.5 }]} 
                         onPress={runBenchmark}
                         disabled={running}
@@ -187,7 +188,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                         {running ? <ActivityIndicator color="#fff" /> : (
                             <Text style={styles.runBtnText}>Run Benchmark Race</Text>
                         )}
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
 
                     {/* PHASE 1: TITLES */}
                     <View style={styles.phaseContainer}>

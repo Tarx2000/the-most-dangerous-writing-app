@@ -119,7 +119,7 @@ export const TickDial: React.FC<TickDialProps> = ({
                     decelerationRate="fast"
                     snapToInterval={SNAP}
                     nestedScrollEnabled
-                    scrollEventThrottle={50}
+                    scrollEventThrottle={16}
                     onScroll={onScroll}
                     onScrollBeginDrag={() => setHomeScrollEnabled?.(false)}
                     onMomentumScrollEnd={() => setHomeScrollEnabled?.(true)}

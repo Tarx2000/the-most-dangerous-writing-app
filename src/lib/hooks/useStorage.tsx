@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, createContext, useContext, ReactNode, useEffect } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
@@ -13,7 +13,7 @@ import {
     type AiPrompts,
 } from '@/config/ai';
 
-export function useStorage() {
+function useStorageInternal() {
     const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
     const [persons, setPersons] = useState<Person[]>([]);
     const [currentStreak, setCurrentStreak] = useState<number>(0);
@@ -305,16 +305,19 @@ export function useStorage() {
     };
 
     const deletePerson = async (id: string) => {
-        const updatedPersons = persons.filter(p => p.id !== id);
-        setPersons(updatedPersons);
+        setPersons(prev => {
+            const updated = prev.filter(p => p.id !== id);
+            AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updated));
+            return updated;
+        });
 
         // Unlink notes
-        const updatedNotes = savedNotes.map(n => n.personId === id ? { ...n, personId: undefined } : n);
-        setSavedNotes(updatedNotes);
-
-        await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
-        await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
-        DeviceEventEmitter.emit('NOTES_UPDATED');
+        setSavedNotes(prev => {
+            const updated = prev.map(n => n.personId === id ? { ...n, personId: undefined } : n);
+            AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updated))
+                .then(() => DeviceEventEmitter.emit('NOTES_UPDATED'));
+            return updated;
+        });
     };
 
     const updatePerson = async (id: string, updates: Partial<Person>) => {
@@ -430,4 +433,30 @@ export function useStorage() {
         saveAiGrammarModel,
         saveAiPrompts,
     };
+}
+
+type StorageContextType = ReturnType<typeof useStorageInternal>;
+const StorageContext = createContext<StorageContextType | null>(null);
+
+export const StorageProvider = ({ children }: { children: ReactNode }) => {
+    const storage = useStorageInternal();
+
+    // Load data once when the app launches instead of on every screen
+    useEffect(() => {
+        storage.loadAllData();
+    }, [storage.loadAllData]);
+
+    return (
+        <StorageContext.Provider value={storage}>
+            {children}
+        </StorageContext.Provider>
+    );
+};
+
+export function useStorage() {
+    const context = useContext(StorageContext);
+    if (!context) {
+        throw new Error('useStorage must be used within a StorageProvider');
+    }
+    return context;
 }

@@ -2,22 +2,23 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
     View,
     Text,
-    TouchableOpacity,
+    Pressable,
     ScrollView,
-    FlatList,
     Modal,
     StyleSheet,
     Vibration,
     Platform,
     StatusBar,
-    Animated,
-    PanResponder,
     Dimensions,
     ActivityIndicator,
     DeviceEventEmitter,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { FlashList } from '@shopify/flash-list';
 import { BlurView } from 'expo-blur';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { useStorage } from '@/lib/hooks/useStorage';
@@ -50,7 +51,7 @@ const SORT_OPTIONS: { id: SortOption, label: string, icon: any }[] = [
     { id: 'longest-text', label: 'Most Words', icon: 'text-long' },
 ];
 
-export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart, sessionMode }) => {
+const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, sessionMode }) => {
     /**
      * Map shared sessionMode to library tab.
      * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins', 'vlog' -> 'vlogs'
@@ -83,41 +84,74 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
         updateNote: storage.updateNote,
     });
 
-    // Custom PanResponder for Android wipe-to-dismiss on the fullscreen modal
-    const panY = useRef(new Animated.Value(0)).current;
-    const notePanResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, g) => g.dy > 0, // Only respond to downward swipes
-            onPanResponderMove: (_, g) => {
-                if (g.dy > 0) panY.setValue(g.dy);
-            },
-            onPanResponderRelease: (_, g) => {
-                if (g.dy > 150 || g.vy > 1.5) {
-                    // Swipe down passed threshold - close modal
-                    setViewNoteModal(null);
-                    setTimeout(() => panY.setValue(0), 300);
-                } else {
-                    // Snap back
-                    Animated.spring(panY, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        bounciness: 0
-                    }).start();
+    // Custom GestureDetector for wipe-to-dismiss on the fullscreen modal
+    const panY = useSharedValue(0);
+
+    const notePanGesture = useMemo(() => 
+        Gesture.Pan()
+            .activeOffsetY([-10, 10])
+            .onUpdate((event) => {
+                if (event.translationY > 0) {
+                    panY.value = event.translationY;
                 }
+            })
+            .onEnd((event) => {
+                if (event.translationY > 150 || event.velocityY > 1500) {
+                    runOnJS(setViewNoteModal)(null);
+                    panY.value = withTiming(0, { duration: 300 });
+                } else {
+                    panY.value = withSpring(0, { damping: 15, stiffness: 150 });
+                }
+            })
+    , [panY, setViewNoteModal]);
+
+    const animatedCardStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: panY.value }]
+    }));
+
+    /**
+     * Precompute notes grouped by person for O(1) lookups.
+     * Avoids O(n*m) filtering inside renderPersonItem.
+     */
+    const notesByPerson = useMemo(() => {
+        const map = new Map<string, typeof storage.savedNotes>();
+        for (const n of storage.savedNotes) {
+            if (n.personId) {
+                const arr = map.get(n.personId) || [];
+                arr.push(n);
+                map.set(n.personId, arr);
             }
-        })
-    ).current;
+        }
+        return map;
+    }, [storage.savedNotes]);
 
-    useEffect(() => {
-        storage.loadAllData();
-        const sub = DeviceEventEmitter.addListener('NOTES_UPDATED', () => {
-            storage.loadAllData();
+    const sortedPersons = useMemo(() => {
+        return [...storage.persons].sort((a, b) => {
+            const aCount = notesByPerson.get(a.id)?.length || 0;
+            const bCount = notesByPerson.get(b.id)?.length || 0;
+            return bCount - aCount;
         });
-        return () => sub.remove();
-    }, []);
+    }, [storage.persons, notesByPerson]);
 
-    const getGroupedNotes = (circleId?: string | null) => {
+    const renderPersonItem = useCallback(({ item: p }: { item: Person }) => (
+        <View style={{ marginBottom: 10 }}>
+            <ExpandablePersonCard
+                person={p}
+                notes={notesByPerson.get(p.id) || []}
+                isExpanded={selectedCircleId === p.id}
+                isLocked={!security.isNotesUnlocked}
+                onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
+                onNotePress={setViewNoteModal}
+                onDelete={() => setPersonToDelete(p.id)}
+                onProfilePress={() => setProfilePerson(p)}
+                canDelete={security.isNotesUnlocked}
+                isNoteActive={isNoteActive}
+                isNoteQueued={isNoteQueued}
+            />
+        </View>
+    ), [storage.savedNotes, selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued]);
+
+    const getFlattenedNotes = useCallback((circleId?: string | null) => {
         let notesToGroup = [...storage.savedNotes];
         
         if (libraryTab === 'checkins') {
@@ -142,7 +176,9 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
             }
         });
 
-        const groups: { title: string, data: SavedNote[] }[] = [];
+        const flatData: (string | SavedNote)[] = [];
+        let currentGroup = '';
+
         sorted.forEach(note => {
             let groupTitle = '';
             if (sortBy === 'newest' || sortBy === 'oldest') {
@@ -153,12 +189,15 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                 groupTitle = `${note.durationMin} Min Sessions`;
             }
 
-            let group = groups.find(g => g.title === groupTitle);
-            if (!group) { group = { title: groupTitle, data: [] }; groups.push(group); }
-            group.data.push(note);
+            if (groupTitle !== currentGroup) {
+                flatData.push(groupTitle);
+                currentGroup = groupTitle;
+            }
+            flatData.push(note);
         });
-        return groups;
-    };
+
+        return flatData;
+    }, [storage.savedNotes, libraryTab, sortBy]);
 
     const getScoreDetails = (s: number) => {
         if (s <= 2) return { icon: 'emoticon-dead-outline' as const, color: '#ff4d4d' };
@@ -206,7 +245,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                     <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{storage.savedNotes.length} Entries • {storage.persons.length} Circles</Text>
                 </View>
                 {!security.isNotesUnlocked ? (
-                    <TouchableOpacity
+                    <AnimatedScaleButton
                         style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.primaryAction, borderColor: theme.colors.primaryAction }]}
                         onPress={async () => {
                             const success = await security.unlockNotes();
@@ -215,26 +254,26 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                     >
                         <MaterialCommunityIcons name="lock-open-variant" size={16} color={theme.colors.primaryActionText} style={{ marginRight: 6 }} />
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>Unlock</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 ) : (
-                    <TouchableOpacity
+                    <AnimatedScaleButton
                         style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]}
                         onPress={() => { security.lockAll(); }}
                     >
                         <MaterialCommunityIcons name="lock" size={16} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 )}
             </View>
 
             {/* Filter Toggle Action Button (Hidden for Circles/Vlogs view) */}
             {libraryTab !== 'circles' && libraryTab !== 'vlogs' && (
                 <View style={styles.filterRow}>
-                    <TouchableOpacity style={styles.filterDropdownBtn} onPress={() => setShowSortModal(true)}>
+                    <AnimatedScaleButton style={styles.filterDropdownBtn} onPress={() => setShowSortModal(true)}>
                         <MaterialCommunityIcons name="sort" size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
                         <Text style={styles.filterDropdownText}>Sort by: <Text style={{ color: theme.colors.textPrimary, fontWeight: 'bold' }}>{SORT_OPTIONS.find(o => o.id === sortBy)?.label}</Text></Text>
                         <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} style={{ marginLeft: 'auto' }} />
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </View>
             )}
 
@@ -242,53 +281,65 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
             {(libraryTab === 'notes' || libraryTab === 'checkins') && (
                 <>
                     {storage.savedNotes.filter(n => libraryTab === 'checkins' ? (n as any).isAlignmentReflection : (!n.personId && !(n as any).isAlignmentReflection)).length === 0 ? (
-                        <View style={styles.emptyStateContainer}>
-                            <MaterialCommunityIcons name={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"} size={48} color={theme.colors.glassBorder} style={{ marginBottom: 15 }} />
-                            <Text style={commonStyles.emptyLibrary}>No {libraryTab === 'checkins' ? 'check-ins' : 'notes'} found.</Text>
-                        </View>
+                        <EmptyLibraryState 
+                            icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
+                            title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
+                            description={libraryTab === 'checkins' ? "Start your weekly alignment check-in to track your progress over time." : "Start writing to build your library of dangerous sessions."}
+                            actionLabel="Start Writing"
+                            onAction={onGoToStart}
+                        />
                     ) : (
-                        <FlatList
-                            data={getGroupedNotes()}
-                            keyExtractor={item => item.title}
-                            renderItem={({ item }) => (
-                                <View style={commonStyles.groupContainer}>
-                                    <Text style={commonStyles.groupTitle}>{item.title}</Text>
-                                    {item.data.map(note => (
-                                        <View key={note.id}>
-                                            {(note as any).isAlignmentReflection ? (
-                                                <TouchableOpacity 
-                                                    style={styles.reflectionCard} 
-                                                    onPress={() => setViewNoteModal(note)}
-                                                    disabled={!security.isNotesUnlocked}
-                                                >
-                                                    <LinearGradient colors={['rgba(255,255,255,0.03)', 'transparent']} style={StyleSheet.absoluteFillObject} />
-                                                    <View style={styles.reflectionHeader}>
-                                                        <View>
-                                                            <Text style={styles.reflectionDate}>{note.dateStr}</Text>
-                                                            <Text style={styles.reflectionScore}>Score: {(note as any).alignmentScore}/10</Text>
-                                                        </View>
-                                                        <MaterialCommunityIcons name={getScoreDetails((note as any).alignmentScore).icon} size={36} color={getScoreDetails((note as any).alignmentScore).color} />
-                                                    </View>
-                                                    <Text style={commonStyles.noteCardPreview} numberOfLines={2}>
-                                                        {!security.isNotesUnlocked ? '•••• •••••••• •••••' : note.text}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ) : (
-                                                <NoteCard
-                                                    note={note}
-                                                    onPress={setViewNoteModal}
-                                                    personName={note.personId ? storage.persons.find(p => p.id === note.personId)?.name : undefined}
-                                                    isLocked={!security.isNotesUnlocked}
-                                                    isProcessing={isNoteActive(note.id)}
-                                                    isQueued={isNoteQueued(note.id)}
-                                                />
-                                            )}
-                                        </View>
-                                    ))}
-                                </View>
-                            )}
-                            showsVerticalScrollIndicator={false}
+                        <FlashList
+                            data={getFlattenedNotes()}
+                            keyExtractor={(item) => typeof item === 'string' ? `header-${item}` : item.id}
+                            getItemType={(item) => typeof item === 'string' ? 'header' : 'card'}
                             contentContainerStyle={{ paddingBottom: 120 }}
+                            showsVerticalScrollIndicator={false}
+                            renderItem={({ item }) => {
+                                if (typeof item === 'string') {
+                                    return (
+                                        <View style={{ paddingTop: 20, paddingBottom: 10 }}>
+                                            <Text style={commonStyles.groupTitle}>{item}</Text>
+                                        </View>
+                                    );
+                                }
+
+                                const note = item as SavedNote;
+                                const _isAlignment = (note as any).isAlignmentReflection;
+
+                                return (
+                                    <View>
+                                        {_isAlignment ? (
+                                            <AnimatedScaleButton 
+                                                style={styles.reflectionCard} 
+                                                onPress={() => setViewNoteModal(note)}
+                                                disabled={!security.isNotesUnlocked}
+                                            >
+                                                <LinearGradient colors={['rgba(255,255,255,0.03)', 'transparent']} style={StyleSheet.absoluteFillObject} />
+                                                <View style={styles.reflectionHeader}>
+                                                    <View>
+                                                        <Text style={styles.reflectionDate}>{note.dateStr}</Text>
+                                                        <Text style={styles.reflectionScore}>Score: {(note as any).alignmentScore}/10</Text>
+                                                    </View>
+                                                    <MaterialCommunityIcons name={getScoreDetails((note as any).alignmentScore).icon} size={36} color={getScoreDetails((note as any).alignmentScore).color} />
+                                                </View>
+                                                <Text style={commonStyles.noteCardPreview} numberOfLines={2}>
+                                                    {!security.isNotesUnlocked ? '•••• •••••••• •••••' : note.text}
+                                                </Text>
+                                            </AnimatedScaleButton>
+                                        ) : (
+                                            <NoteCard
+                                                note={note}
+                                                onPress={setViewNoteModal}
+                                                personName={note.personId ? storage.persons.find(p => p.id === note.personId)?.name : undefined}
+                                                isLocked={!security.isNotesUnlocked}
+                                                isProcessing={isNoteActive(note.id)}
+                                                isQueued={isNoteQueued(note.id)}
+                                            />
+                                        )}
+                                    </View>
+                                );
+                            }}
                         />
                     )}
                 </>
@@ -303,7 +354,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
                                 <Text style={styles.circlesLockTitle}>Circles Protected</Text>
                                 <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
-                                <TouchableOpacity
+                                <AnimatedScaleButton
                                     style={styles.circlesUnlockBtn}
                                     onPress={async () => {
                                         const success = await security.unlockCircles();
@@ -312,50 +363,30 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 >
                                     <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={{ marginRight: 10 }} />
                                     <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             </View>
                         </View>
                     ) : (
                         <>
                     {storage.persons.length === 0 ? (
-                        <View style={styles.emptyStateContainer}>
-                            <MaterialCommunityIcons name="account-group-outline" size={48} color={theme.colors.glassBorder} style={{ marginBottom: 15 }} />
-                            <Text style={commonStyles.emptyLibrary}>No circles yet.</Text>
-                        </View>
+                        <EmptyLibraryState
+                            icon="account-group-outline"
+                            title="No circles yet"
+                            description="Create circles to organize your writing sessions by the people who matter most."
+                            actionLabel="Start Writing"
+                            onAction={onGoToStart}
+                        />
                     ) : (
                         <View style={{ flex: 1, width: '100%' }}>
                             <FlashList
-                                data={
-                                    [...storage.persons].sort((a, b) => {
-                                        const aCount = storage.savedNotes.filter(n => n.personId === a.id).length;
-                                        const bCount = storage.savedNotes.filter(n => n.personId === b.id).length;
-                                        return bCount - aCount;
-                                    })
-                                }
+                                data={sortedPersons}
                                 keyExtractor={(p) => p.id}
                                 extraData={{ 
                                     selectedCircleId, 
                                     notesLength: storage.savedNotes.length,
                                     isUnlocked: security.isNotesUnlocked 
                                 }}
-                                renderItem={({ item: p }) => (
-                                    <View style={{ marginBottom: 10 }}>
-                                    <ExpandablePersonCard
-                                        key={p.id}
-                                        person={p}
-                                        notes={storage.savedNotes.filter(n => n.personId === p.id)}
-                                        isExpanded={selectedCircleId === p.id}
-                                        isLocked={!security.isNotesUnlocked}
-                                        onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
-                                        onNotePress={setViewNoteModal}
-                                        onDelete={() => setPersonToDelete(p.id)}
-                                        onProfilePress={() => setProfilePerson(p)}
-                                        canDelete={security.isNotesUnlocked}
-                                        isNoteActive={isNoteActive}
-                                        isNoteQueued={isNoteQueued}
-                                    />
-                                    </View>
-                                )}
+                                renderItem={renderPersonItem}
                                 showsVerticalScrollIndicator={false}
                                 contentContainerStyle={{ paddingBottom: 120 }}
                             />
@@ -378,16 +409,18 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
 
             {/* Sort Action Sheet Modal */}
             <Modal visible={showSortModal} transparent animationType="fade">
-                <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowSortModal(false)}>
+                <View style={styles.modalBackdrop}>
+                    {/* Backdrop dismiss — sits behind content, doesn't intercept child presses */}
+                    <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowSortModal(false)} />
                     <View style={styles.actionSheetContainer}>
                         <View style={styles.actionSheetHeader}>
                             <Text style={styles.actionSheetTitle}>Sort Library By</Text>
-                            <TouchableOpacity onPress={() => setShowSortModal(false)}>
+                            <AnimatedScaleButton onPress={() => setShowSortModal(false)}>
                                 <MaterialCommunityIcons name="close-circle-outline" size={24} color={theme.colors.textMuted} />
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                         {SORT_OPTIONS.map((opt) => (
-                            <TouchableOpacity 
+                            <AnimatedScaleButton 
                                 key={opt.id} 
                                 style={[styles.actionSheetOption, sortBy === opt.id && styles.actionSheetOptionActive]} 
                                 onPress={() => { setSortBy(opt.id); setShowSortModal(false); Vibration.vibrate(10); }}
@@ -395,24 +428,25 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 <MaterialCommunityIcons name={opt.icon} size={22} color={sortBy === opt.id ? theme.colors.primaryAction : theme.colors.textSecondary} />
                                 <Text style={[styles.actionSheetOptionText, sortBy === opt.id && styles.actionSheetOptionTextActive]}>{opt.label}</Text>
                                 {sortBy === opt.id && <MaterialCommunityIcons name="check" size={20} color={theme.colors.primaryAction} style={{ marginLeft: 'auto' }} />}
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         ))}
                     </View>
-                </TouchableOpacity>
+                </View>
             </Modal>
 
             {/* Premium Note View — Liquid Glass Card Popup */}
             <Modal visible={!!viewNoteModal} animationType="fade" transparent={true} onRequestClose={() => setViewNoteModal(null)}>
                 {viewNoteModal && (
                     <View style={styles.cardPopupBackdrop}>
-                        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setViewNoteModal(null)} />
-                        <Animated.View style={[styles.cardPopupContainer, { transform: [{ translateY: panY }] }]}>
+                        <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setViewNoteModal(null)} />
+                        <Animated.View style={[styles.cardPopupContainer, animatedCardStyle]}>
                             {/* Solid background */}
                             <View style={styles.cardPopupTint} />
 
                             {/* Swipeable Header Zone */}
-                            <View {...notePanResponder.panHandlers}>
-                                {/* Drag handle */}
+                            <GestureDetector gesture={notePanGesture}>
+                                <Animated.View>
+                                    {/* Drag handle */}
                                 <View style={styles.cardPopupHandle} />
 
                                 {/* Header — AI Title + Date */}
@@ -427,11 +461,12 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                             {viewNoteModal.text.split(/\s+/).filter(Boolean).length} words • {viewNoteModal.durationMin > 0 ? `${viewNoteModal.durationMin} min` : 'Quick Note'}
                                         </Text>
                                     </View>
-                                    <TouchableOpacity style={styles.premiumNoteCloseBtn} onPress={() => setViewNoteModal(null)}>
+                                    <AnimatedScaleButton style={styles.premiumNoteCloseBtn} onPress={() => setViewNoteModal(null)}>
                                         <MaterialCommunityIcons name="close" size={22} color="#FFF" />
-                                    </TouchableOpacity>
+                                    </AnimatedScaleButton>
                                 </View>
-                            </View>
+                                </Animated.View>
+                            </GestureDetector>
 
                             {/* Body */}
                             <ScrollView style={styles.cardPopupScroll} showsVerticalScrollIndicator={false}>
@@ -458,13 +493,13 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
 
                                 {/* Regenerate AI button — shown when note has no AI data */}
                                 {!viewNoteModal.aiTitle && (!viewNoteModal.aiSummary || viewNoteModal.aiSummary.length === 0) && !isNoteActive(viewNoteModal.id) && (
-                                    <TouchableOpacity
+                                    <AnimatedScaleButton
                                         style={styles.regenerateBtn}
                                         onPress={() => handleRegenerateAi(viewNoteModal)}
                                     >
                                         <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
                                         <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
-                                    </TouchableOpacity>
+                                    </AnimatedScaleButton>
                                 )}
 
                                 {isNoteActive(viewNoteModal.id) && (
@@ -480,12 +515,12 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                             {/* Footer — Delete + Regenerate */}
                             <View style={styles.premiumNoteFooter}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                    <TouchableOpacity style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
+                                    <AnimatedScaleButton style={styles.premiumNoteDeleteBtn} onPress={() => { setViewNoteModal(null); setNoteToDelete(viewNoteModal.id); }}>
                                         <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
                                         <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
-                                    </TouchableOpacity>
+                                    </AnimatedScaleButton>
                                     {(viewNoteModal.aiTitle || (viewNoteModal.aiSummary && viewNoteModal.aiSummary.length > 0)) && (
-                                        <TouchableOpacity
+                                        <AnimatedScaleButton
                                             style={styles.regenerateSmallBtn}
                                             onPress={() => handleRegenerateAi(viewNoteModal)}
                                             disabled={isNoteActive(viewNoteModal.id)}
@@ -495,7 +530,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                             ) : (
                                                 <MaterialCommunityIcons name="refresh" size={16} color={theme.colors.textMuted} />
                                             )}
-                                        </TouchableOpacity>
+                                        </AnimatedScaleButton>
                                     )}
                                 </View>
                             </View>
@@ -513,10 +548,10 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                             Are you sure you want to permanently delete this session? This cannot be undone.
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setNoteToDelete(null)}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setNoteToDelete(null)}>
                                 <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
                                 if (noteToDelete) {
                                     storage.deleteNote(noteToDelete).then(() => {
                                         setNoteToDelete(null);
@@ -525,7 +560,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 }
                             }}>
                                 <Text style={commonStyles.closeVersionBtnText}>Delete</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     </View>
                 </View>
@@ -540,10 +575,10 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                             Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setPersonToDelete(null)}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground }]} onPress={() => setPersonToDelete(null)}>
                                 <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger }]} onPress={() => {
                                 if (personToDelete) {
                                     storage.deletePerson(personToDelete).then(() => {
                                         setPersonToDelete(null);
@@ -554,7 +589,7 @@ export const LibraryScreen: React.FC<Props> = ({ navigation, route, onGoToStart,
                                 }
                             }}>
                                 <Text style={commonStyles.closeVersionBtnText}>Delete All</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     </View>
                 </View>
@@ -927,3 +962,9 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255, 255, 255, 0.08)',
     },
 });
+
+/**
+ * Memoized export — prevents re-renders from HomeScreen scroll events
+ * and useTransition-deferred updates from causing layout thrashing.
+ */
+export const LibraryScreen = React.memo(LibraryScreenInner);

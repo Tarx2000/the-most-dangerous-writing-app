@@ -18,20 +18,26 @@ import {
     View,
     Text,
     TextInput,
-    TouchableOpacity,
     ScrollView,
     StyleSheet,
     Platform,
     Dimensions,
     ActivityIndicator,
     Vibration,
-    Animated,
 } from 'react-native';
+import ReanimatedAnimated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withRepeat,
+    withSequence,
+    withTiming,
+} from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useAiQueue } from '@/lib/hooks/useAiQueue';
 import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { theme } from '@/styles/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,25 +50,27 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /* ── Shimmer Loading Animation ───────────────────────────────────────── */
 
-/** Simple shimmer placeholder for loading states */
+/** Simple shimmer placeholder for loading states — runs on UI thread */
 const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: any }> = ({ width, height = 16, style }) => {
-    const animValue = useRef(new Animated.Value(0)).current;
+    const pulse = useSharedValue(0);
 
     useEffect(() => {
-        const loop = Animated.loop(
-            Animated.sequence([
-                Animated.timing(animValue, { toValue: 1, duration: 1000, useNativeDriver: true }),
-                Animated.timing(animValue, { toValue: 0, duration: 1000, useNativeDriver: true }),
-            ])
+        pulse.value = withRepeat(
+            withSequence(
+                withTiming(1, { duration: 1000 }),
+                withTiming(0, { duration: 1000 }),
+            ),
+            -1,
+            false
         );
-        loop.start();
-        return () => loop.stop();
-    }, [animValue]);
+    }, [pulse]);
 
-    const opacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.35] });
+    const animatedStyle = useAnimatedStyle(() => ({
+        opacity: 0.15 + pulse.value * 0.2,
+    }));
 
     return (
-        <Animated.View style={[{ width: width as any, height, borderRadius: 8, backgroundColor: '#FFF', opacity }, style]} />
+        <ReanimatedAnimated.View style={[{ width: width as any, height, borderRadius: 8, backgroundColor: '#FFF' }, animatedStyle, style]} />
     );
 };
 
@@ -81,7 +89,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     });
 
     /* ── State ──────────────────────────────────────────────────────── */
-    const [editableText, setEditableText] = useState('');
+    const editableTextRef = useRef('');
+    const [renderKey, setRenderKey] = useState(0);
 
     /** Grammar check state (user-triggered, not through queue) */
     const [grammarSuggestions, setGrammarSuggestions] = useState<GrammarSuggestion[]>([]);
@@ -95,11 +104,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const aiEnqueuedRef = useRef(false);
     const noteSavedRef = useRef(false);
 
-    /* ── Load note data on mount ────────────────────────────────────── */
-    useEffect(() => {
-        storage.loadAllData();
-    }, []);
-
+    // Data is auto-loaded by StorageProvider
     /** Find the note once data is loaded */
     const note = storage.savedNotes.find(n => n.id === noteId);
 
@@ -112,8 +117,9 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     /** Initialize editable text when note is found */
     useEffect(() => {
-        if (note && !editableText) {
-            setEditableText(note.text);
+        if (note && !editableTextRef.current) {
+            editableTextRef.current = note.text;
+            setRenderKey(prev => prev + 1);
         }
     }, [note]);
 
@@ -137,12 +143,12 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     /* ── Grammar Check (user-triggered) ─────────────────────────────── */
     const handleGrammarCheck = useCallback(async () => {
-        if (grammarLoading || !editableText.trim()) return;
+        if (grammarLoading || !editableTextRef.current.trim()) return;
         setGrammarLoading(true);
         Vibration.vibrate(30);
 
         try {
-            const suggestions = await checkGrammar(editableText, {
+            const suggestions = await checkGrammar(editableTextRef.current, {
                 apiKey: storage.aiApiKey,
                 baseUrl: storage.aiBaseUrl,
                 model: storage.aiGrammarModel,
@@ -155,23 +161,23 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         } finally {
             setGrammarLoading(false);
         }
-    }, [editableText, storage.aiApiKey, storage.aiBaseUrl, storage.aiGrammarModel, storage.aiPrompts, grammarLoading]);
+    }, [storage.aiApiKey, storage.aiBaseUrl, storage.aiGrammarModel, storage.aiPrompts, grammarLoading]);
 
     /* ── Apply a single grammar suggestion (tap-to-accept) ──────────── */
     const applySuggestion = useCallback((suggestion: GrammarSuggestion) => {
-        const newText = editableText.replace(suggestion.original, suggestion.suggestion);
-        setEditableText(newText);
+        const newText = editableTextRef.current.replace(suggestion.original, suggestion.suggestion);
+        editableTextRef.current = newText;
+        setRenderKey(prev => prev + 1);
         setGrammarSuggestions(prev => prev.filter(s => s !== suggestion));
         Vibration.vibrate(20);
-    }, [editableText]);
+    }, []);
 
-    /* ── Save & Close ───────────────────────────────────────────────── */
     const handleSaveAndClose = useCallback(async () => {
         if (noteSavedRef.current) return;
         noteSavedRef.current = true;
 
         // Save any text edits (AI results are saved directly by the queue)
-        await storage.updateNote(noteId, { text: editableText });
+        await storage.updateNote(noteId, { text: editableTextRef.current });
 
         navigation.reset({
             index: 0,
@@ -182,11 +188,11 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     : undefined,
             }],
         });
-    }, [editableText, noteId, navigation, route.params]);
+    }, [noteId, navigation, route.params]);
 
     /* ── Render ──────────────────────────────────────────────────────── */
 
-    const wordCount = editableText.trim().split(/\s+/).filter(Boolean).length;
+    const wordCount = editableTextRef.current.trim().split(/\s+/).filter(Boolean).length;
 
     return (
         <View style={styles.container}>
@@ -257,7 +263,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         <Text style={styles.sectionLabel}>
                             <MaterialCommunityIcons name="pencil-outline" size={14} color={theme.colors.textMuted} /> YOUR ENTRY
                         </Text>
-                        <TouchableOpacity
+                        <AnimatedScaleButton
                             style={styles.editToggle}
                             onPress={() => setIsEditing(!isEditing)}
                         >
@@ -269,21 +275,22 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <Text style={[styles.editToggleText, isEditing && { color: '#4ade80' }]}>
                                 {isEditing ? 'Done' : 'Edit'}
                             </Text>
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     </View>
 
                     {isEditing ? (
                         <TextInput
+                            key={renderKey}
                             style={styles.editableTextInput}
-                            value={editableText}
-                            onChangeText={setEditableText}
+                            defaultValue={editableTextRef.current}
+                            onChangeText={(val) => editableTextRef.current = val}
                             multiline
                             autoFocus
                             selectionColor={theme.colors.primaryAction}
                         />
                     ) : (
                         <View style={styles.readOnlyTextContainer}>
-                            <RichText style={styles.readOnlyText} text={editableText} />
+                            <RichText style={styles.readOnlyText} text={editableTextRef.current} />
                         </View>
                     )}
                 </View>
@@ -291,7 +298,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 {/* ── Grammar Check (user-triggered only) ─────────── */}
                 <View style={styles.grammarSection}>
                     {!grammarChecked ? (
-                        <TouchableOpacity
+                        <AnimatedScaleButton
                             style={[styles.grammarBtn, grammarLoading && styles.grammarBtnLoading]}
                             onPress={handleGrammarCheck}
                             disabled={grammarLoading}
@@ -304,7 +311,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <Text style={styles.grammarBtnText}>
                                 {grammarLoading ? 'Checking...' : 'Check Grammar & Spelling'}
                             </Text>
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     ) : (
                         <View>
                             <View style={styles.grammarResultHeader}>
@@ -318,7 +325,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             </View>
 
                             {grammarSuggestions.map((s, i) => (
-                                <TouchableOpacity
+                                <AnimatedScaleButton
                                     key={i}
                                     style={styles.suggestionCard}
                                     onPress={() => applySuggestion(s)}
@@ -335,7 +342,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                     <View style={styles.suggestionApplyBtn}>
                                         <MaterialCommunityIcons name="check" size={16} color="#4ade80" />
                                     </View>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
                             ))}
                         </View>
                     )}
@@ -347,10 +354,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
             {/* ── Floating Save Button ────────────────────────────── */}
             <View style={styles.floatingFooter}>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveAndClose}>
+                <AnimatedScaleButton style={styles.saveBtn} onPress={handleSaveAndClose}>
                     <MaterialCommunityIcons name="content-save-check" size={20} color="#000" />
                     <Text style={styles.saveBtnText}>Save & Close</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             </View>
         </View>
     );

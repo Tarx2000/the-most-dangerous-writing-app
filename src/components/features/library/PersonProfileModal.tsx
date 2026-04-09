@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     ScrollView,
     TextInput,
     StyleSheet,
@@ -10,6 +9,7 @@ import {
     Platform,
     Dimensions,
 } from 'react-native';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
@@ -82,12 +82,16 @@ export const PersonProfileModal: React.FC<Props> = ({
 }) => {
     /* ── Edit mode state ──────────────────────────────────────────────── */
     const [isEditing, setIsEditing] = useState(false);
-    const [editNickname, setEditNickname] = useState('');
+    
+    // We keep relationship in state still because of the custom dropdown picker logic,
+    // which requires rapid re-renders to show/hide the checkmarks properly.
     const [editRelationship, setEditRelationship] = useState('');
-    const [editBirthday, setEditBirthday] = useState('');
-    const [editBio, setEditBio] = useState('');
     const [showRelationshipPicker, setShowRelationshipPicker] = useState(false);
-    const [customRelInput, setCustomRelInput] = useState('');
+    
+    const editNicknameRef = useRef('');
+    const editBirthdayRef = useRef('');
+    const editBioRef = useRef('');
+    const customRelInputRef = useRef('');
 
     /* ── Derived: all available relationship options (predefined + custom) */
     const allRelationshipOptions = useMemo(() => {
@@ -98,10 +102,10 @@ export const PersonProfileModal: React.FC<Props> = ({
     /* ── Sync edit fields when person changes or edit mode starts ───── */
     useEffect(() => {
         if (person && isEditing) {
-            setEditNickname(person.nickname || '');
+            editNicknameRef.current = person.nickname || '';
             setEditRelationship(person.relationship || '');
-            setEditBirthday(person.birthday || '');
-            setEditBio(person.bio || '');
+            editBirthdayRef.current = person.birthday || '';
+            editBioRef.current = person.bio || '';
         }
     }, [isEditing, person]);
 
@@ -142,10 +146,10 @@ export const PersonProfileModal: React.FC<Props> = ({
     /* ── Save profile edits ────────────────────────────────────────── */
     const handleSave = async () => {
         await onUpdatePerson(person.id, {
-            nickname: editNickname.trim() || undefined,
+            nickname: editNicknameRef.current.trim() || undefined,
             relationship: editRelationship.trim() || undefined,
-            birthday: editBirthday.trim() || undefined,
-            bio: editBio.trim() || undefined,
+            birthday: editBirthdayRef.current.trim() || undefined,
+            bio: editBioRef.current.trim() || undefined,
         });
         Vibration.vibrate(30);
         setIsEditing(false);
@@ -153,13 +157,13 @@ export const PersonProfileModal: React.FC<Props> = ({
 
     /** Add a custom relationship option */
     const handleAddCustomRelationship = () => {
-        const trimmed = customRelInput.trim();
+        const trimmed = customRelInputRef.current.trim();
         if (!trimmed || allRelationshipOptions.includes(trimmed)) return;
 
         const updated = [...(person.customRelationships || []), trimmed];
         onUpdatePerson(person.id, { customRelationships: updated });
         setEditRelationship(trimmed);
-        setCustomRelInput('');
+        customRelInputRef.current = '';
     };
 
     /** Format a date string (YYYY-MM-DD) into a readable format */
@@ -194,13 +198,13 @@ export const PersonProfileModal: React.FC<Props> = ({
             <Text style={styles.lockedName}>{person.name}</Text>
             <Text style={styles.lockedHint}>Verify your identity to view this profile</Text>
 
-            <TouchableOpacity style={styles.unlockBtn} onPress={async () => {
+            <AnimatedScaleButton style={styles.unlockBtn} onPress={async () => {
                 const success = await onUnlock();
                 if (success) Vibration.vibrate(50);
             }}>
                 <MaterialCommunityIcons name="fingerprint" size={24} color="#FFF" style={{ marginRight: 10 }} />
                 <Text style={styles.unlockBtnText}>Unlock Profile</Text>
-            </TouchableOpacity>
+            </AnimatedScaleButton>
         </View>
     );
 
@@ -211,8 +215,8 @@ export const PersonProfileModal: React.FC<Props> = ({
             <Text style={styles.editLabel}>Nickname</Text>
             <TextInput
                 style={styles.editInput}
-                value={editNickname}
-                onChangeText={setEditNickname}
+                defaultValue={editNicknameRef.current}
+                onChangeText={(text) => editNicknameRef.current = text}
                 placeholder="Optional display name..."
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardAppearance="dark"
@@ -220,7 +224,7 @@ export const PersonProfileModal: React.FC<Props> = ({
 
             {/* Section: Relationship */}
             <Text style={styles.editLabel}>Relationship</Text>
-            <TouchableOpacity
+            <AnimatedScaleButton
                 style={styles.editDropdown}
                 onPress={() => setShowRelationshipPicker(!showRelationshipPicker)}
             >
@@ -232,12 +236,12 @@ export const PersonProfileModal: React.FC<Props> = ({
                     size={20}
                     color={theme.colors.textSecondary}
                 />
-            </TouchableOpacity>
+            </AnimatedScaleButton>
 
             {showRelationshipPicker && (
                 <View style={styles.relPickerContainer}>
                     {allRelationshipOptions.map((rel) => (
-                        <TouchableOpacity
+                        <AnimatedScaleButton
                             key={rel}
                             style={[styles.relOption, editRelationship === rel && styles.relOptionActive]}
                             onPress={() => {
@@ -251,26 +255,26 @@ export const PersonProfileModal: React.FC<Props> = ({
                             {editRelationship === rel && (
                                 <MaterialCommunityIcons name="check" size={18} color={theme.colors.primaryAction} />
                             )}
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     ))}
 
                     {/* Add custom relationship */}
                     <View style={styles.addCustomRelRow}>
                         <TextInput
                             style={styles.addCustomRelInput}
-                            value={customRelInput}
-                            onChangeText={setCustomRelInput}
+                            defaultValue={customRelInputRef.current}
+                            onChangeText={(text) => customRelInputRef.current = text}
                             placeholder="Add custom..."
                             placeholderTextColor={theme.colors.textMuted}
                             keyboardAppearance="dark"
                         />
-                        <TouchableOpacity
-                            style={[styles.addCustomRelBtn, !customRelInput.trim() && { opacity: 0.3 }]}
+                        <AnimatedScaleButton
+                            style={[styles.addCustomRelBtn, !customRelInputRef.current.trim() && { opacity: 0.3 }]}
                             onPress={handleAddCustomRelationship}
-                            disabled={!customRelInput.trim()}
+                            disabled={!customRelInputRef.current.trim()}
                         >
                             <MaterialCommunityIcons name="plus" size={20} color="#000" />
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     </View>
                 </View>
             )}
@@ -279,8 +283,8 @@ export const PersonProfileModal: React.FC<Props> = ({
             <Text style={styles.editLabel}>Birthday</Text>
             <TextInput
                 style={styles.editInput}
-                value={editBirthday}
-                onChangeText={setEditBirthday}
+                defaultValue={editBirthdayRef.current}
+                onChangeText={(text) => editBirthdayRef.current = text}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardAppearance="dark"
@@ -293,8 +297,8 @@ export const PersonProfileModal: React.FC<Props> = ({
             <Text style={styles.editLabel}>Personal Notes</Text>
             <TextInput
                 style={[styles.editInput, styles.editTextArea]}
-                value={editBio}
-                onChangeText={setEditBio}
+                defaultValue={editBioRef.current}
+                onChangeText={(text) => editBioRef.current = text}
                 placeholder="Write personal notes about this person..."
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardAppearance="dark"
@@ -304,24 +308,24 @@ export const PersonProfileModal: React.FC<Props> = ({
 
             {/* Action buttons */}
             <View style={styles.editActions}>
-                <TouchableOpacity
+                <AnimatedScaleButton
                     style={[styles.editActionBtn, styles.editCancelBtn]}
                     onPress={() => setIsEditing(false)}
                 >
                     <Text style={styles.editCancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </AnimatedScaleButton>
+                <AnimatedScaleButton
                     style={[styles.editActionBtn, styles.editSaveBtn]}
                     onPress={handleSave}
                 >
                     <MaterialCommunityIcons name="check" size={18} color="#000" style={{ marginRight: 6 }} />
                     <Text style={styles.editSaveBtnText}>Save</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             </View>
 
             {/* Delete Person — danger zone, only in edit mode */}
             {onDeletePerson && (
-                <TouchableOpacity
+                <AnimatedScaleButton
                     style={styles.deleteDangerBtn}
                     onPress={() => {
                         onDeletePerson(person.id);
@@ -330,7 +334,7 @@ export const PersonProfileModal: React.FC<Props> = ({
                 >
                     <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} style={{ marginRight: 8 }} />
                     <Text style={styles.deleteDangerBtnText}>Delete Person</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             )}
         </ScrollView>
     );
@@ -398,10 +402,10 @@ export const PersonProfileModal: React.FC<Props> = ({
             )}
 
             {/* Edit Profile button */}
-            <TouchableOpacity style={styles.editProfileBtn} onPress={() => setIsEditing(true)}>
+            <AnimatedScaleButton style={styles.editProfileBtn} onPress={() => setIsEditing(true)}>
                 <MaterialCommunityIcons name="pencil-outline" size={18} color={theme.colors.primaryAction} style={{ marginRight: 8 }} />
                 <Text style={styles.editProfileBtnText}>Edit Profile</Text>
-            </TouchableOpacity>
+            </AnimatedScaleButton>
 
             {/* Recent Entries */}
             {recentNotes.length > 0 && (

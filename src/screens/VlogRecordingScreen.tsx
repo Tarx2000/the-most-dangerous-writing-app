@@ -2,14 +2,13 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     StyleSheet,
     Dimensions,
     StatusBar,
     Vibration,
     Platform,
-    Animated,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence, withRepeat, cancelAnimation } from 'react-native-reanimated';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
@@ -20,6 +19,7 @@ import { CONFIG } from '@/config';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VlogRecording'>;
 
@@ -78,17 +78,21 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const isCancelledRef = useRef(false);
 
     /* ── Animations ────────────────────────────────────────────────────── */
-    const countdownScale = useRef(new Animated.Value(0)).current;
-    const countdownOpacity = useRef(new Animated.Value(0)).current;
-    const pulseAnim = useRef(new Animated.Value(1)).current;
-    const stopBtnSlide = useRef(new Animated.Value(100)).current;
+    const countdownScale = useSharedValue(0);
+    const countdownOpacity = useSharedValue(0);
+    const pulseAnim = useSharedValue(1);
+    const stopBtnSlide = useSharedValue(100);
 
-    const { saveVlog, loadAllData } = useStorage();
+    const countdownStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: countdownScale.value }],
+        opacity: countdownOpacity.value,
+    }));
+    const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseAnim.value }));
+    const stopBtnStyle = useAnimatedStyle(() => ({ transform: [{ translateY: stopBtnSlide.value }] }));
 
-    useEffect(() => {
-        loadAllData();
-    }, []);
+    const { saveVlog } = useStorage();
 
+    // Removed loadAllData call
     /* ── Permission flow ───────────────────────────────────────────────── */
     useEffect(() => {
         const checkPermissions = async () => {
@@ -124,22 +128,11 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
         /** Animate a single countdown number: scale up + fade in, then fade out */
         const animateNumber = () => {
-            countdownScale.setValue(0.3);
-            countdownOpacity.setValue(0);
+            countdownScale.value = 0.3;
+            countdownOpacity.value = 0;
 
-            Animated.parallel([
-                Animated.spring(countdownScale, {
-                    toValue: 1,
-                    useNativeDriver: true,
-                    damping: 12,
-                    stiffness: 180,
-                }),
-                Animated.timing(countdownOpacity, {
-                    toValue: 1,
-                    duration: 200,
-                    useNativeDriver: true,
-                }),
-            ]).start();
+            countdownScale.value = withSpring(1, { damping: 12, stiffness: 180 });
+            countdownOpacity.value = withTiming(1, { duration: 200 });
 
             Vibration.vibrate(50);
         };
@@ -168,24 +161,20 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     useEffect(() => {
         if (phase !== 'recording' && phase !== 'canStop') return;
 
-        const pulse = Animated.loop(
-            Animated.sequence([
-                Animated.timing(pulseAnim, {
-                    toValue: 0.4,
-                    duration: PULSE_DURATION_MS / 2,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(pulseAnim, {
-                    toValue: 1,
-                    duration: PULSE_DURATION_MS / 2,
-                    useNativeDriver: true,
-                }),
-            ])
+        pulseAnim.value = withRepeat(
+            withSequence(
+                withTiming(0.4, { duration: PULSE_DURATION_MS / 2 }),
+                withTiming(1, { duration: PULSE_DURATION_MS / 2 })
+            ),
+            -1,
+            false
         );
-        pulse.start();
 
-        return () => pulse.stop();
-    }, [phase]);
+        return () => {
+            cancelAnimation(pulseAnim);
+            pulseAnim.value = 1;
+        };
+    }, [phase, pulseAnim]);
 
     /* ── Start recording ───────────────────────────────────────────────── */
     const startRecording = useCallback(async () => {
@@ -212,12 +201,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 Vibration.vibrate([0, 100, 50, 100]); // Double vibrate to signal timer done
 
                 // Slide in the stop button
-                Animated.spring(stopBtnSlide, {
-                    toValue: 0,
-                    useNativeDriver: true,
-                    damping: 15,
-                    stiffness: 150,
-                }).start();
+                stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
             }
         }, TIMER_TICK_MS);
 
@@ -356,9 +340,9 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Text style={styles.permissionSubtitle}>
                     Please enable camera and microphone access in your device settings to record vlogs.
                 </Text>
-                <TouchableOpacity style={styles.permissionBtn} onPress={() => navigation.goBack()}>
+                <AnimatedScaleButton style={styles.permissionBtn} onPress={() => navigation.goBack()}>
                     <Text style={styles.permissionBtnText}>Go Back</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             </View>
         );
     }
@@ -383,10 +367,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 <View style={styles.countdownOverlay}>
                     <Animated.Text style={[
                         styles.countdownText,
-                        {
-                            transform: [{ scale: countdownScale }],
-                            opacity: countdownOpacity,
-                        },
+                        countdownStyle
                     ]}>
                         {countdownNum}
                     </Animated.Text>
@@ -396,15 +377,14 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
             {/* Cancel button — visible during countdown and recording (before timer ends) */}
             {(phase === 'countdown' || phase === 'recording') && (
-                <TouchableOpacity
+                <AnimatedScaleButton
                     style={styles.cancelBtn}
                     onPress={cancelRecording}
-                    activeOpacity={0.7}
                 >
                     <View style={styles.cancelBtnInner}>
-                        <MaterialCommunityIcons name="close" size={22} color="#FFF" />
+                        <MaterialCommunityIcons name="close" size={22} color={theme.colors.textPrimary} />
                     </View>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             )}
 
             {/* Recording UI — Timer bar + recording indicator */}
@@ -421,7 +401,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 <View style={styles.recIndicator}>
                                     <Animated.View style={[
                                         styles.recDot,
-                                        { opacity: pulseAnim },
+                                        pulseStyle,
                                     ]} />
                                     <Text style={styles.recText}>
                                         {phase === 'canStop' ? 'COMPLETE' : phase === 'saving' ? 'SAVING...' : 'REC'}
@@ -451,7 +431,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {phase === 'canStop' && (
                         <Animated.View style={[
                             styles.stopBtnWrapper,
-                            { transform: [{ translateY: stopBtnSlide }] },
+                            stopBtnStyle,
                         ]}>
                             <View style={styles.stopBtnContainer}>
                                 <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
@@ -459,15 +439,14 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                                 <Text style={styles.stopHintText}>Timer complete! You can continue or stop.</Text>
 
-                                <TouchableOpacity
+                                <AnimatedScaleButton
                                     style={styles.stopBtn}
                                     onPress={stopRecording}
-                                    activeOpacity={0.7}
                                 >
                                     <View style={styles.stopBtnInner}>
-                                        <MaterialCommunityIcons name="stop" size={32} color="#FFF" />
+                                        <MaterialCommunityIcons name="stop" size={32} color={theme.colors.textPrimary} />
                                     </View>
-                                </TouchableOpacity>
+                                </AnimatedScaleButton>
 
                                 <Text style={styles.stopBtnLabel}>Stop & Save</Text>
                             </View>

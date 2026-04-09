@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
-import { View, Text, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, Dimensions } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -16,6 +17,10 @@ interface Props {
     onInteractionEnd?: () => void;
 }
 
+/**
+ * CarouselSelector — Horizontal scrollable picker with arrow nav and dot indicators.
+ * Uses AnimatedScaleButton for all interactive elements for premium tactile feel.
+ */
 export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, selectedIndex, onSelect, renderItemText, onInteractionStart, onInteractionEnd }) => {
     const CAROUSEL_WIDTH = Math.min(SCREEN_WIDTH * 0.5, 200);
     const carouselRef = useRef<any>(null);
@@ -36,9 +41,9 @@ export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, sele
         <View style={commonStyles.carouselWrapper}>
             <Text style={commonStyles.carouselLabel}>{label}</Text>
             <View style={commonStyles.carouselControlRow}>
-                <TouchableOpacity style={commonStyles.carouselArrowBtn} onPress={prev}>
+                <AnimatedScaleButton style={commonStyles.carouselArrowBtn} onPress={prev}>
                     <Text style={commonStyles.carouselArrowText}>{"<"}</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
 
                 <View
                     style={{ width: CAROUSEL_WIDTH, height: 60 }}
@@ -64,23 +69,23 @@ export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, sele
                     />
                 </View>
 
-                <TouchableOpacity style={commonStyles.carouselArrowBtn} onPress={next}>
+                <AnimatedScaleButton style={commonStyles.carouselArrowBtn} onPress={next}>
                     <Text style={commonStyles.carouselArrowText}>{">"}</Text>
-                </TouchableOpacity>
+                </AnimatedScaleButton>
             </View>
 
             <View style={commonStyles.dotRow}>
                 {data.map((_, idx) => (
-                    <TouchableOpacity
+                    <AnimatedScaleButton
                         key={idx}
-                        style={{ padding: 10 }} // Increased touch target
+                        style={{ padding: 10 }}
                         onPress={() => {
                             carouselRef.current?.scrollTo({ index: idx, animated: true });
                             onSelect(idx);
                         }}
                     >
                         <View style={[commonStyles.dot, selectedIndex === idx && { backgroundColor: theme.colors.danger }]} />
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 ))}
             </View>
         </View>

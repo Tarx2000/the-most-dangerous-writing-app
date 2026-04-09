@@ -1,13 +1,13 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    Animated,
-    TouchableOpacity,
     Modal,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * CONFIGURABLE: Icon and dot sizing
@@ -37,17 +37,18 @@ interface StreakPopupProps {
  */
 export const StreakPopup: React.FC<StreakPopupProps> = ({ visible, streak, streakHistory = [], onClose }) => {
     /* ── Animation refs ── */
-    const overlayFade = useRef(new Animated.Value(0)).current;
-    const iconScale = useRef(new Animated.Value(0.3)).current;
-    const iconFade = useRef(new Animated.Value(0)).current;
-    const textFade = useRef(new Animated.Value(0)).current;
-    const textSlide = useRef(new Animated.Value(30)).current;
-    const weekFade = useRef(new Animated.Value(0)).current;
-    const buttonFade = useRef(new Animated.Value(0)).current;
-    const buttonSlide = useRef(new Animated.Value(30)).current;
+    const overlayFade = useSharedValue(0);
+    const iconScale = useSharedValue(0.3);
+    const iconFade = useSharedValue(0);
+    const textFade = useSharedValue(0);
+    const textSlide = useSharedValue(30);
+    const weekFade = useSharedValue(0);
+    const buttonFade = useSharedValue(0);
+    const buttonSlide = useSharedValue(30);
 
     /** Compute which days of the current week have streak records */
     const weekDots = useMemo(() => {
+        if (!visible) return [];
         const histSet = new Set<string>(streakHistory);
         const today = new Date();
         const dayOfWeek = today.getDay(); // 0=Sun
@@ -60,92 +61,63 @@ export const StreakPopup: React.FC<StreakPopupProps> = ({ visible, streak, strea
             dots.push(histSet.has(key));
         }
         return dots;
-    }, [streakHistory]);
+    }, [streakHistory, visible]);
 
     const todayIndex = new Date().getDay();
 
     useEffect(() => {
-        if (!visible) return;
+        if (!visible) {
+            // Reset all animated values
+            overlayFade.value = 0;
+            iconScale.value = 0.3;
+            iconFade.value = 0;
+            textFade.value = 0;
+            textSlide.value = 30;
+            weekFade.value = 0;
+            buttonFade.value = 0;
+            buttonSlide.value = 30;
+            return;
+        }
 
-        // Reset all animated values
-        overlayFade.setValue(0);
-        iconScale.setValue(0.3);
-        iconFade.setValue(0);
-        textFade.setValue(0);
-        textSlide.setValue(30);
-        weekFade.setValue(0);
-        buttonFade.setValue(0);
-        buttonSlide.setValue(30);
+        // Staggered entrance using withDelay from Reanimated
+        overlayFade.value = withTiming(1, { duration: 400 });
 
-        // Staggered entrance using delays instead of sequence (more reliable)
-        const animations = [
-            // 1. Overlay fade in
-            Animated.timing(overlayFade, {
-                toValue: 1,
-                duration: 400,
-                useNativeDriver: true,
-            }),
-            // 2. Icon appears with spring (started after short delay)
-            Animated.parallel([
-                Animated.spring(iconScale, {
-                    toValue: 1,
-                    friction: 5,
-                    tension: 60,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(iconFade, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: true,
-                }),
-            ]),
-        ];
+        iconScale.value = withDelay(200, withSpring(1, { damping: 10, mass: 1, stiffness: 100 }));
+        iconFade.value = withDelay(200, withTiming(1, { duration: 300 }));
 
-        // Start overlay, then icon after 200ms, then text after 500ms
-        Animated.timing(overlayFade, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-        }).start();
+        textFade.value = withDelay(500, withTiming(1, { duration: 350 }));
+        textSlide.value = withDelay(500, withSpring(0, { damping: 12, mass: 1, stiffness: 80 }));
 
-        setTimeout(() => {
-            Animated.parallel([
-                Animated.spring(iconScale, { toValue: 1, friction: 5, tension: 60, useNativeDriver: true }),
-                Animated.timing(iconFade, { toValue: 1, duration: 300, useNativeDriver: true }),
-            ]).start();
-        }, 200);
+        weekFade.value = withDelay(800, withTiming(1, { duration: 300 }));
 
-        setTimeout(() => {
-            Animated.parallel([
-                Animated.timing(textFade, { toValue: 1, duration: 350, useNativeDriver: true }),
-                Animated.spring(textSlide, { toValue: 0, friction: 8, tension: 40, useNativeDriver: true }),
-            ]).start();
-        }, 500);
+        buttonFade.value = withDelay(1000, withTiming(1, { duration: 300 }));
+        buttonSlide.value = withDelay(1000, withSpring(0, { damping: 12, mass: 1, stiffness: 80 }));
+    }, [visible, overlayFade, iconScale, iconFade, textFade, textSlide, weekFade, buttonFade, buttonSlide]);
 
-        setTimeout(() => {
-            Animated.timing(weekFade, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-        }, 800);
-
-        setTimeout(() => {
-            Animated.parallel([
-                Animated.timing(buttonFade, { toValue: 1, duration: 300, useNativeDriver: true }),
-                Animated.spring(buttonSlide, { toValue: 0, friction: 8, tension: 40, useNativeDriver: true }),
-            ]).start();
-        }, 1000);
-    }, [visible]);
+    const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayFade.value }));
+    const iconStyle = useAnimatedStyle(() => ({
+        opacity: iconFade.value,
+        transform: [{ scale: iconScale.value }]
+    }));
+    const textStyle = useAnimatedStyle(() => ({
+        opacity: textFade.value,
+        transform: [{ translateY: textSlide.value }]
+    }));
+    const weekStyle = useAnimatedStyle(() => ({ opacity: weekFade.value }));
+    const buttonStyle = useAnimatedStyle(() => ({
+        opacity: buttonFade.value,
+        transform: [{ translateY: buttonSlide.value }]
+    }));
 
     if (!visible) return null;
 
     return (
         <Modal transparent visible={visible} animationType="none" statusBarTranslucent>
-            <Animated.View style={[styles.overlay, { opacity: overlayFade }]}>
+            <Animated.View style={[styles.overlay, overlayStyle]}>
                 <View style={styles.content}>
 
                     {/* ── Checkmark Icon ── */}
-                    <Animated.View style={[
-                        styles.iconContainer,
-                        { opacity: iconFade, transform: [{ scale: iconScale }] }
-                    ]}>
+                    <Animated.View style={[styles.iconContainer, iconStyle]}>
                         <View style={styles.iconRing}>
                             {/* Checkmark using Unicode — perfectly centered with flexbox */}
                             <Text style={styles.checkmarkText}>✓</Text>
@@ -153,16 +125,13 @@ export const StreakPopup: React.FC<StreakPopupProps> = ({ visible, streak, strea
                     </Animated.View>
 
                     {/* ── Title ── */}
-                    <Animated.View style={[
-                        styles.textContainer,
-                        { opacity: textFade, transform: [{ translateY: textSlide }] }
-                    ]}>
+                    <Animated.View style={[styles.textContainer, textStyle]}>
                         <Text style={styles.title}>Well done!</Text>
                         <Text style={styles.subtitle}>Streak completed today</Text>
                     </Animated.View>
 
                     {/* ── Week Dots ── */}
-                    <Animated.View style={[styles.weekContainer, { opacity: weekFade }]}>
+                    <Animated.View style={[styles.weekContainer, weekStyle]}>
                         <View style={styles.weekLabelsRow}>
                             {WEEK_LABELS.map((label, i) => (
                                 <Text
@@ -185,13 +154,10 @@ export const StreakPopup: React.FC<StreakPopupProps> = ({ visible, streak, strea
                 </View>
 
                 {/* ── Button ── */}
-                <Animated.View style={[
-                    styles.buttonWrapper,
-                    { opacity: buttonFade, transform: [{ translateY: buttonSlide }] }
-                ]}>
-                    <TouchableOpacity style={styles.button} onPress={onClose} activeOpacity={0.8}>
+                <Animated.View style={[styles.buttonWrapper, buttonStyle]}>
+                    <AnimatedScaleButton style={styles.button} onPress={onClose}>
                         <Text style={styles.buttonText}>Ok</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </Animated.View>
             </Animated.View>
         </Modal>

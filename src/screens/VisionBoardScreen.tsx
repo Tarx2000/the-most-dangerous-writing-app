@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, TextInput, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
@@ -19,31 +20,41 @@ const TABS: { key: TabKey, label: string }[] = [
 ];
 
 export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
-    const { visionBoard, saveVisionBoard, loadAllData } = useStorage();
+    const { visionBoard, saveVisionBoard } = useStorage();
     const [activeTab, setActiveTab] = useState<TabKey>('health');
-    const [localState, setLocalState] = useState<VisionBoard>({
+    const localStateRef = useRef<VisionBoard>({
         health: '',
         career: '',
         relationships: '',
         mindset: ''
     });
+    const [, forceRender] = useState({});
 
-    useEffect(() => {
-        loadAllData();
-    }, [loadAllData]);
-
+    // Empty map for removed loadAllData call
     useEffect(() => {
         if (visionBoard) {
-            setLocalState(visionBoard);
+            localStateRef.current = { ...visionBoard };
+            forceRender({});
         }
     }, [visionBoard]);
 
+    /**
+     * Auto-save vision board when navigating away.
+     * Prevents data loss if user swipes back without tapping Done.
+     */
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('beforeRemove', () => {
+            saveVisionBoard(localStateRef.current);
+        });
+        return unsubscribe;
+    }, [navigation, saveVisionBoard]);
+
     const handleTextChange = (text: string) => {
-        setLocalState(prev => ({ ...prev, [activeTab]: text }));
+        localStateRef.current[activeTab] = text;
     };
 
     const handleSaveAndExit = () => {
-        saveVisionBoard(localState);
+        saveVisionBoard(localStateRef.current);
         navigation.goBack();
     };
 
@@ -52,9 +63,9 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
             <KeyboardAvoidingView style={commonStyles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <View style={styles.header}>
                     <Text style={styles.title}>Your Best Self</Text>
-                    <TouchableOpacity onPress={handleSaveAndExit} style={styles.doneBtn}>
+                    <AnimatedScaleButton onPress={handleSaveAndExit} style={styles.doneBtn}>
                         <Text style={styles.doneBtnText}>Done</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </View>
 
                 {/* Tabs */}
@@ -65,7 +76,7 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
                     style={{ maxHeight: 60 }}
                 >
                     {TABS.map(tab => (
-                        <TouchableOpacity
+                        <AnimatedScaleButton
                             key={tab.key}
                             style={[styles.tab, activeTab === tab.key && styles.activeTab]}
                             onPress={() => setActiveTab(tab.key)}
@@ -73,7 +84,7 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
                             <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
                                 {tab.label}
                             </Text>
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     ))}
                 </ScrollView>
 
@@ -86,10 +97,11 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
                         Describe your ideal state for {TABS.find(t => t.key === activeTab)?.label?.toLowerCase()}. Who do you want to become?
                     </Text>
                     <TextInput
+                        key={activeTab + (visionBoard ? '_loaded' : '_init')}
                         style={styles.textInput}
                         multiline
                         autoFocus
-                        value={localState[activeTab]}
+                        defaultValue={localStateRef.current[activeTab]}
                         onChangeText={handleTextChange}
                         placeholder="My vision is..."
                         placeholderTextColor="#666"
@@ -117,7 +129,7 @@ const styles = StyleSheet.create({
         marginTop: Platform.OS === 'ios' ? 0 : 20,
     },
     title: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 24,
         fontWeight: 'bold',
         fontFamily: theme.typography.fontFamily,
@@ -129,7 +141,7 @@ const styles = StyleSheet.create({
         borderRadius: 20,
     },
     doneBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: '600',
     },

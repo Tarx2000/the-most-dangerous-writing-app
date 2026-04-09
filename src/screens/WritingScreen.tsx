@@ -3,13 +3,13 @@ import {
     View,
     Text,
     TextInput,
-    TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
     StyleSheet,
     Pressable
 } from 'react-native';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';;
@@ -45,14 +45,13 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         skipTimer
     } = useSession(timeIndex, diffIndex, inputRef);
 
-    const { saveNote, fontIndex, sizeIndex, loadAllData, devMode } = useStorage();
+    const { saveNote, fontIndex, sizeIndex, devMode } = useStorage();
 
-    // On mount, start the session immediately and load storage
+    // On mount, start the session immediately
     useEffect(() => {
-        loadAllData();
         startSession(isQuickNote);
         return () => clearTimers();
-    }, [startSession, clearTimers, loadAllData, isQuickNote]);
+    }, [startSession, clearTimers, isQuickNote]);
 
     const handleSave = async () => {
         const currentText = textRef.current;
@@ -127,12 +126,12 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </Text>
                         {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
                         {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNote && (
-                            <TouchableOpacity
+                            <AnimatedScaleButton
                                 onPress={skipTimer}
                                 style={{ backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}
                             >
                                 <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         )}
                     </View>
 
@@ -168,12 +167,12 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                     {(sessionTimeRemaining === 0 || isContinuingAfterLoss || isQuickNote) && !hasLost && (
                         <View style={commonStyles.finishedActionsContainer}>
-                            <TouchableOpacity style={[commonStyles.saveActionBtn, { opacity: 0.6 }]} onPress={handleSave}>
+                            <AnimatedScaleButton style={[commonStyles.saveActionBtn, { opacity: 0.6 }]} onPress={handleSave}>
                                 <Text style={commonStyles.saveActionText}>SAVE ENTRY</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[commonStyles.menuActionBtn, { opacity: 0.6 }]} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton style={[commonStyles.menuActionBtn, { opacity: 0.6 }]} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                                 <Text style={commonStyles.menuActionText}>Return to Menu</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     )}
                 </Animated.View>
@@ -185,13 +184,13 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <Text style={commonStyles.deathGiant}>YOU DIED</Text>
                             <Text style={commonStyles.deathSub}>You stopped writing for too long.</Text>
 
-                            <TouchableOpacity style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                            <AnimatedScaleButton style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                                 <Text style={commonStyles.deathBtnMasterText}>Return to Output</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
 
-                            <TouchableOpacity style={commonStyles.deathBtnSecondary} onPress={() => resumeWritingFreely()}>
+                            <AnimatedScaleButton style={commonStyles.deathBtnSecondary} onPress={() => resumeWritingFreely()}>
                                 <Text style={commonStyles.deathBtnSecondaryText}>I don't care, let me write</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     )}
                 </Animated.View>
@@ -199,12 +198,12 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 {/* Floating Buttons on Death Screen */}
                 {hasLost && (
                     <View style={commonStyles.floatingActionRow}>
-                        <TouchableOpacity style={commonStyles.floatHomeBtn} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                        <AnimatedScaleButton style={commonStyles.floatHomeBtn} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                             <Text style={commonStyles.floatBtnText}>🏠 Menu</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={commonStyles.floatSaveBtn} onPress={handleSave}>
+                        </AnimatedScaleButton>
+                        <AnimatedScaleButton style={commonStyles.floatSaveBtn} onPress={handleSave}>
                             <Text style={commonStyles.floatBtnText}>💾 Save What's Left</Text>
-                        </TouchableOpacity>
+                        </AnimatedScaleButton>
                     </View>
                 )}
             </KeyboardAvoidingView>

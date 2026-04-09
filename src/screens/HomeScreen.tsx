@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo, useTransition } from 'react';
 import { View, Dimensions, StyleSheet, Vibration, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -82,12 +82,23 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     }, []);
 
     /**
+     * useTransition marks the mode switch as a low-priority update.
+     * React commits the nav bar indicator change IMMEDIATELY, then
+     * defers the expensive StartScreen/LibraryScreen re-renders to
+     * the next frame. This eliminates the perceived lag.
+     */
+    const [, startTransition] = useTransition();
+
+    /**
      * Handle nav tab selection.
-     * Circles mode is freely navigable — the lock screen is shown on the Library side only.
+     * Uses startTransition so the nav pill slides instantly while
+     * the heavy screen content updates are deferred.
      */
     const handleModeChange = useCallback((mode: string) => {
-        setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
-    }, []);
+        startTransition(() => {
+            setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
+        });
+    }, [startTransition]);
 
     /**
      * Track horizontal scroll to determine current page.
@@ -105,13 +116,16 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)
     );
 
-    /** Nav items for the liquid glass pill */
-    const navItems = [
+    /**
+     * Memoize nav items to prevent LiquidGlassNav re-renders.
+     * Only recalculates when the urgent dot status changes.
+     */
+    const navItems = useMemo(() => [
         { id: 'journal', icon: 'notebook-edit', label: 'Journal' },
         { id: 'circles', icon: 'account-group', label: 'Circles' },
         { id: 'vlog', icon: 'video-outline', label: 'Vlog' },
         { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
-    ];
+    ], [isCheckinUrgent]);
 
     return (
         <View style={styles.container}>

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     useSharedValue,
@@ -190,20 +191,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <View style={styles.monthNav}>
                 <Text style={styles.monthLabel}>{monthLabel} {yearLabel}</Text>
                 <View style={styles.monthArrows}>
-                    <TouchableOpacity
+                    <AnimatedScaleButton
                         onPress={() => commitMonth('prev')}
                         style={styles.arrowBtn}
                         activeOpacity={0.6}
                     >
                         <Text style={styles.arrowText}>‹</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </AnimatedScaleButton>
+                    <AnimatedScaleButton
                         onPress={() => canGoForward && commitMonth('next')}
                         style={[styles.arrowBtn, !canGoForward && styles.arrowDisabled]}
                         activeOpacity={canGoForward ? 0.6 : 1}
                     >
                         <Text style={[styles.arrowText, !canGoForward && styles.arrowTextDisabled]}>›</Text>
-                    </TouchableOpacity>
+                    </AnimatedScaleButton>
                 </View>
             </View>
 

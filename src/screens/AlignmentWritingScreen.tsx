@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TextInput, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -41,13 +42,12 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
         skipTimer
     } = useSession(timeIndex, DIFF_INDEX, stopRef);
 
-    const { saveAlignmentReflection, fontIndex, sizeIndex, loadAllData, devMode } = useStorage();
+    const { saveAlignmentReflection, fontIndex, sizeIndex, devMode } = useStorage();
 
     useEffect(() => {
-        loadAllData();
         startSession(false);
         return () => clearTimers();
-    }, [startSession, clearTimers, loadAllData]);
+    }, [startSession, clearTimers]);
 
     useEffect(() => {
         if (hasLost && !isContinuingAfterLoss) {
@@ -137,9 +137,9 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             {hasLost ? 'YOU DIED' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
                         </Text>
                         {devMode && sessionTimeRemaining > 0 && !hasLost && (
-                            <TouchableOpacity onPress={skipTimer} style={{ backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}>
+                            <AnimatedScaleButton onPress={skipTimer} style={{ backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}>
                                 <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         )}
                     </View>
 
@@ -194,9 +194,9 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
 
                     {(sessionTimeRemaining === 0 || isContinuingAfterLoss) && !hasLost && (
                         <View style={commonStyles.finishedActionsContainer}>
-                            <TouchableOpacity style={[commonStyles.saveActionBtn, { opacity: 0.6 }]} onPress={handleSave}>
+                            <AnimatedScaleButton style={[commonStyles.saveActionBtn, { opacity: 0.6 }]} onPress={handleSave}>
                                 <Text style={commonStyles.saveActionText}>SAVE ENTRY</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     )}
                 </Animated.View>
@@ -208,13 +208,13 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             <Text style={commonStyles.deathGiant}>YOU DIED</Text>
                             <Text style={commonStyles.deathSub}>You stopped reflecting for too long.</Text>
 
-                            <TouchableOpacity style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                            <AnimatedScaleButton style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
                                 <Text style={commonStyles.deathBtnMasterText}>Return to Menu</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
 
-                            <TouchableOpacity style={commonStyles.deathBtnSecondary} onPress={() => resumeWritingFreely()}>
+                            <AnimatedScaleButton style={commonStyles.deathBtnSecondary} onPress={() => resumeWritingFreely()}>
                                 <Text style={commonStyles.deathBtnSecondaryText}>Let me finish my reflection</Text>
-                            </TouchableOpacity>
+                            </AnimatedScaleButton>
                         </View>
                     )}
                 </Animated.View>

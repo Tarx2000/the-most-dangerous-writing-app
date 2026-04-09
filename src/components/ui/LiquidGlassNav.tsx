@@ -1,34 +1,49 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import {
     View,
-    Text,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
-    Animated,
-    Dimensions,
+    useWindowDimensions,
     Platform,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 
-/**
- * CONFIGURABLE: The width of the pill relative to the screen.
- * 0.88 = 88% of screen width for a floating look.
- */
+/* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
+
+/** Width of the pill relative to the screen (0.88 = 88%) */
 const PILL_WIDTH_RATIO = 0.88;
 
+/** Total pill height — increased for icon-only layout */
+const PILL_HEIGHT = 72;
+
+/** Icon size — larger now that labels are removed */
+const ICON_SIZE = 26;
+
+/** Indicator spring physics for the premium slide effect */
+const INDICATOR_SPRING = {
+    damping: 20,
+    stiffness: 200,
+    mass: 0.6,
+};
+
+/* ── COMPONENT ────────────────────────────────────────────────────────────── */
+
 /**
- * LiquidGlassNav — Premium floating pill navigation bar.
+ * LiquidGlassNav — Premium floating pill navigation bar (icon-only).
  *
- * Inspired by TIDE app's liquid glass bottom nav:
- * - Frosted glass / translucent pill shape
- * - Floating above content with subtle shadow
- * - Smooth animated indicator that slides between tabs
- * - Minimalistic icons with labels
+ * Design:
+ * - Thicker, more opaque glass for a stronger "liquid" feel
+ * - Icon-only tabs (no labels) for a cleaner, more modern look
+ * - Larger pill height (72px) with bigger icons (26px)
+ * - Perfectly centered icons via flexbox (no gap offset)
  *
- * This component lives at the HomeScreen level so it persists
- * across the horizontal scroll between Start and Library.
+ * Performance:
+ * - Wrapped in React.memo to skip scroll-event re-renders
+ * - Uses raw Pressable for instant tap response (<16ms)
+ * - Sliding indicator uses spring animation for premium feel
  */
 interface NavItem {
     id: string;
@@ -44,60 +59,63 @@ interface Props {
     onSelect: (id: string) => void;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PILL_WIDTH = SCREEN_WIDTH * PILL_WIDTH_RATIO;
+const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => {
+    const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const PILL_WIDTH = SCREEN_WIDTH * PILL_WIDTH_RATIO;
 
-export const LiquidGlassNav: React.FC<Props> = ({ items, activeId, onSelect }) => {
     const activeIndex = items.findIndex(i => i.id === activeId);
     const tabWidth = PILL_WIDTH / items.length;
 
     /** Animated position for the sliding indicator */
-    const indicatorX = useRef(new Animated.Value(activeIndex * tabWidth)).current;
+    const indicatorX = useSharedValue(activeIndex * tabWidth);
 
-    useEffect(() => {
-        Animated.spring(indicatorX, {
-            toValue: activeIndex * tabWidth,
-            useNativeDriver: true,
-            damping: 20,
-            stiffness: 200,
-            mass: 0.6,
-        }).start();
-    }, [activeIndex, tabWidth]);
+    /**
+     * Drive indicator to the new position on activeId change.
+     * Since the component is memoized, this only fires when activeId changes.
+     */
+    const targetX = activeIndex * tabWidth;
+    if (indicatorX.value !== targetX) {
+        indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
+    }
+
+    /** Indicator padding from edges */
+    const INDICATOR_PADDING = 7;
+
+    const indicatorStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: indicatorX.value + INDICATOR_PADDING }],
+    }));
 
     return (
         <View style={styles.wrapper}>
-            <View style={styles.pill}>
-                {/* Frosted glass background via BlurView */}
+            <View style={[styles.pill, { width: PILL_WIDTH }]}>
+                {/* Frosted glass — higher intensity for more opaque "liquid" feel */}
                 <BlurView
-                    intensity={40}
+                    intensity={60}
                     tint="dark"
                     style={StyleSheet.absoluteFillObject}
                 />
 
-                {/* Extra dark tint overlay for AMOLED contrast */}
+                {/* Dense tint overlay — darker and more opaque for liquid glass effect */}
                 <View style={styles.tintOverlay} />
 
-                {/* Sliding active indicator */}
+                {/* Sliding active indicator — vertically centered */}
                 <Animated.View
                     style={[
                         styles.indicator,
-                        {
-                            width: tabWidth - 16,
-                            transform: [{ translateX: Animated.add(indicatorX, 8) }],
-                        },
+                        { width: tabWidth - (INDICATOR_PADDING * 2) },
+                        indicatorStyle
                     ]}
                 />
 
-                {/* Tab items */}
+                {/* Tab items — icon only, no labels */}
                 <View style={styles.tabRow}>
                     {items.map((item) => {
                         const isActive = item.id === activeId;
                         return (
-                            <TouchableOpacity
+                            <Pressable
                                 key={item.id}
                                 style={[styles.tab, { width: tabWidth }]}
                                 onPress={() => onSelect(item.id)}
-                                activeOpacity={0.7}
                             >
                                 <View style={styles.iconContainer}>
                                     {item.urgent && (
@@ -105,17 +123,11 @@ export const LiquidGlassNav: React.FC<Props> = ({ items, activeId, onSelect }) =
                                     )}
                                     <MaterialCommunityIcons
                                         name={item.icon as any}
-                                        size={22}
-                                        color={isActive ? '#FFF' : 'rgba(255,255,255,0.4)'}
+                                        size={ICON_SIZE}
+                                        color={isActive ? theme.colors.textPrimary : 'rgba(255,255,255,0.35)'}
                                     />
                                 </View>
-                                <Text style={[
-                                    styles.label,
-                                    isActive && styles.labelActive,
-                                ]}>
-                                    {item.label}
-                                </Text>
-                            </TouchableOpacity>
+                            </Pressable>
                         );
                     })}
                 </View>
@@ -123,6 +135,14 @@ export const LiquidGlassNav: React.FC<Props> = ({ items, activeId, onSelect }) =
         </View>
     );
 };
+
+/**
+ * Memoized export — only re-renders when items or activeId change.
+ * Prevents re-renders from HomeScreen scroll events.
+ */
+export const LiquidGlassNav = React.memo(LiquidGlassNavInner);
+
+/* ── STYLES ───────────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
     /** Positioned at the bottom of the screen */
@@ -134,38 +154,40 @@ const styles = StyleSheet.create({
         zIndex: 999,
     },
 
-    /** The glass pill container */
+    /** The glass pill — taller, more opaque, stronger border glow */
     pill: {
-        width: PILL_WIDTH,
-        height: 64,
-        borderRadius: 32,
+        height: PILL_HEIGHT,
+        borderRadius: PILL_HEIGHT / 2,
         overflow: 'hidden',
-        // Liquid glass border
+        // Liquid glass border — slightly brighter for more definition
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
-        // Glow shadow
-        shadowColor: 'rgba(0, 0, 0, 0.8)',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.6,
-        shadowRadius: 20,
-        elevation: 20,
+        borderColor: 'rgba(255, 255, 255, 0.18)',
+        // Stronger glow shadow for floating effect
+        shadowColor: 'rgba(0, 0, 0, 0.9)',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.7,
+        shadowRadius: 24,
+        elevation: 24,
     },
 
-    /** Semi-transparent dark overlay on top of blur */
+    /**
+     * Denser tint overlay — more opaque for a solid "liquid glass" look
+     * rather than a thin barely-visible frosted effect.
+     */
     tintOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(15, 15, 15, 0.65)',
+        backgroundColor: 'rgba(10, 10, 10, 0.75)',
     },
 
-    /** The sliding highlight behind the active tab */
+    /** Sliding highlight — vertically centered with equal padding top/bottom */
     indicator: {
         position: 'absolute',
-        top: 6,
-        height: 52,
-        borderRadius: 26,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        top: 7,
+        height: PILL_HEIGHT - 14,
+        borderRadius: (PILL_HEIGHT - 14) / 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
     },
 
     /** Row of tab buttons */
@@ -175,11 +197,11 @@ const styles = StyleSheet.create({
         zIndex: 2,
     },
 
-    /** Individual tab */
+    /** Individual tab — perfectly centered icon (no gap, no label) */
     tab: {
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 3,
+        height: PILL_HEIGHT,
     },
 
     /** Icon wrapper for badge positioning */
@@ -190,24 +212,12 @@ const styles = StyleSheet.create({
     /** Urgent notification dot */
     urgentDot: {
         position: 'absolute',
-        top: -2,
-        right: -4,
-        width: 7,
-        height: 7,
+        top: -3,
+        right: -5,
+        width: 8,
+        height: 8,
         borderRadius: 4,
         backgroundColor: '#FFD700',
         zIndex: 3,
-    },
-
-    /** Tab label text */
-    label: {
-        fontSize: 11,
-        fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.35)',
-        letterSpacing: 0.2,
-    },
-    labelActive: {
-        color: '#FFF',
-        fontWeight: '700',
     },
 });

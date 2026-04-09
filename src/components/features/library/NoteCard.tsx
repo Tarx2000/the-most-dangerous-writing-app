@@ -11,73 +11,91 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import Animated, { 
+    useSharedValue, 
+    useAnimatedStyle, 
+    withSpring, 
+    withTiming, 
+    withRepeat, 
+    withSequence,
+    interpolateColor
+} from 'react-native-reanimated';
 import { SavedNote } from '@/types';
 import { commonStyles } from '@/styles/commonStyles';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { RichText } from '@/components/ui/RichText';
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 interface Props {
     note: SavedNote;
     onPress: (note: SavedNote) => void;
     personName?: string;
     isLocked?: boolean;
-    /** Whether this note is actively being processed by the AI Queue (pulsing) */
     isProcessing?: boolean;
-    /** Whether this note is waiting in the AI Queue */
     isQueued?: boolean;
     onLongPress?: () => void;
     isSelected?: boolean;
 }
 
-/**
- * NoteCard — Library entry card with live AI processing/queued indicators.
- *
- * Supports `isProcessing` (pulsing glow) and `isQueued` (subtle waiting dot) props.
- */
 export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPress, personName, isLocked, isProcessing, isQueued, isSelected }) => {
     const hasAi = !!note.aiTitle;
 
     /* ── Pulsing Glow Animation ─────────────────────────────────────── */
-    const pulseAnim = useRef(new Animated.Value(0)).current;
+    const pulse = useSharedValue(0);
+    const scale = useSharedValue(1);
 
     useEffect(() => {
         if (isProcessing) {
-            const loop = Animated.loop(
-                Animated.sequence([
-                    Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: false }),
-                    Animated.timing(pulseAnim, { toValue: 0, duration: 1200, useNativeDriver: false }),
-                ])
+            pulse.value = withRepeat(
+                withSequence(
+                    withTiming(1, { duration: 1200 }),
+                    withTiming(0, { duration: 1200 })
+                ),
+                -1,
+                false
             );
-            loop.start();
-            return () => loop.stop();
         } else {
-            pulseAnim.setValue(0);
+            pulse.value = withTiming(0, { duration: 300 });
         }
-    }, [isProcessing, pulseAnim]);
+    }, [isProcessing]);
 
-    /** Animated border color: pulses between subtle and vibrant red */
-    const animatedBorderColor = pulseAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['rgba(255, 42, 42, 0.1)', 'rgba(255, 42, 42, 0.45)'],
+    const overlayStyle = useAnimatedStyle(() => {
+        return {
+            borderColor: interpolateColor(
+                pulse.value,
+                [0, 1],
+                ['rgba(255, 42, 42, 0.1)', 'rgba(255, 42, 42, 0.45)']
+            ),
+            backgroundColor: interpolateColor(
+                pulse.value,
+                [0, 1],
+                ['rgba(255, 42, 42, 0.0)', 'rgba(255, 42, 42, 0.04)']
+            ),
+        };
     });
 
-    /** Animated background glow */
-    const animatedBgColor = pulseAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['rgba(255, 42, 42, 0.0)', 'rgba(255, 42, 42, 0.04)'],
-    });
+    const pressStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }]
+    }));
 
     return (
-        <TouchableOpacity
+        <AnimatedPressable
             style={[
                 commonStyles.noteCard, 
-                isSelected && { borderColor: theme.colors.primaryAction, backgroundColor: 'rgba(255,255,255,0.06)' }
+                isSelected && { borderColor: theme.colors.primaryAction, backgroundColor: 'rgba(255,255,255,0.06)' },
+                pressStyle
             ]}
             onPress={() => !isLocked && onPress(note)}
             onLongPress={onLongPress}
-            activeOpacity={isLocked ? 1 : 0.2}
+            onPressIn={() => {
+                if (!isLocked) scale.value = withSpring(0.97, { damping: 20, stiffness: 300 });
+            }}
+            onPressOut={() => {
+                scale.value = withSpring(1, { damping: 20, stiffness: 300 });
+            }}
             delayLongPress={400}
         >
             {/* Animated processing overlay — sits behind content */}
@@ -86,10 +104,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
                     style={[
                         StyleSheet.absoluteFillObject,
                         styles.processingOverlay,
-                        {
-                            borderColor: animatedBorderColor,
-                            backgroundColor: animatedBgColor,
-                        },
+                        overlayStyle
                     ]}
                 />
             )}
@@ -121,7 +136,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
             ) : hasAi ? (
                 <>
                     <RichText
-                        style={{ color: '#FFF', fontSize: 16, fontWeight: '700', lineHeight: 22, marginBottom: 4 }}
+                        style={{ color: theme.colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, marginBottom: 4 }}
                         numberOfLines={2}
                         text={note.aiTitle!}
                     />
@@ -136,26 +151,23 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
                     Linked to: {personName}
                 </Text>
             )}
-        </TouchableOpacity>
+        </AnimatedPressable>
     );
 });
 
 /* ── Styles ───────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
-    /** Absolute-fill overlay for pulsing glow effect */
     processingOverlay: {
         borderRadius: 16,
         borderWidth: 1,
     },
-    /** Row showing brain icon + "Processing..." text */
     processingRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 5,
         marginBottom: 4,
     },
-    /** Processing label text */
     processingText: {
         color: theme.colors.primaryAction,
         fontSize: 12,
