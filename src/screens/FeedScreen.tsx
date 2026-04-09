@@ -12,7 +12,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
@@ -139,13 +139,22 @@ const FeedScreenInner: React.FC<Props> = ({
         });
     }, [feedItems, filterBookmarked, storage.bookmarkedNoteIds]);
 
+    /** 
+     * Block list scrolling natively via state if the outer feed isn't 100% physically snapped open. 
+     * useAnimatedReaction executes EXACTLY once when the boundary crosses, making it deeply efficient.
+     */
+    useAnimatedReaction(
+        () => (feedProgress ? feedProgress.value >= 0.99 : true),
+        (isFullyOpen, prevIsFullyOpen) => {
+            if (isFullyOpen !== prevIsFullyOpen) {
+                runOnJS(setFeedScrollEnabled)(isFullyOpen);
+            }
+        }
+    );
+
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e: any) => {
             listScrollY.value = e.contentOffset.y;
-            if (feedProgress) {
-                const isFullyOpen = feedProgress.value >= 0.99;
-                runOnJS(setFeedScrollEnabled)(isFullyOpen);
-            }
         }
     });
 
