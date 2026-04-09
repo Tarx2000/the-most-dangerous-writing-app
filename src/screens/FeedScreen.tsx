@@ -79,6 +79,7 @@ const FeedScreenInner: React.FC<Props> = ({
 }) => {
     const storage = useStorage();
     const [filterBookmarked, setFilterBookmarked] = useState(false);
+    const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
     const listRef = useRef<any>(null);
     const listScrollY = useSharedValue(0);
     const overscrollStartY = useSharedValue(0);
@@ -142,6 +143,11 @@ const FeedScreenInner: React.FC<Props> = ({
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e: any) => {
             listScrollY.value = e.contentOffset.y;
+            // Track feedProgress for scroll-lock: only enable scrolling when fully snapped
+            if (feedProgress) {
+                const isFullyOpen = feedProgress.value >= 0.99;
+                runOnJS(setFeedScrollEnabled)(isFullyOpen);
+            }
             // Native overscroll for iOS
             if (feedProgress && e.contentOffset.y < 0 && !isOverscrolling.value) {
                 const overscrollFactor = Math.abs(e.contentOffset.y) / 250;
@@ -312,6 +318,7 @@ const FeedScreenInner: React.FC<Props> = ({
                 keyExtractor={(item: any) => item.note?.id || item.vlog?.id || String(item.timestamp)}
                 bounces={true}
                 overScrollMode="always"
+                scrollEnabled={feedScrollEnabled}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
                 renderItem={({ item }: { item: any }) => (

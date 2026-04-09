@@ -144,37 +144,44 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                     <Text style={styles.timeAgo}>{formatRelativeTime(item.timestamp)}</Text>
                 </View>
 
-                {/* Video Player Area */}
-                <Pressable style={[styles.videoContainer, { position: 'relative' }]} onPress={() => onOpenVlog(vlog)}>
+                {/* Video Player Area — View container with layered touch targets */}
+                <View style={[styles.videoContainer, { position: 'relative' }]}>
+                    {/* Background tap-to-open layer (lowest z, catches taps that miss the mute button) */}
+                    <Pressable
+                        style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]}
+                        onPress={() => onOpenVlog(vlog)}
+                    />
+
                     {/* Thumbnail fallback when paused and thumbnail exists */}
                     {!isPlaying && vlog.thumbnailPath ? (
-                        <Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} />
+                        <View pointerEvents="none"><Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} /></View>
                     ) : (
                         <VideoView
-                            style={styles.videoPlayer}
+                            style={[styles.videoPlayer, { pointerEvents: 'none' } as any]}
                             player={player}
                             nativeControls={false}
                         />
                     )}
 
-                    {/* Mute/Unmute Toggle Top-Right Overlay */}
-                    <AnimatedScaleButton
-                        style={[styles.muteToggleArea, { zIndex: 10, position: 'absolute', top: 5, right: 5 }]}
+                    {/* Mute/Unmute Toggle Top-Right Overlay (highest z, intercepts taps first) */}
+                    <Pressable
+                        style={[styles.muteToggleArea, { zIndex: 20, position: 'absolute', top: 5, right: 5 }]}
                         onPress={() => {
                             setIsMuted(!isMuted);
                             Vibration.vibrate(10);
                         }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <View style={styles.muteToggleButton}>
                             <MaterialCommunityIcons name={isMuted ? "volume-off" : "volume-high"} size={16} color="#FFF" />
                         </View>
-                    </AnimatedScaleButton>
+                    </Pressable>
 
                     {/* Duration badge */}
-                    <View style={styles.durationBadge}>
+                    <View style={[styles.durationBadge, { pointerEvents: 'none' }]}>
                         <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
                     </View>
-                </Pressable>
+                </View>
 
                 {/* Footer — actions */}
                 <View style={styles.footer}>
