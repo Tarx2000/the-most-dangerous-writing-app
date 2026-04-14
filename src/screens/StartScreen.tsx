@@ -19,7 +19,7 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { FadeInUp, FadeOutUp, FadeIn } from 'react-native-reanimated';
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
 import { clearAiLog, getAiLog } from '@/lib/aiLogger';
-import { useAiQueue } from '@/lib/hooks/useAiQueue';
+import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { pingServer } from '@/lib/aiService';
 import { theme } from '@/styles/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -96,15 +96,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const storage = useStorage();
     const security = useSecurity();
 
-    /** Central AI Queue — all batch processing goes through here */
-    const { queueState, startBatch, cancelBatch } = useAiQueue({
-        aiApiKey: storage.aiApiKey,
-        aiBaseUrl: storage.aiBaseUrl,
-        aiModel: storage.aiModel,
-        aiPrompts: storage.aiPrompts,
-        savedNotes: storage.savedNotes,
-        updateNote: storage.updateNote,
-    });
+    /** Central AI Queue — single instance via AiQueueProvider */
+    const { queueState, startBatch, cancelBatch } = useAiQueueContext();
 
     const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
     const isModalOpenRef = useRef(isModalOpen);
@@ -317,7 +310,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                     </Text>
                                 </AnimatedScaleButton>
                                 {selectedPersonId && (
-                                    <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
+                                    <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { Vibration.vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
                                         <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
                                         <Text style={styles.quickNoteText}>Quick Note</Text>
                                     </AnimatedScaleButton>
@@ -562,16 +555,12 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                 style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 16, borderRadius: 100, shadowColor: theme.colors.primaryAction, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}
                                 onPress={async () => {
                                     if (newPersonNameRef.current.trim()) {
-                                        await storage.addPerson(newPersonNameRef.current);
+                                        const newId = await storage.addPerson(newPersonNameRef.current);
                                         newPersonNameRef.current = '';
                                         setCreatingNewCircle(false);
                                         circleSearchRef.current = '';
                                         handleCircleSearchChange('');
-                                        // Auto-select the newly created person (it's at index 0 after addPerson)
-                                        setTimeout(() => {
-                                            const newest = storage.persons[0];
-                                            if (newest) setSelectedPersonId(newest.id);
-                                        }, 100);
+                                        if (newId) setSelectedPersonId(newId);
                                     }
                                 }}
                             >

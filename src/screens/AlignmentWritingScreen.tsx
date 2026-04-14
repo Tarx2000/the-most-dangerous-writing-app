@@ -8,9 +8,10 @@ import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
 import { useSession } from '@/lib/hooks/useSession';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { usePreferences, useStorageActions } from '@/lib/hooks/useStorage';
 import { AlignmentReflection } from '@/types';
 import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
+import { generateId } from '@/lib/utils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AlignmentWriting'>;
 
@@ -42,7 +43,8 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
         skipTimer
     } = useSession(timeIndex, DIFF_INDEX, stopRef);
 
-    const { saveAlignmentReflection, fontIndex, sizeIndex, devMode } = useStorage();
+    const { saveAlignmentReflection } = useStorageActions();
+    const { fontIndex, sizeIndex, devMode } = usePreferences();
 
     useEffect(() => {
         startSession(false);
@@ -79,7 +81,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
 
         const noteWon = !hasLost && !isContinuingAfterLoss;
         const refObj: AlignmentReflection = {
-            id: Date.now().toString(),
+            id: generateId(),
             text: fullText,
             dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             timestamp: Date.now(),

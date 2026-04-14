@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Vibration } from 'react-native';
 import { useSharedValue, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { CONFIG } from '@/config';
@@ -43,6 +44,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     }, []);
 
     const triggerDeathState = useCallback(() => {
+        Vibration.vibrate([0, 200, 100, 200]);
         setHasLost(true);
         clearTimers();
 

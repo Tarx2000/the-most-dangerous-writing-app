@@ -21,7 +21,7 @@
  *   aiQueue.enqueueNote(noteId, 'journal');
  */
 
-import { DeviceEventEmitter } from 'react-native';
+import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { processNote, pingServer, type AiConfig } from '@/lib/aiService';
 import { logAi } from '@/lib/aiLogger';
@@ -80,6 +80,8 @@ class AiQueueManager {
     private lastError?: string;
     /** Health check interval reference */
     private healthCheckInterval: NodeJS.Timeout | null = null;
+    /** AppState listener subscription — pauses health checks when backgrounded */
+    private appStateSubscription: NativeEventSubscription | null = null;
 
     /** Injected dependencies */
     private getAiConfig: GetAiConfigFn = () => ({});
@@ -123,9 +125,23 @@ class AiQueueManager {
         // Check server status
         await this.checkHealth();
 
-        // Start background health polling
-        if (!this.healthCheckInterval) {
-            this.healthCheckInterval = setInterval(() => this.checkHealth(), AI_HEALTH_CHECK_INTERVAL_MS);
+        // Start background health polling (only if there are pending jobs)
+        this.startHealthChecks();
+
+        // Listen to app lifecycle — pause health checks when backgrounded
+        if (!this.appStateSubscription) {
+            this.appStateSubscription = AppState.addEventListener('change', (nextState) => {
+                if (nextState === 'active') {
+                    // App foregrounded — check immediately and resume polling if needed
+                    this.checkHealth();
+                    if (this.getPendingJobs().length > 0) {
+                        this.startHealthChecks();
+                    }
+                } else {
+                    // App backgrounded — stop polling to save battery
+                    this.stopHealthChecks();
+                }
+            });
         }
 
         // Auto-start processing if there are queued jobs
@@ -152,8 +168,44 @@ class AiQueueManager {
     }
 
     /**
+     * Start the health check interval if not already running.
+     * Only starts if there are pending jobs (saves battery when idle).
+     */
+    private startHealthChecks(): void {
+        if (!this.healthCheckInterval && this.getPendingJobs().length > 0) {
+            this.healthCheckInterval = setInterval(() => this.checkHealth(), AI_HEALTH_CHECK_INTERVAL_MS);
+        }
+    }
+
+    /**
+     * Stop the health check interval.
+     * Called when the queue is idle or the app is backgrounded.
+     */
+    private stopHealthChecks(): void {
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+            this.healthCheckInterval = null;
+        }
+    }
+
+    /**
+     * Fully shut down the queue manager.
+     * Clears the health check interval and removes the AppState listener.
+     * Call this when the app is being destroyed or the provider unmounts.
+     */
+    shutdown(): void {
+        this.stopHealthChecks();
+        if (this.appStateSubscription) {
+            this.appStateSubscription.remove();
+            this.appStateSubscription = null;
+        }
+        this.initialized = false;
+        console.log('[AI Queue] Shutdown complete');
+    }
+
+    /**
      * Update dependencies when storage state changes.
-     * Called by useAiQueue when notes/config update.
+     * Called by AiQueueProvider when notes/config update.
      */
     updateDependencies(
         getAiConfig: GetAiConfigFn,
@@ -343,10 +395,11 @@ class AiQueueManager {
 
         const nextJob = this.getNextJob();
         if (!nextJob) {
-            // Queue is empty
+            // Queue is empty — stop polling to save battery
             this.processing = false;
             this.batchTotal = null;
             this.batchCompleted = 0;
+            this.stopHealthChecks();
             this.emitState();
             return;
         }

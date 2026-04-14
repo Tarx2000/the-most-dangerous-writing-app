@@ -8,6 +8,7 @@ import {
     Vibration,
     Pressable,
     Dimensions,
+    DeviceEventEmitter,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -16,7 +17,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, Shared
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useNotes, useVlogs, usePersons, useFeedData } from '@/lib/hooks/useStorage';
 import { theme } from '@/styles/theme';
 import type { SavedNote, SavedVlog, Person } from '@/types';
 
@@ -77,7 +78,11 @@ const FeedScreenInner: React.FC<Props> = ({
     onClose,
     feedProgress,
 }) => {
-    const storage = useStorage();
+    const { savedNotes } = useNotes();
+    const { savedVlogs } = useVlogs();
+    const { persons } = usePersons();
+    const { autoPlayFeedVideos, bookmarkedNoteIds, feedComments, toggleBookmark, saveFeedComment } = useFeedData();
+
     const [filterBookmarked, setFilterBookmarked] = useState(false);
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
     const listRef = useRef<any>(null);
@@ -95,10 +100,10 @@ const FeedScreenInner: React.FC<Props> = ({
 
         // Build person lookup for circle entries
         const personMap = new Map<string, Person>();
-        storage.persons.forEach(p => personMap.set(p.id, p));
+        persons.forEach(p => personMap.set(p.id, p));
 
         // Process text notes (journals, circles, check-ins)
-        storage.savedNotes.forEach(note => {
+        savedNotes.forEach(note => {
             const wordCount = (note.text || '').split(/\s+/).filter(Boolean).length;
             const isCheckin = !!(note as any).isAlignmentReflection;
             const type: FeedItemType = isCheckin ? 'checkin'
@@ -116,7 +121,7 @@ const FeedScreenInner: React.FC<Props> = ({
         });
 
         // Process vlogs
-        storage.savedVlogs.forEach(vlog => {
+        savedVlogs.forEach(vlog => {
             items.push({
                 type: 'clip',
                 timestamp: vlog.timestamp,
@@ -128,16 +133,16 @@ const FeedScreenInner: React.FC<Props> = ({
         items.sort((a, b) => b.timestamp - a.timestamp);
 
         return items;
-    }, [storage.savedNotes, storage.savedVlogs, storage.persons]);
+    }, [savedNotes, savedVlogs, persons]);
 
     /** Apply bookmark filter if active */
     const displayItems = useMemo(() => {
         if (!filterBookmarked) return feedItems;
         return feedItems.filter(item => {
             const id = item.note?.id || item.vlog?.id || '';
-            return storage.bookmarkedNoteIds.includes(id);
+            return bookmarkedNoteIds.includes(id);
         });
-    }, [feedItems, filterBookmarked, storage.bookmarkedNoteIds]);
+    }, [feedItems, filterBookmarked, bookmarkedNoteIds]);
 
     /** 
      * Block list scrolling natively via state if the outer feed isn't 100% physically snapped open. 
@@ -200,6 +205,34 @@ const FeedScreenInner: React.FC<Props> = ({
             }
             isOverscrolling.value = false;
         }), [onClose, feedProgress]);
+    const renderFeedItem = useCallback(({ item }: { item: any }) => (
+        <View style={styles.cardWrapper}>
+            {/* Use FeedVideoCard for clips, FeedCard for everything else */}
+            {item.type === 'clip' && item.vlog && onOpenVlog ? (
+                <FeedVideoCard
+                    item={item}
+                    isBookmarked={bookmarkedNoteIds.includes(item.vlog.id)}
+                    comment={feedComments[item.vlog.id]}
+                    autoPlay={autoPlayFeedVideos}
+                    onToggleBookmark={toggleBookmark}
+                    onSaveComment={saveFeedComment}
+                    onOpenVlog={onOpenVlog}
+                />
+            ) : (
+                <FeedCard
+                    item={item}
+                    isBookmarked={bookmarkedNoteIds.includes(
+                        item.note?.id || item.vlog?.id || ''
+                    )}
+                    comment={feedComments[item.note?.id || item.vlog?.id || '']}
+                    onToggleBookmark={toggleBookmark}
+                    onSaveComment={saveFeedComment}
+                    onOpenEntry={onOpenNote}
+                    onOpenVlog={onOpenVlog}
+                />
+            )}
+        </View>
+    ), [bookmarkedNoteIds, feedComments, autoPlayFeedVideos, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
     const lockPanGesture = useMemo(() => Gesture.Pan()
@@ -321,35 +354,9 @@ const FeedScreenInner: React.FC<Props> = ({
                 overScrollMode="never"
                 scrollEnabled={feedScrollEnabled}
                 onScroll={handleScroll}
+                onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
                 scrollEventThrottle={16}
-                renderItem={({ item }: { item: any }) => (
-                    <View style={styles.cardWrapper}>
-                        {/* Use FeedVideoCard for clips, FeedCard for everything else */}
-                        {item.type === 'clip' && item.vlog && onOpenVlog ? (
-                            <FeedVideoCard
-                                item={item}
-                                isBookmarked={storage.bookmarkedNoteIds.includes(item.vlog.id)}
-                                comment={storage.feedComments[item.vlog.id]}
-                                autoPlay={storage.autoPlayFeedVideos}
-                                onToggleBookmark={storage.toggleBookmark}
-                                onSaveComment={storage.saveFeedComment}
-                                onOpenVlog={onOpenVlog}
-                            />
-                        ) : (
-                            <FeedCard
-                                item={item}
-                                isBookmarked={storage.bookmarkedNoteIds.includes(
-                                    item.note?.id || item.vlog?.id || ''
-                                )}
-                                comment={storage.feedComments[item.note?.id || item.vlog?.id || '']}
-                                onToggleBookmark={storage.toggleBookmark}
-                                onSaveComment={storage.saveFeedComment}
-                                onOpenEntry={onOpenNote}
-                                onOpenVlog={onOpenVlog}
-                            />
-                        )}
-                    </View>
-                )}
+                renderItem={renderFeedItem}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
             />

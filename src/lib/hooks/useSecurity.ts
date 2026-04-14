@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -43,7 +43,7 @@ export function useSecurity() {
             setIsProfileUnlocked(false);
             setIsCirclesUnlocked(false);
             setIsFeedUnlocked(false);
-        }, 600000); // 10 minutes
+        }, 180000); // 3 minutes
     }, []);
 
     /* ── Lock everything instantly ───────────────────────────────────── */
@@ -134,10 +134,15 @@ export function useSecurity() {
 
     /* ── Cleanup ─────────────────────────────────────────────────────── */
     useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('RESET_LOCK_TIMER', () => {
+            if (isNotesUnlocked) resetLockTimeout();
+        });
+
         return () => {
             if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+            sub.remove();
         };
-    }, []);
+    }, [isNotesUnlocked, resetLockTimeout]);
 
     return {
         /** Stage 2: full access (read notes, delete) */
@@ -156,5 +161,7 @@ export function useSecurity() {
         unlockNotes,
         /** Lock all tiers instantly */
         lockAll,
+        /** Reset lock timeout when there is meaningful activity */
+        keepAlive: resetLockTimeout,
     };
 }

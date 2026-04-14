@@ -7,19 +7,22 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
-    Pressable
+    Pressable,
+    Vibration,
+    DeviceEventEmitter
 } from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '@/types/navigation.types';;
+import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
 import { CONFIG } from '@/config';
 import { useSession } from '@/lib/hooks/useSession';
-import { useStorage } from '@/lib/hooks/useStorage';
-import { SavedNote } from '@/types';;
+import { useNotes, usePreferences } from '@/lib/hooks/useStorage';
+import { SavedNote } from '@/types';
 import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
 import { theme } from '@/styles/theme';
+import { generateId } from '@/lib/utils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 
@@ -45,11 +48,13 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         skipTimer
     } = useSession(timeIndex, diffIndex, inputRef);
 
-    const { saveNote, fontIndex, sizeIndex, devMode } = useStorage();
+    const { saveNote } = useNotes();
+    const { fontIndex, sizeIndex, devMode } = usePreferences();
 
     // On mount, start the session immediately
     useEffect(() => {
         startSession(isQuickNote);
+        Vibration.vibrate(50);
         return () => clearTimers();
     }, [startSession, clearTimers, isQuickNote]);
 
@@ -62,7 +67,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
         const noteWon = !hasLost && !isContinuingAfterLoss;
         const newNote: SavedNote = {
-            id: Date.now().toString(),
+            id: generateId(),
             text: currentText,
             dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             timestamp: Date.now(),
@@ -87,6 +92,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
     
     const handleTextChangeLocal = (newText: string) => {
+        DeviceEventEmitter.emit('RESET_LOCK_TIMER');
         handleTextChange(newText);
         const newWordCount = newText.trim().split(/\s+/).filter(w => w.length > 0).length;
         if (newWordCount !== wordCount) {

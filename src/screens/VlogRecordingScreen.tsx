@@ -16,10 +16,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { CONFIG } from '@/config';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useVlogs } from '@/lib/hooks/useStorage';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { generateId } from '@/lib/utils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VlogRecording'>;
 
@@ -90,7 +91,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseAnim.value }));
     const stopBtnStyle = useAnimatedStyle(() => ({ transform: [{ translateY: stopBtnSlide.value }] }));
 
-    const { saveVlog } = useStorage();
+    const { saveVlog } = useVlogs();
 
     // Removed loadAllData call
     /* ── Permission flow ───────────────────────────────────────────────── */
@@ -273,7 +274,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             }
 
             // Generate unique filename and move from cache to private storage
-            const vlogId = Date.now().toString();
+            const vlogId = generateId();
             const permanentPath = `${vlogDir}${vlogId}.mp4`;
             await FileSystem.moveAsync({
                 from: tempUri,

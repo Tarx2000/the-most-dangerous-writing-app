@@ -9,9 +9,9 @@ import { LibraryScreen } from './LibraryScreen';
 import { FeedScreen } from './FeedScreen';
 import { LiquidGlassNav } from '@/components/ui/LiquidGlassNav';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
-import { useAiQueue } from '@/lib/hooks/useAiQueue';
+import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -75,35 +75,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     /** Whether the Feed page is currently revealed */
     const [feedVisible, setFeedVisible] = useState(false);
 
-    const storage = useStorage();
     const security = useSecurity();
-
-    /**
-     * Initialize the AI Queue Manager on app startup.
-     * Loads persisted queue, recovers orphaned jobs,
-     * and auto-resumes processing. Only runs once.
-     */
-    const { initializeQueue, enqueueNote, isNoteActive } = useAiQueue({
-        aiApiKey: storage.aiApiKey,
-        aiBaseUrl: storage.aiBaseUrl,
-        aiModel: storage.aiModel,
-        aiPrompts: storage.aiPrompts,
-        savedNotes: storage.savedNotes,
-        updateNote: storage.updateNote,
-    });
+    const { lastReflectionDate } = usePreferences();
+    const { enqueueNote, isNoteActive } = useAiQueueContext();
 
     /** Note Viewer State for the Feed Screen */
     const [viewNoteModal, setViewNoteModal] = useState<any | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
-
-    /** Initialize queue once on mount (after storage loads) */
-    const queueInitedRef = useRef(false);
-    useEffect(() => {
-        if (storage.savedNotes.length > 0 && !queueInitedRef.current) {
-            queueInitedRef.current = true;
-            initializeQueue();
-        }
-    }, [storage.savedNotes.length, initializeQueue]);
 
     /** Navigate to Library page (scroll right) */
     const goToLibrary = useCallback(() => {
@@ -147,8 +125,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     /** Check-in urgency: show dot when overdue (>7 days) AND only on homescreen */
     const isCheckinUrgent = currentPage === 0 && (
-        !storage.lastReflectionDate ||
-        (Date.now() - storage.lastReflectionDate > 7 * 24 * 60 * 60 * 1000)
+        !lastReflectionDate ||
+        (Date.now() - lastReflectionDate > 7 * 24 * 60 * 60 * 1000)
     );
 
     /**
@@ -191,7 +169,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * Pan gesture: only activates when swiping UP on the Start page.
      * Prevents interference with horizontal library swipe or vertical scrolling.
      */
-    const feedPanGesture = Gesture.Pan()
+    const feedPanGesture = useMemo(() => Gesture.Pan()
         // Must be [min, max]. Activate if finger moves UP 20px (past -20)
         // or DOWN more than 10000px (effectively never)
         .activeOffsetY([-20, 10000])
@@ -214,7 +192,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 // Snap back
                 feedProgress.value = withSpring(0, FEED_SPRING);
             }
-        });
+        }), [currentPage, feedVisible, feedProgress, openFeed]);
 
     /** Main content animates UP (to -SCREEN_HEIGHT) when feed opens */
     const mainContentAnimStyle = useAnimatedStyle(() => ({

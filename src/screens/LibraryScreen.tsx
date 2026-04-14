@@ -23,7 +23,7 @@ import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
-import { useAiQueue } from '@/lib/hooks/useAiQueue';
+import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
@@ -75,15 +75,8 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     const storage = useStorage();
     const security = useSecurity();
 
-    /** Central AI Queue — replaces all direct aiService calls */
-    const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueue({
-        aiApiKey: storage.aiApiKey,
-        aiBaseUrl: storage.aiBaseUrl,
-        aiModel: storage.aiModel,
-        aiPrompts: storage.aiPrompts,
-        savedNotes: storage.savedNotes,
-        updateNote: storage.updateNote,
-    });
+    /** Central AI Queue — single instance via AiQueueProvider */
+    const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueueContext();
 
     // Custom GestureDetector for wipe-to-dismiss on the fullscreen modal
     const panY = useSharedValue(0);

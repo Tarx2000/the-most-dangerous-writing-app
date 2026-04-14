@@ -134,7 +134,6 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                             showsVerticalScrollIndicator={false}
                             bounces={true}
                             overScrollMode="always"
-                            onScroll={handleScroll}
                             scrollEventThrottle={16}
                         >
                             {note.aiSummary && note.aiSummary.length > 0 && (

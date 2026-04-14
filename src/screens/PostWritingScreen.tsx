@@ -34,8 +34,8 @@ import ReanimatedAnimated, {
 } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
-import { useStorage } from '@/lib/hooks/useStorage';
-import { useAiQueue } from '@/lib/hooks/useAiQueue';
+import { useNotes, useAiConfig } from '@/lib/hooks/useStorage';
+import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { theme } from '@/styles/theme';
@@ -76,17 +76,11 @@ const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: a
 
 export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
-    const storage = useStorage();
+    const { savedNotes, updateNote } = useNotes();
+    const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts } = useAiConfig();
 
-    /** AI Queue hook — all AI processing goes through here */
-    const { enqueueNote, isNoteActive, isNoteQueued } = useAiQueue({
-        aiApiKey: storage.aiApiKey,
-        aiBaseUrl: storage.aiBaseUrl,
-        aiModel: storage.aiModel,
-        aiPrompts: storage.aiPrompts,
-        savedNotes: storage.savedNotes,
-        updateNote: storage.updateNote,
-    });
+    /** AI Queue — centralized, single-instance via AiQueueProvider */
+    const { enqueueNote, isNoteActive, isNoteQueued, queueState } = useAiQueueContext();
 
     /* ── State ──────────────────────────────────────────────────────── */
     const editableTextRef = useRef('');
@@ -106,7 +100,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     // Data is auto-loaded by StorageProvider
     /** Find the note once data is loaded */
-    const note = storage.savedNotes.find(n => n.id === noteId);
+    const note = savedNotes.find(n => n.id === noteId);
 
     /** Whether AI is currently processing this note */
     const aiProcessing = isNoteActive(noteId) || isNoteQueued(noteId);
@@ -149,10 +143,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
         try {
             const suggestions = await checkGrammar(editableTextRef.current, {
-                apiKey: storage.aiApiKey,
-                baseUrl: storage.aiBaseUrl,
-                model: storage.aiGrammarModel,
-                prompts: storage.aiPrompts,
+                apiKey: aiApiKey,
+                baseUrl: aiBaseUrl,
+                model: aiGrammarModel,
+                prompts: aiPrompts,
             });
             setGrammarSuggestions(suggestions);
             setGrammarChecked(true);
@@ -161,7 +155,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         } finally {
             setGrammarLoading(false);
         }
-    }, [storage.aiApiKey, storage.aiBaseUrl, storage.aiGrammarModel, storage.aiPrompts, grammarLoading]);
+    }, [aiApiKey, aiBaseUrl, aiGrammarModel, aiPrompts, grammarLoading]);
 
     /* ── Apply a single grammar suggestion (tap-to-accept) ──────────── */
     const applySuggestion = useCallback((suggestion: GrammarSuggestion) => {
@@ -177,7 +171,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         noteSavedRef.current = true;
 
         // Save any text edits (AI results are saved directly by the queue)
-        await storage.updateNote(noteId, { text: editableTextRef.current });
+        await updateNote(noteId, { text: editableTextRef.current });
 
         navigation.reset({
             index: 0,
@@ -222,9 +216,13 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         <MaterialCommunityIcons name="format-title" size={14} color={theme.colors.textMuted} /> AI TITLE
                     </Text>
                     {!hasAiTitle ? (
-                        <View style={styles.shimmerContainer}>
-                            <ShimmerLine width="75%" height={24} />
-                        </View>
+                        queueState.serverOnline === false ? (
+                            <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>AI Server Unreachable</Text>
+                        ) : (
+                            <View style={styles.shimmerContainer}>
+                                <ShimmerLine width="75%" height={24} />
+                            </View>
+                        )
                     ) : (
                         <RichText style={styles.aiTitleText} text={note!.aiTitle || 'Untitled Entry'} />
                     )}
@@ -240,11 +238,15 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         )}
                     </View>
                     {!hasAiSummary ? (
-                        <View style={styles.shimmerContainer}>
-                            <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
-                            <ShimmerLine width="80%" style={{ marginBottom: 10 }} />
-                            <ShimmerLine width="85%" />
-                        </View>
+                        queueState.serverOnline === false ? (
+                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Summary unavailable.</Text>
+                        ) : (
+                            <View style={styles.shimmerContainer}>
+                                <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
+                                <ShimmerLine width="80%" style={{ marginBottom: 10 }} />
+                                <ShimmerLine width="85%" />
+                            </View>
+                        )
                     ) : (
                         <View style={styles.bulletsContainer}>
                             {(note!.aiSummary || []).map((bullet, i) => (
