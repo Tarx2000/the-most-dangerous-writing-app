@@ -22,6 +22,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { VlogViewerModal, LayoutRect } from './VlogViewerModal';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 
@@ -81,27 +82,10 @@ export const VlogCalendarGallery: React.FC<Props> = ({
 
     /* ── Expanded vlog state ───────────────────────────────────────────── */
     const [expandedDayVlogs, setExpandedDayVlogs] = useState<SavedVlog[] | null>(null);
-    const [expandedIndex, setExpandedIndex] = useState(0);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+    const [sourceRect, setSourceRect] = useState<LayoutRect | null>(null);
+    const cellRefs = React.useRef<Record<string, View | null>>({});
 
-    /* ── Animations (Reanimated — runs on UI thread) ──────────────────── */
-    const expandScale = useSharedValue(0.8);
-    const expandOpacity = useSharedValue(0);
-
-    /** Animated style for the expanded backdrop (opacity) */
-    const backdropAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: expandOpacity.value,
-    }));
-
-    /** Animated style for the expanded card (scale) */
-    const cardAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: expandScale.value }],
-    }));
-
-    /**
-     * Group vlogs by calendar date key (YYYY-MM-DD) for quick lookup.
-     * This is memoized so it only recalculates when vlogs change.
-     */
+    /* ── Month navigation ──────────────────────────────────────────────── */
     const vlogsByDate = useMemo(() => {
         const map: Record<string, SavedVlog[]> = {};
         vlogs.forEach(v => {
@@ -154,38 +138,19 @@ export const VlogCalendarGallery: React.FC<Props> = ({
         const dayVlogs = vlogsByDate[dateKey];
         if (!dayVlogs || dayVlogs.length === 0) return;
 
-        setExpandedDayVlogs(dayVlogs);
-        setExpandedIndex(0);
-
-        // Animate in with Reanimated
-        expandScale.value = 0.85;
-        expandOpacity.value = 0;
-        expandScale.value = withSpring(1, { damping: 18, stiffness: 180 });
-        expandOpacity.value = withTiming(1, { duration: 250 });
-
-        Vibration.vibrate(20);
-    }, [vlogsByDate, expandScale, expandOpacity]);
-
-    /* ── Close expanded view ───────────────────────────────────────────── */
-    const closeExpanded = useCallback(() => {
-        expandScale.value = withTiming(0.85, { duration: 200 });
-        expandOpacity.value = withTiming(0, { duration: 200 });
-        // Delay state cleanup to allow animation to finish
-        setTimeout(() => {
-            setExpandedDayVlogs(null);
-            setExpandedIndex(0);
-        }, 220);
-    }, [expandScale, expandOpacity]);
-
-    /* ── Swipe between vlogs on same day ───────────────────────────────── */
-    const swipeVlog = useCallback((direction: number) => {
-        if (!expandedDayVlogs) return;
-        const newIdx = expandedIndex + direction;
-        if (newIdx >= 0 && newIdx < expandedDayVlogs.length) {
-            setExpandedIndex(newIdx);
-            Vibration.vibrate(10);
+        const cellRef = cellRefs.current[dateKey];
+        if (cellRef) {
+            cellRef.measureInWindow((x, y, width, height) => {
+                setSourceRect({ x, y, width, height });
+                setExpandedDayVlogs(dayVlogs);
+                Vibration.vibrate(20);
+            });
+        } else {
+            setSourceRect(null);
+            setExpandedDayVlogs(dayVlogs);
+            Vibration.vibrate(20);
         }
-    }, [expandedDayVlogs, expandedIndex]);
+    }, [vlogsByDate]);
 
     /* ── Format helpers ────────────────────────────────────────────────── */
     const monthLabel = new Date(currentYear, currentMonth).toLocaleString('default', {
@@ -271,7 +236,10 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                     <>
                                         {hasVlogs ? (
                                             /* Day with vlog — gradient or thumbnail */
-                                            <View style={[
+                                            <View 
+                                                ref={el => { if (cell.dateKey) cellRefs.current[cell.dateKey] = el; }}
+                                                collapsable={false}
+                                                style={[
                                                 styles.vlogThumb,
                                                 isToday(cell.day) && styles.vlogThumbToday,
                                             ]}>
@@ -342,116 +310,13 @@ export const VlogCalendarGallery: React.FC<Props> = ({
             </ScrollView>
 
             {/* Expanded Vlog Playback Modal */}
-            <Modal visible={!!expandedDayVlogs} transparent animationType="none" onRequestClose={closeExpanded}>
-                {expandedDayVlogs && expandedDayVlogs[expandedIndex] && (
-                    <Animated.View style={[
-                        styles.expandedBackdrop,
-                        backdropAnimatedStyle,
-                    ]}>
-                        <AnimatedScaleButton style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={closeExpanded} />
-
-                        <Animated.View style={[
-                            styles.expandedCard,
-                            cardAnimatedStyle,
-                        ]}>
-                            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
-                            <View style={styles.expandedTint} />
-
-                            {/* Video Player */}
-                            <View style={styles.expandedVideoContainer}>
-                                <VlogPlayer uri={expandedDayVlogs[expandedIndex].filePath} />
-                            </View>
-
-                            {/* Info bar */}
-                            <View style={styles.expandedInfo}>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.expandedDate}>{expandedDayVlogs[expandedIndex].dateStr}</Text>
-                                    <Text style={styles.expandedMeta}>
-                                        {formatDuration(expandedDayVlogs[expandedIndex].durationSec)} • {(expandedDayVlogs[expandedIndex].fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
-                                    </Text>
-                                </View>
-
-                                {/* Swipe navigation (if multiple vlogs on this day) */}
-                                {expandedDayVlogs.length > 1 && (
-                                    <View style={styles.swipeNav}>
-                                        <AnimatedScaleButton
-                                            onPress={() => swipeVlog(-1)}
-                                            disabled={expandedIndex === 0}
-                                            style={[styles.swipeBtn, expandedIndex === 0 && { opacity: 0.3 }]}
-                                        >
-                                            <MaterialCommunityIcons name="chevron-left" size={24} color={theme.colors.textPrimary} />
-                                        </AnimatedScaleButton>
-                                        <Text style={styles.swipeCounter}>
-                                            {expandedIndex + 1}/{expandedDayVlogs.length}
-                                        </Text>
-                                        <AnimatedScaleButton
-                                            onPress={() => swipeVlog(1)}
-                                            disabled={expandedIndex === expandedDayVlogs.length - 1}
-                                            style={[styles.swipeBtn, expandedIndex === expandedDayVlogs.length - 1 && { opacity: 0.3 }]}
-                                        >
-                                            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textPrimary} />
-                                        </AnimatedScaleButton>
-                                    </View>
-                                )}
-                            </View>
-
-                            {/* Actions */}
-                            <View style={styles.expandedActions}>
-                                <AnimatedScaleButton style={styles.closeBtn} onPress={closeExpanded}>
-                                    <MaterialCommunityIcons name="close" size={20} color={theme.colors.textPrimary} />
-                                    <Text style={styles.closeBtnText}>Close</Text>
-                                </AnimatedScaleButton>
-                                <AnimatedScaleButton
-                                    style={styles.deleteBtn}
-                                    onPress={() => setShowDeleteConfirm(expandedDayVlogs[expandedIndex].id)}
-                                >
-                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
-                                    <Text style={styles.deleteBtnText}>Delete</Text>
-                                </AnimatedScaleButton>
-                            </View>
-                        </Animated.View>
-                    </Animated.View>
-                )}
-            </Modal>
-
-            {/* Delete Confirmation Modal */}
-            <Modal visible={!!showDeleteConfirm} transparent animationType="fade">
-                <View style={styles.deleteModalOverlay}>
-                    <View style={styles.deleteModalCard}>
-                        <Text style={styles.deleteModalTitle}>Delete Vlog?</Text>
-                        <Text style={styles.deleteModalSub}>
-                            This will permanently delete this video. This cannot be undone.
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                            <AnimatedScaleButton
-                                style={[styles.deleteModalBtn, { backgroundColor: theme.colors.glassBackground }]}
-                                onPress={() => setShowDeleteConfirm(null)}
-                            >
-                                <MaterialCommunityIcons name="close" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                                <Text style={styles.deleteModalBtnText}>Cancel</Text>
-                            </AnimatedScaleButton>
-                            <AnimatedScaleButton
-                                style={[styles.deleteModalBtn, { backgroundColor: theme.colors.danger }]}
-                                onPress={async () => {
-                                    if (showDeleteConfirm) {
-                                        await onDeleteVlog(showDeleteConfirm);
-                                        setShowDeleteConfirm(null);
-                                        // If we deleted the last vlog for this day, close the expanded view
-                                        if (expandedDayVlogs && expandedDayVlogs.length <= 1) {
-                                            closeExpanded();
-                                        } else if (expandedIndex >= (expandedDayVlogs?.length || 1) - 1) {
-                                            setExpandedIndex(Math.max(0, expandedIndex - 1));
-                                        }
-                                    }
-                                }}
-                            >
-                                <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                                <Text style={styles.deleteModalBtnText}>Delete</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            <VlogViewerModal
+                visible={!!expandedDayVlogs}
+                vlogs={expandedDayVlogs || []}
+                sourceRect={sourceRect}
+                onClose={() => setExpandedDayVlogs(null)}
+                onDelete={onDeleteVlog}
+            />
         </View>
     );
 };

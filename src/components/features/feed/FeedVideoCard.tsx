@@ -13,8 +13,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { useStorage } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import type { SavedVlog } from '@/types';
 import type { FeedItem } from './FeedCard';
+import type { LayoutRect } from '../library/VlogViewerModal';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
@@ -51,7 +53,7 @@ interface FeedVideoCardProps {
     /** Save comment callback */
     onSaveComment: (id: string, comment: string) => void;
     /** Open full-screen vlog player */
-    onOpenVlog: (vlog: SavedVlog) => void;
+    onOpenVlog: (vlog: SavedVlog, rect?: LayoutRect, player?: any) => void;
 }
 
 /**
@@ -99,12 +101,38 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     const [isMuted, setIsMuted] = useState(true);
     const accentColor = '#FF6B35'; // Orange for video clips
 
+    const flashOpacity = useSharedValue(0);
+    const [flashIcon, setFlashIcon] = useState<'play' | 'pause'>('play');
+    const videoRef = React.useRef<View>(null);
+
+    const handleTogglePlay = React.useCallback(() => {
+        const nextState = !isPlaying;
+        setIsPlaying(nextState);
+        setFlashIcon(nextState ? 'play' : 'pause');
+        flashOpacity.value = withSequence(
+            withTiming(0.8, { duration: 50 }),
+            withTiming(0, { duration: 600 })
+        );
+        Vibration.vibrate(10);
+    }, [isPlaying, flashOpacity]);
+
     /** Create video player (muted by default) */
     const player = useVideoPlayer(vlog.filePath, (p) => {
         p.loop = true;
         p.volume = 0; // Starts muted
         if (autoPlay) p.play();
     });
+
+    const handleExpandMedia = React.useCallback(() => {
+        if (videoRef.current) {
+            videoRef.current.measureInWindow((x, y, w, h) => {
+                onOpenVlog(vlog, { x, y, width: w, height: h }, player);
+            });
+        } else {
+            onOpenVlog(vlog, undefined, player);
+        }
+        Vibration.vibrate(10);
+    }, [vlog, onOpenVlog, player]);
 
     const { updateVlog } = useStorage();
     const { getThumbnail } = useThumbnails(updateVlog);
@@ -116,6 +144,17 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
         } else {
             player.pause();
         }
+    }, [isPlaying, player]);
+
+    /** Robust resume: Monitor player status to prevent freezes after modal close */
+    useEffect(() => {
+        const subscription = player.addListener('playingChange', (event) => {
+            if (isPlaying && !event.isPlaying) {
+                // If it should be playing but stopped (e.g. modal closed), force resume
+                player.play();
+            }
+        });
+        return () => subscription.remove();
     }, [isPlaying, player]);
 
     useEffect(() => {
@@ -145,12 +184,23 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                 </View>
 
                 {/* Video Player Area — View container with layered touch targets */}
-                <View style={[styles.videoContainer, { position: 'relative' }]}>
+                <View ref={videoRef} collapsable={false} style={[styles.videoContainer, { position: 'relative' }]}>
                     {/* Background tap-to-open layer (lowest z, catches taps that miss the mute button) */}
                     <Pressable
                         style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]}
-                        onPress={() => onOpenVlog(vlog)}
+                        onPress={handleTogglePlay}
                     />
+
+                    {/* Flashing Play/Pause Icon Overlay */}
+                    <Animated.View style={[
+                        styles.flashIconContainer,
+                        useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
+                        { pointerEvents: 'none', zIndex: 10 }
+                    ]}>
+                        <View style={styles.flashIconBg}>
+                            <MaterialCommunityIcons name={flashIcon} size={48} color="#FFF" />
+                        </View>
+                    </Animated.View>
 
                     {/* Thumbnail fallback when paused and thumbnail exists */}
                     {!isPlaying && vlog.thumbnailPath ? (
@@ -203,10 +253,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                             />
                         </AnimatedScaleButton>
                         <AnimatedScaleButton
-                            onPress={() => {
-                                onOpenVlog(vlog);
-                                Vibration.vibrate(10);
-                            }}
+                            onPress={handleExpandMedia}
                             style={[styles.actionBtn, { zIndex: 10 }]}
                         >
                             <MaterialCommunityIcons name="arrow-expand" size={16} color={theme.colors.textMuted} />
@@ -282,6 +329,16 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
         resizeMode: 'cover',
+    },
+    flashIconContainer: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    flashIconBg: {
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        padding: 16,
+        borderRadius: 40,
     },
 
     /* ── Overlays ───────────────────────────────────────────────────── */

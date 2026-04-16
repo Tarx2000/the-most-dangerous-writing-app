@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Tarik/.claude//**)",
+      "Read(//c/Users/Tarik/.claude/projects//**)",
+      "Bash(cat /c/Users/Tarik/.claude/plugins/*.json)",
+      "Bash(grep -l \"error\\\\|Error\\\\|fail\" \"/c/Users/Tarik/AppData/Local/claude-cli-nodejs/Cache/c--Users-Tarik--gemini-antigravity-scratch-the-most-dangerous-writing-app/mcp-logs-claude-vscode/\"*.jsonl)",
+      "Bash(xargs grep:*)",
+      "Bash(claude --version)",
+      "Bash(claude config:*)",
+      "Bash(ANTHROPIC_API_KEY=\"\" ANTHROPIC_AUTH_TOKEN=\"\" ANTHROPIC_BASE_URL=\"\" claude config get model)",
+      "Bash(ANTHROPIC_API_KEY=\"\" ANTHROPIC_AUTH_TOKEN=\"\" ANTHROPIC_BASE_URL=\"\" claude config list)",
+      "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_BASE_URL', 'User'\\)\")",
+      "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_AUTH_TOKEN', 'User'\\)\")",
+      "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_API_KEY', 'User'\\)\")",
+      "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_BASE_URL', 'Machine'\\)\")",
+      "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_AUTH_TOKEN', 'Machine'\\)\")",
+      "Bash(ANTHROPIC_BASE_URL=http://localhost:11434 ANTHROPIC_AUTH_TOKEN=ollama claude config:*)"
+    ]
+  }
+}

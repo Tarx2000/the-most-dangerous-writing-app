@@ -20,6 +20,7 @@ import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
 import { useNotes, useVlogs, usePersons, useFeedData } from '@/lib/hooks/useStorage';
 import { theme } from '@/styles/theme';
 import type { SavedNote, SavedVlog, Person } from '@/types';
+import type { LayoutRect } from '../components/features/library/VlogViewerModal';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
@@ -63,7 +64,7 @@ interface Props {
     /** Callback to open a note in the full note viewer */
     onOpenNote: (note: SavedNote) => void;
     /** Callback to open a vlog in the player */
-    onOpenVlog?: (vlog: SavedVlog) => void;
+    onOpenVlog?: (vlog: SavedVlog, rect?: LayoutRect) => void;
     /** Callback to return to HomeScreen (swipe up / close) */
     onClose: () => void;
     /** Shared value from HomeScreen driving feed translation */

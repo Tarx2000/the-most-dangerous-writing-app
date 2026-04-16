@@ -9,6 +9,7 @@ import { LibraryScreen } from './LibraryScreen';
 import { FeedScreen } from './FeedScreen';
 import { LiquidGlassNav } from '@/components/ui/LiquidGlassNav';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
+import { VlogViewerModal, LayoutRect } from '@/components/features/library/VlogViewerModal';
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
@@ -82,6 +83,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     /** Note Viewer State for the Feed Screen */
     const [viewNoteModal, setViewNoteModal] = useState<any | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
+    const [viewVlogModal, setViewVlogModal] = useState<any | null>(null);
+    const [vlogSourceRect, setVlogSourceRect] = useState<LayoutRect | null>(null);
+    const [vlogPlayerInst, setVlogPlayerInst] = useState<any | null>(null);
 
     /** Navigate to Library page (scroll right) */
     const goToLibrary = useCallback(() => {
@@ -215,8 +219,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         setViewNoteModal(note);
     }, []);
 
-    const handleOpenVlogModal = useCallback((vlog: any) => {
-        // TODO: Open vlog player
+    const handleOpenVlogModal = useCallback((vlog: any, rect?: LayoutRect, player?: any) => {
+        setVlogSourceRect(rect || null);
+        setVlogPlayerInst(player || null);
+        setViewVlogModal(vlog);
     }, []);
 
     const handleCloseNoteModal = useCallback(() => {
@@ -254,6 +260,15 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 onDelete={handleDeleteNoteModal}
                 isNoteActive={isNoteActive}
                 onRegenerateAi={handleRegenerateAi}
+            />
+
+            {/* Vlog Viewer Modal */}
+            <VlogViewerModal
+                visible={!!viewVlogModal}
+                vlogs={viewVlogModal ? [viewVlogModal] : []}
+                sourceRect={vlogSourceRect}
+                player={vlogPlayerInst}
+                onClose={() => setViewVlogModal(null)}
             />
 
             {/* Main Content — Start + Library horizontal scroll */}
