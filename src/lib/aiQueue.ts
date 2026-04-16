@@ -6,7 +6,7 @@
  * Instead, screens enqueue jobs here and listen for completion events.
  *
  * Architecture:
- * - Jobs are persisted in AsyncStorage so they survive app restarts
+ * - Jobs are persisted in storage so they survive app restarts
  * - Processing is sequential (one job at a time) with rate limiting
  * - Failed jobs retry up to AI_MAX_RETRIES times, then move to end of queue
  * - Batch processing orders by category: Journals → Circles → Check-ins
@@ -22,7 +22,7 @@
  */
 
 import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig } from '@/lib/aiService';
 import { logAi } from '@/lib/aiLogger';
 import {
@@ -119,8 +119,6 @@ class AiQueueManager {
         // Recover orphaned jobs (stuck in 'processing' status from a crash)
         await this.recoverOrphans();
 
-        // Also recover notes with stale aiProcessing flag
-        await this.recoverStaleNotes();
 
         // Check server status
         await this.checkHealth();
@@ -453,7 +451,6 @@ class AiQueueManager {
                 aiTitle: result.title,
                 aiSummary: result.summary,
                 aiModelUsed: config.model || 'default',
-                aiProcessing: false, // Clear deprecated flag
             });
 
             // Mark job as done
@@ -511,11 +508,6 @@ class AiQueueManager {
                 nextJob.status = 'failed';
                 nextJob.completedAt = Date.now();
                 nextJob.error = error.message || 'Max retries exceeded';
-
-                // Clear processing flag on the note
-                try {
-                    await this.updateNote(nextJob.noteId, { aiProcessing: false });
-                } catch (_) { /* best effort */ }
             }
         }
 
@@ -550,14 +542,14 @@ class AiQueueManager {
 
     /* ── Persistence ───────────────────────────────────────────────── */
 
-    /** Save the current queue to AsyncStorage */
+    /** Save the current queue to storage */
     private async persistQueue(): Promise<void> {
         try {
             // Only persist queued and processing jobs (not done/failed)
             const toPersist = this.jobs.filter(
                 j => j.status === 'queued' || j.status === 'processing'
             );
-            await AsyncStorage.setItem(
+            await storage.setItem(
                 AI_STORAGE_KEYS.QUEUE,
                 JSON.stringify(toPersist)
             );
@@ -566,10 +558,10 @@ class AiQueueManager {
         }
     }
 
-    /** Load the queue from AsyncStorage */
+    /** Load the queue from storage */
     private async loadQueue(): Promise<void> {
         try {
-            const raw = await AsyncStorage.getItem(AI_STORAGE_KEYS.QUEUE);
+            const raw = await storage.getItem(AI_STORAGE_KEYS.QUEUE);
             if (raw) {
                 this.jobs = JSON.parse(raw) as AiJob[];
             }
@@ -601,41 +593,6 @@ class AiQueueManager {
         if (orphans.length > 0) {
             await this.persistQueue();
             console.log(`[AI Queue] Recovered ${orphans.length} orphaned job(s)`);
-        }
-    }
-
-    /**
-     * Find notes with stale aiProcessing=true flag but no active job.
-     * These are leftover from the old system. Enqueue them for processing.
-     */
-    private async recoverStaleNotes(): Promise<void> {
-        const allNotes = this.getAllNotes();
-        const staleNotes = allNotes.filter(
-            n => n.aiProcessing === true && !this.isNoteActive(n.id) && !this.isNoteQueued(n.id)
-        );
-
-        for (const note of staleNotes) {
-            const category = this.categorizeNote(note);
-            this.jobs.push({
-                id: `recovery_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                noteId: note.id,
-                category,
-                status: 'queued',
-                createdAt: Date.now(),
-                retryCount: 0,
-            });
-
-            await logAi({
-                action: 'orphan_recovery',
-                noteId: note.id,
-                model: this.getAiConfig().model || 'default',
-                phase: 'both',
-            });
-        }
-
-        if (staleNotes.length > 0) {
-            await this.persistQueue();
-            console.log(`[AI Queue] Recovered ${staleNotes.length} note(s) with stale aiProcessing flag`);
         }
     }
 

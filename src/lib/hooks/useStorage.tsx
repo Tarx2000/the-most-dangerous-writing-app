@@ -18,8 +18,8 @@
  *
  * Fixes applied:
  * - Stale closures → all functions use refs for fresh state reads
- * - Fire-and-forget writes → all AsyncStorage calls use await + try/catch
- * - deletePerson atomicity → uses AsyncStorage.multiSet
+ * - Fire-and-forget writes → all storage calls use await + try/catch
+ * - deletePerson atomicity → uses storage.multiSet
  * - clearAllData completeness → includes feed keys (excludes AI settings)
  * - ID collisions → uses generateId() instead of Date.now()
  * - Error feedback → Alert.alert for critical failures
@@ -35,12 +35,13 @@ import {
     useEffect,
     type ReactNode,
 } from 'react';
-import { DeviceEventEmitter, Alert, Vibration } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert, Vibration } from 'react-native';
+import { storage } from '@/lib/storage';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { CONFIG } from '@/config';
 import { generateId } from '@/lib/utils';
+import { cleanupOrphanedVlogs as cleanupOrphanFiles, formatStorageSize } from '@/lib/storageManager';
 import {
     DEFAULT_OLLAMA_API_KEY,
     DEFAULT_OLLAMA_BASE_URL,
@@ -123,6 +124,10 @@ interface VlogContextType {
     saveVlog: (vlog: SavedVlog) => Promise<{ streakIncreased: boolean; newStreak: number }>;
     deleteVlog: (id: string) => Promise<void>;
     updateVlog: (id: string, patch: Partial<SavedVlog>) => Promise<void>;
+    /** Clean up orphaned vlog files on disk that have no metadata entry */
+    cleanupOrphanedVlogs: () => Promise<number>;
+    /** Get a summary of storage usage across all domains */
+    getStorageSummary: () => { vlogCount: number; vlogBytes: number; noteCount: number; personCount: number };
 }
 
 /** Cross-cutting storage operations */
@@ -203,13 +208,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     streakHistoryRef.current = streakHistory;
     const savedVlogsRef = useRef(savedVlogs);
     savedVlogsRef.current = savedVlogs;
+    const devModeRef = useRef(devMode);
+    devModeRef.current = devMode;
     const bookmarkedNoteIdsRef = useRef(bookmarkedNoteIds);
     bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
     const feedCommentsRef = useRef(feedComments);
     feedCommentsRef.current = feedComments;
 
     /* ══════════════════════════════════════════════════════════════════════
-       DATA LOADING — Centralized load from AsyncStorage on app start
+       DATA LOADING — Centralized load from storage on app start
        ══════════════════════════════════════════════════════════════════════ */
 
     const loadAllData = useCallback(async () => {
@@ -223,18 +230,18 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                 AI_STORAGE_KEYS.MODEL, AI_STORAGE_KEYS.GRAMMAR_MODEL,
                 AI_STORAGE_KEYS.PROMPTS,
             ];
-            const results = await AsyncStorage.multiGet(keys);
+            const results = await storage.multiGet(keys);
             const data: Record<string, string | null> = Object.fromEntries(results);
 
-            /* ── Notes (with migration for stale aiProcessing flags) ───── */
+            /* ── Notes (with migration to strip deprecated aiProcessing field) ── */
             let loadedNotes: SavedNote[] = [];
             if (data['SAVED_NOTES']) {
                 loadedNotes = JSON.parse(data['SAVED_NOTES']);
-                const hadStale = loadedNotes.some(n => n.aiProcessing === true);
+                const hadStale = (loadedNotes as any[]).some((n: any) => 'aiProcessing' in n);
                 if (hadStale) {
-                    loadedNotes = loadedNotes.map(n => n.aiProcessing ? { ...n, aiProcessing: false } : n);
-                    await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(loadedNotes));
-                    console.log('[Storage] Cleaned up stale aiProcessing flags');
+                    loadedNotes = (loadedNotes as any[]).map(({ aiProcessing: _, ...rest }: any) => rest) as SavedNote[];
+                    await storage.setItem('SAVED_NOTES', JSON.stringify(loadedNotes));
+                    console.log('[Storage] Stripped deprecated aiProcessing fields from notes');
                 }
                 setSavedNotes(loadedNotes);
                 savedNotesRef.current = loadedNotes;
@@ -324,7 +331,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                 loadedHistory = Array.from(historySet);
                 setStreakHistory(loadedHistory);
                 streakHistoryRef.current = loadedHistory;
-                await AsyncStorage.setItem('STREAK_HISTORY', JSON.stringify(loadedHistory));
+                await storage.setItem('STREAK_HISTORY', JSON.stringify(loadedHistory));
             }
 
             /* ── Recalculate streak if stored value is stale ───────────── */
@@ -345,7 +352,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                 if (recalcStreak > 0) {
                     setCurrentStreak(recalcStreak);
                     currentStreakRef.current = recalcStreak;
-                    await AsyncStorage.setItem('CURRENT_STREAK', recalcStreak.toString());
+                    await storage.setItem('CURRENT_STREAK', recalcStreak.toString());
                 }
             }
         } catch (error) {
@@ -359,7 +366,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     /* ══════════════════════════════════════════════════════════════════════
        NOTES OPERATIONS
        All functions use refs → no stale closures.
-       All AsyncStorage writes are awaited → no fire-and-forget.
+       All storage writes are awaited → no fire-and-forget.
        ══════════════════════════════════════════════════════════════════════ */
 
     /**
@@ -426,8 +433,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                     ['STREAK_HISTORY', JSON.stringify(newHistory)],
                 );
             }
-            await AsyncStorage.multiSet(writes);
-            DeviceEventEmitter.emit('NOTES_UPDATED');
+            await storage.multiSet(writes);
         } catch (error) {
             console.error('[Storage] Failed to save note:', error);
             Vibration.vibrate([0, 500]);
@@ -443,8 +449,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setSavedNotes(updatedNotes);
 
         try {
-            await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
-            DeviceEventEmitter.emit('NOTES_UPDATED');
+            await storage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
         } catch (error) {
             console.error('[Storage] Failed to delete note:', error);
             Vibration.vibrate([0, 500]);
@@ -460,8 +465,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setSavedNotes(updatedNotes);
 
         try {
-            await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
-            DeviceEventEmitter.emit('NOTES_UPDATED');
+            await storage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
         } catch (error) {
             console.error('[Storage] Failed to update note:', error);
         }
@@ -479,8 +483,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setSavedNotes(updatedNotes);
 
         try {
-            await AsyncStorage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
-            DeviceEventEmitter.emit('NOTES_UPDATED');
+            await storage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
         } catch (error) {
             console.error('[Storage] Failed to clear AI metadata:', error);
         }
@@ -504,7 +507,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setPersons(updatedPersons);
 
         try {
-            await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
+            await storage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
         } catch (error) {
             console.error('[Storage] Failed to add person:', error);
             Vibration.vibrate([0, 500]);
@@ -514,7 +517,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /**
      * Delete a person AND unlink their notes atomically.
-     * Uses AsyncStorage.multiSet so both writes succeed or the error is caught.
+     * Uses storage.multiSet so both writes succeed or the error is caught.
      * Shows an Alert to the user if persistence fails.
      */
     const deletePerson = useCallback(async (id: string) => {
@@ -531,11 +534,10 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
         // Persist both atomically
         try {
-            await AsyncStorage.multiSet([
+            await storage.multiSet([
                 ['SAVED_PERSONS', JSON.stringify(updatedPersons)],
                 ['SAVED_NOTES', JSON.stringify(updatedNotes)],
             ]);
-            DeviceEventEmitter.emit('NOTES_UPDATED');
         } catch (error) {
             console.error('[Storage] Failed to delete person:', error);
             Vibration.vibrate([0, 500]);
@@ -555,7 +557,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setPersons(updatedPersons);
 
         try {
-            await AsyncStorage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
+            await storage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
         } catch (error) {
             console.error('[Storage] Failed to update person:', error);
         }
@@ -569,7 +571,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setFontIndex(fIdx);
         setSizeIndex(sIdx);
         try {
-            await AsyncStorage.multiSet([
+            await storage.multiSet([
                 ['USER_FONT_IDX', fIdx.toString()],
                 ['USER_SIZE_IDX', sIdx.toString()],
             ]);
@@ -579,19 +581,19 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const toggleDevMode = useCallback(async () => {
-        const newVal = !devMode;
+        const newVal = !devModeRef.current;
         setDevMode(newVal);
         try {
-            await AsyncStorage.setItem('DEV_MODE', JSON.stringify(newVal));
+            await storage.setItem('DEV_MODE', JSON.stringify(newVal));
         } catch (error) {
             console.error('[Storage] Failed to toggle dev mode:', error);
         }
-    }, [devMode]);
+    }, []);
 
     const updateBiometricsPref = useCallback(async (val: boolean) => {
         setUseBiometrics(val);
         try {
-            await AsyncStorage.setItem('USE_BIOMETRICS', JSON.stringify(val));
+            await storage.setItem('USE_BIOMETRICS', JSON.stringify(val));
         } catch (error) {
             console.error('[Storage] Failed to update biometrics pref:', error);
         }
@@ -600,7 +602,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const saveVisionBoard = useCallback(async (newBoard: VisionBoard) => {
         setVisionBoard(newBoard);
         try {
-            await AsyncStorage.setItem('VISION_BOARD', JSON.stringify(newBoard));
+            await storage.setItem('VISION_BOARD', JSON.stringify(newBoard));
         } catch (error) {
             console.error('[Storage] Failed to save vision board:', error);
         }
@@ -612,27 +614,47 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     const saveAiApiKey = useCallback(async (key: string) => {
         setAiApiKey(key);
-        await AsyncStorage.setItem(AI_STORAGE_KEYS.API_KEY, key);
+        try {
+            await storage.setItem(AI_STORAGE_KEYS.API_KEY, key);
+        } catch (error) {
+            console.error('[Storage] Failed to save AI API key:', error);
+        }
     }, []);
 
     const saveAiBaseUrl = useCallback(async (url: string) => {
         setAiBaseUrl(url);
-        await AsyncStorage.setItem(AI_STORAGE_KEYS.BASE_URL, url);
+        try {
+            await storage.setItem(AI_STORAGE_KEYS.BASE_URL, url);
+        } catch (error) {
+            console.error('[Storage] Failed to save AI base URL:', error);
+        }
     }, []);
 
     const saveAiModel = useCallback(async (model: string) => {
         setAiModel(model);
-        await AsyncStorage.setItem(AI_STORAGE_KEYS.MODEL, model);
+        try {
+            await storage.setItem(AI_STORAGE_KEYS.MODEL, model);
+        } catch (error) {
+            console.error('[Storage] Failed to save AI model:', error);
+        }
     }, []);
 
     const saveAiGrammarModel = useCallback(async (grammarModel: string) => {
         setAiGrammarModel(grammarModel);
-        await AsyncStorage.setItem(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
+        try {
+            await storage.setItem(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
+        } catch (error) {
+            console.error('[Storage] Failed to save AI grammar model:', error);
+        }
     }, []);
 
     const saveAiPrompts = useCallback(async (prompts: AiPrompts) => {
         setAiPrompts(prompts);
-        await AsyncStorage.setItem(AI_STORAGE_KEYS.PROMPTS, JSON.stringify(prompts));
+        try {
+            await storage.setItem(AI_STORAGE_KEYS.PROMPTS, JSON.stringify(prompts));
+        } catch (error) {
+            console.error('[Storage] Failed to save AI prompts:', error);
+        }
     }, []);
 
     /* ══════════════════════════════════════════════════════════════════════
@@ -648,7 +670,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setBookmarkedNoteIds(updated);
 
         try {
-            await AsyncStorage.setItem('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
+            await storage.setItem('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
             Vibration.vibrate([0, 20, 0, 20]);
         } catch (error) {
             console.error('[Storage] Failed to toggle bookmark:', error);
@@ -663,7 +685,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setFeedComments(updated);
 
         try {
-            await AsyncStorage.setItem('FEED_COMMENTS', JSON.stringify(updated));
+            await storage.setItem('FEED_COMMENTS', JSON.stringify(updated));
         } catch (error) {
             console.error('[Storage] Failed to save comment:', error);
         }
@@ -672,7 +694,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const toggleAutoPlayFeedVideos = useCallback(async (enabled: boolean) => {
         setAutoPlayFeedVideos(enabled);
         try {
-            await AsyncStorage.setItem('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
+            await storage.setItem('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
         } catch (error) {
             console.error('[Storage] Failed to toggle auto-play:', error);
         }
@@ -690,7 +712,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setTotalVlogStorageBytes(prev => prev + (vlog.fileSizeBytes || 0));
 
         try {
-            await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
+            await storage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
         } catch (error) {
             console.error('[Storage] Failed to save vlog:', error);
         }
@@ -711,7 +733,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         }
 
         try {
-            await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
+            await storage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
         } catch (error) {
             console.error('[Storage] Failed to delete vlog:', error);
             Vibration.vibrate([0, 500]);
@@ -726,10 +748,26 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setSavedVlogs(updatedVlogs);
 
         try {
-            await AsyncStorage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
+            await storage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
         } catch (error) {
             console.error('[Storage] Failed to update vlog:', error);
         }
+    }, []);
+
+    /** Clean up orphaned vlog files on disk that have no metadata entry */
+    const cleanupOrphanedVlogs = useCallback(async (): Promise<number> => {
+        const knownPaths = new Set(savedVlogsRef.current.map(v => v.filePath));
+        return cleanupOrphanFiles(knownPaths);
+    }, []);
+
+    /** Get storage usage summary (tracking only — never auto-deletes) */
+    const getStorageSummary = useCallback((): { vlogCount: number; vlogBytes: number; noteCount: number; personCount: number } => {
+        return {
+            vlogCount: savedVlogsRef.current.length,
+            vlogBytes: savedVlogsRef.current.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0),
+            noteCount: savedNotesRef.current.length,
+            personCount: personsRef.current.length,
+        };
     }, []);
 
     /* ══════════════════════════════════════════════════════════════════════
@@ -750,7 +788,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         ];
 
         try {
-            await AsyncStorage.multiRemove(allKeys);
+            await storage.multiRemove(allKeys);
         } catch (error) {
             console.error('[Storage] Failed to clear data:', error);
         }
@@ -795,7 +833,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setLastReflectionDate(now);
 
         try {
-            await AsyncStorage.setItem('LAST_REFLECTION_DATE', now.toString());
+            await storage.setItem('LAST_REFLECTION_DATE', now.toString());
         } catch (error) {
             console.error('[Storage] Failed to save reflection date:', error);
         }
@@ -840,8 +878,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
          toggleBookmark, saveFeedComment, toggleAutoPlayFeedVideos]);
 
     const vlogValue = useMemo<VlogContextType>(() => ({
-        savedVlogs, totalVlogStorageBytes, saveVlog, deleteVlog, updateVlog,
-    }), [savedVlogs, totalVlogStorageBytes, saveVlog, deleteVlog, updateVlog]);
+        savedVlogs, totalVlogStorageBytes, saveVlog, deleteVlog, updateVlog, cleanupOrphanedVlogs, getStorageSummary,
+    }), [savedVlogs, totalVlogStorageBytes, saveVlog, deleteVlog, updateVlog, cleanupOrphanedVlogs, getStorageSummary]);
 
     const actionsValue = useMemo<StorageActionsContextType>(() => ({
         clearAllData, saveAlignmentReflection, loadAllData,

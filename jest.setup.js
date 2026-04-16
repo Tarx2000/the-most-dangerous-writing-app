@@ -1,0 +1,1 @@
+// Jest setup — minimal, no jest.mock calls (they don't work in setupFiles)

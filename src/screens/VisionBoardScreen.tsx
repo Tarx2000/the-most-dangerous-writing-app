@@ -5,7 +5,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { usePreferences } from '@/lib/hooks/useStorage';
 import { VisionBoard } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VisionBoard'>;
@@ -20,7 +20,7 @@ const TABS: { key: TabKey, label: string }[] = [
 ];
 
 export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
-    const { visionBoard, saveVisionBoard } = useStorage();
+    const { visionBoard, saveVisionBoard } = usePreferences();
     const [activeTab, setActiveTab] = useState<TabKey>('health');
     const localStateRef = useRef<VisionBoard>({
         health: '',

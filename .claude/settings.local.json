@@ -15,7 +15,22 @@
       "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_API_KEY', 'User'\\)\")",
       "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_BASE_URL', 'Machine'\\)\")",
       "Bash(powershell.exe -Command \"[System.Environment]::GetEnvironmentVariable\\('ANTHROPIC_AUTH_TOKEN', 'Machine'\\)\")",
-      "Bash(ANTHROPIC_BASE_URL=http://localhost:11434 ANTHROPIC_AUTH_TOKEN=ollama claude config:*)"
+      "Bash(ANTHROPIC_BASE_URL=http://localhost:11434 ANTHROPIC_AUTH_TOKEN=ollama claude config:*)",
+      "Bash(npm install *)",
+      "Bash(npx jest *)",
+      "Bash(node -e ' *)",
+      "WebSearch",
+      "WebFetch(domain:docs.expo.dev)",
+      "Bash(npm info *)",
+      "Bash(npx tsc *)",
+      "Read(//mnt/c/Users/Tarik/Documents/MDWA App Antigravity Project/**)",
+      "Bash(npx expo *)",
+      "Bash(kill %1)",
+      "Bash(npx expo-doctor *)",
+      "Bash(npx react-native *)",
+      "Bash(node -e \"const g = require\\('@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/MaterialCommunityIcons.json'\\); const suspects = ['notebook-edit','account-group','video-outline','compass-outline','lock-outline','lock','lock-open-variant','fingerprint','chevron-down','sort','check','close','close-circle-outline','delete-outline','delete-alert-outline','sort-clock-descending-outline','sort-clock-ascending-outline','timer-sand','timer-sand-empty','text-long','emoticon-dead-outline','emoticon-confused-outline','emoticon-neutral-outline','emoticon-happy-outline','emoticon-excited-outline','emoticon-cool-outline','notebook-edit-outline','note-edit-outline','lead-pencil','notebook-outline','sort-variant','sort-clock-descending','sort-clock-ascending','text-box','format-text','cake-variant-outline','pencil-outline','clock-outline','brain','plus','magnify','star-four-points','star-off-outline','lightning-bolt','newspaper-variant-outline','play-circle-outline','arrow-right','creation','format-title','spellcheck','content-save-check','chevron-left','chevron-right','refresh','loading','connection','alert-circle','alert-circle-outline','volume-off','volume-high','video','arrow-expand','comment-text-outline','clock-outline','camera-off','stop','camera-off']; suspects.forEach\\(s => console.log\\(s, s in g ? 'EXISTS' : 'MISSING'\\)\\);\")",
+      "Bash(node -e \"const mci = require\\('@expo/vector-icons/build/MaterialCommunityIcons'\\); console.log\\('font prop:', JSON.stringify\\(mci.default.font\\)\\); console.log\\('getFontFamily:', mci.default.getFontFamily\\(\\)\\);\")",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

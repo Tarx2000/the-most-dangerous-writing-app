@@ -13,6 +13,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RichText } from '@/components/ui/RichText';
 import { theme } from '@/styles/theme';
 import type { SavedNote, SavedVlog, Person } from '@/types';
+import { formatRelativeTime } from '@/lib/utils';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
@@ -64,22 +65,6 @@ const TYPE_COLORS: Record<string, string> = {
 /** Get word count from text */
 const getWordCount = (text: string) => (text || '').split(/\s+/).filter(Boolean).length;
 
-/** Format timestamp to relative time (e.g., "2h ago", "3 days ago") */
-const formatRelativeTime = (timestamp: number): string => {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-    const weeks = Math.floor(diff / 604800000);
-
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-    if (weeks < 4) return `${weeks}w ago`;
-    return new Date(timestamp).toLocaleDateString('default', { month: 'short', day: 'numeric' });
-};
 
 /** Get score details for check-in entries */
 const getScoreDetails = (score: number) => {

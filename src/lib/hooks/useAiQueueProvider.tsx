@@ -87,13 +87,13 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     /** Check if a specific note is actively processing */
     const isNoteActive = useCallback(
         (noteId: string) => aiQueue.isNoteActive(noteId),
-        [queueState]
+        []
     );
 
     /** Check if a specific note is queued */
     const isNoteQueued = useCallback(
         (noteId: string) => aiQueue.isNoteQueued(noteId),
-        [queueState]
+        []
     );
 
     /** Enqueue a single note */

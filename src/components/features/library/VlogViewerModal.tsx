@@ -39,6 +39,7 @@ export interface VlogViewerModalProps {
     visible: boolean;
     vlogs: SavedVlog[];
     sourceRect: LayoutRect | null;
+    initialIndex?: number;
     player?: any; // Shared expo-video player for perfect sync
     onClose: () => void;
     onDelete?: (id: string) => void;

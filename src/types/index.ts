@@ -52,11 +52,6 @@ export interface SavedNote {
     aiSummary?: string[];
     /** The AI model used to generate the summary */
     aiModelUsed?: string;
-    /**
-     * @deprecated Processing state is now derived from the AI Queue.
-     * Kept for backwards compatibility only — will be cleaned up on load.
-     */
-    aiProcessing?: boolean;
 }
 
 export type SortOption = 'newest' | 'oldest' | 'longest' | 'shortest' | 'longest-text';

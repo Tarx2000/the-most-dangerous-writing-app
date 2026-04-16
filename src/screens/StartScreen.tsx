@@ -25,7 +25,7 @@ import { theme } from '@/styles/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Person } from '@/types';
 import { useSecurity } from '@/lib/hooks/useSecurity';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useNotes, usePersons, useStreak, usePreferences, useAiConfig, useFeedData, useVlogs, useStorageActions } from '@/lib/hooks/useStorage';
 import { TickDial } from '@/components/ui/TickDial';
 import { StreakPopup } from '@/components/features/writing/StreakPopup';
 import { CalendarView } from '@/components/features/library/CalendarView';
@@ -93,7 +93,25 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const [creatingNewCircle, setCreatingNewCircle] = useState(false);
     const newPersonNameRef = useRef('');
 
-    const storage = useStorage();
+    const notes = useNotes();
+    const personsHook = usePersons();
+    const streak = useStreak();
+    const preferences = usePreferences();
+    const aiConfig = useAiConfig();
+    const feedData = useFeedData();
+    const vlogs = useVlogs();
+    const storageActions = useStorageActions();
+
+    const storage = useMemo(() => ({
+        ...notes,
+        ...personsHook,
+        ...streak,
+        ...preferences,
+        ...aiConfig,
+        ...feedData,
+        ...vlogs,
+        ...storageActions,
+    }), [notes, personsHook, streak, preferences, aiConfig, feedData, vlogs, storageActions]);
     const security = useSecurity();
 
     /** Central AI Queue — single instance via AiQueueProvider */

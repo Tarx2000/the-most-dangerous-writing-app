@@ -29,6 +29,12 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
 
     const sessionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const idleIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const deathTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const hasLostRef = useRef(hasLost);
+    hasLostRef.current = hasLost;
+    const isContinuingAfterLossRef = useRef(isContinuingAfterLoss);
+    isContinuingAfterLossRef.current = isContinuingAfterLoss;
 
     /** SharedValue for idle time — updated every TICK_RATE_MS WITHOUT triggering React re-render */
     const idleTimeMsShared = useSharedValue(0);
@@ -41,6 +47,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     const clearTimers = useCallback(() => {
         if (sessionIntervalRef.current) clearInterval(sessionIntervalRef.current);
         if (idleIntervalRef.current) clearInterval(idleIntervalRef.current);
+        if (deathTimeoutRef.current) clearTimeout(deathTimeoutRef.current);
     }, []);
 
     const triggerDeathState = useCallback(() => {
@@ -60,8 +67,8 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
             easing: Easing.out(Easing.ease)
         });
 
-        setTimeout(() => { 
-            textRef.current = ''; 
+        deathTimeoutRef.current = setTimeout(() => {
+            textRef.current = '';
             if (inputRefRef && inputRefRef.current) {
                 inputRefRef.current.clear();
             }
@@ -117,10 +124,10 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     const handleTextChange = useCallback((newText: string) => {
         textRef.current = newText;
         // Reset idle timer on any typing (works for both timed sessions and quick notes)
-        if (!hasLost && !isContinuingAfterLoss) {
+        if (!hasLostRef.current && !isContinuingAfterLossRef.current) {
             idleTimeMsShared.value = 0;
         }
-    }, [hasLost, isContinuingAfterLoss, idleTimeMsShared]);
+    }, [idleTimeMsShared]);
 
     const resumeWritingFreely = useCallback((onResumed?: () => void) => {
         setIsContinuingAfterLoss(true);

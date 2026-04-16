@@ -20,6 +20,7 @@ import {
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_AI_PROMPTS,
     AI_REQUEST_TIMEOUT_MS,
+    AI_MAX_RETRIES,
     type AiPrompts,
 } from '@/config/ai';
 
@@ -43,19 +44,62 @@ export interface AiConfig {
     prompts?: Partial<AiPrompts>;
 }
 
+/* ── Connection Health State ──────────────────────────────────────────── */
+
+/** Consecutive ping failures (reset to 0 on success) */
+let _consecutivePingFailures = 0;
+
+/** Threshold above which the server is considered persistently offline */
+const PERSISTENT_OFFLINE_THRESHOLD = 3;
+
+/**
+ * Returns whether the server appears persistently offline based on
+ * consecutive ping failure count.  When true callers may reduce
+ * health-check frequency or skip work entirely.
+ */
+export function isServerPersistentlyOffline(): boolean {
+    return _consecutivePingFailures > PERSISTENT_OFFLINE_THRESHOLD;
+}
+
+/* ── Retry Utilities ─────────────────────────────────────────────────── */
+
+/**
+ * Determine whether an error is transient (worth retrying).
+ * Network errors, timeouts, and 5xx responses are retryable.
+ * Auth errors and 4xx client errors are NOT retryable.
+ */
+function isTransientError(error: Error): boolean {
+    const msg = error.message || '';
+
+    // Network / connection errors
+    if (msg.includes('Network request failed')) return true;
+    if (msg.includes('connection dropped')) return true;
+    if (msg.includes('unreachable')) return true;
+
+    // Timeout errors
+    if (msg.includes('timed out')) return true;
+
+    // 5xx server errors — retryable (server is having a bad time)
+    if (/API error [5]\d\d/.test(msg)) return true;
+
+    // Everything else (4xx, auth errors, parse errors, etc.) — not retryable
+    return false;
+}
+
+/**
+ * Sleep helper — returns a promise that resolves after `ms` milliseconds.
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /* ── Internal Helpers ─────────────────────────────────────────────────── */
 
 /**
- * Send a chat completion request to the Ollama Cloud API.
- *
- * Endpoint: POST <baseUrl>/api/chat
- * Auth: Bearer token in Authorization header
- * Body: { model, messages, stream: false }
- *
- * Returns the assistant's response content as a string.
- * Throws on network or API errors.
+ * Send a single (non-retried) chat completion request to the Ollama Cloud API.
+ * This is the low-level XHR call; retry logic lives in the wrapper above it.
  */
-async function ollamaChat(
+async function ollamaChatSingle(
     systemPrompt: string,
     userMessage: string,
     config: AiConfig = {},
@@ -77,14 +121,14 @@ async function ollamaChat(
         xhr.open('POST', url);
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
-        
+
         let processedLength = 0;
         let rawBuffer = '';
-        
+
         let fullResponse = '';
         let streamedResponse = '';
         let wordBuffer = '';
-            
+
         xhr.onreadystatechange = () => {
             if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
                 if (xhr.status !== 200) {
@@ -95,7 +139,7 @@ async function ollamaChat(
                 const newText = xhr.responseText.substring(processedLength);
                 processedLength = xhr.responseText.length;
                 rawBuffer += newText;
-                
+
                 let newlineIndex;
                 while ((newlineIndex = rawBuffer.indexOf('\n')) !== -1) {
                     const line = rawBuffer.slice(0, newlineIndex).trim();
@@ -108,14 +152,14 @@ async function ollamaChat(
                                 return;
                             }
                             const chunkStr = parsed.message?.content || '';
-                            
+
                             fullResponse += chunkStr;
-                            
+
                             if (onChunk && chunkStr) {
                                 wordBuffer += chunkStr;
-                                
+
                                 // Flush wordBuffer when a boundary is found (space, tab, newline, common or Chinese punctuation, or CJK characters)
-                                if (/[ \t\n\.,\!\?\-:;，。！？、“”'\"\u4e00-\u9fa5]/.test(chunkStr.slice(-1)) || wordBuffer.length > 12) {
+                                if (/[ \t\n\.,\!\?\-:;，。！？、"”'\"\u4e00-\u9fa5]/.test(chunkStr.slice(-1)) || wordBuffer.length > 12) {
                                     streamedResponse += wordBuffer;
                                     wordBuffer = '';
                                     onChunk(streamedResponse);
@@ -126,7 +170,7 @@ async function ollamaChat(
                         }
                     }
                 }
-                
+
                 // Flush remaining buffer on DONE
                 if (xhr.readyState === XMLHttpRequest.DONE) {
                     if (wordBuffer && onChunk) {
@@ -159,7 +203,7 @@ async function ollamaChat(
                 originalOnReady.call(this, ev);
             }
         };
-        
+
         xhr.send(JSON.stringify({
             model,
             messages: [
@@ -170,6 +214,68 @@ async function ollamaChat(
             options: mergedOptions,
         }));
     });
+}
+
+/**
+ * Send a chat completion request with exponential-backoff retries.
+ *
+ * Wraps `ollamaChatSingle` and retries on transient errors only
+ * (network failures, timeouts, 5xx).  Auth errors and 4xx responses
+ * are not retried.  Backoff starts at 1 s and doubles each attempt.
+ *
+ * The `onChunk` callback is only wired on the final (or only) attempt
+ * so that partial streaming from a failed request doesn't corrupt the
+ * consumer's buffer.
+ */
+async function ollamaChat(
+    systemPrompt: string,
+    userMessage: string,
+    config: AiConfig = {},
+    optionsOverwrite: Record<string, any> = {},
+    onChunk?: (text: string) => void
+): Promise<string> {
+    const maxAttempts = AI_MAX_RETRIES + 1; // e.g. AI_MAX_RETRIES=2 → 3 attempts
+    let lastError: Error = new Error('Unknown error');
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            // Only attach the streaming callback on the last attempt.
+            // On earlier attempts we skip it so a partial stream from a
+            // doomed request doesn't pollute the consumer's buffer.
+            const isLastAttempt = attempt === maxAttempts - 1;
+            const chunkCb = isLastAttempt ? onChunk : undefined;
+
+            const result = await ollamaChatSingle(
+                systemPrompt,
+                userMessage,
+                config,
+                optionsOverwrite,
+                chunkCb,
+            );
+            return result;
+        } catch (error: any) {
+            lastError = error;
+
+            // Don't retry non-transient errors (4xx, auth, parse errors, etc.)
+            if (!isTransientError(error)) {
+                throw error;
+            }
+
+            // If we have retries left, wait with exponential backoff
+            const retriesLeft = maxAttempts - attempt - 1;
+            if (retriesLeft > 0) {
+                const delayMs = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s, ...
+                console.warn(
+                    `[AI] Transient error (attempt ${attempt + 1}/${maxAttempts}), ` +
+                    `retrying in ${delayMs}ms: ${error.message}`
+                );
+                await sleep(delayMs);
+            }
+        }
+    }
+
+    // All retries exhausted
+    throw lastError;
 }
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -257,6 +363,12 @@ export async function checkGrammar(
  * Health check — ping the server to verify it's reachable and properly configured.
  * Returns { online: true } if the server responds without throwing a network error.
  *
+ * Tracks consecutive failures: after more than 3 in a row the server is
+ * considered persistently offline.  This status can be queried via
+ * `isServerPersistentlyOffline()` so that callers reduce health-check
+ * frequency or skip work when the server is clearly down for an extended
+ * period.
+ *
  * @param config - Optional config overrides
  * @returns Object with online status and any error message
  */
@@ -281,11 +393,16 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
         // If we get a response (even 401/404), the server is reachable at this URL
         const isOk = response.ok || response.status === 401 || response.status === 404;
         if (!isOk) {
+            _consecutivePingFailures++;
             return { online: false, error: `Server connected but returned HTTP ${response.status}` };
         }
+
+        // Success — reset consecutive failure counter
+        _consecutivePingFailures = 0;
         return { online: true };
     } catch (err: any) {
-        console.warn('[AI] Ping failed:', err);
+        _consecutivePingFailures++;
+        console.warn(`[AI] Ping failed (${_consecutivePingFailures} consecutive):`, err);
         return { online: false, error: err.message || 'Network request failed' };
     }
 }
@@ -295,6 +412,11 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
  * This is the main entry point used by the AI Queue Manager.
  * Runs title first, then summary (sequential to be kind to the API).
  *
+ * The entire pipeline is wrapped in a defensive try/catch so that no
+ * unhandled exception can propagate.  On failure a structured result is
+ * returned with empty fields rather than throwing, giving the caller a
+ * safe object to work with regardless of the outcome.
+ *
  * @param text - The full journal entry text
  * @param config - Optional config overrides
  * @returns Object with title string and summary bullet array
@@ -303,7 +425,12 @@ export async function processNote(
     text: string,
     config: AiConfig = {},
 ): Promise<{ title: string; summary: string[] }> {
-    const title = await generateTitle(text, config);
-    const summary = await generateSummary(text, config);
-    return { title, summary };
+    try {
+        const title = await generateTitle(text, config);
+        const summary = await generateSummary(text, config);
+        return { title, summary };
+    } catch (error: any) {
+        console.warn('[AI] processNote failed — returning empty result:', error.message);
+        return { title: '', summary: [] };
+    }
 }

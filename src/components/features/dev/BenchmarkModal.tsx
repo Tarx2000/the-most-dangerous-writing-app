@@ -4,7 +4,7 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { commonStyles } from '@/styles/commonStyles';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useNotes, useAiConfig } from '@/lib/hooks/useStorage';
 import { generateTitle, generateSummary, checkGrammar } from '@/lib/aiService';
 
 interface BenchmarkModalProps {
@@ -31,7 +31,8 @@ interface BenchmarkResult {
 export type BenchmarkPhase = 'idle' | 'title' | 'summary' | 'grammar' | 'done';
 
 export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose }) => {
-    const storage = useStorage();
+    const { savedNotes } = useNotes();
+    const { aiApiKey, aiBaseUrl, aiPrompts } = useAiConfig();
     const [running, setRunning] = useState(false);
     const [currentPhase, setCurrentPhase] = useState<BenchmarkPhase>('idle');
     const [results, setResults] = useState<Record<string, BenchmarkResult>>({});
@@ -51,9 +52,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
             });
             setResults(initial);
             
-            if (storage.savedNotes.length > 0) {
-                let max = storage.savedNotes[0];
-                for (const n of storage.savedNotes) {
+            if (savedNotes.length > 0) {
+                let max = savedNotes[0];
+                for (const n of savedNotes) {
                     if (n.text.length > max.text.length) max = n;
                 }
                 setTestInput(max.text);
@@ -61,15 +62,15 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                 setTestInput("This is a placeholder journal entry to test the AI. I didn't have much to say, but I really enjoyed the coffee in the morning and I think the spelling is mostly fine but we will se.");
             }
         }
-    }, [visible, storage.savedNotes]);
+    }, [visible, savedNotes]);
 
     const runBenchmark = async () => {
         setRunning(true);
 
         const aiConfigBase = {
-            apiKey: storage.aiApiKey,
-            baseUrl: storage.aiBaseUrl,
-            prompts: storage.aiPrompts,
+            apiKey: aiApiKey,
+            baseUrl: aiBaseUrl,
+            prompts: aiPrompts,
         };
 
         // Reset all models to running

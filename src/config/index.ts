@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.5.3";
 
 export const VERSION_HISTORY = [
     { version: 'v1.3.0', changes: ['True Black UI Overhaul: Library redesigned with native swipe-to-dismiss presentation style', 'Check-in Improvements: Fixed layout scaling, added urgent 7-day reflection glow reminder', 'Circles Refactor: Premium full-screen modal with interactive person search', 'Bug Fixes: Fixed Android keyboard padding constraints across application'] },

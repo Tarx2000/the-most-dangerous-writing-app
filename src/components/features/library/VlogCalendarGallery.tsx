@@ -23,14 +23,14 @@ import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { VlogViewerModal, LayoutRect } from './VlogViewerModal';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useVlogs } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /** Mini component to asynchronously fetch missing thumbnails without causing entire calendar re-renders */
 const ThumbnailFetcher: React.FC<{ vlog: SavedVlog }> = ({ vlog }) => {
-    const { updateVlog } = useStorage();
+    const { updateVlog } = useVlogs();
     const { getThumbnail } = useThumbnails(updateVlog);
     
     useEffect(() => {

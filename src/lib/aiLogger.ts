@@ -4,7 +4,7 @@
  * Every AI operation (enqueue, start, success, fail, retry, cancel)
  * is logged with timestamps, model info, note IDs, and durations.
  *
- * Log entries are persisted to AsyncStorage under `AI_PROCESSING_LOG`
+ * Log entries are persisted to storage under `AI_PROCESSING_LOG`
  * with a FIFO cap of AI_LOG_MAX_ENTRIES (200) to prevent storage bloat.
  *
  * Usage:
@@ -12,7 +12,7 @@
  *   await logAi({ action: 'start', noteId: '123', model: 'kimi-k2.5:cloud', phase: 'title' });
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage } from '@/lib/storage';
 import { AI_STORAGE_KEYS, AI_LOG_MAX_ENTRIES } from '@/config/ai';
 import type { AiLogEntry } from '@/types';
 
@@ -39,7 +39,7 @@ export async function logAi(
             ? updated.slice(updated.length - AI_LOG_MAX_ENTRIES)
             : updated;
 
-        await AsyncStorage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
+        await storage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
 
         // Also log to console for real-time debugging
         const emoji = LOG_EMOJIS[entry.action] || '📝';
@@ -57,7 +57,7 @@ export async function logAi(
  */
 export async function getAiLog(): Promise<AiLogEntry[]> {
     try {
-        const raw = await AsyncStorage.getItem(AI_STORAGE_KEYS.LOG);
+        const raw = await storage.getItem(AI_STORAGE_KEYS.LOG);
         if (!raw) return [];
         return JSON.parse(raw) as AiLogEntry[];
     } catch {
@@ -70,7 +70,7 @@ export async function getAiLog(): Promise<AiLogEntry[]> {
  * Useful for freeing up space or resetting debug state.
  */
 export async function clearAiLog(): Promise<void> {
-    await AsyncStorage.removeItem(AI_STORAGE_KEYS.LOG);
+    await storage.removeItem(AI_STORAGE_KEYS.LOG);
 }
 
 /* ── Internal ─────────────────────────────────────────────────────────── */

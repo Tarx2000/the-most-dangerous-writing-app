@@ -5,8 +5,7 @@
  * When AI title is available, shows it as the primary preview (bold, larger).
  * Falls back to a truncated raw text preview if no AI title exists.
  *
- * Processing state is derived from the AI Queue (via `isProcessing` prop),
- * NOT from the deprecated `note.aiProcessing` flag.
+ * Processing state is derived from the AI Queue (via `isProcessing` prop).
  * When processing, shows a smooth pulsing glow border animation.
  */
 

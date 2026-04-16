@@ -11,7 +11,8 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useVlogs } from '@/lib/hooks/useStorage';
+import { formatRelativeTime } from '@/lib/utils';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import type { SavedVlog } from '@/types';
@@ -66,24 +67,6 @@ const formatDuration = (seconds: number): string => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-/**
- * Format timestamp to relative time (sharing helper with FeedCard)
- */
-const formatRelativeTime = (timestamp: number): string => {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-    const weeks = Math.floor(diff / 604800000);
-
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-    if (weeks < 4) return `${weeks}w ago`;
-    return new Date(timestamp).toLocaleDateString('default', { month: 'short', day: 'numeric' });
-};
 
 export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     item,
@@ -134,7 +117,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
         Vibration.vibrate(10);
     }, [vlog, onOpenVlog, player]);
 
-    const { updateVlog } = useStorage();
+    const { updateVlog } = useVlogs();
     const { getThumbnail } = useThumbnails(updateVlog);
 
     /** Sync playing state and volume with player */

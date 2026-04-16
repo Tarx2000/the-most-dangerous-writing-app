@@ -21,7 +21,7 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
-import { useStorage } from '@/lib/hooks/useStorage';
+import { useNotes, usePersons, useVlogs } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { NoteCard } from '@/components/features/library/NoteCard';
@@ -72,7 +72,9 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     /** Person whose profile modal is currently open */
     const [profilePerson, setProfilePerson] = useState<Person | null>(null);
 
-    const storage = useStorage();
+    const { savedNotes, deleteNote } = useNotes();
+    const { persons, deletePerson, updatePerson } = usePersons();
+    const { savedVlogs, deleteVlog } = useVlogs();
     const security = useSecurity();
 
     /** Central AI Queue — single instance via AiQueueProvider */
@@ -108,8 +110,8 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
      * Avoids O(n*m) filtering inside renderPersonItem.
      */
     const notesByPerson = useMemo(() => {
-        const map = new Map<string, typeof storage.savedNotes>();
-        for (const n of storage.savedNotes) {
+        const map = new Map<string, typeof savedNotes>();
+        for (const n of savedNotes) {
             if (n.personId) {
                 const arr = map.get(n.personId) || [];
                 arr.push(n);
@@ -117,15 +119,15 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             }
         }
         return map;
-    }, [storage.savedNotes]);
+    }, [savedNotes]);
 
     const sortedPersons = useMemo(() => {
-        return [...storage.persons].sort((a, b) => {
+        return [...persons].sort((a, b) => {
             const aCount = notesByPerson.get(a.id)?.length || 0;
             const bCount = notesByPerson.get(b.id)?.length || 0;
             return bCount - aCount;
         });
-    }, [storage.persons, notesByPerson]);
+    }, [persons, notesByPerson]);
 
     const renderPersonItem = useCallback(({ item: p }: { item: Person }) => (
         <View style={{ marginBottom: 10 }}>
@@ -143,10 +145,10 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 isNoteQueued={isNoteQueued}
             />
         </View>
-    ), [storage.savedNotes, selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued]);
+    ), [savedNotes, selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued]);
 
     const getFlattenedNotes = useCallback((circleId?: string | null) => {
-        let notesToGroup = [...storage.savedNotes];
+        let notesToGroup = [...savedNotes];
         
         if (libraryTab === 'checkins') {
             notesToGroup = notesToGroup.filter(n => (n as any).isAlignmentReflection);
@@ -191,7 +193,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
         });
 
         return flatData;
-    }, [storage.savedNotes, libraryTab, sortBy]);
+    }, [savedNotes, libraryTab, sortBy]);
 
     /** Pure function — score to icon/color mapping. Memoized to avoid recreation. */
     const getScoreDetails = useCallback((s: number) => {
@@ -230,19 +232,19 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     }, []);
     const handleConfirmDeleteNote = useCallback(() => {
         setNoteToDelete(prev => {
-            if (prev) storage.deleteNote(prev);
+            if (prev) deleteNote(prev);
             return null;
         });
-    }, [storage.deleteNote]);
+    }, [deleteNote]);
     const handleConfirmDeletePerson = useCallback(() => {
         setPersonToDelete(prev => {
             if (prev) {
-                storage.deletePerson(prev);
+                deletePerson(prev);
                 setSelectedCircleId(current => current === prev ? null : current);
             }
             return null;
         });
-    }, [storage.deletePerson]);
+    }, [deletePerson]);
 
     return (
         <View style={commonStyles.libraryContainer}>
@@ -264,7 +266,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             </View>
                         )}
                     </View>
-                    <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{storage.savedNotes.length} Entries • {storage.persons.length} Circles</Text>
+                    <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{savedNotes.length} Entries • {persons.length} Circles</Text>
                 </View>
                 {!security.isNotesUnlocked ? (
                     <AnimatedScaleButton
@@ -302,7 +304,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             {/* Tab content — Notes & Check-ins */}
             {(libraryTab === 'notes' || libraryTab === 'checkins') && (
                 <>
-                    {storage.savedNotes.filter(n => libraryTab === 'checkins' ? (n as any).isAlignmentReflection : (!n.personId && !(n as any).isAlignmentReflection)).length === 0 ? (
+                    {savedNotes.filter(n => libraryTab === 'checkins' ? (n as any).isAlignmentReflection : (!n.personId && !(n as any).isAlignmentReflection)).length === 0 ? (
                         <EmptyLibraryState 
                             icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
                             title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
@@ -353,7 +355,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                             <NoteCard
                                                 note={note}
                                                 onPress={setViewNoteModal}
-                                                personName={note.personId ? storage.persons.find(p => p.id === note.personId)?.name : undefined}
+                                                personName={note.personId ? persons.find(p => p.id === note.personId)?.name : undefined}
                                                 isLocked={!security.isNotesUnlocked}
                                                 isProcessing={isNoteActive(note.id)}
                                                 isQueued={isNoteQueued(note.id)}
@@ -390,7 +392,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         </View>
                     ) : (
                         <>
-                    {storage.persons.length === 0 ? (
+                    {persons.length === 0 ? (
                         <EmptyLibraryState
                             icon="account-group-outline"
                             title="No circles yet"
@@ -405,7 +407,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                 keyExtractor={(p) => p.id}
                                 extraData={{ 
                                     selectedCircleId, 
-                                    notesLength: storage.savedNotes.length,
+                                    notesLength: savedNotes.length,
                                     isUnlocked: security.isNotesUnlocked 
                                 }}
                                 renderItem={renderPersonItem}
@@ -422,10 +424,10 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             {/* Tab content — Vlogs Calendar Gallery */}
             {libraryTab === 'vlogs' && (
                 <VlogCalendarGallery
-                    vlogs={storage.savedVlogs}
+                    vlogs={savedVlogs}
                     isLocked={!security.isCirclesUnlocked && !security.isNotesUnlocked}
                     onUnlock={security.unlockCircles}
-                    onDeleteVlog={storage.deleteVlog}
+                    onDeleteVlog={deleteVlog}
                 />
             )}
 
@@ -515,10 +517,10 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 visible={!!profilePerson}
                 onClose={() => setProfilePerson(null)}
                 person={profilePerson}
-                notes={profilePerson ? storage.savedNotes.filter(n => n.personId === profilePerson.id) : []}
+                notes={profilePerson ? savedNotes.filter(n => n.personId === profilePerson.id) : []}
                 isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
                 onUnlock={security.unlockProfile}
-                onUpdatePerson={storage.updatePerson}
+                onUpdatePerson={updatePerson}
                 onDeletePerson={handleDeleteFromProfile}
                 onNotePress={setViewNoteModal}
                 isNotesUnlocked={security.isNotesUnlocked}

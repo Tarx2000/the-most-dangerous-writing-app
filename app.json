@@ -28,8 +28,6 @@
         "CAMERA",
         "RECORD_AUDIO"
       ],
-      "enableProguardInReleaseBuilds": true,
-      "enableShrinkResourcesInReleaseBuilds": true
     },
     "plugins": [
       [
