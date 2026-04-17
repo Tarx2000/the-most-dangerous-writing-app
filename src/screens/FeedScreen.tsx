@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import {
     View,
     Text,
@@ -7,10 +7,10 @@ import {
     StatusBar,
     Vibration,
     Pressable,
-    Dimensions,
+    useWindowDimensions,
     DeviceEventEmitter,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
@@ -20,19 +20,20 @@ import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
 import { useNotes, useVlogs, usePersons, useFeedData } from '@/lib/hooks/useStorage';
 import { theme } from '@/styles/theme';
 import type { SavedNote, SavedVlog, Person } from '@/types';
+import { isAlignmentReflection } from '@/types';
 import type { LayoutRect } from '../components/features/library/VlogViewerModal';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
 /** Word count threshold for tweet vs story classification */
 const TWEET_THRESHOLD = 50;
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
  * Hoisted outside component to prevent React from unmounting/remounting
  * the list on every parent re-render. Creating animated components inside
  * render is a critical performance anti-pattern (rerender-no-inline-components).
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
@@ -79,6 +80,11 @@ const FeedScreenInner: React.FC<Props> = ({
     onClose,
     feedProgress,
 }) => {
+    const { height: screenHeight } = useWindowDimensions();
+    /** SharedValue for Reanimated worklets — kept in sync via useEffect to avoid render-phase writes */
+    const screenHeightSV = useSharedValue(screenHeight);
+    useEffect(() => { screenHeightSV.value = screenHeight; }, [screenHeight, screenHeightSV]);
+
     const { savedNotes } = useNotes();
     const { savedVlogs } = useVlogs();
     const { persons } = usePersons();
@@ -86,6 +92,7 @@ const FeedScreenInner: React.FC<Props> = ({
 
     const [filterBookmarked, setFilterBookmarked] = useState(false);
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
+    // FlashListRef and GestureType are incompatible — use any for gesture interop
     const listRef = useRef<any>(null);
     const listScrollY = useSharedValue(0);
     const overscrollStartY = useSharedValue(0);
@@ -106,7 +113,7 @@ const FeedScreenInner: React.FC<Props> = ({
         // Process text notes (journals, circles, check-ins)
         savedNotes.forEach(note => {
             const wordCount = (note.text || '').split(/\s+/).filter(Boolean).length;
-            const isCheckin = !!(note as any).isAlignmentReflection;
+            const isCheckin = isAlignmentReflection(note);
             const type: FeedItemType = isCheckin ? 'checkin'
                 : wordCount < TWEET_THRESHOLD ? 'tweet' : 'story';
 
@@ -184,7 +191,7 @@ const FeedScreenInner: React.FC<Props> = ({
                 if (isOverscrolling.value) {
                     const draggedDistance = e.absoluteY - overscrollStartY.value;
                     if (draggedDistance > 0) {
-                        const overscrollFactor = draggedDistance / SCREEN_HEIGHT;
+                        const overscrollFactor = draggedDistance / screenHeightSV.value;
                         feedProgress.value = Math.max(0, 1 - overscrollFactor);
                     } else {
                         feedProgress.value = 1;
@@ -377,7 +384,7 @@ export const FeedScreen = React.memo(FeedScreenInner);
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
     },
     listContent: {
         paddingBottom: 100,

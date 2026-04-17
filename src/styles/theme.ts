@@ -17,10 +17,52 @@ export const theme = {
         danger: '#FF2A2A',
         success: '#FFFFFF',
 
+        // Semantic colors
+        gold: '#FFD700',
+        green: '#4ade80',
+        orange: '#FF6B35',
+
+        // Danger variants
+        dangerSubtle: 'rgba(255, 42, 42, 0.06)',
+        dangerLight: 'rgba(255, 42, 42, 0.08)',
+        dangerTint: 'rgba(255, 42, 42, 0.1)',
+        dangerMedium: 'rgba(255, 42, 42, 0.1)',
+        dangerBorderLight: 'rgba(255, 42, 42, 0.12)',
+        dangerAccent: 'rgba(255, 42, 42, 0.15)',
+        dangerBorderMedium: 'rgba(255, 42, 42, 0.25)',
+        dangerBorder: 'rgba(255, 42, 42, 0.2)',
+        dangerBorderStrong: 'rgba(255, 42, 42, 0.3)',
+        dangerFill: 'rgba(255, 42, 42, 0.15)',
+        dangerFillStrong: 'rgba(255, 42, 42, 0.3)',
+        dangerOverlayLight: 'rgba(255, 42, 42, 0.45)',
+        dangerGradientEnd: 'rgba(255, 42, 42, 0.45)',
+
         // Deep Glassmorphism Containers
         glassBackground: 'rgba(255, 255, 255, 0.05)',
         glassBorder: 'rgba(255, 255, 255, 0.1)',
         glassHighlight: 'rgba(255, 255, 255, 0.15)',
+        glassSurface: 'rgba(255, 255, 255, 0.06)',
+        glassSurfaceMedium: 'rgba(255, 255, 255, 0.08)',
+        glassBorderSubtle: 'rgba(255, 255, 255, 0.06)',
+        glassBorderMedium: 'rgba(255, 255, 255, 0.12)',
+
+        // Surface colors
+        surfaceDark: '#0A0A0A',
+        surfaceMedium: '#111',
+        surfaceLight: '#222',
+        surfaceRaised: '#1A1A1A',
+
+        // Card & Modal containers
+        cardBackground: 'rgba(255, 255, 255, 0.06)',
+        modalBackground: 'rgba(0, 0, 0, 0.6)',
+
+        // Overlay
+        overlayDark: 'rgba(0, 0, 0, 0.4)',
+        overlayMedium: 'rgba(0, 0, 0, 0.85)',
+        deathOverlay: 'rgba(40, 35, 32, 0.95)',
+
+        // Placeholder
+        placeholder: '#555',
 
         // Legacy fallbacks
         darkGrey: 'rgba(0, 0, 0, 0.3)',
@@ -50,5 +92,11 @@ export const theme = {
         weightBold: '600' as const,
         weightExtraBold: '800' as const,
         weightBlack: '900' as const,
+    },
+    animation: {
+        springDefault: { damping: 22, stiffness: 220, mass: 0.8 },
+        springSnappy: { damping: 30, stiffness: 300, mass: 0.8 },
+        springGentle: { damping: 18, stiffness: 180, mass: 0.8 },
+        springLight: { damping: 20, stiffness: 200, mass: 0.5 },
     }
 };

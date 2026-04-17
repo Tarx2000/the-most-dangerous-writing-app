@@ -2,6 +2,8 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { theme } from '@/styles/theme';
 
+const MAX_RETRIES = 3;
+
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -9,15 +11,16 @@ interface ErrorBoundaryProps {
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  retryCount: number;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retryCount: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
@@ -25,12 +28,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  handleRestart = (): void => {
-    this.setState({ hasError: false, error: null });
+  handleRetry = (): void => {
+    if (this.state.retryCount >= MAX_RETRIES) return;
+    this.setState(prev => ({ hasError: false, error: null, retryCount: prev.retryCount + 1 }));
   };
 
   render(): ReactNode {
     if (this.state.hasError) {
+      const exhausted = this.state.retryCount >= MAX_RETRIES;
+
       return (
         <View style={styles.container}>
           <View style={styles.content}>
@@ -38,9 +44,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <Text style={styles.message}>
               {this.state.error?.message || 'An unexpected error occurred.'}
             </Text>
-            <TouchableOpacity style={styles.button} onPress={this.handleRestart}>
-              <Text style={styles.buttonText}>Restart</Text>
-            </TouchableOpacity>
+            {exhausted ? (
+              <Text style={styles.exhaustedText}>
+                Please restart the app to recover.
+              </Text>
+            ) : (
+              <TouchableOpacity style={styles.button} onPress={this.handleRetry}>
+                <Text style={styles.buttonText}>Try Again</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       );
@@ -53,7 +65,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: theme.colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     padding: theme.spacing.lg,
@@ -63,7 +75,7 @@ const styles = StyleSheet.create({
     maxWidth: 320,
   },
   title: {
-    color: '#F3F4F6',
+    color: theme.colors.textPrimary,
     fontSize: 22,
     fontWeight: '600',
     textAlign: 'center',
@@ -86,6 +98,11 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryActionText,
     fontSize: 16,
     fontWeight: '600',
+  },
+  exhaustedText: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 

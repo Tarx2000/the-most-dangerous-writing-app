@@ -300,7 +300,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: theme.colors.surfaceLight,
     },
     header: {
         flexDirection: 'row',
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     phaseTitle: {
-        color: '#FFD700',
+        color: theme.colors.gold,
         fontSize: 16,
         fontWeight: '700',
         textTransform: 'uppercase',
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     winnerText: {
-        color: '#FFD700',
+        color: theme.colors.gold,
         fontSize: 12,
         fontWeight: 'bold',
     },

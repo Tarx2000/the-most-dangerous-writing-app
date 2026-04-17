@@ -117,7 +117,7 @@ function sanitizePath(pathStr: string): string {
  * - No Animated.Value listeners (removes Animated overhead entirely)
  * - setNativeProps bypasses React's reconciler
  */
-export const LiquidMorphIcon: React.FC<Props> = ({ mode, size = 42, color = theme.colors.primaryAction, style }) => {
+export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size = 42, color = theme.colors.primaryAction, style }: Props) {
     /** Tracks the current mode — updated instantly to prevent re-triggering */
     const currentModeRef = useRef<Mode>(mode);
 
@@ -263,4 +263,4 @@ export const LiquidMorphIcon: React.FC<Props> = ({ mode, size = 42, color = them
             </Svg>
         </View>
     );
-};
+});

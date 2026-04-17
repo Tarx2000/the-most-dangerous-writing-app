@@ -4,7 +4,7 @@ import {
     StyleSheet,
     View,
     Text,
-    Dimensions,
+    useWindowDimensions,
     KeyboardAvoidingView,
     Platform,
     TouchableWithoutFeedback
@@ -17,8 +17,8 @@ import Animated, {
     withTiming,
     runOnJS
 } from 'react-native-reanimated';
+import { theme } from '@/styles/theme';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DISMISS_THRESHOLD = 80;
 const DISMISS_VELOCITY = 600;
 
@@ -31,7 +31,9 @@ interface Props {
     setHomeScrollEnabled?: (enabled: boolean) => void;
 }
 
-export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, children, title, height = SCREEN_HEIGHT * 0.88, setHomeScrollEnabled }) => {
+export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, children, title, height, setHomeScrollEnabled }) => {
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
+    const resolvedHeight = height ?? SCREEN_HEIGHT * 0.88;
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const overlayOpacity = useSharedValue(0);
 
@@ -79,7 +81,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
                 });
                 overlayOpacity.value = withTiming(1, { duration: 150 });
             }
-        }), [handleClose, translateY, overlayOpacity]);
+        }), [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: translateY.value }],
@@ -127,7 +129,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
 const styles = StyleSheet.create({
     scrim: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: theme.colors.overlayDark,
     },
     sheet: {
         backgroundColor: '#0A0A0A',

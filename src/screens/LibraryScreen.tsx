@@ -29,16 +29,19 @@ import { ExpandablePersonCard } from '@/components/features/library/ExpandablePe
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
-import { SortOption, SavedNote, Person, AiJobCategory } from '@/types';
+import { SortOption, SavedNote, Person, AiJobCategory, isAlignmentReflection as isAlignmentRef } from '@/types';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '@/types/navigation.types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+/** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
+const { height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 type Props = {
-    navigation: any;
-    route: any;
+    navigation: NativeStackNavigationProp<RootStackParamList>;
+    route: { params?: RootStackParamList['Home'] };
     onGoToStart: () => void;
     /** Shared session mode from HomeScreen — drives which content tab is shown */
     sessionMode: 'journal' | 'circles' | 'checkin' | 'vlog';
@@ -130,7 +133,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     }, [persons, notesByPerson]);
 
     const renderPersonItem = useCallback(({ item: p }: { item: Person }) => (
-        <View style={{ marginBottom: 10 }}>
+        <View style={styles.personItemWrapper}>
             <ExpandablePersonCard
                 person={p}
                 notes={notesByPerson.get(p.id) || []}
@@ -151,11 +154,11 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
         let notesToGroup = [...savedNotes];
         
         if (libraryTab === 'checkins') {
-            notesToGroup = notesToGroup.filter(n => (n as any).isAlignmentReflection);
+            notesToGroup = notesToGroup.filter(n => isAlignmentRef(n));
         } else if (circleId) {
-            notesToGroup = notesToGroup.filter(n => n.personId === circleId && !(n as any).isAlignmentReflection);
+            notesToGroup = notesToGroup.filter(n => n.personId === circleId && !isAlignmentRef(n));
         } else {
-            notesToGroup = notesToGroup.filter(n => !n.personId && !(n as any).isAlignmentReflection);
+            notesToGroup = notesToGroup.filter(n => !n.personId && !isAlignmentRef(n));
         }
 
         const sorted = notesToGroup.sort((a, b) => {
@@ -211,7 +214,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
      */
     const handleRegenerateAi = useCallback(async (note: SavedNote) => {
         Vibration.vibrate(30);
-        const category: AiJobCategory = (note as any).isAlignmentReflection
+        const category: AiJobCategory = isAlignmentRef(note)
             ? 'checkin'
             : note.personId
                 ? 'circle'
@@ -249,9 +252,9 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     return (
         <View style={commonStyles.libraryContainer}>
             {/* Header row */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+            <View style={styles.headerRow}>
                 <View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={styles.headerTitleRow}>
                         <Text style={[commonStyles.libraryTitle, { marginBottom: 0 }]}>Library</Text>
                         {/* AI Processing badge — compact indicator */}
                         {queueState.isProcessing && (
@@ -276,7 +279,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             if (success) Vibration.vibrate(50);
                         }}
                     >
-                        <MaterialCommunityIcons name="lock-open-variant" size={16} color={theme.colors.primaryActionText} style={{ marginRight: 6 }} />
+                        <MaterialCommunityIcons name="lock-open-variant" size={16} color={theme.colors.primaryActionText} style={styles.iconMarginRight} />
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>Unlock</Text>
                     </AnimatedScaleButton>
                 ) : (
@@ -284,7 +287,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]}
                         onPress={() => { security.lockAll(); }}
                     >
-                        <MaterialCommunityIcons name="lock" size={16} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
+                        <MaterialCommunityIcons name="lock" size={16} color={theme.colors.textPrimary} style={styles.iconMarginRight} />
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock</Text>
                     </AnimatedScaleButton>
                 )}
@@ -294,9 +297,9 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             {libraryTab !== 'circles' && libraryTab !== 'vlogs' && (
                 <View style={styles.filterRow}>
                     <AnimatedScaleButton style={styles.filterDropdownBtn} onPress={() => setShowSortModal(true)}>
-                        <MaterialCommunityIcons name="sort" size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
-                        <Text style={styles.filterDropdownText}>Sort by: <Text style={{ color: theme.colors.textPrimary, fontWeight: 'bold' }}>{SORT_OPTIONS.find(o => o.id === sortBy)?.label}</Text></Text>
-                        <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} style={{ marginLeft: 'auto' }} />
+                        <MaterialCommunityIcons name="sort" size={18} color={theme.colors.textSecondary} style={styles.iconMarginRight8} />
+                        <Text style={styles.filterDropdownText}>Sort by: <Text style={styles.filterDropdownActive}>{SORT_OPTIONS.find(o => o.id === sortBy)?.label}</Text></Text>
+                        <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} style={styles.iconMarginLeftAuto} />
                     </AnimatedScaleButton>
                 </View>
             )}
@@ -304,7 +307,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             {/* Tab content — Notes & Check-ins */}
             {(libraryTab === 'notes' || libraryTab === 'checkins') && (
                 <>
-                    {savedNotes.filter(n => libraryTab === 'checkins' ? (n as any).isAlignmentReflection : (!n.personId && !(n as any).isAlignmentReflection)).length === 0 ? (
+                    {savedNotes.filter(n => libraryTab === 'checkins' ? isAlignmentRef(n) : (!n.personId && !isAlignmentRef(n))).length === 0 ? (
                         <EmptyLibraryState 
                             icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
                             title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
@@ -322,14 +325,14 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             renderItem={({ item }) => {
                                 if (typeof item === 'string') {
                                     return (
-                                        <View style={{ paddingTop: 20, paddingBottom: 10 }}>
+                                        <View style={styles.dateHeader}>
                                             <Text style={commonStyles.groupTitle}>{item}</Text>
                                         </View>
                                     );
                                 }
 
                                 const note = item as SavedNote;
-                                const _isAlignment = (note as any).isAlignmentReflection;
+                                const _isAlignment = isAlignmentRef(note);
 
                                 return (
                                     <View>
@@ -375,7 +378,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                     {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
                         <View style={styles.circlesLockOverlay}>
                             <View style={styles.circlesLockCard}>
-                                <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
+                                <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={styles.iconMarginBottom16} />
                                 <Text style={styles.circlesLockTitle}>Circles Protected</Text>
                                 <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
                                 <AnimatedScaleButton
@@ -385,7 +388,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                         if (success) Vibration.vibrate(50);
                                     }}
                                 >
-                                    <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={{ marginRight: 10 }} />
+                                    <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={styles.iconMarginRight10} />
                                     <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
                                 </AnimatedScaleButton>
                             </View>
@@ -401,7 +404,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             onAction={onGoToStart}
                         />
                     ) : (
-                        <View style={{ flex: 1, width: '100%' }}>
+                        <View style={styles.fullFlexWidth}>
                             <FlashList
                                 data={sortedPersons}
                                 keyExtractor={(p) => p.id}
@@ -451,7 +454,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             >
                                 <MaterialCommunityIcons name={opt.icon} size={22} color={sortBy === opt.id ? theme.colors.primaryAction : theme.colors.textSecondary} />
                                 <Text style={[styles.actionSheetOptionText, sortBy === opt.id && styles.actionSheetOptionTextActive]}>{opt.label}</Text>
-                                {sortBy === opt.id && <MaterialCommunityIcons name="check" size={20} color={theme.colors.primaryAction} style={{ marginLeft: 'auto' }} />}
+                                {sortBy === opt.id && <MaterialCommunityIcons name="check" size={20} color={theme.colors.primaryAction} style={styles.iconMarginLeftAuto} />}
                             </AnimatedScaleButton>
                         ))}
                     </View>
@@ -476,14 +479,14 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         <Text style={[commonStyles.addPersonSuggestionText, { textAlign: 'center', marginBottom: 20 }]}>
                             Are you sure you want to permanently delete this session? This cannot be undone.
                         </Text>
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setNoteToDelete(null)}>
+                        <View style={styles.confirmRow}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.cancelBtn]} onPress={() => setNoteToDelete(null)}>
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }]}>Cancel</Text>
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={handleConfirmDeleteNote}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.deleteBtn]} onPress={handleConfirmDeleteNote}>
                                 <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
-                                <Text style={[commonStyles.closeVersionBtnText, { color: '#FFF', fontWeight: 'bold', fontSize: 15 }]}>Delete</Text>
+                                <Text style={styles.deleteBtnText}>Delete</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
@@ -495,17 +498,17 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 <View style={commonStyles.modalOverlay}>
                     <View style={commonStyles.versionModalContent}>
                         <Text style={commonStyles.versionModalTitle}>Delete Circle?</Text>
-                        <Text style={{ textAlign: 'center', marginBottom: 20, color: 'rgba(255,255,255,0.7)', fontSize: 16, lineHeight: 22 }}>
+                        <Text style={styles.confirmText}>
                             Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!
                         </Text>
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setPersonToDelete(null)}>
+                        <View style={styles.modalBtnRow}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.cancelBtnGlass]} onPress={() => setPersonToDelete(null)}>
                                 <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={{ color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }}>Cancel</Text>
+                                <Text style={styles.modalBtnTextPrimary}>Cancel</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={handleConfirmDeletePerson}>
+                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.cancelBtnDanger]} onPress={handleConfirmDeletePerson}>
                                 <MaterialCommunityIcons name="delete-alert-outline" size={18} color="#FFF" />
-                                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Delete All</Text>
+                                <Text style={styles.modalBtnTextWhite}>Delete All</Text>
                             </AnimatedScaleButton>
                         </View>
                     </View>
@@ -538,12 +541,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: 'rgba(255, 42, 42, 0.1)',
+        backgroundColor: theme.colors.dangerTint,
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.2)',
+        borderColor: theme.colors.dangerBorder,
     },
     aiBadgeText: {
         color: theme.colors.primaryAction,
@@ -703,7 +706,7 @@ const styles = StyleSheet.create({
     },
     cardPopupContainer: {
         width: '100%',
-        height: SCREEN_HEIGHT * 0.88,
+        height: DEFAULT_HEIGHT * 0.88,
         borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1,
@@ -716,7 +719,7 @@ const styles = StyleSheet.create({
     },
     cardPopupTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: '#111',
+        backgroundColor: theme.colors.surfaceMedium,
     },
     cardPopupHandle: {
         width: 40,
@@ -854,12 +857,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: 'rgba(255, 42, 42, 0.06)',
+        backgroundColor: theme.colors.dangerSubtle,
         paddingVertical: 10,
         paddingHorizontal: 16,
         borderRadius: 14,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.12)',
+        borderColor: theme.colors.dangerBorderLight,
         marginBottom: 16,
     },
     regenerateBtnText: {
@@ -877,6 +880,108 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+
+    /* ── Extracted inline styles ──────────────────────────────────── */
+    headerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 15,
+    },
+    headerTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    personItemWrapper: {
+        marginBottom: 10,
+    },
+    iconMarginRight: {
+        marginRight: 6,
+    },
+    iconMarginRight8: {
+        marginRight: 8,
+    },
+    iconMarginRight10: {
+        marginRight: 10,
+    },
+    filterDropdownActive: {
+        color: theme.colors.textPrimary,
+        fontWeight: 'bold',
+    },
+    dateHeader: {
+        paddingTop: 20,
+        paddingBottom: 10,
+    },
+    flexFill: {
+        flex: 1,
+        width: '100%',
+    },
+    iconMarginLeftAuto: {
+        marginLeft: 'auto',
+    },
+    iconMarginBottom16: {
+        marginBottom: 16,
+    },
+    confirmText: {
+        textAlign: 'center',
+        marginBottom: 20,
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 16,
+        lineHeight: 22,
+    },
+    modalBtnRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    fullFlexWidth: {
+        flex: 1,
+        width: '100%',
+    },
+    confirmRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    cancelBtn: {
+        flex: 1,
+        backgroundColor: theme.colors.glassBackground,
+        marginTop: 0,
+    },
+    deleteBtn: {
+        flex: 1,
+        backgroundColor: theme.colors.danger,
+        marginTop: 0,
+    },
+    cancelBtnGlass: {
+        flex: 1,
+        backgroundColor: theme.colors.glassBackground,
+        marginTop: 0,
+    },
+    cancelBtnDanger: {
+        flex: 1,
+        backgroundColor: theme.colors.danger,
+        marginTop: 0,
+    },
+    cancelBtnText: {
+        color: theme.colors.textPrimary,
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
+    deleteBtnText: {
+        color: '#FFF',
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
+    modalBtnTextPrimary: {
+        color: theme.colors.textPrimary,
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
+    modalBtnTextWhite: {
+        color: '#FFF',
+        fontWeight: 'bold',
+        fontSize: 15,
     },
 });
 

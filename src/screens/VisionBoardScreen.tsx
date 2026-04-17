@@ -104,7 +104,7 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
                         defaultValue={localStateRef.current[activeTab]}
                         onChangeText={handleTextChange}
                         placeholder="My vision is..."
-                        placeholderTextColor="#666"
+                        placeholderTextColor={theme.colors.placeholder}
                         selectionColor={theme.colors.primaryAction}
                     />
                 </ScrollView>
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingVertical: 15,
         borderBottomWidth: 1,
-        borderBottomColor: '#222',
+        borderBottomColor: theme.colors.cardBackground,
         marginTop: Platform.OS === 'ios' ? 0 : 20,
     },
     title: {
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     doneBtn: {
         paddingVertical: 8,
         paddingHorizontal: 16,
-        backgroundColor: '#222',
+        backgroundColor: theme.colors.cardBackground,
         borderRadius: 20,
     },
     doneBtnText: {
@@ -155,13 +155,13 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 20,
         marginRight: 10,
-        backgroundColor: '#111',
+        backgroundColor: theme.colors.cardBackground,
     },
     activeTab: {
         backgroundColor: theme.colors.primaryAction,
     },
     tabText: {
-        color: '#888',
+        color: theme.colors.textMuted,
         fontSize: 15,
         fontWeight: '600',
     },

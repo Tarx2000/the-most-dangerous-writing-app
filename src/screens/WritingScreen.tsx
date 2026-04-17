@@ -21,6 +21,7 @@ import { useSession } from '@/lib/hooks/useSession';
 import { useNotes, usePreferences } from '@/lib/hooks/useStorage';
 import { SavedNote } from '@/types';
 import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
+import { DeathOverlay } from '@/components/features/writing/DeathOverlay';
 import { theme } from '@/styles/theme';
 import { generateId } from '@/lib/utils';
 
@@ -134,7 +135,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNote && (
                             <AnimatedScaleButton
                                 onPress={skipTimer}
-                                style={{ backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}
+                                style={{ backgroundColor: theme.colors.gold, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}
                             >
                                 <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
                             </AnimatedScaleButton>
@@ -164,7 +165,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 defaultValue=""
                                 onChangeText={handleTextChangeLocal}
                                 placeholder="Keep typing..."
-                                placeholderTextColor="#555"
+                                placeholderTextColor={theme.colors.placeholder}
                                 selectionColor="#ff4d4d"
                                 editable={!hasLost}
                             />
@@ -183,23 +184,15 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     )}
                 </Animated.View>
 
-                {/* Death Overlay */}
-                <Animated.View pointerEvents={hasLost ? 'auto' : 'none'} style={[commonStyles.deathOverlayLayer, animatedOpacityStyle]}>
-                    {hasLost && (
-                        <View style={commonStyles.deathContentBox}>
-                            <Text style={commonStyles.deathGiant}>YOU DIED</Text>
-                            <Text style={commonStyles.deathSub}>You stopped writing for too long.</Text>
-
-                            <AnimatedScaleButton style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
-                                <Text style={commonStyles.deathBtnMasterText}>Return to Output</Text>
-                            </AnimatedScaleButton>
-
-                            <AnimatedScaleButton style={commonStyles.deathBtnSecondary} onPress={() => resumeWritingFreely()}>
-                                <Text style={commonStyles.deathBtnSecondaryText}>I don't care, let me write</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    )}
-                </Animated.View>
+                <DeathOverlay
+                    lossOverlayOpacity={lossOverlayOpacity}
+                    hasLost={hasLost}
+                    subtitle="You stopped writing for too long."
+                    primaryLabel="Return to Output"
+                    onReturnHome={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+                    secondaryLabel="I don't care, let me write"
+                    onContinueWriting={resumeWritingFreely}
+                />
 
                 {/* Floating Buttons on Death Screen */}
                 {hasLost && (

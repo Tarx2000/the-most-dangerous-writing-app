@@ -1,11 +1,9 @@
-import React, { useRef } from 'react';
-import { View, Text, Dimensions } from 'react-native';
+import React, { useRef, useCallback } from 'react';
+import { View, Text, useWindowDimensions } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface Props {
     label: string;
@@ -22,6 +20,7 @@ interface Props {
  * Uses AnimatedScaleButton for all interactive elements for premium tactile feel.
  */
 export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, selectedIndex, onSelect, renderItemText, onInteractionStart, onInteractionEnd }) => {
+    const { width: SCREEN_WIDTH } = useWindowDimensions();
     const CAROUSEL_WIDTH = Math.min(SCREEN_WIDTH * 0.5, 200);
     const carouselRef = useRef<any>(null);
 

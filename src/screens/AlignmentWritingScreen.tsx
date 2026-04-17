@@ -11,6 +11,7 @@ import { useSession } from '@/lib/hooks/useSession';
 import { usePreferences, useStorageActions } from '@/lib/hooks/useStorage';
 import { AlignmentReflection } from '@/types';
 import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
+import { DeathOverlay } from '@/components/features/writing/DeathOverlay';
 import { generateId } from '@/lib/utils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AlignmentWriting'>;
@@ -139,7 +140,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             {hasLost ? 'YOU DIED' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
                         </Text>
                         {devMode && sessionTimeRemaining > 0 && !hasLost && (
-                            <AnimatedScaleButton onPress={skipTimer} style={{ backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}>
+                            <AnimatedScaleButton onPress={skipTimer} style={{ backgroundColor: theme.colors.gold, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}>
                                 <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
                             </AnimatedScaleButton>
                         )}
@@ -161,7 +162,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                                 autoFocus
                                 onChangeText={(t) => handleInput('stop', t)}
                                 placeholder="I need to stop..."
-                                placeholderTextColor="#555"
+                                placeholderTextColor={theme.colors.placeholder}
                                 selectionColor={theme.colors.primaryAction}
                                 editable={!hasLost}
                             />
@@ -174,7 +175,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                                 multiline
                                 onChangeText={(t) => handleInput('start', t)}
                                 placeholder="I will start..."
-                                placeholderTextColor="#555"
+                                placeholderTextColor={theme.colors.placeholder}
                                 selectionColor={theme.colors.primaryAction}
                                 editable={!hasLost}
                             />
@@ -187,7 +188,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                                 multiline
                                 onChangeText={(t) => handleInput('continue', t)}
                                 placeholder="I will continue..."
-                                placeholderTextColor="#555"
+                                placeholderTextColor={theme.colors.placeholder}
                                 selectionColor={theme.colors.primaryAction}
                                 editable={!hasLost}
                             />
@@ -203,23 +204,15 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                     )}
                 </Animated.View>
 
-                {/* Death Overlay */}
-                <Animated.View pointerEvents={hasLost ? 'auto' : 'none'} style={[commonStyles.deathOverlayLayer, animatedOpacityStyle]}>
-                    {hasLost && (
-                        <View style={commonStyles.deathContentBox}>
-                            <Text style={commonStyles.deathGiant}>YOU DIED</Text>
-                            <Text style={commonStyles.deathSub}>You stopped reflecting for too long.</Text>
-
-                            <AnimatedScaleButton style={commonStyles.deathBtnMaster} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
-                                <Text style={commonStyles.deathBtnMasterText}>Return to Menu</Text>
-                            </AnimatedScaleButton>
-
-                            <AnimatedScaleButton style={commonStyles.deathBtnSecondary} onPress={() => resumeWritingFreely()}>
-                                <Text style={commonStyles.deathBtnSecondaryText}>Let me finish my reflection</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    )}
-                </Animated.View>
+                <DeathOverlay
+                    lossOverlayOpacity={lossOverlayOpacity}
+                    hasLost={hasLost}
+                    subtitle="You stopped reflecting for too long."
+                    primaryLabel="Return to Menu"
+                    onReturnHome={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+                    secondaryLabel="Let me finish my reflection"
+                    onContinueWriting={resumeWritingFreely}
+                />
             </KeyboardAvoidingView>
         </View>
     );
@@ -227,5 +220,5 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
 
 const styles = StyleSheet.create({
     promptHeader: { color: theme.colors.primaryAction, fontSize: 16, fontWeight: 'bold', letterSpacing: 2, marginBottom: 5, fontFamily: theme.typography.fontFamily },
-    promptSub: { color: '#888', fontSize: 14, marginBottom: 15, fontFamily: theme.typography.fontFamily, lineHeight: 20 }
+    promptSub: { color: theme.colors.textMuted, fontSize: 14, marginBottom: 15, fontFamily: theme.typography.fontFamily, lineHeight: 20 }
 });

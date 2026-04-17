@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Vibration } from 'react-native';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, useWindowDimensions, Vibration } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS, withSpring } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
@@ -9,29 +9,31 @@ interface CustomSliderProps {
     onValueChange: (v: number) => void;
 }
 
-export const CustomSlider: React.FC<CustomSliderProps> = ({ value, onValueChange }) => {
-    const { width } = Dimensions.get('window');
+const THUMB_SIZE = 36;
+const TICK_COUNT = 10;
+
+export const CustomSlider = React.memo(function CustomSlider({ value, onValueChange }: CustomSliderProps) {
+    const { width } = useWindowDimensions();
     const PADDING = 30;
     const SLIDER_WIDTH = width - PADDING * 2;
-    const THUMB_SIZE = 36;
     const maxTranslateX = SLIDER_WIDTH - THUMB_SIZE;
     const stepSize = maxTranslateX / 9;
 
     const translateX = useSharedValue(((value - 1) / 9) * maxTranslateX);
     const context = useSharedValue({ x: 0 });
-    
+
     // We use a ref to prevent vibrating repeatedly on the same value while dragging
     const lastVibratedValue = useRef(value);
 
-    const handleValueChange = (v: number) => {
+    const handleValueChange = useCallback((v: number) => {
         if (v !== lastVibratedValue.current) {
             Vibration.vibrate(10); // subtle haptic feedback
             lastVibratedValue.current = v;
             onValueChange(v);
         }
-    };
+    }, [onValueChange]);
 
-    const panGesture = Gesture.Pan()
+    const panGesture = useMemo(() => Gesture.Pan()
         .onStart(() => {
             context.value = { x: translateX.value };
         })
@@ -40,16 +42,18 @@ export const CustomSlider: React.FC<CustomSliderProps> = ({ value, onValueChange
             if (nextX < 0) nextX = 0;
             if (nextX > maxTranslateX) nextX = maxTranslateX;
             translateX.value = nextX;
-            
+
             let newValue = Math.round((nextX / maxTranslateX) * 9) + 1;
             runOnJS(handleValueChange)(newValue);
         })
         .onEnd(() => {
             let newValue = Math.round((translateX.value / maxTranslateX) * 9) + 1;
             let snapX = ((newValue - 1) / 9) * maxTranslateX;
-            translateX.value = withSpring(snapX, { damping: 20, stiffness: 200, mass: 0.5 }); 
+            translateX.value = withSpring(snapX, { damping: 20, stiffness: 200, mass: 0.5 });
             runOnJS(handleValueChange)(newValue);
-        });
+        }), [maxTranslateX, translateX, context, handleValueChange]);
+
+    const tickMarks = useMemo(() => [...Array(TICK_COUNT)].map((_, i) => i), []);
 
     const animatedThumbStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: translateX.value }]
@@ -72,7 +76,7 @@ export const CustomSlider: React.FC<CustomSliderProps> = ({ value, onValueChange
                     <Animated.View style={[sliderStyles.trackFill, animatedFillStyle]} />
                     
                     {/* Tick marks */}
-                    {[...Array(10)].map((_, i) => (
+                    {tickMarks.map((i) => (
                         <View key={i} style={[sliderStyles.stepMarker, { left: i * stepSize + THUMB_SIZE / 2 - 1 }]} />
                     ))}
 
@@ -87,7 +91,7 @@ export const CustomSlider: React.FC<CustomSliderProps> = ({ value, onValueChange
             </View>
         </View>
     );
-};
+});
 
 const sliderStyles = StyleSheet.create({
     container: { alignItems: 'center', marginVertical: 35 },

@@ -32,6 +32,7 @@ import {
     AI_HEALTH_CHECK_INTERVAL_MS,
 } from '@/config/ai';
 import type { AiJob, AiJobCategory, AiQueueState, SavedNote } from '@/types';
+import { isAlignmentReflection } from '@/types';
 
 /* ── Event Names ──────────────────────────────────────────────────────── */
 
@@ -535,7 +536,7 @@ class AiQueueManager {
 
     /** Determine the category of a note based on its properties */
     private categorizeNote(note: SavedNote): AiJobCategory {
-        if ((note as any).isAlignmentReflection) return 'checkin';
+        if (isAlignmentReflection(note)) return 'checkin';
         if (note.personId) return 'circle';
         return 'journal';
     }

@@ -12,7 +12,8 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RichText } from '@/components/ui/RichText';
 import { theme } from '@/styles/theme';
-import type { SavedNote, SavedVlog, Person } from '@/types';
+import type { SavedNote, SavedVlog, Person, AlignmentReflection } from '@/types';
+import { isAlignmentReflection } from '@/types';
 import { formatRelativeTime } from '@/lib/utils';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
@@ -127,12 +128,12 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
 
     const noteId = item.note?.id || item.vlog?.id || '';
     const isCircle = !!item.note?.personId;
-    const isCheckin = !!(item.note as any)?.isAlignmentReflection;
+    const isCheckin = !!item.note && isAlignmentReflection(item.note);
 
     /** Determine the entry's category for visual styling */
     const category = isCheckin ? 'checkin' : item.type === 'clip' ? 'clip' : isCircle ? 'circle' : 'journal';
     const accentColor = category === 'checkin'
-        ? getScoreDetails((item.note as any)?.alignmentScore || 5).color
+        ? getScoreDetails(item.note && isAlignmentReflection(item.note) ? item.note.alignmentScore : 5).color
         : TYPE_COLORS[category];
 
     /** Category label shown in the header */
@@ -154,7 +155,8 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
     /* ── Render: Avatar ─────────────────────────────────────────────── */
     const renderAvatar = () => {
         if (isCheckin) {
-            const score = (item.note as any)?.alignmentScore || 5;
+            const checkinNote = item.note as AlignmentReflection;
+            const score = checkinNote?.alignmentScore || 5;
             const details = getScoreDetails(score);
             return (
                 <View style={[styles.avatar, { borderColor: details.color, shadowColor: details.color }]}>
@@ -190,7 +192,8 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
 
         // Check-in card
         if (isCheckin) {
-            const score = (item.note as any)?.alignmentScore || 5;
+            const checkinNote = item.note as AlignmentReflection;
+            const score = checkinNote?.alignmentScore || 5;
             const details = getScoreDetails(score);
             return (
                 <View>
@@ -369,7 +372,7 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         paddingHorizontal: 20,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+        borderBottomColor: theme.colors.glassSurface,
     },
     leftColumn: {
         marginRight: 12,
@@ -390,7 +393,7 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        backgroundColor: theme.colors.glassSurface,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1.5,
@@ -484,7 +487,7 @@ const styles = StyleSheet.create({
         marginTop: 10,
         paddingTop: 10,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255, 255, 255, 0.06)',
+        borderTopColor: theme.colors.glassSurface,
     },
     commentDisplayText: {
         color: theme.colors.textMuted,
@@ -497,10 +500,10 @@ const styles = StyleSheet.create({
         marginTop: 10,
         paddingTop: 10,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255, 255, 255, 0.06)',
+        borderTopColor: theme.colors.glassSurface,
     },
     commentInput: {
-        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        backgroundColor: theme.colors.glassSurface,
         color: '#FFF',
         fontSize: 14,
         padding: 12,

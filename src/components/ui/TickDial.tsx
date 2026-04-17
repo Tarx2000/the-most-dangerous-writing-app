@@ -3,7 +3,7 @@ import {
     View,
     Text,
     StyleSheet,
-    Dimensions,
+    useWindowDimensions,
     Vibration,
     ScrollView,
     NativeSyntheticEvent,
@@ -14,7 +14,6 @@ import { theme } from '@/styles/theme';
 /* ────────────────────────────────────────────────────────────────────────────
  * CONFIGURABLE: Dial layout
  * ──────────────────────────────────────────────────────────────────────────── */
-const SCREEN_W = Dimensions.get('window').width;
 const SNAP = 80;           // px between major ticks (data points)
 const MINORS = 4;           // minor ticks drawn between each major
 const GAP = SNAP / (MINORS + 1); // px between any two neighbouring ticks
@@ -39,13 +38,14 @@ interface TickDialProps {
  *    completely decoupled from scroll mechanics, fires exactly once
  *    per number change, never on bounce-backs.
  */
-export const TickDial: React.FC<TickDialProps> = ({
+export const TickDial = React.memo(function TickDial({
     data,
     selectedIndex,
     onSelect,
     unit = 'min',
     setHomeScrollEnabled,
-}) => {
+}: TickDialProps) {
+    const { width: SCREEN_W } = useWindowDimensions();
     const scrollRef = useRef<ScrollView>(null);
     const [ready, setReady] = useState(false);
     /** Prevents vibration on initial mount */
@@ -99,6 +99,13 @@ export const TickDial: React.FC<TickDialProps> = ({
         [indexFromOffset, onSelect],
     );
 
+    const handleScrollBeginDrag = useCallback(() => setHomeScrollEnabled?.(false), [setHomeScrollEnabled]);
+    const handleMomentumScrollEnd = useCallback(() => setHomeScrollEnabled?.(true), [setHomeScrollEnabled]);
+    const handleScrollEndDrag = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const v = e.nativeEvent.velocity;
+        if (!v || Math.abs(v.x) < 0.2) setHomeScrollEnabled?.(true);
+    }, [setHomeScrollEnabled]);
+
     return (
         <View style={styles.root}>
             {/* Big number */}
@@ -121,12 +128,9 @@ export const TickDial: React.FC<TickDialProps> = ({
                     nestedScrollEnabled
                     scrollEventThrottle={16}
                     onScroll={onScroll}
-                    onScrollBeginDrag={() => setHomeScrollEnabled?.(false)}
-                    onMomentumScrollEnd={() => setHomeScrollEnabled?.(true)}
-                    onScrollEndDrag={(e) => {
-                        const v = e.nativeEvent.velocity;
-                        if (!v || Math.abs(v.x) < 0.2) setHomeScrollEnabled?.(true);
-                    }}
+                    onScrollBeginDrag={handleScrollBeginDrag}
+                    onMomentumScrollEnd={handleMomentumScrollEnd}
+                    onScrollEndDrag={handleScrollEndDrag}
                     contentContainerStyle={{ paddingLeft: pad, paddingRight: pad }}
                     style={ready ? undefined : styles.hidden}
                 >
@@ -139,7 +143,7 @@ export const TickDial: React.FC<TickDialProps> = ({
             </View>
         </View>
     );
-};
+});
 
 /* ──────────────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({

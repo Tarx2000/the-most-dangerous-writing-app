@@ -29,7 +29,7 @@ export const commonStyles = StyleSheet.create({
 
     cardsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 12 },
     card: { flex: 1, backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, alignItems: 'flex-start' },
-    cardActive: { borderColor: theme.colors.textPrimary, backgroundColor: 'rgba(255,255,255,0.08)' },
+    cardActive: { borderColor: theme.colors.textPrimary, backgroundColor: theme.colors.glassSurfaceMedium },
     cardTitle: { color: theme.colors.textSecondary, fontSize: 16, fontWeight: theme.typography.weightBold, marginBottom: 4 },
     cardTitleActive: { color: theme.colors.textPrimary },
     cardDesc: { color: theme.colors.textMuted, fontSize: 12, fontWeight: theme.typography.weightMedium },
@@ -67,7 +67,7 @@ export const commonStyles = StyleSheet.create({
     versionText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: theme.typography.weightMedium },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
     versionModalContent: {
-        backgroundColor: '#0A0A0A',
+        backgroundColor: theme.colors.modalBackground,
         borderRadius: theme.borderRadius.lg,
         padding: 24,
         maxHeight: '80%',
@@ -137,7 +137,7 @@ export const commonStyles = StyleSheet.create({
     groupContainer: { marginBottom: 30 },
     groupTitle: { color: theme.colors.textPrimary, fontSize: 18, fontWeight: theme.typography.weightBold, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: theme.colors.glassBorder, paddingBottom: 8 },
     noteCard: {
-        backgroundColor: '#111',
+        backgroundColor: theme.colors.cardBackground,
         padding: 16,
         borderRadius: theme.borderRadius.md,
         marginBottom: 15,

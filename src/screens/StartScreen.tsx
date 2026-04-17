@@ -36,7 +36,8 @@ import { APP_VERSION, CONFIG, VERSION_HISTORY } from '@/config';
 import { DEFAULT_AI_PROMPTS, AI_AVAILABLE_MODELS } from '@/config/ai';
 import { commonStyles } from '@/styles/commonStyles';
 import { RootStackParamList } from '@/types/navigation.types';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { Route } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
@@ -46,9 +47,11 @@ import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToo
 import type { AiLogEntry } from '@/types';
 import { Easing } from 'react-native-reanimated';
 
+type StartScreenParams = undefined | { streakIncreased?: boolean; newStreak?: number };
+
 type Props = {
-    navigation: any;
-    route: any;
+    navigation: NativeStackNavigationProp<RootStackParamList>;
+    route: Route<string, StartScreenParams>;
     onGoToLibrary: () => void;
     setHomeScrollEnabled?: (enabled: boolean) => void;
     /** Shared session mode from HomeScreen (drives LiquidGlassNav) */
@@ -102,16 +105,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const vlogs = useVlogs();
     const storageActions = useStorageActions();
 
-    const storage = useMemo(() => ({
-        ...notes,
-        ...personsHook,
-        ...streak,
-        ...preferences,
-        ...aiConfig,
-        ...feedData,
-        ...vlogs,
-        ...storageActions,
-    }), [notes, personsHook, streak, preferences, aiConfig, feedData, vlogs, storageActions]);
     const security = useSecurity();
 
     /** Central AI Queue — single instance via AiQueueProvider */
@@ -123,7 +116,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
 
     useEffect(() => {
         if (route.params?.streakIncreased) {
-            setNewStreakParam(route.params.newStreak || storage.currentStreak + 1);
+            setNewStreakParam(route.params.newStreak || streak.currentStreak + 1);
             setShowStreakPopup(true);
             navigation.setParams({ streakIncreased: undefined, newStreak: undefined });
         }
@@ -165,10 +158,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const details = getScoreDetails(score);
 
     const filteredPersons = useMemo(() => {
-        return storage.persons.filter(p =>
+        return personsHook.persons.filter(p =>
             p.name.toLowerCase().includes(debouncedCircleSearch.toLowerCase())
         );
-    }, [storage.persons, debouncedCircleSearch]);
+    }, [personsHook.persons, debouncedCircleSearch]);
 
     const handleCircleSearchChange = (text: string) => {
         circleSearchRef.current = text;
@@ -178,8 +171,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
         // Actually, just standard debounce is enough.
     };
 
-    const activeFont = CONFIG.FONTS[storage.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
-    const activeSize = CONFIG.SIZES[storage.sizeIndex]?.value || 18;
+    const activeFont = CONFIG.FONTS[preferences.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    const activeSize = CONFIG.SIZES[preferences.sizeIndex]?.value || 18;
 
     // --- LOGIC: Handle Batch Processing via AI Queue -------------------------
     const handleBatchProcess = async () => {
@@ -208,10 +201,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             {devToast && (
                 <View style={{
                     position: 'absolute', top: 50, alignSelf: 'center', zIndex: 9999,
-                    backgroundColor: '#1A1A1A', paddingHorizontal: 20, paddingVertical: 12,
-                    borderRadius: 25, borderWidth: 1, borderColor: 'rgba(255, 215, 0, 0.3)',
+                    backgroundColor: theme.colors.surfaceRaised, paddingHorizontal: 20, paddingVertical: 12,
+                    borderRadius: 25, borderWidth: 1, borderColor: theme.colors.dangerBorderStrong,
                 }}>
-                    <Text style={{ color: '#FFD700', fontSize: 14, fontWeight: '600' }}>{devToast}</Text>
+                    <Text style={{ color: theme.colors.gold, fontSize: 14, fontWeight: '600' }}>{devToast}</Text>
                 </View>
             )}
 
@@ -219,7 +212,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             <View style={commonStyles.topBar}>
                 <AnimatedScaleButton onPress={() => setShowCalendar(true)} style={commonStyles.iconButton}>
                     <Text style={{ color: theme.colors.danger, fontSize: 16 }}>🔥</Text>
-                    <Text style={commonStyles.streakText}>{storage.currentStreak}</Text>
+                    <Text style={commonStyles.streakText}>{streak.currentStreak}</Text>
                 </AnimatedScaleButton>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                     {/* Vision Board button — moved here from footer */}
@@ -276,9 +269,9 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             width: 8,
                             height: 8,
                             borderRadius: 4,
-                            backgroundColor: queueState.serverOnline === null ? '#888' : queueState.serverOnline ? '#4ade80' : '#ff4d4d',
+                            backgroundColor: queueState.serverOnline === null ? '#888' : queueState.serverOnline ? theme.colors.green : theme.colors.danger,
                             borderWidth: 1,
-                            borderColor: '#000',
+                            borderColor: theme.colors.background,
                         }} />
                     </View>
 
@@ -323,7 +316,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                     setShowPersonSelect(true);
                                 }}>
                                     <Text style={styles.personSmallSelectText}>
-                                        {selectedPersonId ? storage.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
+                                        {selectedPersonId ? personsHook.persons.find(p => p.id === selectedPersonId)?.name : 'Select target person...'}
                                         <Text style={{ opacity: 0.5 }}> ▼</Text>
                                     </Text>
                                 </AnimatedScaleButton>
@@ -391,7 +384,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
 
             {/* Modals */}
             <SwipeableModal visible={showCalendar} onClose={() => setShowCalendar(false)} setHomeScrollEnabled={setHomeScrollEnabled}>
-                <CalendarView currentStreak={storage.currentStreak} streakHistory={storage.streakHistory} />
+                <CalendarView currentStreak={streak.currentStreak} streakHistory={streak.streakHistory} />
             </SwipeableModal>
 
             <SwipeableModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History" setHomeScrollEnabled={setHomeScrollEnabled}>
@@ -421,10 +414,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                 return (
                                     <AnimatedScaleButton
                                         key={i}
-                                        style={[commonStyles.sortBtn, storage.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
-                                        onPress={() => storage.savePreferences(i, storage.sizeIndex)}
+                                        style={[commonStyles.sortBtn, preferences.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
+                                        onPress={() => preferences.savePreferences(i, preferences.sizeIndex)}
                                     >
-                                        <Text style={[commonStyles.sortBtnText, { fontFamily: fontValue }, storage.fontIndex === i && commonStyles.sortBtnTextActive]}>
+                                        <Text style={[commonStyles.sortBtnText, { fontFamily: fontValue }, preferences.fontIndex === i && commonStyles.sortBtnTextActive]}>
                                             {f.label}
                                         </Text>
                                     </AnimatedScaleButton>
@@ -440,10 +433,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             {CONFIG.SIZES.map((s, i) => (
                                 <AnimatedScaleButton
                                     key={i}
-                                    style={[commonStyles.sortBtn, storage.sizeIndex === i && commonStyles.sortBtnActive]}
-                                    onPress={() => storage.savePreferences(storage.fontIndex, i)}
+                                    style={[commonStyles.sortBtn, preferences.sizeIndex === i && commonStyles.sortBtnActive]}
+                                    onPress={() => preferences.savePreferences(preferences.fontIndex, i)}
                                 >
-                                    <Text style={[commonStyles.sortBtnText, storage.sizeIndex === i && commonStyles.sortBtnTextActive]}>
+                                    <Text style={[commonStyles.sortBtnText, preferences.sizeIndex === i && commonStyles.sortBtnTextActive]}>
                                         {s.label}
                                     </Text>
                                 </AnimatedScaleButton>
@@ -472,7 +465,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                 <Text style={{ color: theme.colors.textMuted, fontSize: 13 }}>Vlog Storage</Text>
                             </View>
                             <Text style={{ color: theme.colors.primaryAction, fontSize: 13, fontWeight: '800' }}>
-                                {(storage.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB
+                                {(vlogs.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB
                             </Text>
                         </View>
                     </View>
@@ -489,7 +482,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         <AnimatedScaleButton
                             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14 }}
                             onPress={() => {
-                                storage.setAutoPlayFeedVideos(!storage.autoPlayFeedVideos);
+                                feedData.toggleAutoPlayFeedVideos(!feedData.autoPlayFeedVideos);
                                 Vibration.vibrate(10);
                             }}
                         >
@@ -500,35 +493,42 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Videos play muted while scrolling</Text>
                                 </View>
                             </View>
-                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: storage.autoPlayFeedVideos ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
-                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: storage.autoPlayFeedVideos ? 'flex-end' : 'flex-start' }} />
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: feedData.autoPlayFeedVideos ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: feedData.autoPlayFeedVideos ? 'flex-end' : 'flex-start' }} />
                             </View>
                         </AnimatedScaleButton>
                     </View>
 
-                    <AiSettingsPanel 
-                        storage={storage} 
-                        queueState={queueState} 
-                        forceBatchOverwrite={forceBatchOverwrite} 
-                        setForceBatchOverwrite={setForceBatchOverwrite} 
-                        handleBatchProcess={handleBatchProcess} 
-                        setChoosingModelFor={setChoosingModelFor} 
+                    <AiSettingsPanel
+                        notes={notes}
+                        aiConfig={aiConfig}
+                        queueState={queueState}
+                        forceBatchOverwrite={forceBatchOverwrite}
+                        setForceBatchOverwrite={setForceBatchOverwrite}
+                        handleBatchProcess={handleBatchProcess}
+                        setChoosingModelFor={setChoosingModelFor}
                     />
 
-                    <DeveloperToolsPanel 
-                        storage={storage} 
-                        queueState={queueState} 
-                        devModeUnlocked={devModeUnlocked} 
-                        setNewStreakParam={setNewStreakParam} 
-                        setShowStreakPopup={setShowStreakPopup} 
-                        setShowSettings={setShowSettings} 
-                        setShowBenchmarkModal={setShowBenchmarkModal} 
-                        loadAiLog={loadAiLog} 
-                        showAiLog={showAiLog} 
-                        setShowAiLog={setShowAiLog} 
-                        aiLogEntries={aiLogEntries} 
+                    <DeveloperToolsPanel
+                        notes={notes}
+                        personsHook={personsHook}
+                        streak={streak}
+                        preferences={preferences}
+                        aiConfig={aiConfig}
+                        vlogs={vlogs}
+                        storageActions={storageActions}
+                        queueState={queueState}
+                        devModeUnlocked={devModeUnlocked}
+                        setNewStreakParam={setNewStreakParam}
+                        setShowStreakPopup={setShowStreakPopup}
+                        setShowSettings={setShowSettings}
+                        setShowBenchmarkModal={setShowBenchmarkModal}
+                        loadAiLog={loadAiLog}
+                        showAiLog={showAiLog}
+                        setShowAiLog={setShowAiLog}
+                        aiLogEntries={aiLogEntries}
                         setAiLogEntries={setAiLogEntries}
-                        clearAiLog={clearAiLog} 
+                        clearAiLog={clearAiLog}
                     />
                 </ScrollView>
             </SwipeableModal>
@@ -573,7 +573,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                 style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 16, borderRadius: 100, shadowColor: theme.colors.primaryAction, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}
                                 onPress={async () => {
                                     if (newPersonNameRef.current.trim()) {
-                                        const newId = await storage.addPerson(newPersonNameRef.current);
+                                        const newId = await personsHook.addPerson(newPersonNameRef.current);
                                         newPersonNameRef.current = '';
                                         setCreatingNewCircle(false);
                                         circleSearchRef.current = '';
@@ -669,7 +669,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             <StreakPopup
                 visible={showStreakPopup}
                 streak={newStreakParam}
-                streakHistory={storage.streakHistory}
+                streakHistory={streak.streakHistory}
                 onClose={() => setShowStreakPopup(false)}
             />
             
@@ -685,7 +685,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         <Text style={commonStyles.versionModalTitle}>Select {choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model</Text>
                         <View style={{ gap: 8, marginTop: 10 }}>
                         {AI_AVAILABLE_MODELS.map(m => {
-                                const isSelected = choosingModelFor === 'summary' ? storage.aiModel === m : storage.aiGrammarModel === m;
+                                const isSelected = choosingModelFor === 'summary' ? aiConfig.aiModel === m : aiConfig.aiGrammarModel === m;
                                 return (
                                     <AnimatedScaleButton 
                                         key={m}
@@ -700,8 +700,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                             borderRadius: 8
                                         }}
                                         onPress={() => {
-                                            if (choosingModelFor === 'summary') storage.saveAiModel(m);
-                                            else storage.saveAiGrammarModel(m);
+                                            if (choosingModelFor === 'summary') aiConfig.saveAiModel(m);
+                                            else aiConfig.saveAiGrammarModel(m);
                                             setChoosingModelFor(null);
                                         }}
                                     >
@@ -732,25 +732,25 @@ const styles = StyleSheet.create({
     heroTitle: {
         fontSize: 28,
         fontWeight: '900',
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontFamily: theme.typography.fontFamily,
         letterSpacing: -0.5,
         marginBottom: 6
     },
     heroSubtitle: {
         fontSize: 16,
-        color: 'rgba(255,255,255,0.6)',
+        color: theme.colors.textSecondary,
         fontFamily: theme.typography.fontFamily
     },
     personSmallSelectBtn: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: theme.colors.glassBorder,
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
         marginTop: 5
     },
     personSmallSelectText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 14,
         fontWeight: '600'
     },
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     premiumPersonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, paddingTop: 20, paddingBottom: 25 },
     premiumPersonTitle: { color: '#FFF', fontSize: 24, fontWeight: '900', letterSpacing: 0.5 },
     premiumPersonCloseBtn: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 8, borderRadius: 20 },
-    premiumSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, paddingHorizontal: 15, height: 55, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    premiumSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.glassSurface, borderRadius: 16, paddingHorizontal: 15, height: 55, borderWidth: 1, borderColor: theme.colors.glassBorder },
     premiumSearchInput: { flex: 1, color: '#FFF', fontSize: 16, paddingVertical: 0 },
     premiumPersonItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
     premiumPersonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },

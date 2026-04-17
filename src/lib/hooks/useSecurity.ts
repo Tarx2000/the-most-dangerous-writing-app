@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Platform, DeviceEventEmitter } from 'react-native';
+import { Platform, DeviceEventEmitter, AppState, type AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 /**
@@ -65,9 +65,17 @@ export function useSecurity() {
             const hasHardware = await LocalAuthentication.hasHardwareAsync();
             const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
-            if (!hasHardware || !isEnrolled || Platform.OS === 'web') {
-                // No biometric available — allow access (no PIN fallback)
-                return true;
+            if (!hasHardware || !isEnrolled) {
+                // No biometric hardware or not enrolled
+                if (Platform.OS === 'web') {
+                    // Web has no biometric API — bypass is acceptable
+                    console.warn('[Security] No biometric support on web — access granted by default');
+                    return true;
+                }
+                // On native: hardware exists but no enrollment → deny access
+                // User must enroll biometrics in device settings first
+                console.warn('[Security] Biometric hardware available but not enrolled — access denied');
+                return false;
             }
 
             const result = await LocalAuthentication.authenticateAsync({
@@ -131,17 +139,25 @@ export function useSecurity() {
         return false;
     }, [authenticate, isNotesUnlocked]);
 
-    /* ── Cleanup ─────────────────────────────────────────────────────── */
+    /* ── Cleanup & AppState ───────────────────────────────────────────── */
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('RESET_LOCK_TIMER', () => {
             if (isNotesUnlocked) resetLockTimeout();
         });
 
+        // Auto-lock when app goes to background (security best practice)
+        const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+            if (nextState === 'background' || nextState === 'inactive') {
+                lockAll();
+            }
+        });
+
         return () => {
             if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
             sub.remove();
+            appStateSub.remove();
         };
-    }, [isNotesUnlocked, resetLockTimeout]);
+    }, [isNotesUnlocked, resetLockTimeout, lockAll]);
 
     return {
         /** Stage 2: full access (read notes, delete) */

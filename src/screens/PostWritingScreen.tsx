@@ -21,7 +21,6 @@ import {
     ScrollView,
     StyleSheet,
     Platform,
-    Dimensions,
     ActivityIndicator,
     Vibration,
 } from 'react-native';
@@ -43,10 +42,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
 import type { AiJobCategory } from '@/types';
+import { isAlignmentReflection } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PostWriting'>;
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /* ── Shimmer Loading Animation ───────────────────────────────────────── */
 
@@ -123,7 +121,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         aiEnqueuedRef.current = true;
 
         // Determine category based on note properties
-        const category: AiJobCategory = (note as any).isAlignmentReflection
+        const category: AiJobCategory = isAlignmentReflection(note)
             ? 'checkin'
             : note.personId
                 ? 'circle'
@@ -272,9 +270,9 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <MaterialCommunityIcons
                                 name={isEditing ? 'check' : 'pencil'}
                                 size={14}
-                                color={isEditing ? '#4ade80' : theme.colors.textMuted}
+                                color={isEditing ? theme.colors.green : theme.colors.textMuted}
                             />
-                            <Text style={[styles.editToggleText, isEditing && { color: '#4ade80' }]}>
+                            <Text style={[styles.editToggleText, isEditing && { color: theme.colors.green }]}>
                                 {isEditing ? 'Done' : 'Edit'}
                             </Text>
                         </AnimatedScaleButton>
@@ -388,12 +386,12 @@ const styles = StyleSheet.create({
     headerBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 42, 42, 0.1)',
+        backgroundColor: theme.colors.dangerTint,
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 20,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.2)',
+        borderColor: theme.colors.dangerBorder,
         marginBottom: 12,
         gap: 6,
     },
@@ -537,12 +535,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
-        backgroundColor: 'rgba(255, 42, 42, 0.08)',
+        backgroundColor: theme.colors.dangerLight,
         paddingVertical: 14,
         paddingHorizontal: 20,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.15)',
+        borderColor: theme.colors.dangerAccent,
     },
     grammarBtnLoading: {
         opacity: 0.7,
@@ -559,14 +557,14 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     grammarResultTitle: {
-        color: '#4ade80',
+        color: theme.colors.green,
         fontSize: 14,
         fontWeight: '700',
     },
     suggestionCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 200, 50, 0.06)',
+        backgroundColor: 'rgba(255, 215, 0, 0.06)',
         borderRadius: 14,
         padding: 14,
         marginBottom: 8,
@@ -590,7 +588,7 @@ const styles = StyleSheet.create({
         textDecorationLine: 'line-through',
     },
     suggestionFixed: {
-        color: '#4ade80',
+        color: theme.colors.green,
         fontSize: 14,
         fontWeight: '700',
     },

@@ -114,7 +114,7 @@ interface FeedContextType {
     autoPlayFeedVideos: boolean;
     toggleBookmark: (noteId: string) => Promise<void>;
     saveFeedComment: (noteId: string, comment: string) => Promise<void>;
-    setAutoPlayFeedVideos: (enabled: boolean) => Promise<void>;
+    toggleAutoPlayFeedVideos: (enabled: boolean) => Promise<void>;
 }
 
 /** Vlogs — low-frequency */
@@ -214,149 +214,209 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
     const feedCommentsRef = useRef(feedComments);
     feedCommentsRef.current = feedComments;
+    const fontIndexRef = useRef(fontIndex);
+    fontIndexRef.current = fontIndex;
+    const sizeIndexRef = useRef(sizeIndex);
+    sizeIndexRef.current = sizeIndex;
+    const useBiometricsRef = useRef(useBiometrics);
+    useBiometricsRef.current = useBiometrics;
+    const visionBoardRef = useRef(visionBoard);
+    visionBoardRef.current = visionBoard;
+    const aiApiKeyRef = useRef(aiApiKey);
+    aiApiKeyRef.current = aiApiKey;
+    const aiBaseUrlRef = useRef(aiBaseUrl);
+    aiBaseUrlRef.current = aiBaseUrl;
+    const aiModelRef = useRef(aiModel);
+    aiModelRef.current = aiModel;
+    const aiGrammarModelRef = useRef(aiGrammarModel);
+    aiGrammarModelRef.current = aiGrammarModel;
+    const aiPromptsRef = useRef(aiPrompts);
+    aiPromptsRef.current = aiPrompts;
+    const autoPlayFeedVideosRef = useRef(autoPlayFeedVideos);
+    autoPlayFeedVideosRef.current = autoPlayFeedVideos;
+    const totalVlogStorageBytesRef = useRef(totalVlogStorageBytes);
+    totalVlogStorageBytesRef.current = totalVlogStorageBytes;
 
     /* ══════════════════════════════════════════════════════════════════════
        DATA LOADING — Centralized load from storage on app start
        ══════════════════════════════════════════════════════════════════════ */
 
-    const loadAllData = useCallback(async () => {
+    /**
+     * Safely parse JSON from AsyncStorage. Returns fallback on parse error.
+     * Logs a warning so corrupted keys are discoverable without crashing the app.
+     */
+    const safeParse = <T extends unknown>(key: string, raw: string | null | undefined, fallback: T): T => {
+        if (raw == null) return fallback;
         try {
-            const keys = [
-                'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
-                'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY',
-                'DEV_MODE', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS',
-                'BOOKMARKED_NOTE_IDS', 'FEED_COMMENTS', 'AUTO_PLAY_FEED_VIDEOS',
-                AI_STORAGE_KEYS.API_KEY, AI_STORAGE_KEYS.BASE_URL,
-                AI_STORAGE_KEYS.MODEL, AI_STORAGE_KEYS.GRAMMAR_MODEL,
-                AI_STORAGE_KEYS.PROMPTS,
-            ];
-            const results = await storage.multiGet(keys);
-            const data: Record<string, string | null> = Object.fromEntries(results);
+            return JSON.parse(raw) as T;
+        } catch (err) {
+            console.warn(`[Storage] Failed to parse key "${key}", using fallback:`, err);
+            return fallback;
+        }
+    };
 
-            /* ── Notes (with migration to strip deprecated aiProcessing field) ── */
-            let loadedNotes: SavedNote[] = [];
-            if (data['SAVED_NOTES']) {
-                loadedNotes = JSON.parse(data['SAVED_NOTES']);
-                const hadStale = (loadedNotes as any[]).some((n: any) => 'aiProcessing' in n);
-                if (hadStale) {
-                    loadedNotes = (loadedNotes as any[]).map(({ aiProcessing: _, ...rest }: any) => rest) as SavedNote[];
-                    await storage.setItem('SAVED_NOTES', JSON.stringify(loadedNotes));
-                    console.log('[Storage] Stripped deprecated aiProcessing fields from notes');
+    const loadAllData = useCallback(async () => {
+        const keys = [
+            'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
+            'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY',
+            'DEV_MODE', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS',
+            'BOOKMARKED_NOTE_IDS', 'FEED_COMMENTS', 'AUTO_PLAY_FEED_VIDEOS',
+            AI_STORAGE_KEYS.API_KEY, AI_STORAGE_KEYS.BASE_URL,
+            AI_STORAGE_KEYS.MODEL, AI_STORAGE_KEYS.GRAMMAR_MODEL,
+            AI_STORAGE_KEYS.PROMPTS,
+        ];
+        const results = await storage.multiGet(keys);
+        const data: Record<string, string | null> = Object.fromEntries(results);
+
+        /* ── Notes (with migration to strip deprecated aiProcessing field) ── */
+        let loadedNotes: SavedNote[] = [];
+        if (data['SAVED_NOTES']) {
+            loadedNotes = safeParse<SavedNote[]>('SAVED_NOTES', data['SAVED_NOTES'], []);
+            const hadStale = (loadedNotes as any[]).some((n: any) => 'aiProcessing' in n);
+            if (hadStale) {
+                loadedNotes = (loadedNotes as any[]).map(({ aiProcessing: _, ...rest }: any) => rest) as SavedNote[];
+                await storage.setItem('SAVED_NOTES', JSON.stringify(loadedNotes));
+                console.log('[Storage] Stripped deprecated aiProcessing fields from notes');
+            }
+            setSavedNotes(loadedNotes);
+            savedNotesRef.current = loadedNotes;
+        }
+
+        /* ── Persons ───────────────────────────────────────────────── */
+        if (data['SAVED_PERSONS']) {
+            const loaded = safeParse<Person[]>('SAVED_PERSONS', data['SAVED_PERSONS'], []);
+            setPersons(loaded);
+            personsRef.current = loaded;
+        }
+
+        /* ── Preferences ───────────────────────────────────────────── */
+        if (data['USER_FONT_IDX'] !== null) {
+            const parsed = parseInt(data['USER_FONT_IDX']!, 10);
+            if (!isNaN(parsed)) { setFontIndex(parsed); fontIndexRef.current = parsed; }
+        }
+        if (data['USER_SIZE_IDX'] !== null) {
+            const parsed = parseInt(data['USER_SIZE_IDX']!, 10);
+            if (!isNaN(parsed)) { setSizeIndex(parsed); sizeIndexRef.current = parsed; }
+        }
+        if (data['USE_BIOMETRICS'] !== null) {
+            const val = safeParse('USE_BIOMETRICS', data['USE_BIOMETRICS'], false);
+            setUseBiometrics(val);
+            useBiometricsRef.current = val;
+        }
+        if (data['DEV_MODE'] !== null) {
+            const val = safeParse('DEV_MODE', data['DEV_MODE'] || 'false', false);
+            setDevMode(val);
+            devModeRef.current = val;
+        }
+        if (data['VISION_BOARD']) {
+            const val = safeParse<VisionBoard>('VISION_BOARD', data['VISION_BOARD'], { health: '', career: '', relationships: '', mindset: '' });
+            setVisionBoard(val);
+            visionBoardRef.current = val;
+        }
+        if (data['LAST_REFLECTION_DATE']) setLastReflectionDate(parseInt(data['LAST_REFLECTION_DATE']!, 10));
+
+        /* ── Streak ────────────────────────────────────────────────── */
+        if (data['CURRENT_STREAK'] !== null) {
+            const val = parseInt(data['CURRENT_STREAK']!, 10);
+            setCurrentStreak(val);
+            currentStreakRef.current = val;
+        }
+        if (data['LAST_WIN_DATE']) {
+            setLastWinDate(data['LAST_WIN_DATE']!);
+            lastWinDateRef.current = data['LAST_WIN_DATE']!;
+        }
+
+        /* ── Vlogs ─────────────────────────────────────────────────── */
+        if (data['SAVED_VLOGS']) {
+            const vlogs = safeParse<SavedVlog[]>('SAVED_VLOGS', data['SAVED_VLOGS'], []);
+            setSavedVlogs(vlogs);
+            savedVlogsRef.current = vlogs;
+            const totalBytes = vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
+            setTotalVlogStorageBytes(totalBytes);
+            totalVlogStorageBytesRef.current = totalBytes;
+        }
+
+        /* ── AI Config ─────────────────────────────────────────────── */
+        if (data[AI_STORAGE_KEYS.API_KEY]) {
+            setAiApiKey(data[AI_STORAGE_KEYS.API_KEY]!);
+            aiApiKeyRef.current = data[AI_STORAGE_KEYS.API_KEY]!;
+        }
+        if (data[AI_STORAGE_KEYS.BASE_URL]) {
+            setAiBaseUrl(data[AI_STORAGE_KEYS.BASE_URL]!);
+            aiBaseUrlRef.current = data[AI_STORAGE_KEYS.BASE_URL]!;
+        }
+        if (data[AI_STORAGE_KEYS.MODEL]) {
+            setAiModel(data[AI_STORAGE_KEYS.MODEL]!);
+            aiModelRef.current = data[AI_STORAGE_KEYS.MODEL]!;
+        }
+        if (data[AI_STORAGE_KEYS.GRAMMAR_MODEL]) {
+            setAiGrammarModel(data[AI_STORAGE_KEYS.GRAMMAR_MODEL]!);
+            aiGrammarModelRef.current = data[AI_STORAGE_KEYS.GRAMMAR_MODEL]!;
+        }
+        if (data[AI_STORAGE_KEYS.PROMPTS]) {
+            const parsed = safeParse<Record<string, string>>('AI_PROMPTS', data[AI_STORAGE_KEYS.PROMPTS], {});
+            const merged = { ...DEFAULT_AI_PROMPTS, ...parsed };
+            setAiPrompts(merged);
+            aiPromptsRef.current = merged;
+        }
+
+        /* ── Feed ──────────────────────────────────────────────────── */
+        if (data['BOOKMARKED_NOTE_IDS']) {
+            const loaded = safeParse<string[]>('BOOKMARKED_NOTE_IDS', data['BOOKMARKED_NOTE_IDS'], []);
+            setBookmarkedNoteIds(loaded);
+            bookmarkedNoteIdsRef.current = loaded;
+        }
+        if (data['FEED_COMMENTS']) {
+            const loaded = safeParse<Record<string, string>>('FEED_COMMENTS', data['FEED_COMMENTS'], {});
+            setFeedComments(loaded);
+            feedCommentsRef.current = loaded;
+        }
+        if (data['AUTO_PLAY_FEED_VIDEOS'] !== null && data['AUTO_PLAY_FEED_VIDEOS'] !== undefined) {
+            const val = safeParse('AUTO_PLAY_FEED_VIDEOS', data['AUTO_PLAY_FEED_VIDEOS'], true);
+            setAutoPlayFeedVideos(val);
+            autoPlayFeedVideosRef.current = val;
+        }
+
+        /* ── Streak History (load or backfill) ─────────────────────── */
+        let loadedHistory: string[] = [];
+        if (data['STREAK_HISTORY']) {
+            loadedHistory = safeParse<string[]>('STREAK_HISTORY', data['STREAK_HISTORY'], []);
+            setStreakHistory(loadedHistory);
+            streakHistoryRef.current = loadedHistory;
+        } else {
+            const historySet = new Set<string>();
+            loadedNotes.forEach(n => {
+                if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
+                    const d = new Date(n.timestamp);
+                    historySet.add(d.toISOString().slice(0, 10));
                 }
-                setSavedNotes(loadedNotes);
-                savedNotesRef.current = loadedNotes;
-            }
+            });
+            loadedHistory = Array.from(historySet);
+            setStreakHistory(loadedHistory);
+            streakHistoryRef.current = loadedHistory;
+            await storage.setItem('STREAK_HISTORY', JSON.stringify(loadedHistory));
+        }
 
-            /* ── Persons ───────────────────────────────────────────────── */
-            if (data['SAVED_PERSONS']) {
-                const loaded = JSON.parse(data['SAVED_PERSONS']);
-                setPersons(loaded);
-                personsRef.current = loaded;
-            }
-
-            /* ── Preferences ───────────────────────────────────────────── */
-            if (data['USER_FONT_IDX'] !== null) {
-                const parsed = parseInt(data['USER_FONT_IDX']!, 10);
-                if (!isNaN(parsed)) setFontIndex(parsed);
-            }
-            if (data['USER_SIZE_IDX'] !== null) {
-                const parsed = parseInt(data['USER_SIZE_IDX']!, 10);
-                if (!isNaN(parsed)) setSizeIndex(parsed);
-            }
-            if (data['USE_BIOMETRICS'] !== null) setUseBiometrics(JSON.parse(data['USE_BIOMETRICS']!));
-            if (data['DEV_MODE'] !== null) setDevMode(JSON.parse(data['DEV_MODE'] || 'false'));
-            if (data['VISION_BOARD']) setVisionBoard(JSON.parse(data['VISION_BOARD']));
-            if (data['LAST_REFLECTION_DATE']) setLastReflectionDate(parseInt(data['LAST_REFLECTION_DATE']!, 10));
-
-            /* ── Streak ────────────────────────────────────────────────── */
-            if (data['CURRENT_STREAK'] !== null) {
-                const val = parseInt(data['CURRENT_STREAK']!, 10);
-                setCurrentStreak(val);
-                currentStreakRef.current = val;
-            }
-            if (data['LAST_WIN_DATE']) {
-                setLastWinDate(data['LAST_WIN_DATE']!);
-                lastWinDateRef.current = data['LAST_WIN_DATE']!;
-            }
-
-            /* ── Vlogs ─────────────────────────────────────────────────── */
-            if (data['SAVED_VLOGS']) {
-                const vlogs: SavedVlog[] = JSON.parse(data['SAVED_VLOGS']);
-                setSavedVlogs(vlogs);
-                savedVlogsRef.current = vlogs;
-                setTotalVlogStorageBytes(vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0));
-            }
-
-            /* ── AI Config ─────────────────────────────────────────────── */
-            if (data[AI_STORAGE_KEYS.API_KEY]) setAiApiKey(data[AI_STORAGE_KEYS.API_KEY]!);
-            if (data[AI_STORAGE_KEYS.BASE_URL]) setAiBaseUrl(data[AI_STORAGE_KEYS.BASE_URL]!);
-            if (data[AI_STORAGE_KEYS.MODEL]) setAiModel(data[AI_STORAGE_KEYS.MODEL]!);
-            if (data[AI_STORAGE_KEYS.GRAMMAR_MODEL]) setAiGrammarModel(data[AI_STORAGE_KEYS.GRAMMAR_MODEL]!);
-            if (data[AI_STORAGE_KEYS.PROMPTS]) {
-                try {
-                    const parsed = JSON.parse(data[AI_STORAGE_KEYS.PROMPTS]!);
-                    setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...parsed });
-                } catch { /* keep defaults */ }
-            }
-
-            /* ── Feed ──────────────────────────────────────────────────── */
-            if (data['BOOKMARKED_NOTE_IDS']) {
-                const loaded = JSON.parse(data['BOOKMARKED_NOTE_IDS']);
-                setBookmarkedNoteIds(loaded);
-                bookmarkedNoteIdsRef.current = loaded;
-            }
-            if (data['FEED_COMMENTS']) {
-                const loaded = JSON.parse(data['FEED_COMMENTS']);
-                setFeedComments(loaded);
-                feedCommentsRef.current = loaded;
-            }
-            if (data['AUTO_PLAY_FEED_VIDEOS'] !== null && data['AUTO_PLAY_FEED_VIDEOS'] !== undefined) {
-                setAutoPlayFeedVideos(JSON.parse(data['AUTO_PLAY_FEED_VIDEOS']!));
-            }
-
-            /* ── Streak History (load or backfill) ─────────────────────── */
-            let loadedHistory: string[] = [];
-            if (data['STREAK_HISTORY']) {
-                loadedHistory = JSON.parse(data['STREAK_HISTORY']);
-                setStreakHistory(loadedHistory);
-                streakHistoryRef.current = loadedHistory;
-            } else {
-                const historySet = new Set<string>();
-                loadedNotes.forEach(n => {
-                    if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
-                        const d = new Date(n.timestamp);
-                        historySet.add(d.toISOString().slice(0, 10));
-                    }
-                });
-                loadedHistory = Array.from(historySet);
-                setStreakHistory(loadedHistory);
-                streakHistoryRef.current = loadedHistory;
-                await storage.setItem('STREAK_HISTORY', JSON.stringify(loadedHistory));
-            }
-
-            /* ── Recalculate streak if stored value is stale ───────────── */
-            const storedStreak = data['CURRENT_STREAK'] ? parseInt(data['CURRENT_STREAK']!, 10) : 0;
-            if (loadedHistory.length > 0 && storedStreak === 0) {
-                const histSet = new Set<string>(loadedHistory);
-                let recalcStreak = 0;
-                const checkDate = new Date();
-                for (let i = 0; i < 365; i++) {
-                    const key = checkDate.toISOString().slice(0, 10);
-                    if (histSet.has(key)) {
-                        recalcStreak++;
-                        checkDate.setDate(checkDate.getDate() - 1);
-                    } else {
-                        break;
-                    }
-                }
-                if (recalcStreak > 0) {
-                    setCurrentStreak(recalcStreak);
-                    currentStreakRef.current = recalcStreak;
-                    await storage.setItem('CURRENT_STREAK', recalcStreak.toString());
+        /* ── Recalculate streak if stored value is stale ───────────── */
+        const storedStreak = data['CURRENT_STREAK'] ? parseInt(data['CURRENT_STREAK']!, 10) : 0;
+        if (loadedHistory.length > 0 && storedStreak === 0) {
+            const histSet = new Set<string>(loadedHistory);
+            let recalcStreak = 0;
+            const checkDate = new Date();
+            for (let i = 0; i < 365; i++) {
+                const key = checkDate.toISOString().slice(0, 10);
+                if (histSet.has(key)) {
+                    recalcStreak++;
+                    checkDate.setDate(checkDate.getDate() - 1);
+                } else {
+                    break;
                 }
             }
-        } catch (error) {
-            console.error('[Storage] Failed to load data:', error);
+            if (recalcStreak > 0) {
+                setCurrentStreak(recalcStreak);
+                currentStreakRef.current = recalcStreak;
+                await storage.setItem('CURRENT_STREAK', recalcStreak.toString());
+            }
         }
     }, []);
 
@@ -373,8 +433,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
      * Save a new note and update streak if applicable.
      * Uses refs for ALL state reads to prevent stale closure bugs.
      * Persists notes + streak atomically via multiSet.
+     * On storage failure, rolls back all in-memory state changes.
      */
     const saveNote = useCallback(async (note: SavedNote): Promise<{ streakIncreased: boolean; newStreak: number }> => {
+        // Snapshot current state for rollback
+        const prevNotes = savedNotesRef.current;
+        const prevStreak = currentStreakRef.current;
+        const prevLastWinDate = lastWinDateRef.current;
+        const prevHistory = [...streakHistoryRef.current];
+
         // Read current values from refs (always fresh)
         let updatedStreak = currentStreakRef.current;
         let streakIncreased = false;
@@ -437,6 +504,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) {
             console.error('[Storage] Failed to save note:', error);
             Vibration.vibrate([0, 500]);
+            // Rollback all state changes
+            savedNotesRef.current = prevNotes;
+            setSavedNotes(prevNotes);
+            currentStreakRef.current = prevStreak;
+            setCurrentStreak(prevStreak);
+            lastWinDateRef.current = prevLastWinDate;
+            setLastWinDate(prevLastWinDate);
+            streakHistoryRef.current = prevHistory;
+            setStreakHistory(prevHistory);
         }
 
         return { streakIncreased, newStreak: updatedStreak };
@@ -444,7 +520,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /** Delete a note by ID */
     const deleteNote = useCallback(async (id: string) => {
-        const updatedNotes = savedNotesRef.current.filter(n => n.id !== id);
+        const prevNotes = savedNotesRef.current;
+        const updatedNotes = prevNotes.filter(n => n.id !== id);
         savedNotesRef.current = updatedNotes;
         setSavedNotes(updatedNotes);
 
@@ -453,12 +530,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) {
             console.error('[Storage] Failed to delete note:', error);
             Vibration.vibrate([0, 500]);
+            savedNotesRef.current = prevNotes;
+            setSavedNotes(prevNotes);
         }
     }, []);
 
     /** Update an existing note's fields (e.g. AI-generated title, summary) */
     const updateNote = useCallback(async (id: string, updates: Partial<SavedNote>) => {
-        const updatedNotes = savedNotesRef.current.map(n =>
+        const prevNotes = savedNotesRef.current;
+        const updatedNotes = prevNotes.map(n =>
             n.id === id ? { ...n, ...updates } : n
         );
         savedNotesRef.current = updatedNotes;
@@ -468,12 +548,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             await storage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
         } catch (error) {
             console.error('[Storage] Failed to update note:', error);
+            savedNotesRef.current = prevNotes;
+            setSavedNotes(prevNotes);
         }
     }, []);
 
     /** Remove AI-generated titles, summaries, and model info from all notes */
     const clearAllAiMetadata = useCallback(async () => {
-        const updatedNotes = savedNotesRef.current.map(n => ({
+        const prevNotes = savedNotesRef.current;
+        const updatedNotes = prevNotes.map(n => ({
             ...n,
             aiTitle: undefined,
             aiSummary: undefined,
@@ -486,6 +569,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             await storage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
         } catch (error) {
             console.error('[Storage] Failed to clear AI metadata:', error);
+            savedNotesRef.current = prevNotes;
+            setSavedNotes(prevNotes);
         }
     }, []);
 
@@ -496,13 +581,14 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     /** Add a new person to the Circle */
     const addPerson = useCallback(async (name: string) => {
         if (name.trim().length === 0) return null;
+        const prevPersons = personsRef.current;
         const newId = generateId();
         const newPerson: Person = {
             id: newId,
             name: name.trim(),
             createdAt: Date.now(),
         };
-        const updatedPersons = [newPerson, ...personsRef.current];
+        const updatedPersons = [newPerson, ...prevPersons];
         personsRef.current = updatedPersons;
         setPersons(updatedPersons);
 
@@ -511,6 +597,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) {
             console.error('[Storage] Failed to add person:', error);
             Vibration.vibrate([0, 500]);
+            personsRef.current = prevPersons;
+            setPersons(prevPersons);
         }
         return newId;
     }, []);
@@ -521,8 +609,10 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
      * Shows an Alert to the user if persistence fails.
      */
     const deletePerson = useCallback(async (id: string) => {
-        const updatedPersons = personsRef.current.filter(p => p.id !== id);
-        const updatedNotes = savedNotesRef.current.map(n =>
+        const prevPersons = personsRef.current;
+        const prevNotes = savedNotesRef.current;
+        const updatedPersons = prevPersons.filter(p => p.id !== id);
+        const updatedNotes = prevNotes.map(n =>
             n.personId === id ? { ...n, personId: undefined } : n
         );
 
@@ -540,17 +630,23 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             ]);
         } catch (error) {
             console.error('[Storage] Failed to delete person:', error);
+            // Rollback state
+            personsRef.current = prevPersons;
+            savedNotesRef.current = prevNotes;
+            setPersons(prevPersons);
+            setSavedNotes(prevNotes);
             Vibration.vibrate([0, 500]);
             Alert.alert(
                 'Error',
-                'Failed to delete person. Your data may be out of sync — please restart the app.',
+                'Failed to delete person. Please try again.',
             );
         }
     }, []);
 
     /** Update an existing person's profile fields */
     const updatePerson = useCallback(async (id: string, updates: Partial<Person>) => {
-        const updatedPersons = personsRef.current.map(p =>
+        const prevPersons = personsRef.current;
+        const updatedPersons = prevPersons.map(p =>
             p.id === id ? { ...p, ...updates } : p
         );
         personsRef.current = updatedPersons;
@@ -560,6 +656,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             await storage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
         } catch (error) {
             console.error('[Storage] Failed to update person:', error);
+            personsRef.current = prevPersons;
+            setPersons(prevPersons);
         }
     }, []);
 
@@ -568,6 +666,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
        ══════════════════════════════════════════════════════════════════════ */
 
     const savePreferences = useCallback(async (fIdx: number, sIdx: number) => {
+        const prevFont = fontIndexRef.current;
+        const prevSize = sizeIndexRef.current;
         setFontIndex(fIdx);
         setSizeIndex(sIdx);
         try {
@@ -577,34 +677,48 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             ]);
         } catch (error) {
             console.error('[Storage] Failed to save preferences:', error);
+            setFontIndex(prevFont);
+            setSizeIndex(prevSize);
+            fontIndexRef.current = prevFont;
+            sizeIndexRef.current = prevSize;
         }
     }, []);
 
     const toggleDevMode = useCallback(async () => {
-        const newVal = !devModeRef.current;
+        const prevVal = devModeRef.current;
+        const newVal = !prevVal;
         setDevMode(newVal);
         try {
             await storage.setItem('DEV_MODE', JSON.stringify(newVal));
         } catch (error) {
             console.error('[Storage] Failed to toggle dev mode:', error);
+            setDevMode(prevVal);
         }
     }, []);
 
     const updateBiometricsPref = useCallback(async (val: boolean) => {
+        const prev = useBiometricsRef.current;
         setUseBiometrics(val);
+        useBiometricsRef.current = val;
         try {
             await storage.setItem('USE_BIOMETRICS', JSON.stringify(val));
         } catch (error) {
             console.error('[Storage] Failed to update biometrics pref:', error);
+            setUseBiometrics(prev);
+            useBiometricsRef.current = prev;
         }
     }, []);
 
     const saveVisionBoard = useCallback(async (newBoard: VisionBoard) => {
+        const prev = visionBoardRef.current;
         setVisionBoard(newBoard);
+        visionBoardRef.current = newBoard;
         try {
             await storage.setItem('VISION_BOARD', JSON.stringify(newBoard));
         } catch (error) {
             console.error('[Storage] Failed to save vision board:', error);
+            setVisionBoard(prev);
+            visionBoardRef.current = prev;
         }
     }, []);
 
@@ -613,47 +727,67 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
        ══════════════════════════════════════════════════════════════════════ */
 
     const saveAiApiKey = useCallback(async (key: string) => {
+        const prev = aiApiKeyRef.current;
         setAiApiKey(key);
+        aiApiKeyRef.current = key;
         try {
             await storage.setItem(AI_STORAGE_KEYS.API_KEY, key);
         } catch (error) {
             console.error('[Storage] Failed to save AI API key:', error);
+            setAiApiKey(prev);
+            aiApiKeyRef.current = prev;
         }
     }, []);
 
     const saveAiBaseUrl = useCallback(async (url: string) => {
+        const prev = aiBaseUrlRef.current;
         setAiBaseUrl(url);
+        aiBaseUrlRef.current = url;
         try {
             await storage.setItem(AI_STORAGE_KEYS.BASE_URL, url);
         } catch (error) {
             console.error('[Storage] Failed to save AI base URL:', error);
+            setAiBaseUrl(prev);
+            aiBaseUrlRef.current = prev;
         }
     }, []);
 
     const saveAiModel = useCallback(async (model: string) => {
+        const prev = aiModelRef.current;
         setAiModel(model);
+        aiModelRef.current = model;
         try {
             await storage.setItem(AI_STORAGE_KEYS.MODEL, model);
         } catch (error) {
             console.error('[Storage] Failed to save AI model:', error);
+            setAiModel(prev);
+            aiModelRef.current = prev;
         }
     }, []);
 
     const saveAiGrammarModel = useCallback(async (grammarModel: string) => {
+        const prev = aiGrammarModelRef.current;
         setAiGrammarModel(grammarModel);
+        aiGrammarModelRef.current = grammarModel;
         try {
             await storage.setItem(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
         } catch (error) {
             console.error('[Storage] Failed to save AI grammar model:', error);
+            setAiGrammarModel(prev);
+            aiGrammarModelRef.current = prev;
         }
     }, []);
 
     const saveAiPrompts = useCallback(async (prompts: AiPrompts) => {
+        const prev = aiPromptsRef.current;
         setAiPrompts(prompts);
+        aiPromptsRef.current = prompts;
         try {
             await storage.setItem(AI_STORAGE_KEYS.PROMPTS, JSON.stringify(prompts));
         } catch (error) {
             console.error('[Storage] Failed to save AI prompts:', error);
+            setAiPrompts(prev);
+            aiPromptsRef.current = prev;
         }
     }, []);
 
@@ -662,10 +796,10 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
        ══════════════════════════════════════════════════════════════════════ */
 
     const toggleBookmark = useCallback(async (noteId: string) => {
-        const current = bookmarkedNoteIdsRef.current;
-        const updated = current.includes(noteId)
-            ? current.filter(id => id !== noteId)
-            : [...current, noteId];
+        const prev = bookmarkedNoteIdsRef.current;
+        const updated = prev.includes(noteId)
+            ? prev.filter(id => id !== noteId)
+            : [...prev, noteId];
         bookmarkedNoteIdsRef.current = updated;
         setBookmarkedNoteIds(updated);
 
@@ -674,12 +808,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             Vibration.vibrate([0, 20, 0, 20]);
         } catch (error) {
             console.error('[Storage] Failed to toggle bookmark:', error);
+            bookmarkedNoteIdsRef.current = prev;
+            setBookmarkedNoteIds(prev);
             Vibration.vibrate([0, 500]);
         }
     }, []);
 
     const saveFeedComment = useCallback(async (noteId: string, comment: string) => {
-        const updated = { ...feedCommentsRef.current, [noteId]: comment };
+        const prev = feedCommentsRef.current;
+        const updated = { ...prev, [noteId]: comment };
         if (!comment.trim()) delete updated[noteId];
         feedCommentsRef.current = updated;
         setFeedComments(updated);
@@ -688,15 +825,21 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             await storage.setItem('FEED_COMMENTS', JSON.stringify(updated));
         } catch (error) {
             console.error('[Storage] Failed to save comment:', error);
+            feedCommentsRef.current = prev;
+            setFeedComments(prev);
         }
     }, []);
 
     const toggleAutoPlayFeedVideos = useCallback(async (enabled: boolean) => {
+        const prev = autoPlayFeedVideosRef.current;
         setAutoPlayFeedVideos(enabled);
+        autoPlayFeedVideosRef.current = enabled;
         try {
             await storage.setItem('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
         } catch (error) {
             console.error('[Storage] Failed to toggle auto-play:', error);
+            setAutoPlayFeedVideos(prev);
+            autoPlayFeedVideosRef.current = prev;
         }
     }, []);
 
@@ -706,15 +849,23 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /** Save a new vlog entry. Currently does not increment streak. */
     const saveVlog = useCallback(async (vlog: SavedVlog): Promise<{ streakIncreased: boolean; newStreak: number }> => {
-        const updatedVlogs = [vlog, ...savedVlogsRef.current];
+        const prevVlogs = savedVlogsRef.current;
+        const prevBytes = totalVlogStorageBytesRef.current;
+        const updatedVlogs = [vlog, ...prevVlogs];
         savedVlogsRef.current = updatedVlogs;
         setSavedVlogs(updatedVlogs);
-        setTotalVlogStorageBytes(prev => prev + (vlog.fileSizeBytes || 0));
+        const newBytes = prevBytes + (vlog.fileSizeBytes || 0);
+        setTotalVlogStorageBytes(newBytes);
+        totalVlogStorageBytesRef.current = newBytes;
 
         try {
             await storage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
         } catch (error) {
             console.error('[Storage] Failed to save vlog:', error);
+            savedVlogsRef.current = prevVlogs;
+            setSavedVlogs(prevVlogs);
+            setTotalVlogStorageBytes(prevBytes);
+            totalVlogStorageBytesRef.current = prevBytes;
         }
 
         // Streak placeholder — vlogs don't increment streak yet
@@ -722,13 +873,17 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const deleteVlog = useCallback(async (id: string) => {
-        const vlog = savedVlogsRef.current.find(v => v.id === id);
-        const updatedVlogs = savedVlogsRef.current.filter(v => v.id !== id);
+        const prevVlogs = savedVlogsRef.current;
+        const vlog = prevVlogs.find(v => v.id === id);
+        const updatedVlogs = prevVlogs.filter(v => v.id !== id);
         savedVlogsRef.current = updatedVlogs;
         setSavedVlogs(updatedVlogs);
 
+        const prevBytes = totalVlogStorageBytesRef.current;
         if (vlog) {
-            setTotalVlogStorageBytes(b => Math.max(0, b - (vlog.fileSizeBytes || 0)));
+            const newBytes = Math.max(0, prevBytes - (vlog.fileSizeBytes || 0));
+            setTotalVlogStorageBytes(newBytes);
+            totalVlogStorageBytesRef.current = newBytes;
             FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch(() => {});
         }
 
@@ -736,12 +891,17 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             await storage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
         } catch (error) {
             console.error('[Storage] Failed to delete vlog:', error);
+            savedVlogsRef.current = prevVlogs;
+            setSavedVlogs(prevVlogs);
+            setTotalVlogStorageBytes(prevBytes);
+            totalVlogStorageBytesRef.current = prevBytes;
             Vibration.vibrate([0, 500]);
         }
     }, []);
 
     const updateVlog = useCallback(async (id: string, patch: Partial<SavedVlog>) => {
-        const updatedVlogs = savedVlogsRef.current.map(v =>
+        const prevVlogs = savedVlogsRef.current;
+        const updatedVlogs = prevVlogs.map(v =>
             v.id === id ? { ...v, ...patch } : v
         );
         savedVlogsRef.current = updatedVlogs;
@@ -751,6 +911,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             await storage.setItem('SAVED_VLOGS', JSON.stringify(updatedVlogs));
         } catch (error) {
             console.error('[Storage] Failed to update vlog:', error);
+            savedVlogsRef.current = prevVlogs;
+            setSavedVlogs(prevVlogs);
         }
     }, []);
 
@@ -805,19 +967,25 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setStreakHistory([]);
         streakHistoryRef.current = [];
         setFontIndex(0);
+        fontIndexRef.current = 0;
         setSizeIndex(1);
+        sizeIndexRef.current = 1;
         setUseBiometrics(true);
+        useBiometricsRef.current = true;
         setDevMode(false);
         setVisionBoard(null);
+        visionBoardRef.current = null;
         setLastReflectionDate(null);
         setSavedVlogs([]);
         savedVlogsRef.current = [];
         setTotalVlogStorageBytes(0);
+        totalVlogStorageBytesRef.current = 0;
         setBookmarkedNoteIds([]);
         bookmarkedNoteIdsRef.current = [];
         setFeedComments({});
         feedCommentsRef.current = {};
         setAutoPlayFeedVideos(true);
+        autoPlayFeedVideosRef.current = true;
 
         // Delete vlogs directory
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
@@ -873,7 +1041,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     const feedValue = useMemo<FeedContextType>(() => ({
         bookmarkedNoteIds, feedComments, autoPlayFeedVideos,
-        toggleBookmark, saveFeedComment, setAutoPlayFeedVideos: toggleAutoPlayFeedVideos,
+        toggleBookmark, saveFeedComment, toggleAutoPlayFeedVideos,
     }), [bookmarkedNoteIds, feedComments, autoPlayFeedVideos,
          toggleBookmark, saveFeedComment, toggleAutoPlayFeedVideos]);
 
@@ -972,13 +1140,17 @@ export function useStorageActions(): StorageActionsContextType {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   BACKWARD COMPATIBILITY — useStorage()
-   Returns the union of all context values. Use this when migrating gradually.
-   NOTE: Components using this hook re-render on ANY context change.
-   Prefer domain-specific hooks (useNotes, usePersons, etc.) for better perf.
+   @deprecated useStorage() — DO NOT USE in new code.
+   This hook merges ALL 8 context values, causing re-renders on ANY state change.
+   Use domain-specific hooks instead: useNotes, usePersons, useStreak, etc.
+   Will be removed in a future release.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/** @deprecated Use domain-specific hooks (useNotes, usePersons, etc.) instead. */
 export function useStorage() {
+    if (__DEV__) {
+        console.warn('[useStorage] Deprecated: This hook subscribes to ALL contexts and causes mass re-renders. Use domain-specific hooks instead (useNotes, usePersons, useStreak, etc.).');
+    }
     const notes = useNotes();
     const persons = usePersons();
     const streak = useStreak();

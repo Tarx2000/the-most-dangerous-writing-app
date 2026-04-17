@@ -535,7 +535,7 @@ const styles = StyleSheet.create({
         width: 94,
         height: 94,
         borderRadius: 47,
-        backgroundColor: '#0A0A0A',
+        backgroundColor: theme.colors.surfaceLight,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -564,13 +564,13 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     relationshipBadge: {
-        backgroundColor: 'rgba(255, 42, 42, 0.12)',
+        backgroundColor: theme.colors.dangerBorderLight,
         paddingHorizontal: 14,
         paddingVertical: 6,
         borderRadius: 100,
         marginTop: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.25)',
+        borderColor: theme.colors.dangerBorderMedium,
     },
     relationshipBadgeText: {
         color: theme.colors.primaryAction,
@@ -661,12 +661,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(255, 42, 42, 0.08)',
+        backgroundColor: theme.colors.dangerLight,
         paddingVertical: 14,
         borderRadius: 100,
         marginBottom: 25,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.2)',
+        borderColor: theme.colors.dangerBorder,
     },
     editProfileBtnText: {
         color: theme.colors.primaryAction,
@@ -754,7 +754,7 @@ const styles = StyleSheet.create({
         borderBottomColor: 'rgba(255,255,255,0.05)',
     },
     relOptionActive: {
-        backgroundColor: 'rgba(255, 42, 42, 0.08)',
+        backgroundColor: theme.colors.dangerLight,
     },
     relOptionText: {
         color: theme.colors.textSecondary,

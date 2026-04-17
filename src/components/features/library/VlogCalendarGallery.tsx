@@ -26,6 +26,7 @@ import { VlogViewerModal, LayoutRect } from './VlogViewerModal';
 import { useVlogs } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 
+/** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /** Mini component to asynchronously fetch missing thumbnails without causing entire calendar re-renders */
@@ -470,9 +471,9 @@ const styles = StyleSheet.create({
         height: THUMB_HEIGHT,
         borderRadius: 10,
         overflow: 'hidden',
-        backgroundColor: 'rgba(255, 42, 42, 0.15)',
+        backgroundColor: theme.colors.dangerFill,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.25)',
+        borderColor: theme.colors.dangerBorderMedium,
     },
     vlogThumbToday: {
         borderColor: theme.colors.primaryAction,
@@ -669,7 +670,7 @@ const styles = StyleSheet.create({
         padding: 30,
     },
     deleteModalCard: {
-        backgroundColor: '#0A0A0A',
+        backgroundColor: theme.colors.surfaceRaised,
         borderRadius: 20,
         padding: 25,
         width: '100%',

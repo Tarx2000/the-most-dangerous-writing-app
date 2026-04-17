@@ -52,7 +52,17 @@ export interface SavedNote {
     aiSummary?: string[];
     /** The AI model used to generate the summary */
     aiModelUsed?: string;
+    /** Discriminator for alignment reflections */
+    isAlignmentReflection?: boolean;
 }
+
+/** Type guard to check if a note is an AlignmentReflection */
+export function isAlignmentReflection(note: SavedNote): note is AlignmentReflection {
+    return (note as AlignmentReflection).isAlignmentReflection === true;
+}
+
+/** Union type for any note entry */
+export type NoteEntry = SavedNote | AlignmentReflection;
 
 export type SortOption = 'newest' | 'oldest' | 'longest' | 'shortest' | 'longest-text';
 

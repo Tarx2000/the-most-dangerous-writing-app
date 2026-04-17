@@ -3,7 +3,7 @@ import {
     View,
     Text,
     StyleSheet,
-    Dimensions,
+    useWindowDimensions,
     Modal,
     Platform,
     Vibration,
@@ -25,8 +25,6 @@ import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 /** Represents a bounding box in window coordinates (from view.measureInWindow) */
 export interface LayoutRect {
     x: number;
@@ -44,11 +42,6 @@ export interface VlogViewerModalProps {
     onClose: () => void;
     onDelete?: (id: string) => void;
 }
-
-const CARD_WIDTH = SCREEN_WIDTH - 32;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.75;
-const CARD_TARGET_X = 16;
-const CARD_TARGET_Y = (SCREEN_HEIGHT - CARD_HEIGHT) / 2;
 
 const VlogPlayer: React.FC<{ uri: string, sharedPlayer?: any }> = ({ uri, sharedPlayer }) => {
     const internalPlayer = useVideoPlayer(uri, p => {
@@ -78,6 +71,11 @@ export const VlogViewerModal: React.FC<VlogViewerModalProps> = ({
     onClose,
     onDelete,
 }) => {
+    const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+    const CARD_WIDTH = SCREEN_WIDTH - 32;
+    const CARD_HEIGHT = SCREEN_HEIGHT * 0.75;
+    const CARD_TARGET_X = 16;
+    const CARD_TARGET_Y = (SCREEN_HEIGHT - CARD_HEIGHT) / 2;
     const [expandedIndex, setExpandedIndex] = useState(initialIndex);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
@@ -353,7 +351,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingVertical: 12,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.06)',
+        borderTopColor: theme.colors.glassSurface,
         zIndex: 2,
     },
     expandedDate: {

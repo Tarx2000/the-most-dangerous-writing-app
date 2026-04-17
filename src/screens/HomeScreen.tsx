@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo, useTransition } from 'react';
-import { View, Dimensions, StyleSheet, Vibration, NativeSyntheticEvent, NativeScrollEvent, StatusBar, Platform } from 'react-native';
+import { View, Dimensions, useWindowDimensions, StyleSheet, Vibration, NativeSyntheticEvent, NativeScrollEvent, StatusBar, Platform } from 'react-native';
 import { ScrollView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -13,10 +13,12 @@ import { VlogViewerModal, LayoutRect } from '@/components/features/library/VlogV
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
+import type { SavedNote } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
+/** Static fallback for StyleSheet defaults — dimensions may change at runtime via useWindowDimensions */
+const { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
@@ -55,6 +57,12 @@ const FEED_SPRING = {
  * up and the HomeScreen returns to its original position.
  */
 export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
+    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+    /** SharedValue for screen height — used in Reanimated worklets (animated styles / gesture handlers) */
+    const screenHeightSV = useSharedValue(screenHeight);
+    /** Keep the SharedValue in sync when the window resizes (e.g. rotation) */
+    useEffect(() => { screenHeightSV.value = screenHeight; }, [screenHeight, screenHeightSV]);
+
     const scrollViewRef = useRef<ScrollView>(null);
     const [scrollEnabled, setScrollEnabled] = useState(true);
 
@@ -81,7 +89,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     const { enqueueNote, isNoteActive } = useAiQueueContext();
 
     /** Note Viewer State for the Feed Screen */
-    const [viewNoteModal, setViewNoteModal] = useState<any | null>(null);
+    const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [viewVlogModal, setViewVlogModal] = useState<any | null>(null);
     const [vlogSourceRect, setVlogSourceRect] = useState<LayoutRect | null>(null);
@@ -89,8 +97,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     /** Navigate to Library page (scroll right) */
     const goToLibrary = useCallback(() => {
-        scrollViewRef.current?.scrollTo({ x: width, animated: true });
-    }, []);
+        scrollViewRef.current?.scrollTo({ x: screenWidth, animated: true });
+    }, [screenWidth]);
 
     /** Navigate to Start page (scroll left) */
     const goToStart = useCallback(() => {
@@ -123,9 +131,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      */
     const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const offsetX = e.nativeEvent.contentOffset.x;
-        const page = Math.round(offsetX / width);
+        const page = Math.round(offsetX / screenWidth);
         setCurrentPage(page);
-    }, []);
+    }, [screenWidth]);
 
     /** Check-in urgency: show dot when overdue (>7 days) AND only on homescreen */
     const isCheckinUrgent = currentPage === 0 && (
@@ -183,7 +191,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         .onUpdate((e) => {
             // Only allow upward drag (negative translationY)
             if (e.translationY < 0) {
-                const progress = Math.min(Math.abs(e.translationY) / SCREEN_HEIGHT, 1);
+                const progress = Math.min(Math.abs(e.translationY) / screenHeightSV.value, 1);
                 feedProgress.value = Math.pow(progress, 0.7);
             }
         })
@@ -196,16 +204,16 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 // Snap back
                 feedProgress.value = withSpring(0, FEED_SPRING);
             }
-        }), [currentPage, feedVisible, feedProgress, openFeed]);
+        }), [currentPage, feedVisible, feedProgress, screenHeightSV, openFeed]);
 
-    /** Main content animates UP (to -SCREEN_HEIGHT) when feed opens */
+    /** Main content animates UP (to -screenHeight) when feed opens */
     const mainContentAnimStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: feedProgress.value * -SCREEN_HEIGHT }],
+        transform: [{ translateY: feedProgress.value * -screenHeightSV.value }],
     }));
 
-    /** Feed layer animates UP (from SCREEN_HEIGHT to 0) */
+    /** Feed layer animates UP (from screenHeight to 0) */
     const feedAnimStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: (1 - feedProgress.value) * SCREEN_HEIGHT }],
+        transform: [{ translateY: (1 - feedProgress.value) * screenHeightSV.value }],
     }));
 
     /** Close the feed — animate content back down */
@@ -241,7 +249,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     return (
         <View style={styles.container}>
             {/* Feed Page — positioned below viewport, slides up when revealed */}
-            <Animated.View style={[styles.feedLayer, feedAnimStyle]} pointerEvents={feedVisible ? 'auto' : 'none'}>
+            <Animated.View style={[styles.feedLayer, feedAnimStyle, { height: screenHeight }]} pointerEvents={feedVisible ? 'auto' : 'none'}>
                 <FeedScreen
                     isUnlocked={security.isFeedUnlocked}
                     onUnlock={security.unlockNotes}
@@ -289,7 +297,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         decelerationRate="fast"
                     >
                         {/* Start Screen — writing mode setup */}
-                        <View style={styles.page}>
+                        <View style={[styles.page, { width: screenWidth }]}>
                             <StartScreen
                                 navigation={navigation}
                                 route={route as any}
@@ -301,7 +309,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         </View>
 
                         {/* Library Screen — saved notes & circles */}
-                        <View style={styles.page}>
+                        <View style={[styles.page, { width: screenWidth }]}>
                             <LibraryScreen
                                 navigation={navigation}
                                 route={route as any}
@@ -336,20 +344,21 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     page: {
-        width,
+        width: DEFAULT_WIDTH,
         height: '100%',
     },
     /**
      * Feed layer — positioned absolutely to cover the full screen.
-     * Starts below the viewport (translateY = SCREEN_HEIGHT via animated style)
+     * Starts below the viewport (translateY = screenHeightSV via animated style)
      * and slides into view when the user swipes UP.
+     * Height is overridden inline with useWindowDimensions().
      */
     feedLayer: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        height: SCREEN_HEIGHT,
+        height: DEFAULT_HEIGHT,
         zIndex: 100,
     },
 });

@@ -66,7 +66,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
             borderColor: interpolateColor(
                 pulse.value,
                 [0, 1],
-                ['rgba(255, 42, 42, 0.1)', 'rgba(255, 42, 42, 0.45)']
+                [theme.colors.dangerTint, theme.colors.dangerOverlayLight]
             ),
             backgroundColor: interpolateColor(
                 pulse.value,

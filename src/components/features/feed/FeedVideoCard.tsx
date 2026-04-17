@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         paddingHorizontal: 20,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+        borderBottomColor: theme.colors.glassBorderSubtle,
     },
     leftColumn: {
         marginRight: 12,

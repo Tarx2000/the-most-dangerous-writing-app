@@ -9,6 +9,7 @@ import {
     ActivityIndicator,
     Vibration,
     Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -24,8 +25,10 @@ import { commonStyles } from '@/styles/commonStyles';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { RichText } from '@/components/ui/RichText';
 import type { SavedNote, AiJobCategory } from '@/types';
+import { isAlignmentReflection } from '@/types';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+/** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
+const { height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 interface Props {
     note: SavedNote | null;
@@ -44,6 +47,8 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
     isNoteActive,
     onRegenerateAi,
 }) => {
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
+
     /* ── Local confirmation state ── */
     const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -81,12 +86,12 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
             panY.value = SCREEN_HEIGHT;
             panY.value = withSpring(0, { damping: 30, stiffness: 220, mass: 0.8 });
         }
-    }, [visible, note, panY]);
+    }, [visible, note, panY, SCREEN_HEIGHT]);
 
     const handleRegenerateAi = useCallback(() => {
         if (!note) return;
         Vibration.vibrate(30);
-        const category: AiJobCategory = (note as any).isAlignmentReflection
+        const category: AiJobCategory = isAlignmentReflection(note)
             ? 'checkin'
             : note.personId
             ? 'circle'
@@ -164,7 +169,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                             )}
 
                             {isNoteActive(note.id) && (
-                                <View style={[styles.regenerateBtn, { borderColor: 'rgba(255, 42, 42, 0.2)' }]}>
+                                <View style={[styles.regenerateBtn, { borderColor: theme.colors.dangerBorder }]}>
                                     <ActivityIndicator size="small" color={theme.colors.primaryAction} />
                                     <Text style={styles.regenerateBtnText}>Processing...</Text>
                                 </View>
@@ -237,7 +242,7 @@ const styles = StyleSheet.create({
     },
     cardPopupContainer: {
         width: '100%',
-        height: SCREEN_HEIGHT * 0.88,
+        height: DEFAULT_HEIGHT * 0.88,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
         overflow: 'hidden',
@@ -345,14 +350,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        backgroundColor: 'rgba(255, 42, 42, 0.1)',
+        backgroundColor: theme.colors.dangerTint,
         alignSelf: 'flex-start',
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 100,
         marginBottom: 24,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.3)',
+        borderColor: theme.colors.dangerBorderStrong,
     },
     regenerateBtnText: {
         color: theme.colors.primaryAction,
@@ -375,7 +380,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255, 42, 42, 0.1)',
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.2)',
+        borderColor: theme.colors.dangerBorder,
     },
     premiumNoteDeleteText: {
         color: theme.colors.danger,

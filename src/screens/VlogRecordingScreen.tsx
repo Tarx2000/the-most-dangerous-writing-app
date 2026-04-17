@@ -3,7 +3,6 @@ import {
     View,
     Text,
     StyleSheet,
-    Dimensions,
     StatusBar,
     Vibration,
     Platform,
@@ -23,8 +22,6 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { generateId } from '@/lib/utils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VlogRecording'>;
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /* ────────────────────────────────────────────────────────────────────────────
  * CONFIGURABLE: Recording & UI settings
@@ -563,7 +560,7 @@ const styles = StyleSheet.create({
         fontVariant: ['tabular-nums'],
     },
     timerComplete: {
-        color: '#4ADE80',
+        color: theme.colors.green,
     },
 
     /* ── Duration badge ────────────────────────────────────────────────── */

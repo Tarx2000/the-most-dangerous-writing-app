@@ -198,12 +198,12 @@ const styles = StyleSheet.create({
 
     /** Note count badge — pill showing entry count */
     countBadge: {
-        backgroundColor: 'rgba(255, 42, 42, 0.15)',
+        backgroundColor: theme.colors.dangerAccent,
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.25)',
+        borderColor: theme.colors.dangerBorderMedium,
     },
     countBadgeText: {
         color: theme.colors.primaryAction,
