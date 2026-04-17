@@ -1,3 +1,8 @@
+/**
+ * SettingsCard — Reusable glass-morphic card container for settings sections.
+ * Used by AiSettingsPanel, DeveloperToolsPanel, and future settings panels.
+ * `active` prop adds a gold border tint (e.g. when dev mode is on).
+ */
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { theme } from '@/styles/theme';

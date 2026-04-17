@@ -85,6 +85,7 @@ interface CalendarViewProps {
     streakHistory: string[];
 }
 
+/** React.memo prevents re-renders from parent scroll events that don't change streak data */
 export const CalendarView = React.memo(function CalendarView({
     currentStreak,
     streakHistory,

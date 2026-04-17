@@ -12,6 +12,13 @@ interface CustomSliderProps {
 const THUMB_SIZE = 36;
 const TICK_COUNT = 10;
 
+/**
+ * CustomSlider — 10-step haptic slider for alignment score input.
+ *
+ * React.memo prevents re-renders from parent state changes while dragging.
+ * panGesture is memoized because Gesture objects are expensive to recreate.
+ * handleValueChange is memoized to stabilize the runOnJS dependency.
+ */
 export const CustomSlider = React.memo(function CustomSlider({ value, onValueChange }: CustomSliderProps) {
     const { width } = useWindowDimensions();
     const PADDING = 30;

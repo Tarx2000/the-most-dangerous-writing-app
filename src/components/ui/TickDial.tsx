@@ -31,6 +31,9 @@ interface TickDialProps {
 /**
  * TickDial — Tide-style horizontal ruler for picking a duration.
  *
+ * Wrapped in React.memo to prevent re-renders from parent scroll events.
+ * All scroll handlers use useCallback to stabilize references for native.
+ *
  * Stability rules:
  * 1. Native `snapToInterval` handles ALL snapping — zero manual scrollTo.
  * 2. `onScroll` just reads offset and calls onSelect — no side effects.

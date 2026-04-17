@@ -1,7 +1,20 @@
+/**
+ * ErrorBoundary — Catches render crashes in child components and shows a
+ * themed retry screen instead of a blank white screen.
+ *
+ * Retry behavior:
+ * - Cumulative counter: each caught error increments retryCount (not reset on success).
+ * - After MAX_RETRIES (3) the user must restart the screen — retrying is disabled.
+ * - retryCount persists across errors because it's class state, not per-error.
+ *
+ * Usage: Wrap any screen subtree that might crash (e.g. AI queue, vlog rendering).
+ * Do NOT wrap the entire app — only the specific feature area that can fail.
+ */
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { theme } from '@/styles/theme';
 
+/** Max retry attempts before disabling the retry button. Cumulative across errors. */
 const MAX_RETRIES = 3;
 
 interface ErrorBoundaryProps {

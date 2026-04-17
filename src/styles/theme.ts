@@ -1,4 +1,21 @@
-// src/styles/theme.ts
+/**
+ * Theme — Single source of truth for all design tokens.
+ *
+ * Naming conventions:
+ *   danger*      — Opacity ladder from subtle (0.06) to overlay (0.45).
+ *                   Order: dangerSubtle → dangerLight → dangerTint → dangerMedium
+ *                          → dangerBorderLight → dangerAccent → dangerBorder
+ *                          → dangerBorderMedium → dangerBorderStrong → dangerFill
+ *                          → dangerFillStrong → dangerOverlayLight → dangerGradientEnd
+ *   glass*       — Glassmorphism layers for translucent cards/sheets.
+ *                   Use glassBackground for card fills, glassBorder for borders,
+ *                   glassSurface/glassSurfaceMedium for nested containers.
+ *   surface*    — Solid surfaces for AMOLED: surfaceDark (#0A0A0A) → surfaceLight (#222).
+ *                   surfaceRaised (#1A1A1A) for elevated cards.
+ *
+ * Adding new tokens: append to the appropriate section with the naming pattern above.
+ * This is an AMOLED-only theme — no light mode variant exists yet.
+ */
 import { CONFIG } from '@/config';
 
 export const theme = {

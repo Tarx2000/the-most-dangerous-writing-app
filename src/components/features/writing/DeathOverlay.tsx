@@ -1,3 +1,14 @@
+/**
+ * DeathOverlay — Shared loss/death overlay for writing screens.
+ *
+ * Extracted from WritingScreen and AlignmentWritingScreen to avoid duplicating
+ * overlay logic. Both screens show an animated fade-in "YOU DIED" overlay when
+ * the user stops writing, but differ in subtitle text, button labels, and
+ * secondary action (resume writing vs. resume reflecting).
+ *
+ * The `extraActions` slot allows screens to add custom buttons (e.g. the
+ * "Save What's Left" floating button on WritingScreen).
+ */
 import React from 'react';
 import { View, Text } from 'react-native';
 import Animated, { SharedValue, useAnimatedStyle } from 'react-native-reanimated';

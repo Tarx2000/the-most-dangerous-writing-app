@@ -60,10 +60,25 @@ src/
 ## Architecture Patterns
 
 ### State Management (Split-Context Pattern)
-8 domain-specific React Contexts in `useStorage.tsx`. Each has its own provider, ref-based state (fresh-read pattern to eliminate stale closures), and AsyncStorage persistence. **Always use the domain-specific hooks** (`useNotes`, `usePersons`, `useStreak`, `usePreferences`, `useAiConfig`, `useFeedData`, `useVlogs`, `useStorageActions`) — the legacy `useStorage()` hook subscribes to ALL contexts and causes mass re-renders.
+8 domain-specific React Contexts in `useStorage.tsx`. Each has its own provider, ref-based state (fresh-read pattern to eliminate stale closures), and AsyncStorage persistence. **Always use the domain-specific hooks** (`useNotes`, `usePersons`, `useStreak`, `usePreferences`, `useAiConfig`, `useFeedData`, `useVlogs`, `useStorageActions`) — the legacy `useStorage()` hook is **deprecated** and subscribes to ALL contexts causing mass re-renders.
+
+**Optimistic updates with rollback**: All CRUD operations snapshot state before writing, then restore on AsyncStorage failure. This prevents data loss from partial writes.
+
+**Runtime validation**: `safeParse<T>()` wraps `JSON.parse` with per-key error isolation. One corrupt key won't block the others from loading — it falls back to defaults and logs a warning.
 
 ### Animation (Reanimated SharedValue Pattern)
 Timer ticks and danger overlay animations use `SharedValue` on the UI thread — zero React re-renders during countdown. Flubber SVG morphing pre-computes all frames before playback for 60fps.
+
+**CRITICAL: Never write to `.value` during render.** Always update SharedValues inside `useEffect`, `useCallback`, or gesture handlers. Writing during render causes Reanimated strict-mode warnings and can cause stale value reads. Pattern:
+```tsx
+// WRONG — causes "Writing to value during component render" warning
+const sv = useSharedValue(screenHeight);
+sv.value = screenHeight; // ❌ render-time write
+
+// RIGHT — update in useEffect
+const sv = useSharedValue(screenHeight);
+useEffect(() => { sv.value = screenHeight; }, [screenHeight, sv]); // ✅
+```
 
 ### AI Queue (Singleton + Context)
 `aiQueue.ts` is a singleton. `AiQueueProvider` wraps the app once and exposes queue state via context. Access via `useAiQueueContext()`. Do NOT use the old `useAiQueue` hook (creates per-component subscriptions).
@@ -73,7 +88,21 @@ Timer ticks and danger overlay animations use `SharedValue` on the UI thread —
 - Stage 1: Circles visible
 - Stage 1.5: Profile visible
 - Stage 2: Full access (notes, feed)
-- Auto-lock after 3 minutes of inactivity
+- Auto-lock after 3 minutes of inactivity OR when app goes to background (AppState listener)
+
+### Theme System
+All colors must come from `theme.colors` in `src/styles/theme.ts`. **Never use hardcoded hex/rgba values** in components — always reference a theme token. If a color doesn't exist, add it to `theme.ts` with a semantic name following the naming convention:
+- **Danger scale**: `dangerSubtle` (0.06) → `dangerLight` (0.08) → `dangerTint` (0.1) → `dangerFill` (0.15) → `dangerBorderStrong` (0.3) → `dangerFillStrong` (0.3) → `dangerOverlayLight` (0.45)
+- **Glass scale**: `glassBackground` → `glassSurface` → `glassSurfaceMedium` → `glassBorder` → `glassBorderSubtle` → `glassBorderMedium` → `glassHighlight`
+- **Surface scale**: `background` (#000) → `surfaceDark` (#0A0A0A) → `surfaceRaised` (#1A1A1A) → `surfaceMedium` (#111) → `surfaceLight` (#222)
+- **Animation springs**: Use `theme.animation.springDefault/springSnappy/springGentle/springLight`
+
+### Component Patterns
+- **Shared components**: `DeathOverlay` (writing death screen), `SettingsCard` (settings panel wrapper), `DangerOverlay` (idle danger progress), `SwipeableModal` (bottom sheet), `ErrorBoundary` (retry wrapper)
+- **Type guard**: Use `isAlignmentReflection(note)` to check if a note is a check-in. Never use `(note as any).isAlignmentReflection`.
+- **Memoization**: Components with gesture handlers (`CalendarView`, `CustomSlider`, `TickDial`) use `React.memo` + `useMemo` for gestures to prevent recreation on parent re-renders.
+- **Inline styles**: Prefer `StyleSheet.create()` over inline `style={{}}`. Only keep dynamic values (e.g., `width: progress + '%'`) inline.
+- **Dimensions**: Always use `useWindowDimensions()` hook, never module-level `Dimensions.get('window')`. The latter freezes values at module load and doesn't update on rotation.
 
 ## ⚠️ Version Pinning (CRITICAL — do NOT upgrade these)
 
