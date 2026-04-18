@@ -150,12 +150,14 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             keyboardDismissMode="interactive"
                         >
                             <TextInput
+                                key={`input_${currentFont}`}
                                 ref={inputRef}
                                 style={[commonStyles.textInput, {
                                     flex: 1,
                                     fontSize: currentSize,
                                     lineHeight: currentLineHeight,
                                     fontFamily: currentFont,
+                                    fontWeight: 'normal',
                                     textAlignVertical: 'top',
                                     paddingBottom: 200 // Ensures text doesn't stay hidden under keyboard
                                 }]}

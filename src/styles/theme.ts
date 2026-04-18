@@ -134,5 +134,6 @@ export const theme = {
         springSnappy: { damping: 30, stiffness: 300, mass: 0.8 },
         springGentle: { damping: 18, stiffness: 180, mass: 0.8 },
         springLight: { damping: 20, stiffness: 200, mass: 0.5 },
+        springFeed: { damping: 28, stiffness: 180, mass: 0.9 },
     }
 };

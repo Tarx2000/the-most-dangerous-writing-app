@@ -156,8 +156,9 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             <Text style={styles.promptHeader}>STOP</Text>
                             <Text style={styles.promptSub}>What habits or actions pulled you away from your best self this week?</Text>
                             <TextInput
+                                key={`input_stop_${currentFont}`}
                                 ref={stopRef}
-                                style={[commonStyles.textInput, { fontSize: currentSize, lineHeight: currentLineHeight, fontFamily: currentFont, minHeight: 120, marginBottom: 30 }]}
+                                style={[commonStyles.textInput, { fontSize: currentSize, lineHeight: currentLineHeight, fontFamily: currentFont, fontWeight: 'normal', minHeight: 120, marginBottom: 30 }]}
                                 multiline
                                 autoFocus
                                 onChangeText={(t) => handleInput('stop', t)}
@@ -170,8 +171,9 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             <Text style={styles.promptHeader}>START</Text>
                             <Text style={styles.promptSub}>What specific action will you take next week to bridge the gap?</Text>
                             <TextInput
+                                key={`input_start_${currentFont}`}
                                 ref={startRef}
-                                style={[commonStyles.textInput, { fontSize: currentSize, lineHeight: currentLineHeight, fontFamily: currentFont, minHeight: 120, marginBottom: 30 }]}
+                                style={[commonStyles.textInput, { fontSize: currentSize, lineHeight: currentLineHeight, fontFamily: currentFont, fontWeight: 'normal', minHeight: 120, marginBottom: 30 }]}
                                 multiline
                                 onChangeText={(t) => handleInput('start', t)}
                                 placeholder="I will start..."
