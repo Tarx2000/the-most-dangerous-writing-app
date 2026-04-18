@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo, useTransition } from 'react';
 import { View, Dimensions, useWindowDimensions, StyleSheet, Vibration, NativeSyntheticEvent, NativeScrollEvent, StatusBar, Platform } from 'react-native';
 import { ScrollView, Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, cancelAnimation, runOnJS, type SharedValue } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StartScreen } from './StartScreen';
@@ -13,6 +13,7 @@ import { VlogViewerModal, LayoutRect } from '@/components/features/library/VlogV
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
+import { theme } from '@/styles/theme';
 import type { SavedNote } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -21,19 +22,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 const { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
-
-/**
- * Distance (px) the user must swipe down before the Feed snaps open.
- * If the user drags less than this, the Feed snaps back closed.
- */
-const FEED_SNAP_THRESHOLD = 120;
-
-/** Spring physics for the feed reveal/dismiss animation */
-const FEED_SPRING = {
-    damping: 28,
-    stiffness: 180,
-    mass: 0.9,
-};
 
 /**
  * HomeScreen — Root container wrapping horizontal Start ↔ Library scroll
@@ -165,14 +153,20 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
        on the Start page to reveal it. 
        ═══════════════════════════════════════════════════════════════════ */
 
-    /** 
+    /**
      * Animated progress for the feed reveal (0 to 1)
      * 0 = normal (HomeScreen visible)
      * 1 = Feed fully revealed (content pushed up)
      */
     const feedProgress = useSharedValue(0);
 
-    /** JS callbacks for gesture end (runOnJS bridges) */
+    /** Gesture coordination SharedValues */
+    const gestureStartProgress = useSharedValue(0);
+    const startTranslationOffset = useSharedValue(0);
+    const isFeedGestureActive = useSharedValue(false);
+    const listScrollY = useSharedValue(0);
+
+    /** JS callbacks — lightweight state-only commits, called on spring completion */
     const openFeed = useCallback(() => {
         setFeedVisible(true);
         setScrollEnabled(false);
@@ -184,42 +178,58 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     }, []);
 
     /**
-     * Pan gesture: only activates when swiping UP on the Start page.
-     * Prevents interference with horizontal library swipe or vertical scrolling.
+     * Pan gesture: follow-finger feed reveal on the Start page.
+     * Smart activation — only starts driving feedProgress when swiping up.
+     * Once active, tracks finger in BOTH directions (including reversal).
+     * Uses cancelAnimation on start for rapid switching.
      */
     const feedPanGesture = useMemo(() => Gesture.Pan()
-        // Must be [min, max]. Activate if finger moves UP 20px (past -20)
-        // or DOWN more than 10000px (effectively never)
-        .activeOffsetY([-20, 10000])
-        // Fail gesture if finger moves horizontally by 20px (allows Library swipe)
+        .activeOffsetY([-15, 15])
         .failOffsetX([-20, 20])
+        .simultaneousWithExternalGesture(scrollViewRef)
         .enabled(currentPage === 0 && !feedVisible)
+        .onStart(() => {
+            cancelAnimation(feedProgress);
+            gestureStartProgress.value = feedProgress.value;
+            startTranslationOffset.value = 0;
+            isFeedGestureActive.value = false;
+        })
         .onUpdate((e) => {
-            // Only allow upward drag (negative translationY)
-            if (e.translationY < 0) {
-                const progress = Math.min(Math.abs(e.translationY) / screenHeightSV.value, 1);
-                feedProgress.value = Math.pow(progress, 0.85);
+            if (!isFeedGestureActive.value) {
+                if (e.translationY < -10) {
+                    isFeedGestureActive.value = true;
+                    startTranslationOffset.value = e.translationY;
+                }
+                return;
             }
+            const delta = e.translationY - startTranslationOffset.value;
+            const progressDelta = -delta / screenHeightSV.value;
+            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value + progressDelta));
+            feedProgress.value = newProgress;
         })
         .onEnd((e) => {
-            if (feedProgress.value > 0.5 || e.velocityY < -500) {
-                // Snap open
-                feedProgress.value = withSpring(1, FEED_SPRING);
-                runOnJS(openFeed)();
-            } else {
-                // Snap back
-                feedProgress.value = withSpring(0, FEED_SPRING);
-            }
-        }), [currentPage, feedVisible, feedProgress, screenHeightSV, openFeed]);
+            if (!isFeedGestureActive.value) return;
+            isFeedGestureActive.value = false;
+            const shouldOpen = feedProgress.value > 0.5 || e.velocityY < -500;
+            const target = shouldOpen ? 1 : 0;
+            feedProgress.value = withSpring(target, theme.animation.springFeed, (finished) => {
+                if (finished) runOnJS(shouldOpen ? openFeed : closeFeed)();
+            });
+        })
+        .onFinalize(() => {
+            isFeedGestureActive.value = false;
+        }), [currentPage, feedVisible, feedProgress, screenHeightSV, openFeed, closeFeed]);
 
     /** Main content animates UP (to -screenHeight) when feed opens */
     const mainContentAnimStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: feedProgress.value * -screenHeightSV.value }],
+        pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
     /** Feed layer animates UP (from screenHeight to 0) */
     const feedAnimStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: (1 - feedProgress.value) * screenHeightSV.value }],
+        pointerEvents: feedProgress.value > 0.5 ? 'auto' : 'none',
     }));
 
     /** Nav bar fades out and slides down as feed opens — driven by feedProgress */
@@ -229,11 +239,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
-    /** Close the feed — animate content back down */
+    /** Close the feed — cancel in-flight animation, spring closed, defer state */
     const handleCloseFeed = useCallback(() => {
-        feedProgress.value = withSpring(0, FEED_SPRING);
-        closeFeed();
-    }, [closeFeed]);
+        cancelAnimation(feedProgress);
+        feedProgress.value = withSpring(0, theme.animation.springFeed, (finished) => {
+            if (finished) runOnJS(closeFeed)();
+        });
+    }, [closeFeed, feedProgress]);
 
     /** Stable references for Modals to prevent re-renders */
     const handleOpenNoteModal = useCallback((note: any) => {
@@ -262,15 +274,16 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     return (
         <View style={styles.container}>
             {/* Feed Page — positioned below viewport, slides up when revealed */}
-            <Animated.View style={[styles.feedLayer, feedAnimStyle, { height: screenHeight }]} pointerEvents={feedVisible ? 'auto' : 'none'}>
+            <Animated.View style={[styles.feedLayer, feedAnimStyle, { height: screenHeight }]}>
                 <FeedScreen
                     isUnlocked={security.isFeedUnlocked}
                     onUnlock={security.unlockNotes}
                     onOpenNote={handleOpenNoteModal}
                     onOpenVlog={handleOpenVlogModal}
-                    onClose={handleCloseFeed}
+                    onClose={closeFeed}
                     feedProgress={feedProgress}
                     isFeedVisible={feedVisible}
+                    listScrollY={listScrollY}
                 />
             </Animated.View>
 
@@ -295,8 +308,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
             {/* Main Content — Start + Library horizontal scroll */}
             <GestureDetector gesture={feedPanGesture}>
-                {/* Pointer events bound to inverse feed state so it doesn't catch touches when hidden */}
-                <Animated.View style={[styles.mainContent, mainContentAnimStyle]} pointerEvents={feedVisible ? 'none' : 'auto'}>
+                <Animated.View style={[styles.mainContent, mainContentAnimStyle]}>
                     <ScrollView
                         ref={scrollViewRef}
                         horizontal

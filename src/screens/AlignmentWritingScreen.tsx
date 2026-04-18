@@ -157,7 +157,12 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             <Text style={styles.promptSub}>What habits or actions pulled you away from your best self this week?</Text>
                             <TextInput
                                 key={`input_stop_${currentFont}`}
-                                ref={stopRef}
+                                ref={(node) => {
+                                    stopRef.current = node;
+                                    if (Platform.OS === 'android' && node) {
+                                        node.setNativeProps({ style: { fontFamily: currentFont } });
+                                    }
+                                }}
                                 style={[commonStyles.textInput, { fontSize: currentSize, lineHeight: currentLineHeight, fontFamily: currentFont, fontWeight: 'normal', minHeight: 120, marginBottom: 30 }]}
                                 multiline
                                 autoFocus
@@ -172,7 +177,12 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                             <Text style={styles.promptSub}>What specific action will you take next week to bridge the gap?</Text>
                             <TextInput
                                 key={`input_start_${currentFont}`}
-                                ref={startRef}
+                                ref={(node) => {
+                                    startRef.current = node;
+                                    if (Platform.OS === 'android' && node) {
+                                        node.setNativeProps({ style: { fontFamily: currentFont } });
+                                    }
+                                }}
                                 style={[commonStyles.textInput, { fontSize: currentSize, lineHeight: currentLineHeight, fontFamily: currentFont, fontWeight: 'normal', minHeight: 120, marginBottom: 30 }]}
                                 multiline
                                 onChangeText={(t) => handleInput('start', t)}

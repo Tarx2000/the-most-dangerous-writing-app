@@ -13,7 +13,7 @@ import {
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
@@ -66,12 +66,14 @@ interface Props {
     onOpenNote: (note: SavedNote) => void;
     /** Callback to open a vlog in the player */
     onOpenVlog?: (vlog: SavedVlog, rect?: LayoutRect) => void;
-    /** Callback to return to HomeScreen (swipe up / close) */
+    /** Callback to commit feed close state (lightweight, no animation) */
     onClose: () => void;
     /** Shared value from HomeScreen driving feed translation */
     feedProgress?: SharedValue<number>;
     /** Whether the feed layer is currently visible (from HomeScreen state) */
     isFeedVisible?: boolean;
+    /** Shared scroll position from HomeScreen for gesture coordination */
+    listScrollY?: SharedValue<number>;
 }
 
 const FeedScreenInner: React.FC<Props> = ({
@@ -82,6 +84,7 @@ const FeedScreenInner: React.FC<Props> = ({
     onClose,
     feedProgress,
     isFeedVisible = true,
+    listScrollY: listScrollYProp,
 }) => {
     const { height: screenHeight } = useWindowDimensions();
     /** SharedValue for Reanimated worklets — kept in sync via useEffect to avoid render-phase writes */
@@ -107,9 +110,14 @@ const FeedScreenInner: React.FC<Props> = ({
             setVisibleItemIds(new Set());
         }
     }, [isFeedVisible]);
-    const listScrollY = useSharedValue(0);
-    const overscrollStartY = useSharedValue(0);
-    const isOverscrolling = useSharedValue(false);
+    /** Use prop-provided listScrollY if available, otherwise local fallback */
+    const localListScrollY = useSharedValue(0);
+    const listScrollY = listScrollYProp || localListScrollY;
+
+    /** Gesture coordination SharedValues */
+    const gestureStartProgress = useSharedValue(0);
+    const startTranslationOffset = useSharedValue(0);
+    const isFeedGestureActive = useSharedValue(false);
 
     /** Fade animation for lock screen → feed transition */
     const fadeAnim = useSharedValue(isUnlocked ? 1 : 0);
@@ -194,11 +202,11 @@ const FeedScreenInner: React.FC<Props> = ({
     const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 0 }), []);
 
     /**
-     * Enable list scrolling once the feed is mostly revealed (90%+).
+     * Enable list scrolling once the feed is nearly fully revealed (95%+).
      * useAnimatedReaction executes EXACTLY once when the boundary crosses.
      */
     useAnimatedReaction(
-        () => (feedProgress ? feedProgress.value >= 0.9 : true),
+        () => (feedProgress ? feedProgress.value >= 0.95 : false),
         (isFullyOpen, prevIsFullyOpen) => {
             if (isFullyOpen !== prevIsFullyOpen) {
                 runOnJS(setFeedScrollEnabled)(isFullyOpen);
@@ -212,48 +220,61 @@ const FeedScreenInner: React.FC<Props> = ({
         }
     });
 
-    /** Universal drag-down to close (works seamlessly on Android and iOS alongside ScrollView) */
+    /** Follow-finger drag-down to close — coexists with FlashList scroll */
     const feedPanGesture = useMemo(() => Gesture.Pan()
         .simultaneousWithExternalGesture(listRef)
-        .activeOffsetY([-10000, 10]) // Only trigger Pan capture if dragged DOWN natively
-        .failOffsetY([-10, 10000])   // Fail Pan capture entirely if dragging UP (let ScrollView fly)
+        .activeOffsetY([-15, 15])
+        .failOffsetX([-20, 20])
         .onStart(() => {
-            isOverscrolling.value = false;
+            if (!feedProgress) return;
+            cancelAnimation(feedProgress);
+            gestureStartProgress.value = feedProgress.value;
+            startTranslationOffset.value = 0;
+            isFeedGestureActive.value = false;
         })
         .onUpdate((e) => {
-            if (feedProgress && listScrollY.value <= 0) {
-                // Determine initiation: only start bounding if physically swiping down
-                if (!isOverscrolling.value && e.velocityY > 0) {
-                    isOverscrolling.value = true;
-                    overscrollStartY.value = e.absoluteY;
+            if (!feedProgress) return;
+
+            // Smart activation: start closing when at top of list + swiping down
+            if (!isFeedGestureActive.value) {
+                const atTopOfList = listScrollY.value <= 0;
+                const swipingDown = e.translationY > 10;
+
+                if (atTopOfList && swipingDown) {
+                    isFeedGestureActive.value = true;
+                    startTranslationOffset.value = e.translationY;
                 }
-                
-                // Track absolutely seamlessly in both directions organically once caught
-                if (isOverscrolling.value) {
-                    const draggedDistance = e.absoluteY - overscrollStartY.value;
-                    if (draggedDistance > 0) {
-                        const overscrollFactor = draggedDistance / screenHeightSV.value;
-                        feedProgress.value = Math.max(0, 1 - overscrollFactor);
-                    } else {
-                        feedProgress.value = 1;
-                    }
-                }
-            } else if (listScrollY.value > 0) {
-                isOverscrolling.value = false;
+                return;
             }
+
+            // Follow finger in both directions from activation point
+            const delta = e.translationY - startTranslationOffset.value;
+            const progressDelta = delta / screenHeightSV.value; // positive = down = closing
+            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
+            feedProgress.value = newProgress;
         })
         .onEnd((e) => {
-            if (feedProgress && feedProgress.value < 1) {
-                // If main menu shows more than feed (feedProgress < 0.5), snap to main
-                if (feedProgress.value < 0.5 || e.velocityY > 500) {
-                    runOnJS(onClose)();
-                } else {
-                    // Snap back to feed
-                    feedProgress.value = withSpring(1, { damping: 28, stiffness: 180, mass: 0.9 });
+            if (!feedProgress) return;
+
+            if (isFeedGestureActive.value) {
+                isFeedGestureActive.value = false;
+                const shouldClose = feedProgress.value < 0.5 || e.velocityY > 500;
+                const target = shouldClose ? 0 : 1;
+                feedProgress.value = withSpring(target, theme.animation.springFeed, (finished) => {
+                    if (finished && shouldClose) runOnJS(onClose)();
+                });
+            } else {
+                // Mid-scroll dismiss: fast downward fling from any scroll position
+                if (e.velocityY > 1500 && e.translationY > 0) {
+                    feedProgress.value = withSpring(0, theme.animation.springFeed, (finished) => {
+                        if (finished) runOnJS(onClose)();
+                    });
                 }
             }
-            isOverscrolling.value = false;
-        }), [onClose, feedProgress]);
+        })
+        .onFinalize(() => {
+            isFeedGestureActive.value = false;
+        }), [onClose, feedProgress, screenHeightSV, listScrollY]);
     const renderFeedItem = useCallback(({ item }: { item: any }) => {
         const itemId = item.note?.id || item.vlog?.id || '';
         // A video should only auto-play if: (1) auto-play is enabled in settings,

@@ -151,7 +151,12 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         >
                             <TextInput
                                 key={`input_${currentFont}`}
-                                ref={inputRef}
+                                ref={(node) => {
+                                    inputRef.current = node;
+                                    if (Platform.OS === 'android' && node) {
+                                        node.setNativeProps({ style: { fontFamily: currentFont } });
+                                    }
+                                }}
                                 style={[commonStyles.textInput, {
                                     flex: 1,
                                     fontSize: currentSize,
