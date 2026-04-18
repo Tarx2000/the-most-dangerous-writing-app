@@ -20,8 +20,24 @@ import * as LocalAuthentication from 'expo-local-authentication';
  *
  * All stages use biometric auth (fingerprint/face). No PIN fallback.
  * Stage 2 automatically includes ALL lower stages.
+ *
+ * Auto-lock behavior:
+ * - Configurable inactivity timer while unlocked (resets on user activity, controlled by timeoutMins)
+ * - Grace period when app goes to background (configurable, see BACKGROUND_LOCK_GRACE_MS) before locking
+ * - Immediate lock if app goes to "inactive" state (e.g., control center)
  */
-export function useSecurity() {
+
+/** Default inactivity auto-lock timeout — overridden by timeoutMins parameter */
+const AUTO_LOCK_TIMEOUT_MS = 180000;
+
+/** Grace period before locking when app goes to background.
+ * Allows brief interruptions like responding to a message or switching
+ * to the camera for a vlog without requiring re-authentication.
+ * Set to 0 via timeoutMins to lock immediately on background instead.
+ */
+const BACKGROUND_LOCK_GRACE_MS = 30000;
+
+export function useSecurity(timeoutMins: number = 3) {
     /** Stage 2: full unlock — notes readable, delete available */
     const [isNotesUnlocked, setIsNotesUnlocked] = useState<boolean>(false);
     /** Stage 1.5: person profile details visible */
@@ -31,19 +47,22 @@ export function useSecurity() {
     /** Feed access: controlled by the central unlock (Stage 2) */
     const [isFeedUnlocked, setIsFeedUnlocked] = useState<boolean>(false);
 
-    /** Auto-lock timer ref (10 min timeout for full unlock) */
+    /** Auto-lock timer ref (inactivity timeout for full unlock, duration set by timeoutMins) */
     const lockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    /** Grace period timer ref — allows brief background interruptions before locking */
+    const backgroundGraceRef = useRef<NodeJS.Timeout | null>(null);
 
-    /* ── Auto-lock after 10 minutes of full unlock ───────────────────── */
+    /* ── Auto-lock after inactivity ─────────────────────────────── */
     const resetLockTimeout = useCallback(() => {
         if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+        if (timeoutMins === 0) return; // 0 means no inactivity timer, only lock on background
         lockTimeoutRef.current = setTimeout(() => {
             setIsNotesUnlocked(false);
             setIsProfileUnlocked(false);
             setIsCirclesUnlocked(false);
             setIsFeedUnlocked(false);
-        }, 180000); // 3 minutes
-    }, []);
+        }, timeoutMins * 60000);
+    }, [timeoutMins]);
 
     /* ── Lock everything instantly ───────────────────────────────────── */
     const lockAll = useCallback(() => {
@@ -52,6 +71,7 @@ export function useSecurity() {
         setIsCirclesUnlocked(false);
         setIsFeedUnlocked(false);
         if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+        if (backgroundGraceRef.current) clearTimeout(backgroundGraceRef.current);
     }, []);
 
     /**
@@ -145,15 +165,38 @@ export function useSecurity() {
             if (isNotesUnlocked) resetLockTimeout();
         });
 
-        // Auto-lock when app goes to background (security best practice)
+        // Auto-lock with grace period when app goes to background.
+        // Brief background trips (responding to a message, opening camera)
+        // get a grace period so the user doesn't have to re-authenticate.
+        // Immediate lock for "inactive" state (control center, notification overlay).
         const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-            if (nextState === 'background' || nextState === 'inactive') {
+            if (nextState === 'background') {
+                // Start grace period — lock only if user doesn't return quickly
+                if (backgroundGraceRef.current) clearTimeout(backgroundGraceRef.current);
+                if (timeoutMins === 0) {
+                    lockAll(); // Lock immediately on background
+                } else {
+                    backgroundGraceRef.current = setTimeout(() => {
+                        lockAll();
+                    }, BACKGROUND_LOCK_GRACE_MS);
+                }
+            } else if (nextState === 'inactive') {
+                // Inactive = control center / notification overlay — lock immediately
                 lockAll();
+            } else if (nextState === 'active') {
+                // App foregrounded — cancel any pending grace period lock
+                if (backgroundGraceRef.current) {
+                    clearTimeout(backgroundGraceRef.current);
+                    backgroundGraceRef.current = null;
+                }
+                // Resume inactivity timer if still unlocked
+                if (isNotesUnlocked) resetLockTimeout();
             }
         });
 
         return () => {
             if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+            if (backgroundGraceRef.current) clearTimeout(backgroundGraceRef.current);
             sub.remove();
             appStateSub.remove();
         };

@@ -9,6 +9,7 @@ import {
     Platform,
     TouchableWithoutFeedback
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
     useSharedValue,
@@ -33,6 +34,8 @@ interface Props {
 
 export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, children, title, height, setHomeScrollEnabled }) => {
     const { height: SCREEN_HEIGHT } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
+    /** Resolved modal height — uses explicit prop or defaults to 88% of screen */
     const resolvedHeight = height ?? SCREEN_HEIGHT * 0.88;
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const overlayOpacity = useSharedValue(0);
@@ -83,9 +86,11 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
             }
         }), [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
+    /** BUG FIX: Use resolvedHeight (computed default) instead of raw height prop
+     * which is undefined when no explicit height is passed, collapsing the sheet. */
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: translateY.value }],
-        height
+        height: resolvedHeight
     }));
 
     const overlayStyle = useAnimatedStyle(() => ({
@@ -115,7 +120,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
                                 </View>
                             </GestureDetector>
 
-                            <View style={styles.contentArea}>
+                            <View style={[styles.contentArea, { paddingBottom: insets.bottom + 10 }]}>
                                 {children}
                             </View>
                         </Animated.View>
@@ -132,11 +137,11 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.overlayDark,
     },
     sheet: {
-        backgroundColor: '#0A0A0A',
+        backgroundColor: theme.colors.surfaceDark,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: 'rgba(255, 255, 255, 0.12)',
+        borderTopColor: theme.colors.glassBorderMedium,
         borderLeftWidth: 0,
         borderRightWidth: 0,
         borderBottomWidth: 0,
@@ -151,7 +156,7 @@ const styles = StyleSheet.create({
     handlePill: {
         width: 40,
         height: 5,
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        backgroundColor: theme.colors.grey,
         borderRadius: 3,
         marginBottom: 12,
     },
@@ -161,7 +166,7 @@ const styles = StyleSheet.create({
         paddingTop: 8,
     },
     sheetTitle: {
-        color: '#FFFFFF',
+        color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: '600',
         textAlign: 'center',

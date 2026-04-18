@@ -128,7 +128,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
                     <View style={commonStyles.header}>
                         <Text style={commonStyles.wordCount}>{wordCount} Words</Text>
-                        <Text style={hasLost ? commonStyles.lossText : (sessionTimeRemaining === 0 && !isQuickNote) ? commonStyles.winText : isQuickNote ? { color: theme.colors.textMuted, fontSize: 14 } : { color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: 'bold' }}>
+                        <Text style={hasLost ? commonStyles.lossText : (sessionTimeRemaining === 0 && !isQuickNote) ? commonStyles.winText : isQuickNote ? { color: theme.colors.textMuted, fontSize: 14 } : { color: theme.colors.textDim, fontSize: 18, fontWeight: 'bold' }}>
                             {hasLost ? 'YOU DIED' : isQuickNote ? 'QUICK NOTE' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
                         </Text>
                         {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
@@ -166,7 +166,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 onChangeText={handleTextChangeLocal}
                                 placeholder="Keep typing..."
                                 placeholderTextColor={theme.colors.placeholder}
-                                selectionColor="#ff4d4d"
+                                selectionColor={theme.colors.danger}
                                 editable={!hasLost}
                             />
                         </ScrollView>
@@ -188,7 +188,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     lossOverlayOpacity={lossOverlayOpacity}
                     hasLost={hasLost}
                     subtitle="You stopped writing for too long."
-                    primaryLabel="Return to Output"
+                    primaryLabel="Return to Menu"
                     onReturnHome={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
                     secondaryLabel="I don't care, let me write"
                     onContinueWriting={resumeWritingFreely}

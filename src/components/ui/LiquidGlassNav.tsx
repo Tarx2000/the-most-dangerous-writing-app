@@ -25,9 +25,9 @@ const ICON_SIZE = 26;
 
 /** Indicator spring physics for the premium slide effect */
 const INDICATOR_SPRING = {
-    damping: 20,
-    stiffness: 200,
-    mass: 0.6,
+    damping: 22,
+    stiffness: 280,
+    mass: 0.5,
 };
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */

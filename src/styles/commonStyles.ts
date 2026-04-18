@@ -73,7 +73,7 @@ export const commonStyles = StyleSheet.create({
         maxHeight: '80%',
         flexShrink: 1,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: theme.colors.glassBorderMedium,
     },
     versionModalTitle: { color: theme.colors.textPrimary, fontSize: 22, fontWeight: theme.typography.weightBold, marginBottom: 20, textAlign: 'center' },
     versionHistoryBlock: { marginBottom: 20 },
@@ -107,9 +107,9 @@ export const commonStyles = StyleSheet.create({
     textInput: { color: theme.colors.textPrimary, minHeight: 150 },
 
     finishedActionsContainer: { marginTop: 20, flexDirection: 'column', gap: 10 },
-    saveActionBtn: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    saveActionBtn: { backgroundColor: theme.colors.glassBackground, padding: 16, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.glassBorder },
     saveActionText: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: theme.typography.weightMedium, letterSpacing: 1 },
-    menuActionBtn: { backgroundColor: 'transparent', padding: 16, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+    menuActionBtn: { backgroundColor: 'transparent', padding: 16, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.glassBorderSubtle },
     menuActionText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: theme.typography.weightMedium },
 
     progressBarContainer: { height: 4, backgroundColor: theme.colors.glassBackground, borderRadius: 2, marginBottom: 15, overflow: 'hidden' },
@@ -151,7 +151,7 @@ export const commonStyles = StyleSheet.create({
     backButton: { marginTop: 20, backgroundColor: theme.colors.glassBackground, padding: 18, borderRadius: theme.borderRadius.round, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.glassBorder },
     backButtonText: { color: theme.colors.textPrimary, fontWeight: theme.typography.weightBold, fontSize: 16 },
 
-    modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', padding: 20 },
+    modalContainer: { flex: 1, backgroundColor: theme.colors.overlayMedium, padding: 20 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
     modalTitle: { color: theme.colors.textPrimary, fontSize: 20, fontWeight: theme.typography.weightBold },
     closeModalButton: { backgroundColor: theme.colors.glassBackground, paddingVertical: 8, paddingHorizontal: 16, borderRadius: theme.borderRadius.round, borderWidth: 1, borderColor: theme.colors.glassBorder },
@@ -159,7 +159,7 @@ export const commonStyles = StyleSheet.create({
     modalScroll: { flex: 1 },
     modalBody: { color: theme.colors.textPrimary, fontSize: 18, lineHeight: 30 },
 
-    deathOverlayLayer: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(40, 35, 32, 0.95)', zIndex: 10000, justifyContent: 'center', alignItems: 'center', padding: 30 },
+    deathOverlayLayer: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.colors.deathOverlay, zIndex: 10000, justifyContent: 'center', alignItems: 'center', padding: 30 },
     deathContentBox: { alignItems: 'center', width: '100%' },
     deathGiant: { color: theme.colors.danger, fontSize: 44, fontWeight: theme.typography.weightBold, letterSpacing: 1, marginBottom: 15, textAlign: 'center' },
     deathSub: { color: theme.colors.textSecondary, fontSize: 18, textAlign: 'center', lineHeight: 28, marginBottom: 40, paddingHorizontal: 10 },

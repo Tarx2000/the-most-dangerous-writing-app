@@ -10,10 +10,10 @@ import {
     useWindowDimensions,
     DeviceEventEmitter,
 } from 'react-native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
@@ -70,6 +70,8 @@ interface Props {
     onClose: () => void;
     /** Shared value from HomeScreen driving feed translation */
     feedProgress?: SharedValue<number>;
+    /** Whether the feed layer is currently visible (from HomeScreen state) */
+    isFeedVisible?: boolean;
 }
 
 const FeedScreenInner: React.FC<Props> = ({
@@ -79,6 +81,7 @@ const FeedScreenInner: React.FC<Props> = ({
     onOpenVlog,
     onClose,
     feedProgress,
+    isFeedVisible = true,
 }) => {
     const { height: screenHeight } = useWindowDimensions();
     /** SharedValue for Reanimated worklets — kept in sync via useEffect to avoid render-phase writes */
@@ -92,11 +95,33 @@ const FeedScreenInner: React.FC<Props> = ({
 
     const [filterBookmarked, setFilterBookmarked] = useState(false);
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
+    /** Track which feed items are currently visible in the viewport for video auto-play */
+    const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(new Set());
     // FlashListRef and GestureType are incompatible — use any for gesture interop
     const listRef = useRef<any>(null);
+
+    /** When feed is hidden (user navigated to home/library), clear all visible items
+     *  so videos stop playing immediately. */
+    useEffect(() => {
+        if (!isFeedVisible) {
+            setVisibleItemIds(new Set());
+        }
+    }, [isFeedVisible]);
     const listScrollY = useSharedValue(0);
     const overscrollStartY = useSharedValue(0);
     const isOverscrolling = useSharedValue(false);
+
+    /** Fade animation for lock screen → feed transition */
+    const fadeAnim = useSharedValue(isUnlocked ? 1 : 0);
+
+    /** Animate feed content in when unlocked, out when locked */
+    useEffect(() => {
+        fadeAnim.value = withTiming(isUnlocked ? 1 : 0, { duration: 300 });
+    }, [isUnlocked, fadeAnim]);
+
+    const feedContentOpacity = useAnimatedStyle(() => ({
+        opacity: fadeAnim.value,
+    }));
 
     /**
      * Merge all content types into a single chronological feed.
@@ -143,21 +168,37 @@ const FeedScreenInner: React.FC<Props> = ({
         return items;
     }, [savedNotes, savedVlogs, persons]);
 
-    /** Apply bookmark filter if active */
+    /** Apply bookmark filter if active (uses Set for O(1) lookups) */
+    const bookmarkSet = useMemo(() => new Set(bookmarkedNoteIds), [bookmarkedNoteIds]);
     const displayItems = useMemo(() => {
         if (!filterBookmarked) return feedItems;
         return feedItems.filter(item => {
             const id = item.note?.id || item.vlog?.id || '';
-            return bookmarkedNoteIds.includes(id);
+            return bookmarkSet.has(id);
         });
-    }, [feedItems, filterBookmarked, bookmarkedNoteIds]);
+    }, [feedItems, filterBookmarked, bookmarkSet]);
 
-    /** 
-     * Block list scrolling natively via state if the outer feed isn't 100% physically snapped open. 
-     * useAnimatedReaction executes EXACTLY once when the boundary crosses, making it deeply efficient.
+    /** Track visible items for video auto-play — only clips that are on-screen should play */
+    const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<FeedItem>[] }) => {
+        const newVisibleIds = new Set<string>();
+        for (const item of viewableItems) {
+            const feedItem = item.item as FeedItem;
+            const id = feedItem?.note?.id || feedItem?.vlog?.id || '';
+            if (id) newVisibleIds.add(id);
+        }
+        setVisibleItemIds(newVisibleIds);
+    }, []);
+
+    /** Consider an item visible when ANY part is in the viewport.
+     *  Videos pause only when completely out of view, not when half-scrolled off. */
+    const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 0 }), []);
+
+    /**
+     * Enable list scrolling once the feed is mostly revealed (90%+).
+     * useAnimatedReaction executes EXACTLY once when the boundary crosses.
      */
     useAnimatedReaction(
-        () => (feedProgress ? feedProgress.value >= 0.99 : true),
+        () => (feedProgress ? feedProgress.value >= 0.9 : true),
         (isFullyOpen, prevIsFullyOpen) => {
             if (isFullyOpen !== prevIsFullyOpen) {
                 runOnJS(setFeedScrollEnabled)(isFullyOpen);
@@ -208,20 +249,25 @@ const FeedScreenInner: React.FC<Props> = ({
                     runOnJS(onClose)();
                 } else {
                     // Snap back to feed
-                    feedProgress.value = withSpring(1, { damping: 30, stiffness: 220, mass: 0.8 });
+                    feedProgress.value = withSpring(1, { damping: 28, stiffness: 180, mass: 0.9 });
                 }
             }
             isOverscrolling.value = false;
         }), [onClose, feedProgress]);
-    const renderFeedItem = useCallback(({ item }: { item: any }) => (
+    const renderFeedItem = useCallback(({ item }: { item: any }) => {
+        const itemId = item.note?.id || item.vlog?.id || '';
+        // A video should only auto-play if: (1) auto-play is enabled in settings,
+        // (2) the item is visible in the viewport, AND (3) the feed is fully revealed
+        const isVisible = visibleItemIds.has(itemId) && isFeedVisible;
+        return (
         <View style={styles.cardWrapper}>
             {/* Use FeedVideoCard for clips, FeedCard for everything else */}
             {item.type === 'clip' && item.vlog && onOpenVlog ? (
                 <FeedVideoCard
                     item={item}
-                    isBookmarked={bookmarkedNoteIds.includes(item.vlog.id)}
+                    isBookmarked={bookmarkSet.has(item.vlog.id)}
                     comment={feedComments[item.vlog.id]}
-                    autoPlay={autoPlayFeedVideos}
+                    autoPlay={autoPlayFeedVideos && isVisible}
                     onToggleBookmark={toggleBookmark}
                     onSaveComment={saveFeedComment}
                     onOpenVlog={onOpenVlog}
@@ -229,7 +275,7 @@ const FeedScreenInner: React.FC<Props> = ({
             ) : (
                 <FeedCard
                     item={item}
-                    isBookmarked={bookmarkedNoteIds.includes(
+                    isBookmarked={bookmarkSet.has(
                         item.note?.id || item.vlog?.id || ''
                     )}
                     comment={feedComments[item.note?.id || item.vlog?.id || '']}
@@ -240,15 +286,32 @@ const FeedScreenInner: React.FC<Props> = ({
                 />
             )}
         </View>
-    ), [bookmarkedNoteIds, feedComments, autoPlayFeedVideos, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
+    );
+    }, [bookmarkSet, feedComments, autoPlayFeedVideos, visibleItemIds, isFeedVisible, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
+    /** Lock screen pan gesture: follow-finger drag down to dismiss.
+     *  Updates feedProgress in real-time so the entire feed layer
+     *  follows the finger, then snaps open or closed on release. */
     const lockPanGesture = useMemo(() => Gesture.Pan()
-        // Activate if pulled DOWN past 20px, or UP past 10000px (never)
-        .activeOffsetY([-10000, 20])
+        .activeOffsetY([-10000, 10])
+        .onUpdate((e) => {
+            if (feedProgress && e.translationY > 0) {
+                const dragProgress = 1 - Math.min(e.translationY / screenHeightSV.value, 1);
+                feedProgress.value = Math.pow(dragProgress, 0.85);
+            }
+        })
         .onEnd((e) => {
-            if (e.translationY > 80) runOnJS(onClose)();
-        }), [onClose]);
+            if (!feedProgress) return;
+            if (feedProgress.value < 0.5 || e.velocityY > 500) {
+                // Snap closed — dismiss the feed
+                feedProgress.value = withSpring(0, { damping: 28, stiffness: 180, mass: 0.9 });
+                runOnJS(onClose)();
+            } else {
+                // Snap back open
+                feedProgress.value = withSpring(1, { damping: 28, stiffness: 180, mass: 0.9 });
+            }
+        }), [onClose, feedProgress, screenHeightSV]);
 
 
     if (!isUnlocked) {
@@ -266,7 +329,7 @@ const FeedScreenInner: React.FC<Props> = ({
                                 if (success) Vibration.vibrate(50);
                             }}
                         >
-                            <MaterialCommunityIcons name="fingerprint" size={24} color="#FFF" style={{ marginRight: 10 }} />
+                            <MaterialCommunityIcons name="fingerprint" size={24} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
                             <Text style={styles.unlockBtnText}>Unlock Feed</Text>
                         </AnimatedScaleButton>
                     </View>
@@ -306,7 +369,7 @@ const FeedScreenInner: React.FC<Props> = ({
                         <MaterialCommunityIcons
                             name="bookmark"
                             size={14}
-                            color={filterBookmarked ? '#FFF' : theme.colors.textMuted}
+                            color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
                             style={{ marginRight: 4 }}
                         />
                         <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
@@ -349,6 +412,7 @@ const FeedScreenInner: React.FC<Props> = ({
     return (
         <GestureDetector gesture={feedPanGesture}>
             <View style={styles.container}>
+            <Animated.View style={[styles.feedContentWrapper, feedContentOpacity]}>
                 <AnimatedFlashList
                 ref={listRef}
                 renderScrollComponent={RNGHScrollView}
@@ -365,9 +429,12 @@ const FeedScreenInner: React.FC<Props> = ({
                 onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
                 scrollEventThrottle={16}
                 renderItem={renderFeedItem}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
             />
+            </Animated.View>
         </View>
         </GestureDetector>
     );
@@ -386,6 +453,9 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
+    feedContentWrapper: {
+        flex: 1,
+    },
     listContent: {
         paddingBottom: 100,
     },
@@ -401,7 +471,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 30,
     },
     lockTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 24,
         fontWeight: '900',
         marginTop: 16,
@@ -428,7 +498,7 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     unlockBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 17,
         fontWeight: '800',
     },
@@ -454,7 +524,7 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     feedTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 32,
         fontWeight: '900',
         letterSpacing: -0.5,
@@ -499,7 +569,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     filterBtnTextActive: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontWeight: '700',
     },
 
@@ -524,7 +594,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 30,
     },
     emptyTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 18,
         fontWeight: '700',
         marginTop: 16,

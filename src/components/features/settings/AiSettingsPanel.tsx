@@ -14,8 +14,10 @@ type AiSettingsPanelProps = {
         aiBaseUrl: string;
         aiModel: string;
         aiGrammarModel: string;
+        autoGenerateSummaries: boolean;
         saveAiApiKey: (key: string) => Promise<void>;
         saveAiBaseUrl: (url: string) => Promise<void>;
+        updateAutoGenerateSummaries: (val: boolean) => Promise<void>;
     };
     queueState: any;
     forceBatchOverwrite: boolean;
@@ -83,6 +85,26 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
             >
                 <Text style={styles.modelSelectText}>{aiConfig.aiGrammarModel}</Text>
                 <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
+            </AnimatedScaleButton>
+
+            {/* Auto-Generate Toggle */}
+            <AnimatedScaleButton
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 16 }}
+                onPress={() => {
+                    aiConfig.updateAutoGenerateSummaries(!aiConfig.autoGenerateSummaries);
+                    Vibration.vibrate(10);
+                }}
+            >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <MaterialCommunityIcons name="robot-outline" size={20} color={theme.colors.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>Auto-Generate Summaries</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Run AI automatically after writing</Text>
+                    </View>
+                </View>
+                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: aiConfig.autoGenerateSummaries ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: aiConfig.autoGenerateSummaries ? 'flex-end' : 'flex-start' }} />
+                </View>
             </AnimatedScaleButton>
 
             {/* Batch AI Processing — via central AI Queue */}

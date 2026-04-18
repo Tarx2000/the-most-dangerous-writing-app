@@ -30,11 +30,13 @@ import { TickDial } from '@/components/ui/TickDial';
 import { StreakPopup } from '@/components/features/writing/StreakPopup';
 import { CalendarView } from '@/components/features/library/CalendarView';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { ActionSheet } from '@/components/ui/ActionSheet';
 import { CustomSlider } from '@/components/features/alignment/CustomSlider';
 import { CarouselSelector } from '@/components/ui/CarouselSelector';
 import { APP_VERSION, CONFIG, VERSION_HISTORY } from '@/config';
 import { DEFAULT_AI_PROMPTS, AI_AVAILABLE_MODELS } from '@/config/ai';
 import { commonStyles } from '@/styles/commonStyles';
+import { isCompressionAvailable } from '@/lib/videoCompressor';
 import { RootStackParamList } from '@/types/navigation.types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Route } from '@react-navigation/native';
@@ -44,6 +46,7 @@ import { FlashList } from '@shopify/flash-list';
 import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
 import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel';
 import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToolsPanel';
+import { CirclePickerSheet } from '@/components/features/circles/CirclePickerSheet';
 import type { AiLogEntry } from '@/types';
 import { Easing } from 'react-native-reanimated';
 
@@ -73,6 +76,9 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const [showPersonSelect, setShowPersonSelect] = useState(false);
     const [showStreakPopup, setShowStreakPopup] = useState(false);
     const [showBenchmarkModal, setShowBenchmarkModal] = useState(false);
+    const [showLockTimeoutModal, setShowLockTimeoutModal] = useState(false);
+    const [showVlogQualityModal, setShowVlogQualityModal] = useState(false);
+    const [showCompressionModal, setShowCompressionModal] = useState(false);
     const [newStreakParam, setNewStreakParam] = useState(0);
     const [devModeUnlocked, setDevModeUnlocked] = useState(false);
     /** Toast message for dev mode unlock feedback */
@@ -88,14 +94,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const [aiLogEntries, setAiLogEntries] = useState<AiLogEntry[]>([]);
     const [showAiLog, setShowAiLog] = useState(false);
 
-    const circleSearchRef = useRef('');
-    const [debouncedCircleSearch, setDebouncedCircleSearch] = useState('');
-    const circleSearchDebounceTimeout = useRef<NodeJS.Timeout | null>(null);
-
-    /** Controls inline creation form inside the Select Circle sheet */
-    const [creatingNewCircle, setCreatingNewCircle] = useState(false);
-    const newPersonNameRef = useRef('');
-
     const notes = useNotes();
     const personsHook = usePersons();
     const streak = useStreak();
@@ -105,7 +103,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     const vlogs = useVlogs();
     const storageActions = useStorageActions();
 
-    const security = useSecurity();
+    const security = useSecurity(preferences.lockTimeoutMins);
 
     /** Central AI Queue — single instance via AiQueueProvider */
     const { queueState, startBatch, cancelBatch } = useAiQueueContext();
@@ -157,20 +155,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     
     const details = getScoreDetails(score);
 
-    const filteredPersons = useMemo(() => {
-        return personsHook.persons.filter(p =>
-            p.name.toLowerCase().includes(debouncedCircleSearch.toLowerCase())
-        );
-    }, [personsHook.persons, debouncedCircleSearch]);
-
-    const handleCircleSearchChange = (text: string) => {
-        circleSearchRef.current = text;
-        if (circleSearchDebounceTimeout.current) clearTimeout(circleSearchDebounceTimeout.current);
-        circleSearchDebounceTimeout.current = setTimeout(() => setDebouncedCircleSearch(text), 150);
-        // Force a synchronous UI update to show/hide the clear button, but avoid re-rendering entire screen if possible?
-        // Actually, just standard debounce is enough.
-    };
-
     const activeFont = CONFIG.FONTS[preferences.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[preferences.sizeIndex]?.value || 18;
 
@@ -193,6 +177,26 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
         setAiLogEntries(entries.slice(-50).reverse()); // Show last 50, newest first
     };
 
+    /** Get dynamically adjusted Vlog quality descriptions based on compression preset */
+    const getQualityOptions = () => {
+        let multiplier = 1;
+        if (isCompressionAvailable()) {
+            switch (preferences.compressionPreset) {
+                case 'light': multiplier = 0.6; break;
+                case 'balanced': multiplier = 0.4; break;
+                case 'max': multiplier = 0.2; break;
+                case 'off':
+                default: multiplier = 1; break;
+            }
+        }
+
+        return [
+            { id: '720p', label: `Data Saver (720p) — ~${Math.round(18 * multiplier)} MB/min` },
+            { id: '1080p', label: `Standard (1080p) — ~${Math.round(34 * multiplier)} MB/min` },
+            { id: '2160p', label: `Cinematic (4K) — ~${Math.round(90 * multiplier)} MB/min` },
+        ];
+    };
+
     return (
         <View style={commonStyles.startContainer}>
             <StatusBar barStyle="light-content" backgroundColor="#000000" />
@@ -209,7 +213,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             )}
 
             {/* Premium Header */}
-            <View style={commonStyles.topBar}>
+            <View style={[commonStyles.topBar, preferences.debugLayout && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.5)' }]}>
                 <AnimatedScaleButton onPress={() => setShowCalendar(true)} style={commonStyles.iconButton}>
                     <Text style={{ color: theme.colors.danger, fontSize: 16 }}>🔥</Text>
                     <Text style={commonStyles.streakText}>{streak.currentStreak}</Text>
@@ -246,7 +250,11 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                 settingsLongPressTimer.current = setTimeout(() => {
                                     const newState = !devModeUnlocked;
                                     setDevModeUnlocked(newState);
-                                    Vibration.vibrate(100);
+                                    if (newState) {
+                                        Vibration.vibrate([0, 50, 100, 50, 100, 150]);
+                                    } else {
+                                        Vibration.vibrate([0, 150, 100, 150]);
+                                    }
                                     setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
                                     setTimeout(() => setDevToast(null), 2000);
                                 }, 5000);
@@ -283,7 +291,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                 {/* Dynamic Hero Area */}
                 <View style={styles.heroWidgetContainer}>
                     {/* The Morphing Vector Icon - Always Mounted */}
-                    <View style={{ position: 'relative', marginBottom: sessionMode === 'checkin' ? 0 : 12, marginTop: sessionMode === 'checkin' ? 15 : 0, width: 80, height: 80, justifyContent: 'center', alignItems: 'center' }}>
+                    <View style={{ position: 'relative', marginBottom: 12, marginTop: 0, width: 80, height: 80, justifyContent: 'center', alignItems: 'center' }}>
                         {/* Glow ring - behind the icon, only visible on checkin */}
                         {sessionMode === 'checkin' && (
                             <View style={[styles.glowRing, { position: 'absolute', backgroundColor: details.glow, shadowColor: details.color, width: 80, height: 80, borderRadius: 40 }]} />
@@ -393,7 +401,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         data={VERSION_HISTORY}
                         keyExtractor={(v) => v.version}
                         renderItem={({ item: v }) => (
-                            <View style={commonStyles.versionHistoryBlock}>
+                            <View style={[commonStyles.cardsRow, { marginTop: 20 }, preferences.debugLayout && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.5)' }]}>
                                 <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>
                                 {v.changes.map((c, j) => <Text key={j} style={commonStyles.versionHistoryItem}>• {c}</Text>)}
                             </View>
@@ -402,19 +410,28 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                 </View>
             </SwipeableModal>
 
-            <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Preferences" setHomeScrollEnabled={setHomeScrollEnabled}>
-                <ScrollView contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+            <SwipeableModal visible={showSettings} onClose={() => setShowSettings(false)} title="Settings" setHomeScrollEnabled={setHomeScrollEnabled}>
+                <ScrollView 
+                    contentContainerStyle={{ paddingBottom: 150 }} 
+                    showsVerticalScrollIndicator={false}
+                    style={preferences.debugLayout && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.5)' }}
+                >
 
+                    {/* Appearance & Typography Card */}
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder }}>
-                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Typography Collection</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Choose your preferred writing style</Text>
-                        <View style={commonStyles.settingsRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <MaterialCommunityIcons name="format-text" size={18} color={theme.colors.primaryAction} />
+                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Appearance</Text>
+                        </View>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Customize your reading and writing typography</Text>
+                        
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 20 }}>
                             {CONFIG.FONTS.map((f, i) => {
                                 const fontValue = f.value;
                                 return (
                                     <AnimatedScaleButton
                                         key={i}
-                                        style={[commonStyles.sortBtn, preferences.fontIndex === i && commonStyles.sortBtnActive, { marginBottom: 10 }]}
+                                        style={[commonStyles.sortBtn, preferences.fontIndex === i && commonStyles.sortBtnActive]}
                                         onPress={() => preferences.savePreferences(i, preferences.sizeIndex)}
                                     >
                                         <Text style={[commonStyles.sortBtnText, { fontFamily: fontValue }, preferences.fontIndex === i && commonStyles.sortBtnTextActive]}>
@@ -423,23 +440,25 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                     </AnimatedScaleButton>
                                 );
                             })}
-                        </View>
+                        </ScrollView>
 
                         <View style={{ height: 1, backgroundColor: theme.colors.glassBorder, marginVertical: 20 }} />
 
-                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Reading Size</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Adjust the text scale</Text>
-                        <View style={commonStyles.settingsRow}>
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 13, fontWeight: '500', marginBottom: 12 }}>Reading Size</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: theme.borderRadius.md, padding: 4 }}>
                             {CONFIG.SIZES.map((s, i) => (
-                                <AnimatedScaleButton
+                                <Pressable
                                     key={i}
-                                    style={[commonStyles.sortBtn, preferences.sizeIndex === i && commonStyles.sortBtnActive]}
-                                    onPress={() => preferences.savePreferences(preferences.fontIndex, i)}
+                                    style={{ flex: 1, paddingVertical: 14, alignItems: 'center', backgroundColor: preferences.sizeIndex === i ? theme.colors.primaryAction : 'transparent', borderRadius: theme.borderRadius.sm }}
+                                    onPress={() => {
+                                        preferences.savePreferences(preferences.fontIndex, i);
+                                        Vibration.vibrate(10);
+                                    }}
                                 >
-                                    <Text style={[commonStyles.sortBtnText, preferences.sizeIndex === i && commonStyles.sortBtnTextActive]}>
-                                        {s.label}
+                                    <Text style={{ color: preferences.sizeIndex === i ? theme.colors.primaryActionText : theme.colors.textSecondary, fontSize: 12 + (i * 4), fontWeight: preferences.sizeIndex === i ? 'bold' : '500' }}>
+                                        A
                                     </Text>
-                                </AnimatedScaleButton>
+                                </Pressable>
                             ))}
                         </View>
                     </View>
@@ -454,29 +473,118 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         </Text>
                     </View>
 
+                    {/* Security & Storage Card */}
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
-                        <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Security & Privacy</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 10 }}>Notes and Circles are protected by biometric authentication (fingerprint / face).</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <MaterialCommunityIcons name="shield-lock-outline" size={18} color={theme.colors.primaryAction} />
+                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Security & Storage</Text>
+                        </View>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 16, lineHeight: 20 }}>Notes and Circles are protected by biometric authentication (fingerprint / face).</Text>
+
+                        {/* Lock Timeout Selection */}
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
+                            onPress={() => setShowLockTimeoutModal(true)}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <MaterialCommunityIcons name="timer-lock-outline" size={20} color={theme.colors.textSecondary} />
+                                <View>
+                                    <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Inactivity Lock</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Time before face/fingerprint needed</Text>
+                                </View>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Text style={{ color: theme.colors.primaryAction, fontSize: 13, fontWeight: '800' }}>
+                                    {preferences.lockTimeoutMins === 0 ? 'Immediate' : `${preferences.lockTimeoutMins} Min${preferences.lockTimeoutMins !== 1 ? 's' : ''}`}
+                                </Text>
+                                <MaterialCommunityIcons name="chevron-down" size={16} color={theme.colors.primaryAction} />
+                            </View>
+                        </AnimatedScaleButton>
 
                         {/* Vlog Storage Usage Counter */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <MaterialCommunityIcons name="video-outline" size={18} color={theme.colors.textMuted} />
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 13 }}>Vlog Storage</Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <MaterialCommunityIcons name="server-network" size={20} color={theme.colors.textSecondary} />
+                                <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Vlog Footprint</Text>
                             </View>
-                            <Text style={{ color: theme.colors.primaryAction, fontSize: 13, fontWeight: '800' }}>
+                            <Text style={{ color: theme.colors.primaryAction, fontSize: 14, fontWeight: '800' }}>
                                 {(vlogs.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB
                             </Text>
                         </View>
+
+                        {/* Vlog Video Quality */}
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14 }}
+                            onPress={() => setShowVlogQualityModal(true)}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <MaterialCommunityIcons name="video-outline" size={20} color={theme.colors.textSecondary} />
+                                <View>
+                                    <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Vlog Quality</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Storage vs Resolution</Text>
+                                </View>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Text style={{ color: theme.colors.primaryAction, fontSize: 13, fontWeight: '800' }}>
+                                    {preferences.vlogQuality || '1080p'}
+                                </Text>
+                                <MaterialCommunityIcons name="chevron-down" size={16} color={theme.colors.primaryAction} />
+                            </View>
+                        </AnimatedScaleButton>
+
+                        {/* Vlog Compression Preset */}
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginTop: 10, opacity: isCompressionAvailable() ? 1 : 0.35 }}
+                            onPress={() => isCompressionAvailable() && setShowCompressionModal(true)}
+                            disabled={!isCompressionAvailable()}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
+                                <MaterialCommunityIcons name="zip-box-outline" size={20} color={theme.colors.textSecondary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Compression</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                                        {isCompressionAvailable() ? 'Post-recording optimization' : 'Requires dev build'}
+                                    </Text>
+                                </View>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <Text style={{ color: isCompressionAvailable() ? theme.colors.primaryAction : theme.colors.textMuted, fontSize: 13, fontWeight: '800' }}>
+                                    {isCompressionAvailable()
+                                        ? (CONFIG.VLOG_COMPRESSION_PRESETS.find(p => p.id === preferences.compressionPreset)?.label || 'Balanced')
+                                        : 'Unavailable'}
+                                </Text>
+                                {isCompressionAvailable() && <MaterialCommunityIcons name="chevron-down" size={16} color={theme.colors.primaryAction} />}
+                            </View>
+                        </AnimatedScaleButton>
                     </View>
 
                     {/* Feed Settings */}
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder, marginTop: 10 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                             <MaterialCommunityIcons name="newspaper-variant-outline" size={18} color={theme.colors.primaryAction} />
-                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Feed Settings</Text>
+                            <Text style={[commonStyles.settingsLabel, { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 }]}>Feed & System</Text>
                         </View>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>Control how your feed behaves</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 12 }}>System-wide configurations and behaviors</Text>
+
+                        {/* Haptic Feedback toggle */}
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
+                            onPress={() => {
+                                preferences.updateHapticsPref(!preferences.enableHaptics);
+                                Vibration.vibrate(10);
+                            }}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                                <MaterialCommunityIcons name="vibrate" size={20} color={theme.colors.textSecondary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Haptic Feedback</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Subtle vibrations on interaction</Text>
+                                </View>
+                            </View>
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: preferences.enableHaptics ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: preferences.enableHaptics ? 'flex-end' : 'flex-start' }} />
+                            </View>
+                        </AnimatedScaleButton>
 
                         {/* Auto-play videos toggle */}
                         <AnimatedScaleButton
@@ -533,137 +641,19 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                 </ScrollView>
             </SwipeableModal>
 
-            {/* Select Circle — Slide-up SwipeableModal (replaces old full-screen Modal) */}
-            <SwipeableModal
+            {/* Select Circle — Extracted into CirclePickerSheet component */}
+            <CirclePickerSheet
                 visible={showPersonSelect}
-                onClose={() => { setShowPersonSelect(false); circleSearchRef.current = ''; handleCircleSearchChange(''); setCreatingNewCircle(false); }}
-                title={creatingNewCircle ? 'New Circle' : 'Select Circle'}
+                onClose={() => setShowPersonSelect(false)}
+                selectedPersonId={selectedPersonId}
+                onSelectPerson={setSelectedPersonId}
+                persons={personsHook.persons}
+                addPerson={personsHook.addPerson}
+                isCirclesUnlocked={security.isCirclesUnlocked}
+                isNotesUnlocked={security.isNotesUnlocked}
+                unlockCircles={security.unlockCircles}
                 setHomeScrollEnabled={setHomeScrollEnabled}
-            >
-                {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
-                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 60 }}>
-                        <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
-                        <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 8 }}>Circles Protected</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>Verify your identity to view your circles</Text>
-                        <AnimatedScaleButton
-                            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 100 }}
-                            onPress={async () => {
-                                const success = await security.unlockCircles();
-                                if (success) Vibration.vibrate(50);
-                            }}
-                        >
-                            <MaterialCommunityIcons name="fingerprint" size={20} color="#FFF" style={{ marginRight: 8 }} />
-                            <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Unlock Circles</Text>
-                        </AnimatedScaleButton>
-                    </View>
-                ) : creatingNewCircle ? (
-                    /* ── Inline Create Form ─────────────────────────────────── */
-                    <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-                        <TextInput
-                            style={commonStyles.addPersonInput}
-                            placeholder="Person's Name"
-                            placeholderTextColor={theme.colors.textMuted}
-                            defaultValue={newPersonNameRef.current}
-                            onChangeText={(text) => newPersonNameRef.current = text}
-                            autoFocus
-                            keyboardAppearance="dark"
-                        />
-                        <View style={{ gap: 10, marginTop: 20 }}>
-                            <AnimatedScaleButton
-                                style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingVertical: 16, borderRadius: 100, shadowColor: theme.colors.primaryAction, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}
-                                onPress={async () => {
-                                    if (newPersonNameRef.current.trim()) {
-                                        const newId = await personsHook.addPerson(newPersonNameRef.current);
-                                        newPersonNameRef.current = '';
-                                        setCreatingNewCircle(false);
-                                        circleSearchRef.current = '';
-                                        handleCircleSearchChange('');
-                                        if (newId) setSelectedPersonId(newId);
-                                    }
-                                }}
-                            >
-                                <MaterialCommunityIcons name="check" size={20} color="#FFF" style={{ marginRight: 8 }} />
-                                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>Create Circle</Text>
-                            </AnimatedScaleButton>
-                            <AnimatedScaleButton
-                                style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.glassBackground, paddingVertical: 16, borderRadius: 100, borderWidth: 1, borderColor: theme.colors.glassBorder }}
-                                onPress={() => setCreatingNewCircle(false)}
-                            >
-                                <Text style={{ color: theme.colors.textPrimary, fontWeight: '700', fontSize: 15 }}>Back to List</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    </View>
-                ) : (
-                    <>
-                    {/* Search Input */}
-                    <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
-                        <View style={styles.premiumSearchBox}>
-                            <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textMuted} style={{ marginRight: 10 }} />
-                            <TextInput
-                                style={styles.premiumSearchInput}
-                                placeholder="Search your circles..."
-                                placeholderTextColor={theme.colors.textMuted}
-                                defaultValue={circleSearchRef.current}
-                                onChangeText={handleCircleSearchChange}
-                                keyboardAppearance="dark"
-                                autoCorrect={false}
-                            />
-                            {circleSearchRef.current.length > 0 && (
-                                <AnimatedScaleButton onPress={() => { circleSearchRef.current = ''; handleCircleSearchChange(''); }}>
-                                    <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
-                                </AnimatedScaleButton>
-                            )}
-                        </View>
-                    </View>
-
-                    {/* List */}
-                    <View style={{ flex: 1, width: '100%' }}>
-                        {filteredPersons.length > 0 ? (
-                            <FlashList
-                                data={filteredPersons}
-                                renderItem={({ item: p }: { item: Person }) => (
-                                    <AnimatedScaleButton
-                                        style={styles.premiumPersonItem}
-                                        onPress={() => { setSelectedPersonId(p.id); setShowPersonSelect(false); handleCircleSearchChange(''); }}
-                                    >
-                                        <View style={styles.premiumPersonAvatar}>
-                                            <Text style={styles.premiumPersonAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
-                                        </View>
-                                        <Text style={styles.premiumPersonName}>{p.name}</Text>
-                                    </AnimatedScaleButton>
-                                )}
-                                keyExtractor={(p) => p.id}
-                                keyboardShouldPersistTaps="handled"
-                                keyboardDismissMode="on-drag"
-                                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-                            />
-                        ) : (
-                            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' }}>
-                                <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textMuted} style={{ marginBottom: 15 }} />
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
-                                    {debouncedCircleSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
-                                </Text>
-                                
-                                {debouncedCircleSearch.length > 0 && (
-                                    <AnimatedScaleButton style={styles.premiumCreateBtn} onPress={() => { newPersonNameRef.current = debouncedCircleSearch; setCreatingNewCircle(true); }}>
-                                        <MaterialCommunityIcons name="plus" size={20} color="#000" />
-                                        <Text style={styles.premiumCreateBtnText}>Create "{debouncedCircleSearch}"</Text>
-                                    </AnimatedScaleButton>
-                                )}
-                            </ScrollView>
-                        )}
-                    </View>
-                    
-                    {/* Float create button — opens inline creation form */}
-                    {debouncedCircleSearch.length === 0 && (
-                        <AnimatedScaleButton style={styles.premiumFloatCreateBtn} onPress={() => { newPersonNameRef.current = ''; setCreatingNewCircle(true); }}>
-                            <MaterialCommunityIcons name="plus" size={24} color="#000" />
-                            <Text style={styles.premiumFloatCreateBtnText}>New Circle</Text>
-                        </AnimatedScaleButton>
-                    )}
-                    </>
-                )}
-            </SwipeableModal>
+            />
 
             {/* Streak Popup Overlay */}
             <StreakPopup
@@ -678,45 +668,69 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                 onClose={() => setShowBenchmarkModal(false)}
             />
 
-            {/* Select AI Model Modal */}
-            <Modal visible={!!choosingModelFor} transparent animationType="fade" onRequestClose={() => setChoosingModelFor(null)}>
-                <Pressable style={commonStyles.modalOverlay} onPress={() => setChoosingModelFor(null)}>
-                    <View style={commonStyles.versionModalContent}>
-                        <Text style={commonStyles.versionModalTitle}>Select {choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model</Text>
-                        <View style={{ gap: 8, marginTop: 10 }}>
-                        {AI_AVAILABLE_MODELS.map(m => {
-                                const isSelected = choosingModelFor === 'summary' ? aiConfig.aiModel === m : aiConfig.aiGrammarModel === m;
-                                return (
-                                    <AnimatedScaleButton 
-                                        key={m}
-                                        style={{
-                                            flexDirection: 'row',
-                                            alignItems: 'center',
-                                            paddingVertical: 14,
-                                            paddingHorizontal: 16,
-                                            borderBottomWidth: 1,
-                                            borderBottomColor: 'rgba(255,255,255,0.05)',
-                                            backgroundColor: isSelected ? 'rgba(74, 222, 128, 0.1)' : 'transparent',
-                                            borderRadius: 8
-                                        }}
-                                        onPress={() => {
-                                            if (choosingModelFor === 'summary') aiConfig.saveAiModel(m);
-                                            else aiConfig.saveAiGrammarModel(m);
-                                            setChoosingModelFor(null);
-                                        }}
-                                    >
-                                        <Text style={{ color: isSelected ? '#4ade80' : theme.colors.textPrimary, fontSize: 16, fontWeight: isSelected ? 'bold' : 'normal' }}>{m}</Text>
-                                        {isSelected && <MaterialCommunityIcons name="check" size={20} color="#4ade80" style={{ marginLeft: 'auto' }} />}
-                                    </AnimatedScaleButton>
-                                );
-                            })}
-                        </View>
-                        <AnimatedScaleButton style={[commonStyles.closeVersionBtn]} onPress={() => setChoosingModelFor(null)}>
-                            <Text style={commonStyles.closeVersionBtnText}>Cancel</Text>
-                        </AnimatedScaleButton>
-                    </View>
-                </Pressable>
-            </Modal>
+            {/* Select AI Model — unified ActionSheet */}
+            <ActionSheet
+                visible={!!choosingModelFor}
+                title={`Select ${choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model`}
+                options={AI_AVAILABLE_MODELS.map(m => ({ id: m, label: m }))}
+                activeId={choosingModelFor === 'summary' ? aiConfig.aiModel : aiConfig.aiGrammarModel}
+                onSelect={(id) => {
+                    if (choosingModelFor === 'summary') aiConfig.saveAiModel(id);
+                    else aiConfig.saveAiGrammarModel(id);
+                    setChoosingModelFor(null);
+                }}
+                onClose={() => setChoosingModelFor(null)}
+            />
+
+            {/* Lock Timeout Options */}
+            <ActionSheet
+                visible={showLockTimeoutModal}
+                title="Inactivity Lock Timeout"
+                options={[
+                    { id: '0', label: 'Immediately' },
+                    { id: '1', label: '1 Minute' },
+                    { id: '3', label: '3 Minutes' },
+                    { id: '5', label: '5 Minutes' },
+                    { id: '15', label: '15 Minutes' },
+                ]}
+                activeId={preferences.lockTimeoutMins.toString()}
+                onSelect={(id) => {
+                    preferences.updateLockTimeout(parseInt(id, 10));
+                    setShowLockTimeoutModal(false);
+                }}
+                onClose={() => setShowLockTimeoutModal(false)}
+            />
+
+            {/* Vlog Quality Options */}
+            <ActionSheet
+                visible={showVlogQualityModal}
+                title="Vlog Recording Quality"
+                options={getQualityOptions()}
+                activeId={preferences.vlogQuality || '1080p'}
+                onSelect={(id) => {
+                    preferences.updateVlogQuality(id);
+                    setShowVlogQualityModal(false);
+                }}
+                onClose={() => setShowVlogQualityModal(false)}
+            />
+
+            {/* Compression Preset Options */}
+            <ActionSheet
+                visible={showCompressionModal}
+                title="Compression Preset"
+                options={[
+                    { id: 'off',      label: 'Off (Raw Quality)' },
+                    { id: 'light',    label: 'Light — ~40% smaller' },
+                    { id: 'balanced', label: 'Balanced — ~60% smaller ✦' },
+                    { id: 'max',      label: 'Max Savings — ~80% smaller' },
+                ]}
+                activeId={preferences.compressionPreset || 'balanced'}
+                onSelect={(id) => {
+                    preferences.updateCompressionPreset(id);
+                    setShowCompressionModal(false);
+                }}
+                onClose={() => setShowCompressionModal(false)}
+            />
 
         </View>
     );

@@ -27,6 +27,11 @@ export const theme = {
         textPrimary: '#FFFFFF',
         textSecondary: 'rgba(255, 255, 255, 0.6)',
         textMuted: 'rgba(255, 255, 255, 0.3)',
+        textBody: 'rgba(255, 255, 255, 0.85)',       // High-readability body text
+        textInput: 'rgba(255, 255, 255, 0.9)',       // Editable text areas
+        textTweet: 'rgba(255, 255, 255, 0.88)',      // Tweet-style short entries
+        textBodyDim: 'rgba(255, 255, 255, 0.7)',     // Dimmed body text (previews)
+        textDim: 'rgba(255, 255, 255, 0.4)',          // Very dim text (timers, labels)
 
         // Accents & Actions (True Red)
         primaryAction: '#FF2A2A',
@@ -38,6 +43,7 @@ export const theme = {
         gold: '#FFD700',
         green: '#4ade80',
         orange: '#FF6B35',
+        suggestionError: '#ff6b6b',
 
         // Danger variants
         dangerSubtle: 'rgba(255, 42, 42, 0.06)',
@@ -60,6 +66,7 @@ export const theme = {
         glassHighlight: 'rgba(255, 255, 255, 0.15)',
         glassSurface: 'rgba(255, 255, 255, 0.06)',
         glassSurfaceMedium: 'rgba(255, 255, 255, 0.08)',
+        glassSurfaceSubtle: 'rgba(255, 255, 255, 0.02)',
         glassBorderSubtle: 'rgba(255, 255, 255, 0.06)',
         glassBorderMedium: 'rgba(255, 255, 255, 0.12)',
 
@@ -76,7 +83,19 @@ export const theme = {
         // Overlay
         overlayDark: 'rgba(0, 0, 0, 0.4)',
         overlayMedium: 'rgba(0, 0, 0, 0.85)',
+        overlayVideoMuted: 'rgba(0, 0, 0, 0.6)',   // Video mute button background
+        overlayVideoStrong: 'rgba(0, 0, 0, 0.7)',   // Video duration badge background
         deathOverlay: 'rgba(40, 35, 32, 0.95)',
+        overlayPopup: 'rgba(0, 0, 0, 0.92)',         // Full-screen popup overlays (streak, etc.)
+
+        // Video / clip accents
+        videoAccentTint: 'rgba(255, 107, 53, 0.1)',   // Video card avatar background tint
+        videoAccentBorder: 'rgba(255, 107, 53, 0.15)', // Video card avatar border
+        videoFlashBackground: 'rgba(0, 0, 0, 0.4)',   // Play/pause flash icon background
+
+        // Grammar suggestion accents
+        suggestionBackground: 'rgba(255, 215, 0, 0.06)',
+        suggestionBorder: 'rgba(255, 200, 50, 0.12)',
 
         // Placeholder
         placeholder: '#555',

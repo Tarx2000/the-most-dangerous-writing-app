@@ -2,7 +2,7 @@
   "expo": {
     "name": "the-most-dangerous-writing-app",
     "slug": "the-most-dangerous-writing-app",
-    "version": "1.5.3",
+    "version": "1.5.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -23,7 +23,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.themostdangerouswritingapp",
-      "versionCode": 12,
+      "versionCode": 15,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"
@@ -38,7 +38,8 @@
           "recordAudioAndroid": true
         }
       ],
-      "expo-video"
+      "expo-video",
+      "react-native-compressor"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

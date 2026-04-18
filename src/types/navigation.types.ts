@@ -12,6 +12,7 @@ export type RootStackParamList = {
     };
     Library: undefined;
     VisionBoard: undefined;
+    Sandbox: undefined;
     AlignmentWriting: {
         alignmentScore: number;
         timeIndex: number;

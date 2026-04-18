@@ -10,6 +10,7 @@ import {
     Vibration,
     Dimensions,
     useWindowDimensions,
+    Platform,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -21,11 +22,13 @@ import Animated, {
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
-import { commonStyles } from '@/styles/commonStyles';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { RichText } from '@/components/ui/RichText';
 import type { SavedNote, AiJobCategory } from '@/types';
 import { isAlignmentReflection } from '@/types';
+import { usePreferences } from '@/lib/hooks/useStorage';
+import { CONFIG } from '@/config';
 
 /** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
 const { height: DEFAULT_HEIGHT } = Dimensions.get('window');
@@ -48,6 +51,10 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
     onRegenerateAi,
 }) => {
     const { height: SCREEN_HEIGHT } = useWindowDimensions();
+    const { fontIndex, sizeIndex } = usePreferences();
+    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    const activeSize = CONFIG.SIZES[sizeIndex]?.value || 17;
+    const activeLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
 
     /* ── Local confirmation state ── */
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -105,13 +112,13 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
     return (
         <>
             <Modal visible={visible} animationType="fade" transparent={true} onRequestClose={onClose}>
-                <View style={styles.cardPopupBackdrop}>
-                    <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
-                    <Animated.View style={[styles.cardPopupContainer, animatedCardStyle]}>
-                        <View style={styles.cardPopupTint} />
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                    <View style={styles.cardPopupBackdrop}>
+                        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+                        <Animated.View style={[styles.cardPopupContainer, animatedCardStyle]}>
+                            <View style={styles.cardPopupTint} />
 
-                        {/* Swipeable Header Zone */}
-                        <GestureHandlerRootView>
+                            {/* Swipeable Header Zone */}
                             <GestureDetector gesture={notePanGesture}>
                                 <Animated.View>
                                     <View style={styles.cardPopupHandle} />
@@ -131,7 +138,6 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                                     </View>
                                 </Animated.View>
                             </GestureDetector>
-                        </GestureHandlerRootView>
 
                         {/* Body */}
                         <ScrollView 
@@ -175,7 +181,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                                 </View>
                             )}
 
-                            <Text style={styles.premiumNoteBody} selectable={true}>{note.text}</Text>
+                            <Text style={[styles.premiumNoteBody, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]} selectable={true}>{note.text}</Text>
                             <View style={{ height: 100 }} />
                         </ScrollView>
 
@@ -203,32 +209,25 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                         </View>
                     </Animated.View>
                 </View>
-            </Modal>
+            </GestureHandlerRootView>
+        </Modal>
 
-            {/* Delete Confirmation Overlay */}
-            <Modal visible={confirmDelete} transparent animationType="fade">
-                <View style={commonStyles.modalOverlay}>
-                    <View style={commonStyles.versionModalContent}>
-                        <Text style={commonStyles.versionModalTitle}>Delete Entry?</Text>
-                        <Text style={{ textAlign: 'center', marginBottom: 20, color: 'rgba(255,255,255,0.7)', fontSize: 16, lineHeight: 22 }}>
-                            Are you sure you want to permanently delete this session? This cannot be undone.
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.glassBackground, marginTop: 0 }]} onPress={() => setConfirmDelete(false)}>
-                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={[{ color: theme.colors.textPrimary, fontWeight: 'bold', fontSize: 15 }]}>Cancel</Text>
-                            </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, { flex: 1, backgroundColor: theme.colors.danger, marginTop: 0 }]} onPress={() => {
-                                onDelete(note.id);
-                                setConfirmDelete(false);
-                            }}>
-                                <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
-                                <Text style={[{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }]}>Delete</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* Delete Confirmation — unified ConfirmDialog */}
+            <ConfirmDialog
+                visible={confirmDelete}
+                title="Delete Entry?"
+                message="Are you sure you want to permanently delete this session? This cannot be undone."
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                icon="delete-outline"
+                cancelIcon="close"
+                destructive
+                onConfirm={() => {
+                    if (note) onDelete(note.id);
+                    setConfirmDelete(false);
+                }}
+                onCancel={() => setConfirmDelete(false)}
+            />
         </>
     );
 });
@@ -249,7 +248,7 @@ const styles = StyleSheet.create({
     },
     cardPopupTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: '#111',
+        backgroundColor: theme.colors.surfaceMedium,
     },
     cardPopupHandle: {
         width: 40,
@@ -369,7 +368,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         borderTopWidth: 1,
         borderTopColor: 'rgba(255,255,255,0.06)',
-        backgroundColor: '#111',
+        backgroundColor: theme.colors.surfaceMedium,
     },
     premiumNoteDeleteBtn: {
         flexDirection: 'row',

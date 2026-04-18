@@ -170,7 +170,7 @@ export const StreakPopup: React.FC<StreakPopupProps> = ({ visible, streak, strea
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.92)',
+        backgroundColor: theme.colors.overlayPopup,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 30,
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     buttonText: {
-        color: '#000000',
+        color: theme.colors.background,
         fontSize: 17,
         fontWeight: '600',
         letterSpacing: 0.3,

@@ -42,14 +42,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { CONFIG } from '@/config';
 import { generateId } from '@/lib/utils';
 import { cleanupOrphanedVlogs as cleanupOrphanFiles, formatStorageSize } from '@/lib/storageManager';
-import {
-    DEFAULT_OLLAMA_API_KEY,
-    DEFAULT_OLLAMA_BASE_URL,
-    DEFAULT_OLLAMA_MODEL,
-    DEFAULT_AI_PROMPTS,
-    AI_STORAGE_KEYS,
-    type AiPrompts,
-} from '@/config/ai';
+import { DEFAULT_OLLAMA_API_KEY, DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, DEFAULT_AI_PROMPTS, AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
+import { setGlobalHapticsEnabled } from '@/lib/haptics';
+import { processPendingCompressions } from '@/lib/videoCompressor';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONTEXT TYPE DEFINITIONS
@@ -84,12 +79,24 @@ interface PreferencesContextType {
     fontIndex: number;
     sizeIndex: number;
     useBiometrics: boolean;
+    enableHaptics: boolean;
+    lockTimeoutMins: number;
+    vlogQuality: string;
+    /** Active compression preset ID ('off' | 'light' | 'balanced' | 'max') */
+    compressionPreset: string;
     devMode: boolean;
+    debugLayout: boolean;
     visionBoard: VisionBoard | null;
     lastReflectionDate: number | null;
     savePreferences: (fIdx: number, sIdx: number) => Promise<void>;
     updateBiometricsPref: (val: boolean) => Promise<void>;
+    updateHapticsPref: (val: boolean) => Promise<void>;
+    updateLockTimeout: (mins: number) => Promise<void>;
+    updateVlogQuality: (q: string) => Promise<void>;
+    /** Update the active compression preset */
+    updateCompressionPreset: (preset: string) => Promise<void>;
     toggleDevMode: () => Promise<void>;
+    toggleDebugLayout: () => Promise<void>;
     saveVisionBoard: (board: VisionBoard) => Promise<void>;
 }
 
@@ -100,11 +107,13 @@ interface AiConfigContextType {
     aiModel: string;
     aiGrammarModel: string;
     aiPrompts: AiPrompts;
+    autoGenerateSummaries: boolean;
     saveAiApiKey: (key: string) => Promise<void>;
     saveAiBaseUrl: (url: string) => Promise<void>;
     saveAiModel: (model: string) => Promise<void>;
     saveAiGrammarModel: (model: string) => Promise<void>;
     saveAiPrompts: (prompts: AiPrompts) => Promise<void>;
+    updateAutoGenerateSummaries: (val: boolean) => Promise<void>;
 }
 
 /** Feed features — medium-frequency (bookmark toggles, comments) */
@@ -152,6 +161,28 @@ const StorageActionsContext = createContext<StorageActionsContextType | null>(nu
 
 /* ═══════════════════════════════════════════════════════════════════════════
    STORAGE PROVIDER
+   ═══════════════════════════════════════════════════════════════════════════
+   Architecture Note:
+   All 8 domains' state, refs, and CRUD operations live in this single
+   StorageProvider function. While this looks monolithic, the split-context
+   pattern (see context definitions above) ensures that consumers only
+   re-render when THEIR specific context value changes — each context's value
+   is memoized with useMemo and only creates a new reference when its
+   dependencies change.
+
+   This means:
+   - A note save only re-renders components subscribed to useNotes()
+   - A bookmark toggle only re-renders components subscribed to useFeedData()
+   - A preferences change only re-renders components subscribed to usePreferences()
+
+   Cross-domain operations (like deletePerson, which updates both persons AND
+   notes) are straightforward here because all state is in one closure.
+   Splitting into separate providers would require a coordinator pattern for
+   these operations, adding complexity without meaningful performance benefit.
+
+   If the provider function grows too large for maintainability, the CRUD
+   operations can be extracted into separate utility modules that accept
+   refs and setters as parameters — without changing the provider structure.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const StorageProvider = ({ children }: { children: ReactNode }) => {
@@ -170,7 +201,12 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [fontIndex, setFontIndex] = useState(0);
     const [sizeIndex, setSizeIndex] = useState(1);
     const [useBiometrics, setUseBiometrics] = useState<boolean>(true);
+    const [enableHaptics, setEnableHaptics] = useState<boolean>(true);
+    const [lockTimeoutMins, setLockTimeoutMins] = useState<number>(3);
+    const [vlogQuality, setVlogQuality] = useState<string>('1080p');
+    const [compressionPreset, setCompressionPreset] = useState<string>('balanced');
     const [devMode, setDevMode] = useState<boolean>(false);
+    const [debugLayout, setDebugLayout] = useState<boolean>(false);
     const [visionBoard, setVisionBoard] = useState<VisionBoard | null>(null);
     const [lastReflectionDate, setLastReflectionDate] = useState<number | null>(null);
 
@@ -189,6 +225,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [aiModel, setAiModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
     const [aiGrammarModel, setAiGrammarModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
     const [aiPrompts, setAiPrompts] = useState<AiPrompts>({ ...DEFAULT_AI_PROMPTS });
+    const [autoGenerateSummaries, setAutoGenerateSummaries] = useState<boolean>(true);
 
     /* ══════════════════════════════════════════════════════════════════════
        REFS — Fresh-read pattern to eliminate stale closures.
@@ -210,6 +247,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     savedVlogsRef.current = savedVlogs;
     const devModeRef = useRef(devMode);
     devModeRef.current = devMode;
+    const debugLayoutRef = useRef(debugLayout);
+    debugLayoutRef.current = debugLayout;
     const bookmarkedNoteIdsRef = useRef(bookmarkedNoteIds);
     bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
     const feedCommentsRef = useRef(feedComments);
@@ -220,6 +259,14 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     sizeIndexRef.current = sizeIndex;
     const useBiometricsRef = useRef(useBiometrics);
     useBiometricsRef.current = useBiometrics;
+    const enableHapticsRef = useRef(enableHaptics);
+    enableHapticsRef.current = enableHaptics;
+    const lockTimeoutMinsRef = useRef(lockTimeoutMins);
+    lockTimeoutMinsRef.current = lockTimeoutMins;
+    const vlogQualityRef = useRef(vlogQuality);
+    vlogQualityRef.current = vlogQuality;
+    const compressionPresetRef = useRef(compressionPreset);
+    compressionPresetRef.current = compressionPreset;
     const visionBoardRef = useRef(visionBoard);
     visionBoardRef.current = visionBoard;
     const aiApiKeyRef = useRef(aiApiKey);
@@ -232,6 +279,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     aiGrammarModelRef.current = aiGrammarModel;
     const aiPromptsRef = useRef(aiPrompts);
     aiPromptsRef.current = aiPrompts;
+    const autoGenerateSummariesRef = useRef(autoGenerateSummaries);
+    autoGenerateSummariesRef.current = autoGenerateSummaries;
     const autoPlayFeedVideosRef = useRef(autoPlayFeedVideos);
     autoPlayFeedVideosRef.current = autoPlayFeedVideos;
     const totalVlogStorageBytesRef = useRef(totalVlogStorageBytes);
@@ -259,8 +308,9 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         const keys = [
             'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
             'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY',
-            'DEV_MODE', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS',
+            'DEV_MODE', 'DEBUG_LAYOUT', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS', 'COMPRESSION_PRESET',
             'BOOKMARKED_NOTE_IDS', 'FEED_COMMENTS', 'AUTO_PLAY_FEED_VIDEOS',
+            'ENABLE_HAPTICS', 'LOCK_TIMEOUT_MINS', 'VLOG_QUALITY', 'AUTO_GENERATE_SUMMARIES',
             AI_STORAGE_KEYS.API_KEY, AI_STORAGE_KEYS.BASE_URL,
             AI_STORAGE_KEYS.MODEL, AI_STORAGE_KEYS.GRAMMAR_MODEL,
             AI_STORAGE_KEYS.PROMPTS,
@@ -303,10 +353,33 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             setUseBiometrics(val);
             useBiometricsRef.current = val;
         }
+        if (data['ENABLE_HAPTICS'] !== null) {
+            const val = safeParse('ENABLE_HAPTICS', data['ENABLE_HAPTICS'], true);
+            setEnableHaptics(val);
+            enableHapticsRef.current = val;
+            setGlobalHapticsEnabled(val);
+        }
+        if (data['LOCK_TIMEOUT_MINS'] !== null) {
+            const val = parseInt(data['LOCK_TIMEOUT_MINS']!, 10);
+            if (!isNaN(val)) { setLockTimeoutMins(val); lockTimeoutMinsRef.current = val; }
+        }
+        if (data['VLOG_QUALITY'] !== null) {
+            setVlogQuality(data['VLOG_QUALITY']!);
+            vlogQualityRef.current = data['VLOG_QUALITY']!;
+        }
+        if (data['COMPRESSION_PRESET'] !== null && data['COMPRESSION_PRESET'] !== undefined) {
+            setCompressionPreset(data['COMPRESSION_PRESET']!);
+            compressionPresetRef.current = data['COMPRESSION_PRESET']!;
+        }
         if (data['DEV_MODE'] !== null) {
             const val = safeParse('DEV_MODE', data['DEV_MODE'] || 'false', false);
             setDevMode(val);
             devModeRef.current = val;
+        }
+        if (data['DEBUG_LAYOUT'] !== null) {
+            const val = safeParse('DEBUG_LAYOUT', data['DEBUG_LAYOUT'] || 'false', false);
+            setDebugLayout(val);
+            debugLayoutRef.current = val;
         }
         if (data['VISION_BOARD']) {
             const val = safeParse<VisionBoard>('VISION_BOARD', data['VISION_BOARD'], { health: '', career: '', relationships: '', mindset: '' });
@@ -358,6 +431,11 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             const merged = { ...DEFAULT_AI_PROMPTS, ...parsed };
             setAiPrompts(merged);
             aiPromptsRef.current = merged;
+        }
+        if (data['AUTO_GENERATE_SUMMARIES'] !== null) {
+            const val = safeParse('AUTO_GENERATE_SUMMARIES', data['AUTO_GENERATE_SUMMARIES'], true);
+            setAutoGenerateSummaries(val);
+            autoGenerateSummariesRef.current = val;
         }
 
         /* ── Feed ──────────────────────────────────────────────────── */
@@ -422,6 +500,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /** Load once on mount */
     useEffect(() => { loadAllData(); }, [loadAllData]);
+
 
     /* ══════════════════════════════════════════════════════════════════════
        NOTES OPERATIONS
@@ -665,6 +744,44 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
        PREFERENCES & MISC OPERATIONS
        ══════════════════════════════════════════════════════════════════════ */
 
+    const updateHapticsPref = useCallback(async (val: boolean) => {
+        const prev = enableHapticsRef.current;
+        setEnableHaptics(val);
+        enableHapticsRef.current = val;
+        setGlobalHapticsEnabled(val);
+        try { await storage.setItem('ENABLE_HAPTICS', JSON.stringify(val)); }
+        catch (error) { 
+            setEnableHaptics(prev); 
+            enableHapticsRef.current = prev; 
+            setGlobalHapticsEnabled(prev);
+        }
+    }, []);
+
+    const updateLockTimeout = useCallback(async (mins: number) => {
+        const prev = lockTimeoutMinsRef.current;
+        setLockTimeoutMins(mins);
+        lockTimeoutMinsRef.current = mins;
+        try { await storage.setItem('LOCK_TIMEOUT_MINS', mins.toString()); }
+        catch (error) { setLockTimeoutMins(prev); lockTimeoutMinsRef.current = prev; }
+    }, []);
+
+    const updateVlogQuality = useCallback(async (q: string) => {
+        const prev = vlogQualityRef.current;
+        setVlogQuality(q);
+        vlogQualityRef.current = q;
+        try { await storage.setItem('VLOG_QUALITY', q); }
+        catch (error) { setVlogQuality(prev); vlogQualityRef.current = prev; }
+    }, []);
+
+    /** Update the active compression preset and persist to storage */
+    const updateCompressionPreset = useCallback(async (preset: string) => {
+        const prev = compressionPresetRef.current;
+        setCompressionPreset(preset);
+        compressionPresetRef.current = preset;
+        try { await storage.setItem('COMPRESSION_PRESET', preset); }
+        catch (error) { setCompressionPreset(prev); compressionPresetRef.current = prev; }
+    }, []);
+
     const savePreferences = useCallback(async (fIdx: number, sIdx: number) => {
         const prevFont = fontIndexRef.current;
         const prevSize = sizeIndexRef.current;
@@ -693,6 +810,18 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) {
             console.error('[Storage] Failed to toggle dev mode:', error);
             setDevMode(prevVal);
+        }
+    }, []);
+
+    const toggleDebugLayout = useCallback(async () => {
+        const prevVal = debugLayoutRef.current;
+        const newVal = !prevVal;
+        setDebugLayout(newVal);
+        try {
+            await storage.setItem('DEBUG_LAYOUT', JSON.stringify(newVal));
+        } catch (error) {
+            console.error('[Storage] Failed to toggle debug layout:', error);
+            setDebugLayout(prevVal);
         }
     }, []);
 
@@ -725,6 +854,14 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     /* ══════════════════════════════════════════════════════════════════════
        AI CONFIG OPERATIONS
        ══════════════════════════════════════════════════════════════════════ */
+
+    const updateAutoGenerateSummaries = useCallback(async (val: boolean) => {
+        const prev = autoGenerateSummariesRef.current;
+        setAutoGenerateSummaries(val);
+        autoGenerateSummariesRef.current = val;
+        try { await storage.setItem('AUTO_GENERATE_SUMMARIES', JSON.stringify(val)); }
+        catch (error) { setAutoGenerateSummaries(prev); autoGenerateSummariesRef.current = prev; }
+    }, []);
 
     const saveAiApiKey = useCallback(async (key: string) => {
         const prev = aiApiKeyRef.current;
@@ -932,6 +1069,30 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         };
     }, []);
 
+    /**
+     * Process pending compressions on startup.
+     * If the app was killed during compression, the pending queue persists in
+     * AsyncStorage. We wait 2s after mount to let the UI settle, then silently
+     * compress any queued videos in the background.
+     */
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            try {
+                const processed = await processPendingCompressions(updateVlog);
+                if (processed > 0) {
+                    console.log(`[Startup] Processed ${processed} pending compression(s)`);
+                    const freshVlogs = savedVlogsRef.current;
+                    const newTotal = freshVlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
+                    setTotalVlogStorageBytes(newTotal);
+                    totalVlogStorageBytesRef.current = newTotal;
+                }
+            } catch (error) {
+                console.error('[Startup] Failed to process pending compressions:', error);
+            }
+        }, 2000);
+        return () => clearTimeout(timer);
+    }, [updateVlog]);
+
     /* ══════════════════════════════════════════════════════════════════════
        CROSS-CUTTING OPERATIONS
        ══════════════════════════════════════════════════════════════════════ */
@@ -945,7 +1106,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         const allKeys = [
             'SAVED_NOTES', 'SAVED_PERSONS', 'USER_FONT_IDX', 'USER_SIZE_IDX',
             'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY',
-            'DEV_MODE', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS',
+            'DEV_MODE', 'DEBUG_LAYOUT', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS',
             'BOOKMARKED_NOTE_IDS', 'FEED_COMMENTS', 'AUTO_PLAY_FEED_VIDEOS',
         ];
 
@@ -973,6 +1134,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         setUseBiometrics(true);
         useBiometricsRef.current = true;
         setDevMode(false);
+        setDebugLayout(false);
         setVisionBoard(null);
         visionBoardRef.current = null;
         setLastReflectionDate(null);
@@ -1028,16 +1190,16 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     }), [currentStreak, lastWinDate, streakHistory]);
 
     const preferencesValue = useMemo<PreferencesContextType>(() => ({
-        fontIndex, sizeIndex, useBiometrics, devMode, visionBoard, lastReflectionDate,
-        savePreferences, updateBiometricsPref, toggleDevMode, saveVisionBoard,
-    }), [fontIndex, sizeIndex, useBiometrics, devMode, visionBoard, lastReflectionDate,
-         savePreferences, updateBiometricsPref, toggleDevMode, saveVisionBoard]);
+        fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate,
+        savePreferences, updateBiometricsPref, updateHapticsPref, updateLockTimeout, updateVlogQuality, updateCompressionPreset, toggleDevMode, toggleDebugLayout, saveVisionBoard,
+    }), [fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate,
+         savePreferences, updateBiometricsPref, updateHapticsPref, updateLockTimeout, updateVlogQuality, updateCompressionPreset, toggleDevMode, toggleDebugLayout, saveVisionBoard]);
 
     const aiConfigValue = useMemo<AiConfigContextType>(() => ({
-        aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts,
-        saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts,
-    }), [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts,
-         saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts]);
+        aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries,
+        saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts, updateAutoGenerateSummaries,
+    }), [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries,
+         saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts, updateAutoGenerateSummaries]);
 
     const feedValue = useMemo<FeedContextType>(() => ({
         bookmarkedNoteIds, feedComments, autoPlayFeedVideos,

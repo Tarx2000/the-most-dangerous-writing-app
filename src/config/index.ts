@@ -30,6 +30,14 @@ export const CONFIG = {
         { label: 'Serif (Classic)', value: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
         { label: 'Mono (Code)', value: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
         { label: 'Casual (Fun)', value: Platform.OS === 'ios' ? 'Chalkboard SE' : 'casual' },
+        { label: 'Playfair Display', value: 'PlayfairDisplay_400Regular' },
+        { label: 'Space Mono', value: 'SpaceMono_400Regular' },
+        { label: 'Caveat', value: 'Caveat_400Regular' },
+        { label: 'Lora', value: 'Lora_400Regular' },
+        { label: 'Zilla Slab', value: 'ZillaSlab_400Regular' },
+        { label: 'Crimson Pro', value: 'CrimsonPro_400Regular' },
+        { label: 'DM Sans', value: 'DMSans_400Regular' },
+        { label: 'Eagle Lake', value: 'EagleLake_400Regular' },
     ],
     SIZES: [
         { label: 'Small', value: 14, line: 22 },
@@ -45,4 +53,35 @@ export const CONFIG = {
     VLOG_VIDEO_QUALITY: '1080p' as const,
     /** Private subdirectory in documentDirectory for storing vlog files */
     VLOG_STORAGE_DIR: 'vlogs/',
+
+    /* ── Compression Settings ─────────────────────────────────────────── */
+    /**
+     * CONFIGURABLE: Compression presets for post-recording video optimization.
+     *
+     * Each preset defines:
+     * - maxSize: Maximum resolution boundary (0 = skip compression)
+     * - bitrate: Target bitrate in bps for the compressor
+     *
+     * 'balanced' is the default — ~60% file size reduction with great quality.
+     */
+    VLOG_COMPRESSION_PRESETS: [
+        { id: 'off',      label: 'Off (Raw)',       desc: 'No compression — largest files, original quality',  maxSize: 0,    bitrate: 0 },
+        { id: 'light',    label: 'Light',           desc: '~40% smaller, virtually identical quality',         maxSize: 1920, bitrate: 4_000_000 },
+        { id: 'balanced', label: 'Balanced',         desc: '~60% smaller, great quality (recommended)',        maxSize: 1080, bitrate: 2_500_000 },
+        { id: 'max',      label: 'Maximum Savings',  desc: '~80% smaller, good quality, smaller resolution',   maxSize: 720,  bitrate: 1_200_000 },
+    ] as const,
+
+    /**
+     * CONFIGURABLE: Smart bitrate mapping per recording quality.
+     * Replaces the old hardcoded 6Mbps — each quality level gets an
+     * appropriate capture bitrate that balances quality and raw file size.
+     */
+    VLOG_BITRATE_MAP: {
+        '720p':  2_500_000,
+        '1080p': 4_500_000,
+        '2160p': 12_000_000,
+    } as Record<string, number>,
+
+    /** AsyncStorage key for tracking pending (interrupted) compressions */
+    PENDING_COMPRESSION_KEY: 'PENDING_COMPRESSIONS',
 };

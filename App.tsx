@@ -8,6 +8,7 @@ import { PostWritingScreen } from './src/screens/PostWritingScreen';
 import { VisionBoardScreen } from './src/screens/VisionBoardScreen';
 import { AlignmentWritingScreen } from './src/screens/AlignmentWritingScreen';
 import { VlogRecordingScreen } from './src/screens/VlogRecordingScreen';
+import { SandboxScreen } from './src/screens/SandboxScreen';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { StorageProvider } from '@/lib/hooks/useStorage';
@@ -15,6 +16,18 @@ import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
 import { ErrorBoundary, withErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useFonts } from 'expo-font';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { PlayfairDisplay_400Regular } from '@expo-google-fonts/playfair-display';
+import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
+import { Caveat_400Regular } from '@expo-google-fonts/caveat';
+import { Lora_400Regular } from '@expo-google-fonts/lora';
+import { ZillaSlab_400Regular } from '@expo-google-fonts/zilla-slab';
+import { CrimsonPro_400Regular } from '@expo-google-fonts/crimson-pro';
+import { DMSans_400Regular } from '@expo-google-fonts/dm-sans';
+import { EagleLake_400Regular } from '@expo-google-fonts/eagle-lake';
+import { initHapticsMiddleware } from '@/lib/haptics';
+
+// Initialize global haptics middleware
+initHapticsMiddleware();
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -22,6 +35,14 @@ function AppContent() {
   const [fontsLoaded] = useFonts({
     ...MaterialCommunityIcons.font,
     ...Feather.font,
+    PlayfairDisplay_400Regular,
+    SpaceMono_400Regular,
+    Caveat_400Regular,
+    Lora_400Regular,
+    ZillaSlab_400Regular,
+    CrimsonPro_400Regular,
+    DMSans_400Regular,
+    EagleLake_400Regular,
   });
 
   if (!fontsLoaded) {
@@ -45,6 +66,7 @@ function AppContent() {
               <Stack.Screen name="VisionBoard" component={withErrorBoundary(VisionBoardScreen)} />
               <Stack.Screen name="AlignmentWriting" component={withErrorBoundary(AlignmentWritingScreen)} />
               <Stack.Screen name="VlogRecording" component={withErrorBoundary(VlogRecordingScreen)} />
+              <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
             </Stack.Navigator>
           </NavigationContainer>
         </AiQueueProvider>

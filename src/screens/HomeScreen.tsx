@@ -30,9 +30,9 @@ const FEED_SNAP_THRESHOLD = 120;
 
 /** Spring physics for the feed reveal/dismiss animation */
 const FEED_SPRING = {
-    damping: 30,
-    stiffness: 220,
-    mass: 0.8,
+    damping: 28,
+    stiffness: 180,
+    mass: 0.9,
 };
 
 /**
@@ -74,6 +74,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * 'vlog' = video journal
      */
     const [sessionMode, setSessionMode] = useState<'journal' | 'circles' | 'checkin' | 'vlog'>('journal');
+    // Immediate state for the navigation bar to eliminate perceived lag
+    const [activeTabId, setActiveTabId] = useState<'journal' | 'circles' | 'checkin' | 'vlog'>('journal');
 
     /**
      * Track which page is visible (0 = Start, 1 = Library).
@@ -84,8 +86,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     /** Whether the Feed page is currently revealed */
     const [feedVisible, setFeedVisible] = useState(false);
 
-    const security = useSecurity();
-    const { lastReflectionDate } = usePreferences();
+    const { lastReflectionDate, lockTimeoutMins } = usePreferences();
+    const security = useSecurity(lockTimeoutMins);
     const { enqueueNote, isNoteActive } = useAiQueueContext();
 
     /** Note Viewer State for the Feed Screen */
@@ -119,6 +121,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * the heavy screen content updates are deferred.
      */
     const handleModeChange = useCallback((mode: string) => {
+        // Immediate nav update
+        setActiveTabId(mode as any);
+        
+        // Defer heavier screen content re-renders
         startTransition(() => {
             setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
         });
@@ -192,7 +198,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
             // Only allow upward drag (negative translationY)
             if (e.translationY < 0) {
                 const progress = Math.min(Math.abs(e.translationY) / screenHeightSV.value, 1);
-                feedProgress.value = Math.pow(progress, 0.7);
+                feedProgress.value = Math.pow(progress, 0.85);
             }
         })
         .onEnd((e) => {
@@ -214,6 +220,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     /** Feed layer animates UP (from screenHeight to 0) */
     const feedAnimStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: (1 - feedProgress.value) * screenHeightSV.value }],
+    }));
+
+    /** Nav bar fades out and slides down as feed opens — driven by feedProgress */
+    const navAnimStyle = useAnimatedStyle(() => ({
+        opacity: 1 - feedProgress.value,
+        transform: [{ translateY: feedProgress.value * 80 }],
+        pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
     /** Close the feed — animate content back down */
@@ -257,6 +270,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                     onOpenVlog={handleOpenVlogModal}
                     onClose={handleCloseFeed}
                     feedProgress={feedProgress}
+                    isFeedVisible={feedVisible}
                 />
             </Animated.View>
 
@@ -318,15 +332,17 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                             />
                         </View>
                     </ScrollView>
-
-                    {/* Persistent Liquid Glass Navigation — floats above both pages */}
-                    <LiquidGlassNav
-                        items={navItems}
-                        activeId={sessionMode}
-                        onSelect={handleModeChange}
-                    />
                 </Animated.View>
             </GestureDetector>
+
+            {/* Persistent Liquid Glass Navigation — fades out and slides down when feed opens */}
+            <Animated.View style={navAnimStyle}>
+                <LiquidGlassNav
+                    items={navItems}
+                    activeId={activeTabId}
+                    onSelect={handleModeChange}
+                />
+            </Animated.View>
         </View>
     );
 };

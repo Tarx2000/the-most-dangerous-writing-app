@@ -16,10 +16,32 @@ import { CONFIG } from '@/config';
  * - Animations (shake, loss overlay) use Reanimated SharedValues + withTiming
  *   for 60fps UI-thread animations.
  *
+ * Haptic feedback:
+ * - Progressive haptic pattern triggers very late in the danger sequence
+ *   (at 85%+ idle time) with escalating vibration intensity:
+ *   - 85%: Quick double-tap warning
+ *   - 92%: Urgent triple-tap
+ *   - 97%+: Rapid escalating pattern until death
+ *
  * @param timeIndex - Index into CONFIG.SESSION_OPTIONS_MINS
  * @param diffIndex - Index into CONFIG.DIFFICULTIES
  * @param inputRefRef - Ref to the TextInput for programmatic control (clear)
  */
+
+/** Idle danger thresholds for progressive haptic feedback (0-1 ratio scale)
+ *
+ * Escalation pattern (starts subtle, builds exponentially):
+ *   caution → warning → urgent → critical
+ * Adjust thresholds via the constants below — do not hardcode values in comments.
+ */
+const HAPTIC_CAUTION_THRESHOLD = 0.70;   // Gentle nudge
+const HAPTIC_WARNING_THRESHOLD = 0.80;   // Double-tap warning
+const HAPTIC_URGENT_THRESHOLD = 0.90;    // Urgent triple-tap
+const HAPTIC_CRITICAL_THRESHOLD = 0.95;  // Escalating rapid buzz
+
+/** Track last haptic threshold fired to prevent repeated vibrations */
+type HapticLevel = 'none' | 'caution' | 'warning' | 'urgent' | 'critical';
+
 export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<any>) {
     const [sessionTimeSelected, setSessionTimeSelected] = useState<number>(0);
     const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number>(0);
@@ -43,6 +65,9 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     const shakeAnimation = useSharedValue(0);
     /** Loss overlay opacity shared value — runs on UI thread */
     const lossOverlayOpacity = useSharedValue(0);
+
+    /** Track the last haptic level fired to avoid duplicate vibrations at the same threshold */
+    const lastHapticLevelRef = useRef<HapticLevel>('none');
 
     const clearTimers = useCallback(() => {
         if (sessionIntervalRef.current) clearInterval(sessionIntervalRef.current);
@@ -95,6 +120,8 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         clearTimers();
 
         // Quick Notes have no timers at all - no countdown, no idle death
+        // Reset haptic tracking on new session
+        lastHapticLevelRef.current = 'none';
         if (isQuickNote) return;
 
         // Session countdown timer (ticks every second)
@@ -117,6 +144,26 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
                 idleTimeMsShared.value = difficultyLimit;
             } else {
                 idleTimeMsShared.value = newIdleTime;
+
+                // Progressive haptic feedback — only fires when crossing thresholds
+                const ratio = newIdleTime / difficultyLimit;
+                if (ratio >= HAPTIC_CRITICAL_THRESHOLD && lastHapticLevelRef.current !== 'critical') {
+                    // Escalating rapid buzz — panic-inducing, nearly dead
+                    lastHapticLevelRef.current = 'critical';
+                    Vibration.vibrate([0, 50, 25, 50, 25, 50, 25, 80]);
+                } else if (ratio >= HAPTIC_URGENT_THRESHOLD && lastHapticLevelRef.current === 'warning') {
+                    // Urgent triple rapid pulse
+                    lastHapticLevelRef.current = 'urgent';
+                    Vibration.vibrate([0, 40, 25, 40]);
+                } else if (ratio >= HAPTIC_WARNING_THRESHOLD && lastHapticLevelRef.current === 'caution') {
+                    // Double-tap — clear warning, danger is building
+                    lastHapticLevelRef.current = 'warning';
+                    Vibration.vibrate([0, 30, 50, 30]);
+                } else if (ratio >= HAPTIC_CAUTION_THRESHOLD && lastHapticLevelRef.current === 'none') {
+                    // Single short pulse — gentle nudge to keep going
+                    lastHapticLevelRef.current = 'caution';
+                    Vibration.vibrate(20);
+                }
             }
         }, CONFIG.TICK_RATE_MS);
     }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation, idleTimeMsShared]);
@@ -126,12 +173,14 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         // Reset idle timer on any typing (works for both timed sessions and quick notes)
         if (!hasLostRef.current && !isContinuingAfterLossRef.current) {
             idleTimeMsShared.value = 0;
+            // Reset haptic level so thresholds fire again if user idles again
+            lastHapticLevelRef.current = 'none';
         }
     }, [idleTimeMsShared]);
 
     const resumeWritingFreely = useCallback((onResumed?: () => void) => {
         setIsContinuingAfterLoss(true);
-        
+
         const finishResume = () => {
             setHasLost(false);
             if (onResumed) onResumed();

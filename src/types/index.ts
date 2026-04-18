@@ -110,6 +110,12 @@ export interface SavedVlog {
     fileSizeBytes: number;
     /** Cached thumbnail image path (generated on first view via expo-video-thumbnails) */
     thumbnailPath?: string;
+    /** Which compression preset was applied ('off' | 'light' | 'balanced' | 'max') */
+    compressionPreset?: string;
+    /** Original uncompressed file size in bytes (for comparison display) */
+    originalFileSizeBytes?: number;
+    /** Whether compression is still pending (interrupted before completion) */
+    compressionPending?: boolean;
 }
 
 /* ── AI Queue Types ──────────────────────────────────────────────────── */

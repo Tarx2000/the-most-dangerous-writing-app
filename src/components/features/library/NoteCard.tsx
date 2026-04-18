@@ -25,6 +25,9 @@ import { commonStyles } from '@/styles/commonStyles';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { RichText } from '@/components/ui/RichText';
+import { usePreferences } from '@/lib/hooks/useStorage';
+import { CONFIG } from '@/config';
+import { Platform } from 'react-native';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -41,6 +44,8 @@ interface Props {
 
 export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPress, personName, isLocked, isProcessing, isQueued, isSelected }) => {
     const hasAi = !!note.aiTitle;
+    const { fontIndex } = usePreferences();
+    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
 
     /* ── Pulsing Glow Animation ─────────────────────────────────────── */
     const pulse = useSharedValue(0);
@@ -121,7 +126,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
             </View>
 
             {isLocked ? (
-                <Text style={commonStyles.noteCardPreview} numberOfLines={3}>
+                <Text style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={3}>
                     •••• •••••••• ••••• ••• •••
                 </Text>
             ) : isProcessing ? (
@@ -130,23 +135,23 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
                         <MaterialCommunityIcons name="brain" size={13} color={theme.colors.primaryAction} />
                         <Text style={styles.processingText}>Processing...</Text>
                     </View>
-                    <RichText style={commonStyles.noteCardPreview} numberOfLines={1} text={note.text} />
+                    <RichText style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={1} text={note.text} />
                 </>
             ) : hasAi ? (
                 <>
                     <RichText
-                        style={{ color: theme.colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, marginBottom: 4 }}
+                        style={{ color: theme.colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, fontFamily: activeFont, marginBottom: 4 }}
                         numberOfLines={2}
                         text={note.aiTitle!}
                     />
-                    <RichText style={commonStyles.noteCardPreview} numberOfLines={1} text={note.text} />
+                    <RichText style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={1} text={note.text} />
                 </>
             ) : (
-                <RichText style={commonStyles.noteCardPreview} numberOfLines={3} text={note.text} />
+                <RichText style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={3} text={note.text} />
             )}
 
             {personName && (
-                <Text style={{ ...commonStyles.noteCardPreview, marginTop: 8, color: '#aaa', fontStyle: 'italic' }}>
+                <Text style={{ ...commonStyles.noteCardPreview, fontFamily: activeFont, marginTop: 8, color: '#aaa', fontStyle: 'italic' }}>
                     Linked to: {personName}
                 </Text>
             )}

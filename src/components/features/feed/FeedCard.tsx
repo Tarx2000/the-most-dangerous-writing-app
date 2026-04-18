@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
 
     /* ── Tweet content ──────────────────────────────────────────────── */
     tweetText: {
-        color: 'rgba(255, 255, 255, 0.88)',
+        color: theme.colors.textTweet,
         fontSize: 15,
         lineHeight: 23,
     },
@@ -437,14 +437,14 @@ const styles = StyleSheet.create({
 
     /* ── Story content (long entries) ───────────────────────────────── */
     storyTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 18,
         fontWeight: '800',
         marginBottom: 8,
         lineHeight: 24,
     },
     storyPreview: {
-        color: 'rgba(255, 255, 255, 0.7)',
+        color: theme.colors.textBodyDim,
         fontSize: 14,
         lineHeight: 22,
         marginBottom: 12,
@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
         borderRadius: 100,
     },
     commentSaveText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 13,
         fontWeight: '700',
     },

@@ -50,6 +50,7 @@ src/
     features/writing/      — DangerOverlay, StreakPopup
     features/library/      — CalendarView, NoteCard, NoteViewerModal, ExpandablePersonCard, PersonProfileModal, VlogCalendarGallery, VlogViewerModal
     features/feed/         — FeedCard, FeedVideoCard
+    features/circles/      — CirclePickerSheet (extracted from StartScreen)
     features/settings/     — AiSettingsPanel, DeveloperToolsPanel
     features/alignment/    — CustomSlider
   styles/
@@ -88,7 +89,9 @@ useEffect(() => { sv.value = screenHeight; }, [screenHeight, sv]); // ✅
 - Stage 1: Circles visible
 - Stage 1.5: Profile visible
 - Stage 2: Full access (notes, feed)
-- Auto-lock after 3 minutes of inactivity OR when app goes to background (AppState listener)
+- Auto-lock after 3 minutes of inactivity (configurable via `timeoutMins`, 0 = lock on background only)
+- 30-second grace period when app goes to background — brief interruptions (messages, camera) don't require re-auth
+- Immediate lock on `inactive` state (control center, notification overlay)
 
 ### Theme System
 All colors must come from `theme.colors` in `src/styles/theme.ts`. **Never use hardcoded hex/rgba values** in components — always reference a theme token. If a color doesn't exist, add it to `theme.ts` with a semantic name following the naming convention:
@@ -103,6 +106,29 @@ All colors must come from `theme.colors` in `src/styles/theme.ts`. **Never use h
 - **Memoization**: Components with gesture handlers (`CalendarView`, `CustomSlider`, `TickDial`) use `React.memo` + `useMemo` for gestures to prevent recreation on parent re-renders.
 - **Inline styles**: Prefer `StyleSheet.create()` over inline `style={{}}`. Only keep dynamic values (e.g., `width: progress + '%'`) inline.
 - **Dimensions**: Always use `useWindowDimensions()` hook, never module-level `Dimensions.get('window')`. The latter freezes values at module load and doesn't update on rotation.
+
+### Video Auto-Play (Viewport-Driven)
+`FeedVideoCard` uses a single-source playback control pattern:
+
+1. **`autoPlay` prop** (viewport-driven): Computed by `FeedScreen` as `autoPlayFeedVideos && isVisible`, where `isVisible = visibleItemIds.has(id) && isFeedVisible`. When the feed is hidden or the video scrolls off-screen, `autoPlay` becomes `false` and the video pauses immediately.
+2. **`userPausedRef`** (manual override): Tracks whether the user manually paused. Prevents `playingChange` force-resume after manual pause. Reset on every `autoPlay` change so viewport changes always win.
+3. **`playingChange` listener**: Only force-resumes when `autoPlay && !userPausedRef.current && !event.isPlaying`. Handles modal close and system pauses.
+4. **Tap-to-mute**: The entire video area is a `Pressable` with `zIndex: 5` over the `VideoView` (which has `pointerEvents: 'none'`). This ensures taps always reach the `Pressable`, never the native video player.
+
+**CRITICAL: VideoView intercepts touches.** Always set `pointerEvents: 'none'` on `VideoView` and use a separate `Pressable` overlay with `zIndex` for tap handling. The native video player captures touches even with `nativeControls={false}`.
+
+### Feed Transition Architecture
+The feed reveal/dismiss uses `feedProgress` SharedValue (0→1) driving three animated layers:
+- **Main content**: `translateY: feedProgress * -screenHeight` (slides up)
+- **Feed layer**: `translateY: (1 - feedProgress) * screenHeight` (slides in from below)
+- **Nav bar**: `opacity: 1 - feedProgress`, `translateY: feedProgress * 80` (fades out and slides down)
+
+The `LiquidGlassNav` must be OUTSIDE the `mainContent` Animated.View with its own `navAnimStyle`. If placed inside `mainContent`, it gets pushed off-screen when the feed opens and bleeds into the feed during the transition animation.
+
+**Lock screen dismiss**: The lock screen pan gesture updates `feedProgress` in real-time (follow-finger), then snaps to 0 (close) or 1 (open) on release. This provides a smooth drag-to-dismiss experience.
+
+### Progressive Haptic Feedback
+`useSession` implements a 4-level escalating haptic pattern during idle danger. Thresholds are defined by `HAPTIC_CAUTION/WARNING/URGENT/CRITICAL_THRESHOLD` constants at the top of the file — adjust values there, not in comments. Each level fires exactly once per idle period (tracked via `lastHapticLevelRef`). Resets to `'none'` on text input or new session start. Pattern: single short pulse → double-tap → triple rapid pulse → escalating rapid buzz.
 
 ## ⚠️ Version Pinning (CRITICAL — do NOT upgrade these)
 

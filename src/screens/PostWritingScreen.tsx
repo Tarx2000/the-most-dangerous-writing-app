@@ -68,14 +68,14 @@ const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: a
     }));
 
     return (
-        <ReanimatedAnimated.View style={[{ width: width as any, height, borderRadius: 8, backgroundColor: '#FFF' }, animatedStyle, style]} />
+        <ReanimatedAnimated.View style={[{ width: width as any, height, borderRadius: 8, backgroundColor: theme.colors.textPrimary }, animatedStyle, style]} />
     );
 };
 
 export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
     const { savedNotes, updateNote } = useNotes();
-    const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts } = useAiConfig();
+    const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries } = useAiConfig();
 
     /** AI Queue — centralized, single-instance via AiQueueProvider */
     const { enqueueNote, isNoteActive, isNoteQueued, queueState } = useAiQueueContext();
@@ -115,9 +115,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         }
     }, [note]);
 
-    /* ── Enqueue AI processing (once, on mount) ────────────────────── */
     useEffect(() => {
-        if (!note || aiEnqueuedRef.current) return;
+        if (!note || aiEnqueuedRef.current || !autoGenerateSummaries) return;
         aiEnqueuedRef.current = true;
 
         // Determine category based on note properties
@@ -131,6 +130,15 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         if (!note.aiTitle || !note.aiSummary || note.aiSummary.length === 0) {
             enqueueNote(noteId, category);
         }
+    }, [note, noteId, enqueueNote, autoGenerateSummaries]);
+
+    /* ── Manual AI Generate ─────────────────────────────────────────── */
+    const handleManualGenerate = useCallback(() => {
+        if (!note) return;
+        aiEnqueuedRef.current = true;
+        const category: AiJobCategory = isAlignmentReflection(note) ? 'checkin' : note.personId ? 'circle' : 'journal';
+        enqueueNote(noteId, category);
+        Vibration.vibrate(20);
     }, [note, noteId, enqueueNote]);
 
     /* ── Grammar Check (user-triggered) ─────────────────────────────── */
@@ -188,7 +196,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return (
         <View style={styles.container}>
-            <LinearGradient colors={['#0a0a0a', '#000000']} style={StyleSheet.absoluteFillObject} />
+            <LinearGradient colors={[theme.colors.surfaceDark, theme.colors.background]} style={StyleSheet.absoluteFillObject} />
 
             <ScrollView
                 style={styles.scrollView}
@@ -216,6 +224,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {!hasAiTitle ? (
                         queueState.serverOnline === false ? (
                             <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>AI Server Unreachable</Text>
+                        ) : !aiProcessing ? (
+                            <AnimatedScaleButton onPress={handleManualGenerate} style={{ paddingVertical: 10 }}>
+                                <Text style={{ color: theme.colors.primaryAction, fontWeight: '700' }}>Enable AI Processing for this entry</Text>
+                            </AnimatedScaleButton>
                         ) : (
                             <View style={styles.shimmerContainer}>
                                 <ShimmerLine width="75%" height={24} />
@@ -238,6 +250,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {!hasAiSummary ? (
                         queueState.serverOnline === false ? (
                             <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Summary unavailable.</Text>
+                        ) : !aiProcessing ? (
+                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Tap 'Enable AI Processing' above to generate summary.</Text>
                         ) : (
                             <View style={styles.shimmerContainer}>
                                 <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
@@ -368,7 +382,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
     },
     scrollView: {
         flex: 1,
@@ -402,7 +416,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     headerTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 28,
         fontWeight: '900',
         letterSpacing: -0.5,
@@ -432,7 +446,7 @@ const styles = StyleSheet.create({
 
     /* AI Title */
     aiTitleText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '800',
         lineHeight: 30,
@@ -440,12 +454,12 @@ const styles = StyleSheet.create({
 
     /* AI Summary Card */
     summaryCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: theme.colors.glassSurface,
         borderRadius: 20,
         padding: 20,
         marginBottom: 24,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: theme.colors.glassSurfaceMedium,
     },
     summaryHeader: {
         flexDirection: 'row',
@@ -474,7 +488,7 @@ const styles = StyleSheet.create({
         lineHeight: 24,
     },
     bulletText: {
-        color: 'rgba(255, 255, 255, 0.85)',
+        color: theme.colors.textBody,
         fontSize: 15,
         lineHeight: 24,
         flex: 1,
@@ -491,7 +505,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: theme.colors.glassSurface,
         paddingHorizontal: 10,
         paddingVertical: 5,
         borderRadius: 12,
@@ -502,26 +516,26 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     editableTextInput: {
-        color: 'rgba(255, 255, 255, 0.9)',
+        color: theme.colors.textInput,
         fontSize: 16,
         lineHeight: 26,
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: theme.colors.glassSurface,
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: theme.colors.glassBorder,
         minHeight: 150,
         textAlignVertical: 'top',
     },
     readOnlyTextContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
+        backgroundColor: theme.colors.glassSurfaceSubtle,
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
+        borderColor: theme.colors.glassBorderSubtle,
     },
     readOnlyText: {
-        color: 'rgba(255, 255, 255, 0.8)',
+        color: theme.colors.textBodyDim,
         fontSize: 16,
         lineHeight: 26,
     },
@@ -564,12 +578,12 @@ const styles = StyleSheet.create({
     suggestionCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 215, 0, 0.06)',
+        backgroundColor: theme.colors.suggestionBackground,
         borderRadius: 14,
         padding: 14,
         marginBottom: 8,
         borderWidth: 1,
-        borderColor: 'rgba(255, 200, 50, 0.12)',
+        borderColor: theme.colors.suggestionBorder,
     },
     suggestionContent: {
         flex: 1,
@@ -582,7 +596,7 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
     },
     suggestionOriginal: {
-        color: '#ff6b6b',
+        color: theme.colors.suggestionError,
         fontSize: 14,
         fontWeight: '600',
         textDecorationLine: 'line-through',
@@ -601,7 +615,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        backgroundColor: 'rgba(74, 222, 128, 0.1)', // green tint for grammar fix apply
         justifyContent: 'center',
         alignItems: 'center',
         marginLeft: 10,
@@ -622,17 +636,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: '#FFF',
+        backgroundColor: theme.colors.textPrimary,
         paddingVertical: 16,
         borderRadius: 100,
-        shadowColor: '#FFF',
+        shadowColor: theme.colors.textPrimary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
         shadowRadius: 15,
         elevation: 10,
     },
     saveBtnText: {
-        color: '#000',
+        color: theme.colors.background,
         fontSize: 16,
         fontWeight: '900',
         letterSpacing: 0.5,

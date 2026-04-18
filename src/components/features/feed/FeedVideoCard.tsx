@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -32,9 +32,9 @@ const DEFAULT_AUTO_PLAY = true;
  * Design:
  * - Orange gradient accent border (matches "clip" feed type)
  * - Auto-plays muted when visible (configurable via settings)
+ * - Tap anywhere on video to toggle mute/unmute
  * - Shows thumbnail still when paused
  * - Duration badge overlay on bottom-right
- * - Play/pause toggle on tap
  *
  * The auto-play behavior can be toggled in Settings via the
  * autoPlayFeedVideos storage field.
@@ -85,19 +85,16 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     const accentColor = '#FF6B35'; // Orange for video clips
 
     const flashOpacity = useSharedValue(0);
-    const [flashIcon, setFlashIcon] = useState<'play' | 'pause'>('play');
+    const [flashIcon, setFlashIcon] = useState<'volume-off' | 'volume-high'>('volume-off');
     const videoRef = React.useRef<View>(null);
 
-    const handleTogglePlay = React.useCallback(() => {
-        const nextState = !isPlaying;
-        setIsPlaying(nextState);
-        setFlashIcon(nextState ? 'play' : 'pause');
-        flashOpacity.value = withSequence(
-            withTiming(0.8, { duration: 50 }),
-            withTiming(0, { duration: 600 })
-        );
-        Vibration.vibrate(10);
-    }, [isPlaying, flashOpacity]);
+    /**
+     * Tracks whether the user manually paused (vs viewport-driven pause).
+     * - When the user taps pause: userPaused = true → prevents force-resume
+     * - When autoPlay changes (viewport change): userPaused resets → auto-play resumes
+     * - When the user taps play: userPaused = false → allows force-resume again
+     */
+    const userPausedRef = useRef(false);
 
     /** Create video player (muted by default) */
     const player = useVideoPlayer(vlog.filePath, (p) => {
@@ -106,7 +103,35 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
         if (autoPlay) p.play();
     });
 
-    const handleExpandMedia = React.useCallback(() => {
+    /** Viewport-driven playback control.
+     *  When autoPlay changes (feed hidden/shown or video scrolled in/out),
+     *  reset any manual pause override and directly control the player.
+     *  This is the source of truth — autoPlay always wins over manual state. */
+    useEffect(() => {
+        userPausedRef.current = false;
+        if (autoPlay) {
+            player.play();
+        } else {
+            player.pause();
+        }
+        setIsPlaying(autoPlay);
+    }, [autoPlay, player]);
+
+    /** Tap anywhere on video to toggle mute.
+     *  Play/pause is fully viewport-driven (autoPlay prop) — no manual toggle needed.
+     *  The flash icon shows the new mute state for visual feedback. */
+    const handleToggleMute = useCallback(() => {
+        const nextMuted = !isMuted;
+        setIsMuted(nextMuted);
+        setFlashIcon(nextMuted ? 'volume-off' : 'volume-high');
+        flashOpacity.value = withSequence(
+            withTiming(0.8, { duration: 50 }),
+            withTiming(0, { duration: 600 })
+        );
+        Vibration.vibrate(10);
+    }, [isMuted, flashOpacity]);
+
+    const handleExpandMedia = useCallback(() => {
         if (videoRef.current) {
             videoRef.current.measureInWindow((x, y, w, h) => {
                 onOpenVlog(vlog, { x, y, width: w, height: h }, player);
@@ -120,25 +145,18 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     const { updateVlog } = useVlogs();
     const { getThumbnail } = useThumbnails(updateVlog);
 
-    /** Sync playing state and volume with player */
-    useEffect(() => {
-        if (isPlaying) {
-            player.play();
-        } else {
-            player.pause();
-        }
-    }, [isPlaying, player]);
-
-    /** Robust resume: Monitor player status to prevent freezes after modal close */
+    /** Robust resume: prevent freezes after modal close.
+     *  Only force-resumes when: auto-play is active (in viewport + feed visible),
+     *  the user hasn't manually paused, and the player stopped unexpectedly.
+     *  This handles cases like the vlog modal closing or system pauses. */
     useEffect(() => {
         const subscription = player.addListener('playingChange', (event) => {
-            if (isPlaying && !event.isPlaying) {
-                // If it should be playing but stopped (e.g. modal closed), force resume
+            if (autoPlay && !userPausedRef.current && !event.isPlaying) {
                 player.play();
             }
         });
         return () => subscription.remove();
-    }, [isPlaying, player]);
+    }, [autoPlay, player]);
 
     useEffect(() => {
         player.volume = isMuted ? 0 : 1;
@@ -166,52 +184,47 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                     <Text style={styles.timeAgo}>{formatRelativeTime(item.timestamp)}</Text>
                 </View>
 
-                {/* Video Player Area — View container with layered touch targets */}
-                <View ref={videoRef} collapsable={false} style={[styles.videoContainer, { position: 'relative' }]}>
-                    {/* Background tap-to-open layer (lowest z, catches taps that miss the mute button) */}
+                {/* Video Player Area */}
+                <View ref={videoRef} collapsable={false} style={styles.videoContainer}>
+                    {/* Video / Thumbnail layer — renders below the Pressable */}
+                    {!isPlaying && vlog.thumbnailPath ? (
+                        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                            <Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} />
+                        </View>
+                    ) : (
+                        <VideoView
+                            style={[styles.videoPlayer, { position: 'absolute', pointerEvents: 'none' } as any]}
+                            player={player}
+                            nativeControls={false}
+                        />
+                    )}
+
+                    {/* Full-area tap target for mute/unmute — on top of video with zIndex */}
                     <Pressable
-                        style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]}
-                        onPress={handleTogglePlay}
+                        style={[StyleSheet.absoluteFillObject, { zIndex: 5 }]}
+                        onPress={handleToggleMute}
                     />
 
-                    {/* Flashing Play/Pause Icon Overlay */}
+                    {/* Flashing Mute/Unmute Icon Overlay — visual feedback on tap */}
                     <Animated.View style={[
                         styles.flashIconContainer,
                         useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
                         { pointerEvents: 'none', zIndex: 10 }
                     ]}>
                         <View style={styles.flashIconBg}>
-                            <MaterialCommunityIcons name={flashIcon} size={48} color="#FFF" />
+                            <MaterialCommunityIcons name={flashIcon} size={48} color={theme.colors.textPrimary} />
                         </View>
                     </Animated.View>
 
-                    {/* Thumbnail fallback when paused and thumbnail exists */}
-                    {!isPlaying && vlog.thumbnailPath ? (
-                        <View pointerEvents="none"><Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} /></View>
-                    ) : (
-                        <VideoView
-                            style={[styles.videoPlayer, { pointerEvents: 'none' } as any]}
-                            player={player}
-                            nativeControls={false}
-                        />
-                    )}
-
-                    {/* Mute/Unmute Toggle Top-Right Overlay (highest z, intercepts taps first) */}
-                    <Pressable
-                        style={[styles.muteToggleArea, { zIndex: 20, position: 'absolute', top: 5, right: 5 }]}
-                        onPress={() => {
-                            setIsMuted(!isMuted);
-                            Vibration.vibrate(10);
-                        }}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <View style={styles.muteToggleButton}>
-                            <MaterialCommunityIcons name={isMuted ? "volume-off" : "volume-high"} size={16} color="#FFF" />
+                    {/* Mute indicator — visual only */}
+                    <View style={styles.muteIndicator} pointerEvents="none">
+                        <View style={styles.muteIndicatorBg}>
+                            <MaterialCommunityIcons name={isMuted ? "volume-off" : "volume-high"} size={16} color={theme.colors.textPrimary} />
                         </View>
-                    </Pressable>
+                    </View>
 
                     {/* Duration badge */}
-                    <View style={[styles.durationBadge, { pointerEvents: 'none' }]}>
+                    <View style={styles.durationBadge} pointerEvents="none">
                         <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
                     </View>
                 </View>
@@ -277,7 +290,7 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: 'rgba(255, 107, 53, 0.1)',
+        backgroundColor: theme.colors.videoAccentTint,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1.5,
@@ -299,10 +312,11 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: theme.colors.glassBorder,
         aspectRatio: 9 / 16,
-        backgroundColor: '#111',
+        backgroundColor: theme.colors.surfaceMedium,
         marginBottom: 8,
+        position: 'relative',
     },
     videoPlayer: {
         width: '100%',
@@ -319,20 +333,20 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     flashIconBg: {
-        backgroundColor: 'rgba(0,0,0,0.4)',
+        backgroundColor: theme.colors.videoFlashBackground,
         padding: 16,
         borderRadius: 40,
     },
 
     /* ── Overlays ───────────────────────────────────────────────────── */
-    muteToggleArea: {
+    muteIndicator: {
         position: 'absolute',
         top: 8,
         right: 8,
-        padding: 4,
+        pointerEvents: 'none',
     },
-    muteToggleButton: {
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    muteIndicatorBg: {
+        backgroundColor: theme.colors.overlayVideoMuted,
         paddingHorizontal: 8,
         paddingVertical: 6,
         borderRadius: 6,
@@ -343,13 +357,13 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 8,
         right: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: theme.colors.overlayVideoStrong,
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 6,
     },
     durationText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 11,
         fontWeight: '700',
     },

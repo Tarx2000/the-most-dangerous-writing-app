@@ -19,9 +19,12 @@ import { FlashList } from '@shopify/flash-list';
 import { BlurView } from 'expo-blur';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { ActionSheet } from '@/components/ui/ActionSheet';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
-import { useNotes, usePersons, useVlogs } from '@/lib/hooks/useStorage';
+import { useNotes, usePersons, useVlogs, usePreferences } from '@/lib/hooks/useStorage';
+import { CONFIG } from '@/config';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { NoteCard } from '@/components/features/library/NoteCard';
@@ -47,7 +50,8 @@ type Props = {
     sessionMode: 'journal' | 'circles' | 'checkin' | 'vlog';
 };
 
-const SORT_OPTIONS: { id: SortOption, label: string, icon: any }[] = [
+/** Sort options data — feeds into ActionSheet */
+const SORT_OPTIONS_DATA: { id: SortOption, label: string, icon: any }[] = [
     { id: 'newest', label: 'Newest First', icon: 'sort-clock-descending-outline' },
     { id: 'oldest', label: 'Oldest First', icon: 'sort-clock-ascending-outline' },
     { id: 'longest', label: 'Longest Session', icon: 'timer-sand' },
@@ -68,6 +72,9 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     const [sortBy, setSortBy] = useState<SortOption>('newest');
     const [showSortModal, setShowSortModal] = useState(false);
     
+    const { fontIndex, lockTimeoutMins } = usePreferences();
+    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [personToDelete, setPersonToDelete] = useState<string | null>(null);
@@ -78,35 +85,12 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
     const { savedNotes, deleteNote } = useNotes();
     const { persons, deletePerson, updatePerson } = usePersons();
     const { savedVlogs, deleteVlog } = useVlogs();
-    const security = useSecurity();
+    const security = useSecurity(lockTimeoutMins);
 
     /** Central AI Queue — single instance via AiQueueProvider */
     const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueueContext();
 
-    // Custom GestureDetector for wipe-to-dismiss on the fullscreen modal
-    const panY = useSharedValue(0);
 
-    const notePanGesture = useMemo(() => 
-        Gesture.Pan()
-            .activeOffsetY([-10, 10])
-            .onUpdate((event) => {
-                if (event.translationY > 0) {
-                    panY.value = event.translationY;
-                }
-            })
-            .onEnd((event) => {
-                if (event.translationY > 150 || event.velocityY > 1500) {
-                    runOnJS(setViewNoteModal)(null);
-                    panY.value = withTiming(0, { duration: 300 });
-                } else {
-                    panY.value = withSpring(0, { damping: 15, stiffness: 150 });
-                }
-            })
-    , [panY, setViewNoteModal]);
-
-    const animatedCardStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: panY.value }]
-    }));
 
     /**
      * Precompute notes grouped by person for O(1) lookups.
@@ -298,168 +282,202 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 <View style={styles.filterRow}>
                     <AnimatedScaleButton style={styles.filterDropdownBtn} onPress={() => setShowSortModal(true)}>
                         <MaterialCommunityIcons name="sort" size={18} color={theme.colors.textSecondary} style={styles.iconMarginRight8} />
-                        <Text style={styles.filterDropdownText}>Sort by: <Text style={styles.filterDropdownActive}>{SORT_OPTIONS.find(o => o.id === sortBy)?.label}</Text></Text>
+                        <Text style={styles.filterDropdownText}>Sort by: <Text style={styles.filterDropdownActive}>{SORT_OPTIONS_DATA.find(o => o.id === sortBy)?.label}</Text></Text>
                         <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} style={styles.iconMarginLeftAuto} />
                     </AnimatedScaleButton>
                 </View>
             )}
 
-            {/* Tab content — Notes & Check-ins */}
-            {(libraryTab === 'notes' || libraryTab === 'checkins') && (
-                <>
-                    {savedNotes.filter(n => libraryTab === 'checkins' ? isAlignmentRef(n) : (!n.personId && !isAlignmentRef(n))).length === 0 ? (
-                        <EmptyLibraryState 
-                            icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
-                            title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
-                            description={libraryTab === 'checkins' ? "Start your weekly alignment check-in to track your progress over time." : "Start writing to build your library of dangerous sessions."}
-                            actionLabel="Start Writing"
-                            onAction={onGoToStart}
+            {/* Scrollable Content Area with Top & Bottom Fade Dissolve */}
+            <View style={{ flex: 1 }}>
+                {libraryTab !== 'vlogs' && (
+                    <>
+                        {/* Dissolve/Fade out mask at the top of the list to prevent the hard line */}
+                        <LinearGradient
+                            colors={[
+                                'rgba(0,0,0, 1)', 
+                                'rgba(0,0,0, 0.9)', 
+                                'rgba(0,0,0, 0.7)', 
+                                'rgba(0,0,0, 0.4)', 
+                                'rgba(0,0,0, 0.1)', 
+                                'rgba(0,0,0, 0)'
+                            ]}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: -20,
+                                right: -20,
+                                height: 32,
+                                zIndex: 10,
+                            }}
+                            pointerEvents="none"
                         />
-                    ) : (
-                        <FlashList
-                            data={getFlattenedNotes()}
-                            keyExtractor={(item) => typeof item === 'string' ? `header-${item}` : item.id}
-                            getItemType={(item) => typeof item === 'string' ? 'header' : 'card'}
-                            contentContainerStyle={{ paddingBottom: 120 }}
-                            showsVerticalScrollIndicator={false}
-                            renderItem={({ item }) => {
-                                if (typeof item === 'string') {
+
+                        {/* Dissolve/Fade out mask at the bottom of the list */}
+                        <LinearGradient
+                            colors={[
+                                'rgba(0,0,0, 0)', 
+                                'rgba(0,0,0, 0.1)', 
+                                'rgba(0,0,0, 0.4)', 
+                                'rgba(0,0,0, 0.7)', 
+                                'rgba(0,0,0, 0.9)', 
+                                'rgba(0,0,0, 1)'
+                            ]}
+                            style={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: -20,
+                                right: -20,
+                                height: 60,
+                                zIndex: 10,
+                            }}
+                            pointerEvents="none"
+                        />
+                    </>
+                )}
+
+                {/* Tab content — Notes & Check-ins */}
+                {(libraryTab === 'notes' || libraryTab === 'checkins') && (
+                    <>
+                        {savedNotes.filter(n => libraryTab === 'checkins' ? isAlignmentRef(n) : (!n.personId && !isAlignmentRef(n))).length === 0 ? (
+                            <EmptyLibraryState 
+                                icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
+                                title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
+                                description={libraryTab === 'checkins' ? "Start your weekly alignment check-in to track your progress over time." : "Start writing to build your library of dangerous sessions."}
+                                actionLabel="Start Writing"
+                                onAction={onGoToStart}
+                            />
+                        ) : (
+                            <FlashList
+                                style={{ marginHorizontal: -20 }}
+                                data={getFlattenedNotes()}
+                                keyExtractor={(item) => typeof item === 'string' ? `header-${item}` : item.id}
+                                getItemType={(item) => typeof item === 'string' ? 'header' : 'card'}
+                                contentContainerStyle={{ paddingBottom: 120, paddingTop: 12, paddingHorizontal: 20 }}
+                                showsVerticalScrollIndicator={false}
+                                renderItem={({ item }) => {
+                                    if (typeof item === 'string') {
+                                        return (
+                                            <View style={styles.dateHeader}>
+                                                <Text style={commonStyles.groupTitle}>{item}</Text>
+                                            </View>
+                                        );
+                                    }
+
+                                    const note = item as SavedNote;
+                                    const _isAlignment = isAlignmentRef(note);
+
                                     return (
-                                        <View style={styles.dateHeader}>
-                                            <Text style={commonStyles.groupTitle}>{item}</Text>
+                                        <View>
+                                            {_isAlignment ? (
+                                                <AnimatedScaleButton 
+                                                    style={styles.reflectionCard} 
+                                                    onPress={() => setViewNoteModal(note)}
+                                                    disabled={!security.isNotesUnlocked}
+                                                >
+                                                    <LinearGradient colors={['rgba(255,255,255,0.03)', 'transparent']} style={StyleSheet.absoluteFillObject} />
+                                                    <View style={styles.reflectionHeader}>
+                                                        <View>
+                                                            <Text style={styles.reflectionDate}>{note.dateStr}</Text>
+                                                            <Text style={styles.reflectionScore}>Score: {(note as any).alignmentScore}/10</Text>
+                                                        </View>
+                                                        <MaterialCommunityIcons name={getScoreDetails((note as any).alignmentScore).icon} size={36} color={getScoreDetails((note as any).alignmentScore).color} />
+                                                    </View>
+                                                    <Text style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={2}>
+                                                        {!security.isNotesUnlocked ? '•••• •••••••• •••••' : note.text}
+                                                    </Text>
+                                                </AnimatedScaleButton>
+                                            ) : (
+                                                <NoteCard
+                                                    note={note}
+                                                    onPress={setViewNoteModal}
+                                                    personName={note.personId ? persons.find(p => p.id === note.personId)?.name : undefined}
+                                                    isLocked={!security.isNotesUnlocked}
+                                                    isProcessing={isNoteActive(note.id)}
+                                                    isQueued={isNoteQueued(note.id)}
+                                                />
+                                            )}
                                         </View>
                                     );
-                                }
-
-                                const note = item as SavedNote;
-                                const _isAlignment = isAlignmentRef(note);
-
-                                return (
-                                    <View>
-                                        {_isAlignment ? (
-                                            <AnimatedScaleButton 
-                                                style={styles.reflectionCard} 
-                                                onPress={() => setViewNoteModal(note)}
-                                                disabled={!security.isNotesUnlocked}
-                                            >
-                                                <LinearGradient colors={['rgba(255,255,255,0.03)', 'transparent']} style={StyleSheet.absoluteFillObject} />
-                                                <View style={styles.reflectionHeader}>
-                                                    <View>
-                                                        <Text style={styles.reflectionDate}>{note.dateStr}</Text>
-                                                        <Text style={styles.reflectionScore}>Score: {(note as any).alignmentScore}/10</Text>
-                                                    </View>
-                                                    <MaterialCommunityIcons name={getScoreDetails((note as any).alignmentScore).icon} size={36} color={getScoreDetails((note as any).alignmentScore).color} />
-                                                </View>
-                                                <Text style={commonStyles.noteCardPreview} numberOfLines={2}>
-                                                    {!security.isNotesUnlocked ? '•••• •••••••• •••••' : note.text}
-                                                </Text>
-                                            </AnimatedScaleButton>
-                                        ) : (
-                                            <NoteCard
-                                                note={note}
-                                                onPress={setViewNoteModal}
-                                                personName={note.personId ? persons.find(p => p.id === note.personId)?.name : undefined}
-                                                isLocked={!security.isNotesUnlocked}
-                                                isProcessing={isNoteActive(note.id)}
-                                                isQueued={isNoteQueued(note.id)}
-                                            />
-                                        )}
-                                    </View>
-                                );
-                            }}
-                        />
-                    )}
-                </>
-            )}
-
-            {/* Tab content — Circles */}
-            {libraryTab === 'circles' && (
-                <>
-                    {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
-                        <View style={styles.circlesLockOverlay}>
-                            <View style={styles.circlesLockCard}>
-                                <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={styles.iconMarginBottom16} />
-                                <Text style={styles.circlesLockTitle}>Circles Protected</Text>
-                                <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
-                                <AnimatedScaleButton
-                                    style={styles.circlesUnlockBtn}
-                                    onPress={async () => {
-                                        const success = await security.unlockCircles();
-                                        if (success) Vibration.vibrate(50);
-                                    }}
-                                >
-                                    <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={styles.iconMarginRight10} />
-                                    <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
-                                </AnimatedScaleButton>
-                            </View>
-                        </View>
-                    ) : (
-                        <>
-                    {persons.length === 0 ? (
-                        <EmptyLibraryState
-                            icon="account-group-outline"
-                            title="No circles yet"
-                            description="Create circles to organize your writing sessions by the people who matter most."
-                            actionLabel="Start Writing"
-                            onAction={onGoToStart}
-                        />
-                    ) : (
-                        <View style={styles.fullFlexWidth}>
-                            <FlashList
-                                data={sortedPersons}
-                                keyExtractor={(p) => p.id}
-                                extraData={{ 
-                                    selectedCircleId, 
-                                    notesLength: savedNotes.length,
-                                    isUnlocked: security.isNotesUnlocked 
                                 }}
-                                renderItem={renderPersonItem}
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={{ paddingBottom: 120 }}
                             />
-                        </View>
-                    )}
-                        </>
-                    )}
-                </>
-            )}
+                        )}
+                    </>
+                )}
 
-            {/* Tab content — Vlogs Calendar Gallery */}
-            {libraryTab === 'vlogs' && (
-                <VlogCalendarGallery
-                    vlogs={savedVlogs}
-                    isLocked={!security.isCirclesUnlocked && !security.isNotesUnlocked}
-                    onUnlock={security.unlockCircles}
-                    onDeleteVlog={deleteVlog}
-                />
-            )}
+                {/* Tab content — Circles */}
+                {libraryTab === 'circles' && (
+                    <>
+                        {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
+                            <View style={styles.circlesLockOverlay}>
+                                <View style={styles.circlesLockCard}>
+                                    <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={styles.iconMarginBottom16} />
+                                    <Text style={styles.circlesLockTitle}>Circles Protected</Text>
+                                    <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
+                                    <AnimatedScaleButton
+                                        style={styles.circlesUnlockBtn}
+                                        onPress={async () => {
+                                            const success = await security.unlockCircles();
+                                            if (success) Vibration.vibrate(50);
+                                        }}
+                                    >
+                                        <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={styles.iconMarginRight10} />
+                                        <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
+                                    </AnimatedScaleButton>
+                                </View>
+                            </View>
+                        ) : (
+                            <>
+                        {persons.length === 0 ? (
+                            <EmptyLibraryState
+                                icon="account-group-outline"
+                                title="No circles yet"
+                                description="Create circles to organize your writing sessions by the people who matter most."
+                                actionLabel="Start Writing"
+                                onAction={onGoToStart}
+                            />
+                        ) : (
+                            <View style={styles.fullFlexWidth}>
+                                <FlashList
+                                    style={{ marginHorizontal: -20 }}
+                                    data={sortedPersons}
+                                    keyExtractor={(p) => p.id}
+                                    extraData={{ 
+                                        selectedCircleId, 
+                                        notesLength: savedNotes.length,
+                                        isUnlocked: security.isNotesUnlocked 
+                                    }}
+                                    renderItem={renderPersonItem}
+                                    showsVerticalScrollIndicator={false}
+                                    contentContainerStyle={{ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }}
+                                />
+                            </View>
+                        )}
+                            </>
+                        )}
+                    </>
+                )}
 
-            {/* Sort Action Sheet Modal */}
-            <Modal visible={showSortModal} transparent animationType="fade">
-                <View style={styles.modalBackdrop}>
-                    {/* Backdrop dismiss — sits behind content, doesn't intercept child presses */}
-                    <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowSortModal(false)} />
-                    <View style={styles.actionSheetContainer}>
-                        <View style={styles.actionSheetHeader}>
-                            <Text style={styles.actionSheetTitle}>Sort Library By</Text>
-                            <AnimatedScaleButton onPress={() => setShowSortModal(false)}>
-                                <MaterialCommunityIcons name="close-circle-outline" size={24} color={theme.colors.textMuted} />
-                            </AnimatedScaleButton>
-                        </View>
-                        {SORT_OPTIONS.map((opt) => (
-                            <AnimatedScaleButton 
-                                key={opt.id} 
-                                style={[styles.actionSheetOption, sortBy === opt.id && styles.actionSheetOptionActive]} 
-                                onPress={() => { setSortBy(opt.id); setShowSortModal(false); Vibration.vibrate(10); }}
-                            >
-                                <MaterialCommunityIcons name={opt.icon} size={22} color={sortBy === opt.id ? theme.colors.primaryAction : theme.colors.textSecondary} />
-                                <Text style={[styles.actionSheetOptionText, sortBy === opt.id && styles.actionSheetOptionTextActive]}>{opt.label}</Text>
-                                {sortBy === opt.id && <MaterialCommunityIcons name="check" size={20} color={theme.colors.primaryAction} style={styles.iconMarginLeftAuto} />}
-                            </AnimatedScaleButton>
-                        ))}
-                    </View>
-                </View>
-            </Modal>
+                {/* Tab content — Vlogs Calendar Gallery */}
+                {libraryTab === 'vlogs' && (
+                    <VlogCalendarGallery
+                        vlogs={savedVlogs}
+                        isLocked={!security.isCirclesUnlocked && !security.isNotesUnlocked}
+                        onUnlock={security.unlockCircles}
+                        onDeleteVlog={deleteVlog}
+                    />
+                )}
+            </View>
+
+            {/* Sort Action Sheet — unified ActionSheet component */}
+            <ActionSheet
+                visible={showSortModal}
+                title="Sort Library By"
+                options={SORT_OPTIONS_DATA}
+                activeId={sortBy}
+                onSelect={(id) => { setSortBy(id as SortOption); setShowSortModal(false); }}
+                onClose={() => setShowSortModal(false)}
+            />
 
             {/* Premium Note View — Reusable Modal */}
             <NoteViewerModal
@@ -471,49 +489,33 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 onRegenerateAi={(note) => handleRegenerateAi(note)}
             />
 
-            {/* Delete Note Confirmation */}
-            <Modal visible={!!noteToDelete} transparent animationType="fade">
-                <View style={commonStyles.modalOverlay}>
-                    <View style={commonStyles.versionModalContent}>
-                        <Text style={commonStyles.versionModalTitle}>Delete Entry?</Text>
-                        <Text style={[commonStyles.addPersonSuggestionText, { textAlign: 'center', marginBottom: 20 }]}>
-                            Are you sure you want to permanently delete this session? This cannot be undone.
-                        </Text>
-                        <View style={styles.confirmRow}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.cancelBtn]} onPress={() => setNoteToDelete(null)}>
-                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={styles.cancelBtnText}>Cancel</Text>
-                            </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.deleteBtn]} onPress={handleConfirmDeleteNote}>
-                                <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" />
-                                <Text style={styles.deleteBtnText}>Delete</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* Delete Note Confirmation — unified ConfirmDialog */}
+            <ConfirmDialog
+                visible={!!noteToDelete}
+                title="Delete Entry?"
+                message="Are you sure you want to permanently delete this session? This cannot be undone."
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                icon="delete-outline"
+                cancelIcon="close"
+                destructive
+                onConfirm={handleConfirmDeleteNote}
+                onCancel={() => setNoteToDelete(null)}
+            />
 
-            {/* Delete Person Confirmation */}
-            <Modal visible={!!personToDelete} transparent animationType="fade">
-                <View style={commonStyles.modalOverlay}>
-                    <View style={commonStyles.versionModalContent}>
-                        <Text style={commonStyles.versionModalTitle}>Delete Circle?</Text>
-                        <Text style={styles.confirmText}>
-                            Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!
-                        </Text>
-                        <View style={styles.modalBtnRow}>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.cancelBtnGlass]} onPress={() => setPersonToDelete(null)}>
-                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={styles.modalBtnTextPrimary}>Cancel</Text>
-                            </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.closeVersionBtn, styles.cancelBtnDanger]} onPress={handleConfirmDeletePerson}>
-                                <MaterialCommunityIcons name="delete-alert-outline" size={18} color="#FFF" />
-                                <Text style={styles.modalBtnTextWhite}>Delete All</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* Delete Person Confirmation — unified ConfirmDialog */}
+            <ConfirmDialog
+                visible={!!personToDelete}
+                title="Delete Circle?"
+                message="Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!"
+                confirmLabel="Delete All"
+                cancelLabel="Cancel"
+                icon="delete-alert-outline"
+                cancelIcon="close"
+                destructive
+                onConfirm={handleConfirmDeletePerson}
+                onCancel={() => setPersonToDelete(null)}
+            />
 
             {/* Person Profile Modal */}
             <PersonProfileModal

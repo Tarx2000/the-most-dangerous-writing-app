@@ -15,11 +15,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { CONFIG } from '@/config';
-import { useVlogs } from '@/lib/hooks/useStorage';
+import { usePreferences, useVlogs } from '@/lib/hooks/useStorage';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { generateId } from '@/lib/utils';
+import { compressVideo, addToPendingQueue, removeFromPendingQueue, isCompressionAvailable } from '@/lib/videoCompressor';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VlogRecording'>;
 
@@ -59,7 +60,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
     /* ── State machine ─────────────────────────────────────────────────── */
-    type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'saving';
+    type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'compressing' | 'saving';
     const [phase, setPhase] = useState<RecordingPhase>('permissions');
     const [countdownNum, setCountdownNum] = useState(COUNTDOWN_SECONDS);
     const [timeRemaining, setTimeRemaining] = useState(totalDurationSec);
@@ -88,7 +89,12 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseAnim.value }));
     const stopBtnStyle = useAnimatedStyle(() => ({ transform: [{ translateY: stopBtnSlide.value }] }));
 
-    const { saveVlog } = useVlogs();
+    const { saveVlog, updateVlog } = useVlogs();
+    const { vlogQuality, compressionPreset } = usePreferences();
+
+    /* ── Compression progress (0.0 → 1.0) ─────────────────────────────── */
+    const [compressionProgress, setCompressionProgress] = useState(0);
+    const [compressionSavings, setCompressionSavings] = useState<string | null>(null);
 
     // Removed loadAllData call
     /* ── Permission flow ───────────────────────────────────────────────── */
@@ -278,9 +284,45 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 to: permanentPath,
             });
 
-            // Get file size for storage tracking
-            const fileInfo = await FileSystem.getInfoAsync(permanentPath);
-            const fileSizeBytes = (fileInfo as any).size || 0;
+            // Get raw file size before compression
+            const rawInfo = await FileSystem.getInfoAsync(permanentPath);
+            const rawSizeBytes = (rawInfo as any).size || 0;
+
+            // ── Compression phase ──────────────────────────────────────
+            let finalSizeBytes = rawSizeBytes;
+            let originalSizeBytes: number | undefined;
+
+            if (compressionPreset !== 'off' && isCompressionAvailable()) {
+                setPhase('compressing');
+                setCompressionProgress(0);
+
+                // Add to pending queue so we can resume if interrupted
+                await addToPendingQueue({
+                    vlogId,
+                    inputUri: permanentPath,
+                    presetId: compressionPreset,
+                    createdAt: Date.now(),
+                });
+
+                const result = await compressVideo(
+                    permanentPath,
+                    compressionPreset,
+                    (progress) => setCompressionProgress(progress),
+                );
+
+                finalSizeBytes = result.outputSizeBytes;
+                if (result.wasCompressed) {
+                    originalSizeBytes = result.originalSizeBytes;
+                    setCompressionSavings(
+                        `Saved ${result.savingsPercent}% — ${(result.originalSizeBytes / 1024 / 1024).toFixed(0)}MB → ${(result.outputSizeBytes / 1024 / 1024).toFixed(0)}MB`
+                    );
+                }
+
+                // Remove from pending queue — compression completed
+                await removeFromPendingQueue(vlogId);
+            }
+
+            setPhase('saving');
 
             // Build the vlog metadata — use actual elapsed time, not the preset timer
             const now = new Date();
@@ -290,7 +332,10 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 dateStr: now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 timestamp: now.getTime(),
                 durationSec: elapsedRef.current,
-                fileSizeBytes,
+                fileSizeBytes: finalSizeBytes,
+                compressionPreset: compressionPreset,
+                originalFileSizeBytes: originalSizeBytes,
+                compressionPending: false,
             };
 
             // Save to storage + update streak
@@ -356,8 +401,8 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 style={StyleSheet.absoluteFillObject}
                 facing="front"
                 mode="video"
-                videoQuality={CONFIG.VLOG_VIDEO_QUALITY}
-                videoBitrate={6_000_000}
+                videoQuality={(vlogQuality as any) || CONFIG.VLOG_VIDEO_QUALITY}
+                videoBitrate={CONFIG.VLOG_BITRATE_MAP[vlogQuality] || 4_500_000}
             />
 
             {/* 3-2-1 Countdown Overlay */}
@@ -386,7 +431,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             )}
 
             {/* Recording UI — Timer bar + recording indicator */}
-            {(phase === 'recording' || phase === 'canStop' || phase === 'saving') && (
+            {(phase === 'recording' || phase === 'canStop' || phase === 'compressing' || phase === 'saving') && (
                 <>
                     {/* Top glass bar — Timer + Recording dot */}
                     <View style={styles.topBarWrapper}>
@@ -402,7 +447,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                                         pulseStyle,
                                     ]} />
                                     <Text style={styles.recText}>
-                                        {phase === 'canStop' ? 'COMPLETE' : phase === 'saving' ? 'SAVING...' : 'REC'}
+                                        {phase === 'compressing' ? 'OPTIMIZING...' : phase === 'canStop' ? 'COMPLETE' : phase === 'saving' ? 'SAVING...' : 'REC'}
                                     </Text>
                                 </View>
 
@@ -451,14 +496,39 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </Animated.View>
                     )}
 
+                    {/* Compression overlay — shown between recording and saving */}
+                    {phase === 'compressing' && (
+                        <View style={styles.savingOverlay}>
+                            <View style={styles.savingCard}>
+                                <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
+                                <View style={styles.topBarTint} />
+                                <View style={styles.compressionRing}>
+                                    <View style={[styles.compressionRingFill, { 
+                                        transform: [{ rotate: `${compressionProgress * 360}deg` }],
+                                    }]} />
+                                    <Text style={styles.compressionPercent}>
+                                        {Math.round(compressionProgress * 100)}%
+                                    </Text>
+                                </View>
+                                <Text style={styles.savingText}>Optimizing your vlog...</Text>
+                                <Text style={styles.compressionSubtext}>
+                                    This keeps the quality but reduces file size
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+
                     {/* Saving overlay */}
-                    {phase === 'saving' && (
+                    {(phase === 'saving') && (
                         <View style={styles.savingOverlay}>
                             <View style={styles.savingCard}>
                                 <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
                                 <View style={styles.topBarTint} />
                                 <MaterialCommunityIcons name="check-circle" size={48} color="#4ADE80" />
                                 <Text style={styles.savingText}>Saving Vlog...</Text>
+                                {compressionSavings && (
+                                    <Text style={styles.compressionSavingsText}>{compressionSavings}</Text>
+                                )}
                             </View>
                         </View>
                     )}
@@ -650,6 +720,50 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
         marginTop: 16,
+        zIndex: 2,
+    },
+
+    /* ── Compression Progress ──────────────────────────────────────────── */
+    compressionRing: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        borderWidth: 3,
+        borderColor: 'rgba(255, 255, 255, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2,
+    },
+    compressionRingFill: {
+        position: 'absolute',
+        top: -3,
+        left: -3,
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        borderWidth: 3,
+        borderColor: '#4ADE80',
+        borderTopColor: 'transparent',
+        borderRightColor: 'transparent',
+    },
+    compressionPercent: {
+        color: '#FFF',
+        fontSize: 22,
+        fontWeight: '800',
+        fontVariant: ['tabular-nums'] as any,
+    },
+    compressionSubtext: {
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontSize: 13,
+        marginTop: 8,
+        zIndex: 2,
+        textAlign: 'center',
+    },
+    compressionSavingsText: {
+        color: '#4ADE80',
+        fontSize: 13,
+        fontWeight: '600',
+        marginTop: 8,
         zIndex: 2,
     },
 
