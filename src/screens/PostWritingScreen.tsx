@@ -33,12 +33,13 @@ import ReanimatedAnimated, {
 } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
-import { useNotes, useAiConfig } from '@/lib/hooks/useStorage';
+import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { theme } from '@/styles/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { CONFIG } from '@/config';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
 import type { AiJobCategory } from '@/types';
@@ -76,6 +77,12 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
     const { savedNotes, updateNote } = useNotes();
     const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries } = useAiConfig();
+
+    /** User typography — applied to entry text only, not AI chrome */
+    const { fontIndex, sizeIndex } = usePreferences();
+    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    const activeSize = CONFIG.SIZES[sizeIndex]?.value || 18;
+    const activeLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
 
     /** AI Queue — centralized, single-instance via AiQueueProvider */
     const { enqueueNote, isNoteActive, isNoteQueued, queueState } = useAiQueueContext();
@@ -295,7 +302,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {isEditing ? (
                         <TextInput
                             key={renderKey}
-                            style={styles.editableTextInput}
+                            style={[styles.editableTextInput, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]}
                             defaultValue={editableTextRef.current}
                             onChangeText={(val) => editableTextRef.current = val}
                             multiline
@@ -304,7 +311,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         />
                     ) : (
                         <View style={styles.readOnlyTextContainer}>
-                            <RichText style={styles.readOnlyText} text={editableTextRef.current} />
+                            <RichText style={[styles.readOnlyText, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]} text={editableTextRef.current} />
                         </View>
                     )}
                 </View>
@@ -517,7 +524,7 @@ const styles = StyleSheet.create({
     },
     editableTextInput: {
         color: theme.colors.textInput,
-        fontSize: 16,
+        fontSize: 16, // Overridden at render-time with user's preferred size
         lineHeight: 26,
         backgroundColor: theme.colors.glassSurface,
         borderRadius: 16,
@@ -536,7 +543,7 @@ const styles = StyleSheet.create({
     },
     readOnlyText: {
         color: theme.colors.textBodyDim,
-        fontSize: 16,
+        fontSize: 16, // Overridden at render-time with user's preferred size
         lineHeight: 26,
     },
 

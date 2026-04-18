@@ -28,7 +28,6 @@ export const CONFIG = {
     FONTS: [
         { label: 'System (Sans)', value: Platform.OS === 'ios' ? 'System' : 'sans-serif' },
         { label: 'Serif (Classic)', value: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
-        { label: 'Mono (Code)', value: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
         { label: 'Casual (Fun)', value: Platform.OS === 'ios' ? 'Chalkboard SE' : 'casual' },
         { label: 'Playfair Display', value: 'PlayfairDisplay_400Regular' },
         { label: 'Space Mono', value: 'SpaceMono_400Regular' },

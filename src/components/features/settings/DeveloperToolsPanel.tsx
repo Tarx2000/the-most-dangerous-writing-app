@@ -80,7 +80,8 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
             const items = await FileSystem.readDirectoryAsync(path);
             const data = await Promise.all(items.map(async (item) => {
                 const info = await FileSystem.getInfoAsync(path + item);
-                return { name: item, ...info };
+                const size = info.exists && 'size' in info && typeof info.size === 'number' ? info.size : 0;
+                return { name: item, ...info, size };
             }));
             setFileSystemData(data.sort((a, b) => b.size - a.size));
         } catch (e) {

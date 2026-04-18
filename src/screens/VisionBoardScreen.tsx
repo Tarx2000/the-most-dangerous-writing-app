@@ -5,6 +5,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
+import { CONFIG } from '@/config';
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { VisionBoard } from '@/types';
 
@@ -20,7 +21,13 @@ const TABS: { key: TabKey, label: string }[] = [
 ];
 
 export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
-    const { visionBoard, saveVisionBoard } = usePreferences();
+    const { visionBoard, saveVisionBoard, fontIndex, sizeIndex } = usePreferences();
+
+    /** User's chosen typography — applied to personal note content */
+    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    const activeSize = CONFIG.SIZES[sizeIndex]?.value || 18;
+    const activeLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
+
     const [activeTab, setActiveTab] = useState<TabKey>('health');
     const localStateRef = useRef<VisionBoard>({
         health: '',
@@ -93,12 +100,12 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
                     contentContainerStyle={styles.contentContainer}
                     keyboardShouldPersistTaps="handled"
                 >
-                    <Text style={styles.promptText}>
+                    <Text style={[styles.promptText, { fontFamily: activeFont }]}>
                         Describe your ideal state for {TABS.find(t => t.key === activeTab)?.label?.toLowerCase()}. Who do you want to become?
                     </Text>
                     <TextInput
                         key={activeTab + (visionBoard ? '_loaded' : '_init')}
-                        style={styles.textInput}
+                        style={[styles.textInput, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]}
                         multiline
                         autoFocus
                         defaultValue={localStateRef.current[activeTab]}
@@ -178,15 +185,13 @@ const styles = StyleSheet.create({
         fontSize: 16,
         lineHeight: 24,
         marginBottom: 20,
-        fontFamily: theme.typography.fontFamily,
     },
     textInput: {
         flex: 1,
         color: '#FFF',
-        fontSize: 18,
+        fontSize: 18, // Overridden at render-time with user's preferred size
         lineHeight: 28,
         minHeight: 300,
         textAlignVertical: 'top',
-        fontFamily: theme.typography.fontFamily,
     }
 });

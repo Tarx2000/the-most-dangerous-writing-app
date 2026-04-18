@@ -7,11 +7,14 @@ import {
     Vibration,
     Modal,
     Pressable,
+    Platform,
 } from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RichText } from '@/components/ui/RichText';
 import { theme } from '@/styles/theme';
+import { CONFIG } from '@/config';
+import { usePreferences } from '@/lib/hooks/useStorage';
 import type { SavedNote, SavedVlog, Person, AlignmentReflection } from '@/types';
 import { isAlignmentReflection } from '@/types';
 import { formatRelativeTime } from '@/lib/utils';
@@ -126,6 +129,10 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
     const [showCommentInput, setShowCommentInput] = useState(false);
     const [commentText, setCommentText] = useState(comment || '');
 
+    /** User's chosen font — applied to content text only (not UI chrome) */
+    const { fontIndex } = usePreferences();
+    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+
     const noteId = item.note?.id || item.vlog?.id || '';
     const isCircle = !!item.note?.personId;
     const isCheckin = !!item.note && isAlignmentReflection(item.note);
@@ -206,7 +213,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                         </Text>
                     </View>
                     {item.note.text && (
-                        <Text style={styles.tweetText} numberOfLines={3}>
+                        <Text style={[styles.tweetText, { fontFamily: activeFont }]} numberOfLines={3}>
                             {truncateWords(item.note.text, 40)}
                         </Text>
                     )}
@@ -224,7 +231,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                             {item.note.aiTitle}
                         </Text>
                     )}
-                    <Text style={styles.tweetText}>{item.note.text}</Text>
+                    <Text style={[styles.tweetText, { fontFamily: activeFont }]}>{item.note.text}</Text>
                 </View>
             );
         }
@@ -235,7 +242,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                 {item.note.aiTitle && (
                     <RichText style={styles.storyTitle} numberOfLines={2} text={item.note.aiTitle} />
                 )}
-                <Text style={styles.storyPreview}>
+                <Text style={[styles.storyPreview, { fontFamily: activeFont }]}>
                     {truncateWords(item.note.text, STORY_PREVIEW_WORDS)}
                 </Text>
                 <AnimatedScaleButton
@@ -285,7 +292,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                 {comment && !showCommentInput && (
                     <View style={styles.commentDisplay}>
                         <MaterialCommunityIcons name="comment-text-outline" size={12} color={theme.colors.textMuted} />
-                        <Text style={styles.commentDisplayText} numberOfLines={2}>{comment}</Text>
+                        <Text style={[styles.commentDisplayText, { fontFamily: activeFont }]} numberOfLines={2}>{comment}</Text>
                     </View>
                 )}
 
