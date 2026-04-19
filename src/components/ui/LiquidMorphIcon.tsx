@@ -205,6 +205,13 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
             
             colorRafIdRef.current = requestAnimationFrame(animateColor);
         }
+
+        return () => {
+            if (colorRafIdRef.current) {
+                cancelAnimationFrame(colorRafIdRef.current);
+                colorRafIdRef.current = null;
+            }
+        };
     }, [color]);
 
     useEffect(() => {
@@ -317,6 +324,9 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
         return () => {
             if (rafIdRef.current !== null) {
                 cancelAnimationFrame(rafIdRef.current);
+            }
+            if (colorRafIdRef.current !== null) {
+                cancelAnimationFrame(colorRafIdRef.current);
             }
         };
     }, [mode]);

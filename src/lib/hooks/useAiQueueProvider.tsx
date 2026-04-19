@@ -14,6 +14,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
+import { resetPingFailures } from '@/lib/aiService';
 import { useNotes, useAiConfig, usePersons } from '@/lib/hooks/useStorage';
 import type { AiQueueState, AiJobCategory } from '@/types';
 
@@ -74,6 +75,11 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         );
         setQueueState(aiQueue.getState());
         return () => subscription.remove();
+    }, []);
+
+    // Shutdown queue on unmount (cleans up AppState listener + health checks)
+    useEffect(() => {
+        return () => { aiQueue.shutdown(); };
     }, []);
 
     // Auto-initialize queue when notes are available

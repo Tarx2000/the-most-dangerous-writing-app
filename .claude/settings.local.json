@@ -33,7 +33,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(grep -c \"style={{\" src/components/features/settings/DeveloperToolsPanel.tsx)",
       "Bash(grep -c \"style={{\" src/components/features/settings/AiSettingsPanel.tsx)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(node *)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }

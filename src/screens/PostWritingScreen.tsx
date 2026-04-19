@@ -63,6 +63,7 @@ const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: a
             -1,
             false
         );
+        return () => { pulse.value = 0; };
     }, [pulse]);
 
     const animatedStyle = useAnimatedStyle(() => ({

@@ -57,9 +57,6 @@ class AiQueueManager {
     /** Maximum number of jobs before we reject enqueuing */
     private readonly MAX_QUEUE_SIZE = 1000;
 
-    /** Singleton instance */
-    private static instance: AiQueueManager;
-
     /** The persisted job queue */
     private jobs: AiJob[] = [];
 
@@ -202,8 +199,15 @@ class AiQueueManager {
             this.appStateSubscription.remove();
             this.appStateSubscription = null;
         }
+        // Full state reset for clean re-initialization and test isolation
+        this.jobs = [];
+        this.processing = false;
+        this.cancelRequested = false;
+        this.serverOnline = null;
+        this.lastError = undefined;
+        this.batchTotal = null;
+        this.batchCompleted = 0;
         this.initialized = false;
-        console.log('[AI Queue] Shutdown complete');
     }
 
     /**
@@ -464,6 +468,10 @@ class AiQueueManager {
             }
 
             const result = await processNote(note.text, config, relationship);
+
+            if (result.failed) {
+                throw new Error('AI processing returned empty results');
+            }
 
             // Save results to the note
             await this.updateNote(nextJob.noteId, {

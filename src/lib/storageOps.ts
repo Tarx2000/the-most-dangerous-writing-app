@@ -912,12 +912,16 @@ export function createCrossCuttingOps(
             'USE_BIOMETRICS', 'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY',
             'DEV_MODE', 'DEBUG_LAYOUT', 'VISION_BOARD', 'LAST_REFLECTION_DATE', 'SAVED_VLOGS',
             'BOOKMARKED_NOTE_IDS', 'FEED_COMMENTS', 'AUTO_PLAY_FEED_VIDEOS',
+            AI_STORAGE_KEYS.API_KEY, AI_STORAGE_KEYS.BASE_URL,
+            AI_STORAGE_KEYS.MODEL, AI_STORAGE_KEYS.GRAMMAR_MODEL,
+            AI_STORAGE_KEYS.PROMPTS, AI_STORAGE_KEYS.QUEUE, AI_STORAGE_KEYS.LOG,
         ];
 
         try {
             await storage.multiRemove(allKeys);
         } catch (error) {
             console.error('[Storage] Failed to clear data:', error);
+            throw error;
         }
 
         setters.setSavedNotes([]);
@@ -951,6 +955,18 @@ export function createCrossCuttingOps(
         refs.feedComments.current = {};
         setters.setAutoPlayFeedVideos(true);
         refs.autoPlayFeedVideos.current = true;
+        setters.setAiApiKey('');
+        refs.aiApiKey.current = '';
+        setters.setAiBaseUrl('');
+        refs.aiBaseUrl.current = '';
+        setters.setAiModel('');
+        refs.aiModel.current = '';
+        setters.setAiGrammarModel('');
+        refs.aiGrammarModel.current = '';
+        setters.setAiPrompts({ ...DEFAULT_AI_PROMPTS });
+        refs.aiPrompts.current = { ...DEFAULT_AI_PROMPTS };
+        setters.setAutoGenerateSummaries(true);
+        refs.autoGenerateSummaries.current = true;
 
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
         try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (_) {}

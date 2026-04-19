@@ -64,6 +64,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
         } else {
             pulse.value = withTiming(0, { duration: 300 });
         }
+        return () => { pulse.value = 0; };
     }, [isProcessing]);
 
     const overlayStyle = useAnimatedStyle(() => {

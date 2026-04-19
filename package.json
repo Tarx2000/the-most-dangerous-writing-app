@@ -1,6 +1,6 @@
 {
   "name": "the-most-dangerous-writing-app",
-  "version": "1.5.6",
+  "version": "1.5.7",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",

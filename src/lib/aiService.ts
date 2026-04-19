@@ -61,6 +61,16 @@ export function isServerPersistentlyOffline(): boolean {
     return _consecutivePingFailures > PERSISTENT_OFFLINE_THRESHOLD;
 }
 
+/** Reset ping failure counter — call when API config changes to avoid stale offline state */
+export function resetConnectionState(): void {
+    _consecutivePingFailures = 0;
+}
+
+/** Reset all module-level state for test isolation */
+export function resetStateForTesting(): void {
+    _consecutivePingFailures = 0;
+}
+
 /* ── Retry Utilities ─────────────────────────────────────────────────── */
 
 /**
@@ -141,6 +151,7 @@ async function ollamaChatSingle(
         xhr.onreadystatechange = () => {
             if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
                 if (xhr.status !== 200) {
+                    xhr.abort();
                     settle('reject', new Error(`Ollama API error ${xhr.status}`));
                 }
             } else if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) {

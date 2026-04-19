@@ -32,6 +32,7 @@ jest.mock('@/lib/aiService', () => ({
   processNote: jest.fn(() => new Promise(r => { processNoteResolve = r; })),
   pingServer: jest.fn(() => Promise.resolve({ online: true })),
   isServerPersistentlyOffline: jest.fn(() => false),
+  resetAiServiceState: jest.fn(),
 }));
 
 // Mock aiLogger
@@ -41,7 +42,7 @@ jest.mock('@/lib/aiLogger', () => ({
 
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue } from '@/lib/aiQueue';
-import { processNote, pingServer } from '@/lib/aiService';
+import { processNote, pingServer, resetAiServiceState } from '@/lib/aiService';
 
 describe('AiQueueManager', () => {
   const mockGetAiConfig = () => ({ model: 'test-model', apiKey: 'key', baseUrl: 'http://test', prompts: { title: 't', summary: 's', grammar: 'g' } });
@@ -54,8 +55,10 @@ describe('AiQueueManager', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Reset singleton state fully
+    // Reset singleton state fully — shutdown now clears internal state
     aiQueue.shutdown();
+    // Also reset aiService module-level state (consecutive ping failure counter)
+    resetAiServiceState();
     // Re-create the processNote mock so each test gets a fresh hanging promise
     (processNote as jest.Mock).mockImplementation(() => new Promise(r => { processNoteResolve = r; }));
   });
@@ -159,6 +162,33 @@ describe('AiQueueManager', () => {
       await aiQueue.cancelBatch();
       const state = aiQueue.getState();
       expect(state.pendingCount).toBe(0);
+    });
+  });
+
+  describe('processNote failure handling', () => {
+    it('should NOT save empty AI results when processNote returns failed:true', async () => {
+      await initQueue();
+      await aiQueue.enqueueNote('n1', 'journal');
+      // Resolve with a failed result (empty title/summary)
+      processNoteResolve({ title: '', summary: [], failed: true });
+      await new Promise(r => setTimeout(r, 200));
+      // The queue should NOT save empty AI data to the note
+      expect(mockUpdateNote).not.toHaveBeenCalledWith('n1', expect.objectContaining({
+        aiTitle: '',
+        aiSummary: [],
+      }));
+    });
+
+    it('should retry when processNote returns failed:true', async () => {
+      await initQueue();
+      await aiQueue.enqueueNote('n1', 'journal');
+      // Resolve with a failed result
+      processNoteResolve({ title: '', summary: [], failed: true });
+      await new Promise(r => setTimeout(r, 200));
+      // After failure, the job should be re-queued for retry (not marked done)
+      const state = aiQueue.getState();
+      const hasRetryJob = state.jobs.some(j => j.noteId === 'n1' && j.retryCount > 0);
+      expect(hasRetryJob).toBe(true);
     });
   });
 });

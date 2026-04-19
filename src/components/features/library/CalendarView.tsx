@@ -131,8 +131,8 @@ export const CalendarView = React.memo(function CalendarView({
         [],
     );
 
-    /* ── Gesture ── */
-    const panGesture = Gesture.Pan()
+    /* ── Gesture (memoized to prevent stale listeners and memory leaks) ── */
+    const panGesture = useMemo(() => Gesture.Pan()
         .activeOffsetX([-15, 15])
         .failOffsetY([-15, 15])
         .onUpdate((e) => {
@@ -157,7 +157,7 @@ export const CalendarView = React.memo(function CalendarView({
             } else {
                 translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
             }
-        });
+        }), [canGoForward, commitMonth, translateX, swipeThreshold, velocityThreshold, gridWidth]);
 
     /* ── Animated styles ── */
     const stripStyle = useAnimatedStyle(() => ({
