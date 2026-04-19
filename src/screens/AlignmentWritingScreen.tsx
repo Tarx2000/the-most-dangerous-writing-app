@@ -136,12 +136,12 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
                 <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
                     <View style={commonStyles.header}>
                         <Text style={commonStyles.wordCount}>Weekly Reflection</Text>
-                        <Text style={hasLost ? commonStyles.lossText : sessionTimeRemaining === 0 ? commonStyles.winText : { color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: 'bold' }}>
+                        <Text style={hasLost ? commonStyles.lossText : sessionTimeRemaining === 0 ? commonStyles.winText : { color: theme.colors.textDim, fontSize: 18, fontWeight: 'bold' }}>
                             {hasLost ? 'YOU DIED' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
                         </Text>
                         {devMode && sessionTimeRemaining > 0 && !hasLost && (
                             <AnimatedScaleButton onPress={skipTimer} style={{ backgroundColor: theme.colors.gold, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}>
-                                <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
+                                <Text style={{ color: theme.colors.background, fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
                             </AnimatedScaleButton>
                         )}
                     </View>

@@ -103,11 +103,11 @@ export const CustomSlider = React.memo(function CustomSlider({ value, onValueCha
 const sliderStyles = StyleSheet.create({
     container: { alignItems: 'center', marginVertical: 35 },
     trackGestureArea: { height: 50, justifyContent: 'center' },
-    trackBackground: { position: 'absolute', height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3 },
-    trackFill: { position: 'absolute', height: 6, backgroundColor: '#FFF', borderRadius: 3, shadowColor: '#FFF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 10, elevation: 5 },
-    stepMarker: { position: 'absolute', height: 6, width: 2, backgroundColor: 'rgba(255,255,255,0.2)' },
-    thumb: { position: 'absolute', width: 36, height: 36, backgroundColor: '#FFF', borderRadius: 18, justifyContent: 'center', alignItems: 'center', shadowColor: '#FFF', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.8, shadowRadius: 15, elevation: 8 },
+    trackBackground: { position: 'absolute', height: 6, backgroundColor: theme.colors.glassSurfaceMedium, borderRadius: 3 },
+    trackFill: { position: 'absolute', height: 6, backgroundColor: theme.colors.textPrimary, borderRadius: 3, shadowColor: theme.colors.textPrimary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 10, elevation: 5 },
+    stepMarker: { position: 'absolute', height: 6, width: 2, backgroundColor: theme.colors.grey },
+    thumb: { position: 'absolute', width: 36, height: 36, backgroundColor: theme.colors.textPrimary, borderRadius: 18, justifyContent: 'center', alignItems: 'center', shadowColor: theme.colors.textPrimary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.8, shadowRadius: 15, elevation: 8 },
     thumbInner: { width: 14, height: 14, backgroundColor: theme.colors.background, borderRadius: 7 },
     labelsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
-    labelText: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600', letterSpacing: 0.5 }
+    labelText: { color: theme.colors.textDim, fontSize: 13, fontWeight: '600', letterSpacing: 0.5 }
 });

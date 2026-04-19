@@ -338,7 +338,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     ) : (
                         <View>
                             <View style={styles.grammarResultHeader}>
-                                <MaterialCommunityIcons name="spellcheck" size={16} color="#4ade80" />
+                                <MaterialCommunityIcons name="spellcheck" size={16} color={theme.colors.green} />
                                 <Text style={styles.grammarResultTitle}>
                                     {grammarSuggestions.length === 0
                                         ? 'No issues found! ✨'
@@ -363,7 +363,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                         <Text style={styles.suggestionExplanation}>{s.explanation}</Text>
                                     </View>
                                     <View style={styles.suggestionApplyBtn}>
-                                        <MaterialCommunityIcons name="check" size={16} color="#4ade80" />
+                                        <MaterialCommunityIcons name="check" size={16} color={theme.colors.green} />
                                     </View>
                                 </AnimatedScaleButton>
                             ))}
@@ -378,7 +378,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
             {/* ── Floating Save Button ────────────────────────────── */}
             <View style={styles.floatingFooter}>
                 <AnimatedScaleButton style={styles.saveBtn} onPress={handleSaveAndClose}>
-                    <MaterialCommunityIcons name="content-save-check" size={20} color="#000" />
+                    <MaterialCommunityIcons name="content-save-check" size={20} color={theme.colors.background} />
                     <Text style={styles.saveBtnText}>Save & Close</Text>
                 </AnimatedScaleButton>
             </View>
@@ -624,7 +624,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: 'rgba(74, 222, 128, 0.1)', // green tint for grammar fix apply
+        backgroundColor: theme.colors.successFill,
         justifyContent: 'center',
         alignItems: 'center',
         marginLeft: 10,

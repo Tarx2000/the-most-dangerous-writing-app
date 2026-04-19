@@ -33,6 +33,7 @@ import { PersonProfileModal } from '@/components/features/library/PersonProfileM
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
 import { SortOption, SavedNote, Person, AiJobCategory, isAlignmentReflection as isAlignmentRef } from '@/types';
+import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -179,15 +180,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
         return flatData;
     }, [savedNotes, libraryTab, sortBy]);
 
-    /** Pure function — score to icon/color mapping. Memoized to avoid recreation. */
-    const getScoreDetails = useCallback((s: number) => {
-        if (s <= 2) return { icon: 'emoticon-dead-outline' as const, color: '#ff4d4d' };
-        if (s <= 4) return { icon: 'emoticon-confused-outline' as const, color: '#ff9933' };
-        if (s === 5) return { icon: 'emoticon-neutral-outline' as const, color: '#ffcc00' };
-        if (s <= 7) return { icon: 'emoticon-happy-outline' as const, color: '#a2ff66' };
-        if (s <= 9) return { icon: 'emoticon-excited-outline' as const, color: '#66ffcc' };
-        return { icon: 'emoticon-cool-outline' as const, color: '#00ccff' };
-    }, []);
+    const getScoreDetails = getAlignmentScoreDetails;
 
     /**
      * Enqueue a note for AI processing via the central queue.
@@ -372,7 +365,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                                     onPress={() => setViewNoteModal(note)}
                                                     disabled={!security.isNotesUnlocked}
                                                 >
-                                                    <LinearGradient colors={['rgba(255,255,255,0.03)', 'transparent']} style={StyleSheet.absoluteFillObject} />
+                                                    <LinearGradient colors={[theme.colors.glassSurfaceSubtle, 'transparent']} style={StyleSheet.absoluteFillObject} />
                                                     <View style={styles.reflectionHeader}>
                                                         <View>
                                                             <Text style={styles.reflectionDate}>{note.dateStr}</Text>
@@ -418,7 +411,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                             if (success) Vibration.vibrate(50);
                                         }}
                                     >
-                                        <MaterialCommunityIcons name="fingerprint" size={22} color="#FFF" style={styles.iconMarginRight10} />
+                                        <MaterialCommunityIcons name="fingerprint" size={22} color={theme.colors.textPrimary} style={styles.iconMarginRight10} />
                                         <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
                                     </AnimatedScaleButton>
                                 </View>
@@ -563,7 +556,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
+        borderColor: theme.colors.glassBorder
     },
     filterDropdownText: {
         color: theme.colors.textSecondary,
@@ -576,12 +569,12 @@ const styles = StyleSheet.create({
         marginTop: 60
     },
     reflectionCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: theme.colors.glassSurfaceSubtle,
         padding: 18,
         borderRadius: 16,
         marginBottom: 15,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: theme.colors.glassSurfaceMedium,
         overflow: 'hidden'
     },
     reflectionHeader: {
@@ -591,13 +584,13 @@ const styles = StyleSheet.create({
         marginBottom: 12
     },
     reflectionDate: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: 'bold',
         marginBottom: 4
     },
     reflectionScore: {
-        color: 'rgba(255,255,255,0.5)',
+        color: theme.colors.textSecondary,
         fontSize: 13,
         fontWeight: '600',
         textTransform: 'uppercase',
@@ -621,7 +614,7 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     circlesLockTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '900',
         marginBottom: 8,
@@ -647,7 +640,7 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     circlesUnlockBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: '800',
     },

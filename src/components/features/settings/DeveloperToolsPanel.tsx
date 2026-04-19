@@ -9,18 +9,28 @@ import { SettingsCard } from '@/components/ui/SettingsCard';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
-import { DEFAULT_AI_PROMPTS } from '@/config/ai';
-import type { AiLogEntry } from '@/types';
+import { DEFAULT_AI_PROMPTS, type AiPrompts } from '@/config/ai';
+import type { SavedNote, Person, SavedVlog, AiQueueState, AiLogEntry } from '@/types';
+
+/** File system entry as displayed in the dev tools explorer */
+interface FileSystemEntry {
+    name: string;
+    exists: boolean;
+    isDirectory: boolean;
+    size: number;
+    modificationTime: number;
+    uri: string;
+}
 
 type DeveloperToolsPanelProps = {
-    notes: { savedNotes: any[]; clearAllAiMetadata: () => Promise<void> };
-    personsHook: { persons: any[] };
+    notes: { savedNotes: SavedNote[]; clearAllAiMetadata: () => Promise<void> };
+    personsHook: { persons: Person[] };
     streak: { currentStreak: number; lastWinDate: string; streakHistory: string[] };
     preferences: { devMode: boolean; debugLayout: boolean; fontIndex: number; sizeIndex: number; toggleDevMode: () => Promise<void>; toggleDebugLayout: () => Promise<void> };
-    aiConfig: { aiPrompts: any; saveAiPrompts: (prompts: any) => Promise<void> };
-    vlogs: { savedVlogs: any[]; totalVlogStorageBytes: number };
+    aiConfig: { aiPrompts: AiPrompts; saveAiPrompts: (prompts: AiPrompts) => Promise<void> };
+    vlogs: { savedVlogs: SavedVlog[]; totalVlogStorageBytes: number };
     storageActions: { clearAllData: () => Promise<void> };
-    queueState: any;
+    queueState: AiQueueState;
     devModeUnlocked: boolean;
     setNewStreakParam: (val: number) => void;
     setShowStreakPopup: (val: boolean) => void;
@@ -70,7 +80,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
 
     const [showFileSystem, setShowFileSystem] = useState(false);
     const [currentPath, setCurrentPath] = useState(FileSystem.documentDirectory || '');
-    const [fileSystemData, setFileSystemData] = useState<any[]>([]);
+    const [fileSystemData, setFileSystemData] = useState<FileSystemEntry[]>([]);
     const [fileSystemLoading, setFileSystemLoading] = useState(false);
     const [viewingFile, setViewingFile] = useState<{name: string, content: string} | null>(null);
 
@@ -96,13 +106,13 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
     if (!devModeUnlocked) return null;
 
     return (
-        <View style={{ backgroundColor: preferences.devMode ? 'rgba(255, 215, 0, 0.08)' : theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: preferences.devMode ? 'rgba(255, 215, 0, 0.3)' : theme.colors.glassBorder, marginTop: 10 }}>
+        <View style={{ backgroundColor: preferences.devMode ? theme.colors.goldBorderLight : theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: preferences.devMode ? theme.colors.goldBorder : theme.colors.glassBorder, marginTop: 10 }}>
             <Text style={[commonStyles.settingsLabel, { marginTop: 0, color: preferences.devMode ? theme.colors.gold : theme.colors.textPrimary, fontSize: 16 }]}>🛠 Developer Tools</Text>
             <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 15 }}>Debug features for testing</Text>
 
             {/* Dev Mode Toggle */}
             <AnimatedScaleButton
-                style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.devMode ? 'rgba(255, 215, 0, 0.2)' : theme.colors.glassHighlight, marginTop: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.devMode ? theme.colors.goldFillMedium : theme.colors.glassHighlight, marginTop: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
                 onPress={() => {
                     Vibration.vibrate(preferences.devMode ? [0, 100, 50, 100] : [0, 50, 100, 50, 100, 150]);
                     preferences.toggleDevMode();
@@ -116,7 +126,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
             {preferences.devMode && (
                 <View style={{ marginTop: 15, gap: 10 }}>
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 215, 0, 0.15)', marginTop: 0 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.goldTint, marginTop: 0 }]}
                         onPress={() => {
                             setNewStreakParam(streak.currentStreak || 1);
                             setShowStreakPopup(true);
@@ -127,14 +137,14 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(74, 222, 128, 0.15)', marginTop: 0 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.successBorder, marginTop: 0 }]}
                         onPress={() => setShowBenchmarkModal(true)}
                     >
                         <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.green }]}>⚡ Run AI Benchmark</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 77, 77, 0.15)', marginTop: 0 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.dangerFill, marginTop: 0 }]}
                         onPress={() => {
                             storageActions.clearAllData();
                             setShowSettings(false);
@@ -144,16 +154,16 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 165, 0, 0.15)', marginTop: 0 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.orangeFill, marginTop: 0 }]}
                         onPress={() => {
                             notes.clearAllAiMetadata();
                             Vibration.vibrate(50);
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: '#FFA500' }]}>🗑 Reset all AI Entries</Text>
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devOrange }]}>🗑 Reset all AI Entries</Text>
                     </AnimatedScaleButton>
 
-                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
+                    <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
                         <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>📊 Storage Info</Text>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Notes: {notes.savedNotes.length}</Text>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Circles: {personsHook.persons.length}</Text>
@@ -162,19 +172,19 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Streak History: {streak.streakHistory.length} days</Text>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Font: {CONFIG.FONTS[preferences.fontIndex]?.label || 'Default'} | Size: {CONFIG.SIZES[preferences.sizeIndex]?.label || 'Default'}</Text>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Vlogs: {vlogs.savedVlogs.length} ({(vlogs.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB)</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Title Coverage: {notes.savedNotes.filter((n: any) => n.aiTitle).length}/{notes.savedNotes.length} notes</Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Title Coverage: {notes.savedNotes.filter((n: SavedNote) => n.aiTitle).length}/{notes.savedNotes.length} notes</Text>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Queue: {queueState.pendingCount} pending, {queueState.isProcessing ? 'active' : 'idle'}</Text>
                     </View>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 215, 0, 0.15)', marginTop: 10 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.goldFill, marginTop: 10 }]}
                         onPress={async () => { await loadAiLog(); setShowAiLog(!showAiLog); }}
                     >
                         <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.gold }]}>{showAiLog ? '🔽 Hide' : '📋 Show'} AI Processing Log</Text>
                     </AnimatedScaleButton>
 
                     {showAiLog && (
-                        <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 300 }}>
+                        <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 300 }}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold' }}>📋 AI Log ({aiLogEntries.length} entries)</Text>
                                 <AnimatedScaleButton onPress={async () => { await clearAiLog(); setAiLogEntries([]); }}>
@@ -186,7 +196,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>No log entries yet</Text>
                                 ) : (
                                     aiLogEntries.map((entry, i) => (
-                                        <View key={i} style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', paddingVertical: 4 }}>
+                                        <View key={i} style={{ borderBottomWidth: 1, borderBottomColor: theme.colors.glassSurfaceSubtle, paddingVertical: 4 }}>
                                             <Text style={{ color: theme.colors.textMuted, fontSize: 10 }}>
                                                 {new Date(entry.timestamp).toLocaleTimeString()} | {entry.action.toUpperCase()} | {entry.phase}{entry.durationMs ? ` | ${entry.durationMs}ms` : ''}
                                             </Text>
@@ -199,17 +209,17 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                     )}
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(50, 150, 255, 0.15)', marginTop: 10 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 10 }]}
                         onPress={async () => { 
                             if (!showFileSystem) await loadFileSystemData();
                             setShowFileSystem(!showFileSystem); 
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: '#3296FF' }]}>{showFileSystem ? '🔽 Hide' : '📁 Show'} File System Explorer</Text>
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>{showFileSystem ? '🔽 Hide' : '📁 Show'} File System Explorer</Text>
                     </AnimatedScaleButton>
 
                     {showFileSystem && (
-                        <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 400 }}>
+                        <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 400 }}>
                             {viewingFile ? (
                                 <View>
                                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -228,14 +238,14 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                                 <>
                                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                         <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
-                                            <Text style={{ color: '#3296FF', fontSize: 12, fontWeight: 'bold', marginRight: 8 }}>📁 Explorer</Text>
+                                            <Text style={{ color: theme.colors.devBlue, fontSize: 12, fontWeight: 'bold', marginRight: 8 }}>📁 Explorer</Text>
                                             {currentPath !== FileSystem.documentDirectory && (
                                                 <AnimatedScaleButton onPress={() => {
                                                     const parts = currentPath.split('/');
                                                     parts.pop(); // remove trailing empty string
                                                     parts.pop(); // remove current directory
                                                     loadFileSystemData(parts.join('/') + '/');
-                                                }} style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4 }}>
+                                                }} style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: theme.colors.glassBorder, borderRadius: 4 }}>
                                                     <Text style={{ color: theme.colors.textPrimary, fontSize: 10 }}>⬅️ Up</Text>
                                                 </AnimatedScaleButton>
                                             )}
@@ -255,7 +265,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                                             fileSystemData.map((file, i) => (
                                                 <AnimatedScaleButton 
                                                     key={i} 
-                                                    style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', paddingVertical: 8 }}
+                                                    style={{ borderBottomWidth: 1, borderBottomColor: theme.colors.glassSurfaceSubtle, paddingVertical: 8 }}
                                                     onPress={async () => {
                                                         if (file.isDirectory) {
                                                             loadFileSystemData(currentPath + file.name + '/');
@@ -269,7 +279,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                                                         }
                                                     }}
                                                 >
-                                                    <Text style={{ color: file.isDirectory ? '#3296FF' : theme.colors.textSecondary, fontSize: 11, fontWeight: 'bold' }}>
+                                                    <Text style={{ color: file.isDirectory ? theme.colors.devBlue : theme.colors.textSecondary, fontSize: 11, fontWeight: 'bold' }}>
                                                         {file.isDirectory ? '📁' : '📄'} {file.name}
                                                     </Text>
                                                     <Text style={{ color: theme.colors.textMuted, fontSize: 10 }}>
@@ -284,11 +294,11 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         </View>
                     )}
 
-                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
+                    <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
                         <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🤖 AI Prompts (editable)</Text>
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Title Prompt</Text>
                         <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            style={{ backgroundColor: theme.colors.overlayDark, color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.goldFill, marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
                             defaultValue={aiConfig.aiPrompts.title || DEFAULT_AI_PROMPTS.title}
                             onChangeText={(v) => titlePromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, title: titlePromptRef.current })}
@@ -296,7 +306,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         />
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Summary Prompt</Text>
                         <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            style={{ backgroundColor: theme.colors.overlayDark, color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.goldFill, marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
                             defaultValue={aiConfig.aiPrompts.summary || DEFAULT_AI_PROMPTS.summary}
                             onChangeText={(v) => summaryPromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, summary: summaryPromptRef.current })}
@@ -304,7 +314,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         />
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Relationship Title Prompt</Text>
                         <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            style={{ backgroundColor: theme.colors.overlayDark, color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.goldFill, marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
                             defaultValue={aiConfig.aiPrompts.relationshipTitle || DEFAULT_AI_PROMPTS.relationshipTitle}
                             onChangeText={(v) => relationshipTitlePromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, relationshipTitle: relationshipTitlePromptRef.current })}
@@ -312,7 +322,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         />
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Relationship Summary Prompt</Text>
                         <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            style={{ backgroundColor: theme.colors.overlayDark, color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.goldFill, marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
                             defaultValue={aiConfig.aiPrompts.relationshipSummary || DEFAULT_AI_PROMPTS.relationshipSummary}
                             onChangeText={(v) => relationshipSummaryPromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, relationshipSummary: relationshipSummaryPromptRef.current })}
@@ -320,7 +330,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         />
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Grammar Prompt</Text>
                         <TextInput
-                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            style={{ backgroundColor: theme.colors.overlayDark, color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.goldFill, marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
                             defaultValue={aiConfig.aiPrompts.grammar || DEFAULT_AI_PROMPTS.grammar}
                             onChangeText={(v) => grammarPromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, grammar: grammarPromptRef.current })}
@@ -334,11 +344,11 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         </AnimatedScaleButton>
                     </View>
 
-                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
+                    <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
                         <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🔥 Debug Injectors</Text>
                         
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.debugLayout ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.05)', marginTop: 0, marginBottom: 8 }]}
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.debugLayout ? theme.colors.successBorder : theme.colors.glassBackground, marginTop: 0, marginBottom: 8 }]}
                             onPress={preferences.toggleDebugLayout}
                         >
                             <Text style={[commonStyles.closeVersionBtnText, { color: preferences.debugLayout ? theme.colors.green : theme.colors.textMuted }]}>
@@ -347,7 +357,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         </AnimatedScaleButton>
 
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255, 77, 77, 0.15)', marginTop: 0 }]}
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.dangerFill, marginTop: 0 }]}
                             onPress={() => {
                                 // Trigger a render cycle bomb
                                 setTimeout(() => { throw new Error("Developer Simulated Native Crash"); }, 100);
@@ -357,13 +367,13 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         </AnimatedScaleButton>
 
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(100, 100, 255, 0.15)', marginTop: 10 }]}
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.purpleFill, marginTop: 10 }]}
                             onPress={() => {
                                 setShowSettings(false);
                                 navigation.navigate('Sandbox');
                             }}
                         >
-                            <Text style={[commonStyles.closeVersionBtnText, { color: '#6464FF' }]}>🧪 Launch Component Sandbox</Text>
+                            <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>🧪 Launch Component Sandbox</Text>
                         </AnimatedScaleButton>
                     </View>
                 </View>

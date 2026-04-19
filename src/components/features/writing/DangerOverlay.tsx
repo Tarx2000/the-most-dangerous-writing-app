@@ -107,7 +107,7 @@ export const DangerOverlay: React.FC<Props> = React.memo(({
             <Animated.View style={[StyleSheet.absoluteFill, {
                 zIndex: 5,
                 pointerEvents: 'none',
-                backgroundColor: 'rgba(0, 0, 0, 1)',
+                backgroundColor: theme.colors.background,
             }, fogStyle]} />
             {/* Border overlay - renders ABOVE fog at zIndex 6 */}
             <Animated.View style={[StyleSheet.absoluteFill, {

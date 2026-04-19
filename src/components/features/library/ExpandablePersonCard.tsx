@@ -88,7 +88,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
         <View style={styles.cardContainer}>
             {/* Subtle gradient overlay for depth */}
             <LinearGradient
-                colors={['rgba(255,255,255,0.03)', 'transparent']}
+                colors={[theme.colors.glassSurfaceMinimal, 'transparent']}
                 style={StyleSheet.absoluteFillObject}
             />
 

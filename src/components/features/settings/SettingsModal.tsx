@@ -17,7 +17,9 @@ import { AI_AVAILABLE_MODELS } from '@/config/ai';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { isCompressionAvailable } from '@/lib/videoCompressor';
-import type { AiLogEntry } from '@/types';
+import type { AiLogEntry, AiQueueState } from '@/types';
+import type { usePreferences, useFeedData, useVlogs, useNotes, useAiConfig, usePersons, useStreak, useStorageActions } from '@/lib/hooks/useStorage';
+import type { useSecurity } from '@/lib/hooks/useSecurity';
 
 // ---- Grouped prop types to reduce prop drilling ----
 
@@ -51,24 +53,35 @@ export type DevTools = {
     clearAiLog: () => Promise<void>;
 };
 
+/** Domain-specific hook return types */
+type Preferences = ReturnType<typeof usePreferences>;
+type FeedData = ReturnType<typeof useFeedData>;
+type Vlogs = ReturnType<typeof useVlogs>;
+type Notes = ReturnType<typeof useNotes>;
+type AiConfig = ReturnType<typeof useAiConfig>;
+type PersonsHook = ReturnType<typeof usePersons>;
+type Streak = ReturnType<typeof useStreak>;
+type StorageActions = ReturnType<typeof useStorageActions>;
+type Security = ReturnType<typeof useSecurity>;
+
 interface SettingsModalProps {
     visible: boolean;
     onClose: () => void;
     setHomeScrollEnabled?: (enabled: boolean) => void;
 
     /** Hook data */
-    preferences: any;
-    feedData: any;
-    vlogs: any;
-    notes: any;
-    aiConfig: any;
-    personsHook: any;
-    streak: any;
-    storageActions: any;
-    security: any;
+    preferences: Preferences;
+    feedData: FeedData;
+    vlogs: Vlogs;
+    notes: Notes;
+    aiConfig: AiConfig;
+    personsHook: PersonsHook;
+    streak: Streak;
+    storageActions: StorageActions;
+    security: Security;
 
     /** AI queue */
-    queueState: any;
+    queueState: AiQueueState;
     startBatch: (overwrite: boolean, filter?: Set<'journal' | 'circle' | 'checkin'> | undefined) => Promise<number>;
     cancelBatch: () => Promise<void>;
 

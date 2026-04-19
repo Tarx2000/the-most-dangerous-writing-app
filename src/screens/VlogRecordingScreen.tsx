@@ -256,7 +256,10 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     }, [navigation]);
 
     /* ── Handle completed recording — save to private storage ──────────── */
-    const handleRecordingComplete = async (tempUri: string) => {
+    const compressionPresetRef = useRef(compressionPreset);
+    compressionPresetRef.current = compressionPreset;
+
+    const handleRecordingComplete = useCallback(async (tempUri: string) => {
         isRecordingRef.current = false;
 
         // If user cancelled, just delete the temp file and go back
@@ -289,10 +292,11 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             const rawSizeBytes = ('size' in rawInfo ? (rawInfo as { size: number }).size : 0);
 
             // ── Compression phase ──────────────────────────────────────
+            const currentPreset = compressionPresetRef.current;
             let finalSizeBytes = rawSizeBytes;
             let originalSizeBytes: number | undefined;
 
-            if (compressionPreset !== 'off' && isCompressionAvailable()) {
+            if (currentPreset !== 'off' && isCompressionAvailable()) {
                 setPhase('compressing');
                 setCompressionProgress(0);
 
@@ -300,13 +304,13 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 await addToPendingQueue({
                     vlogId,
                     inputUri: permanentPath,
-                    presetId: compressionPreset,
+                    presetId: currentPreset,
                     createdAt: Date.now(),
                 });
 
                 const result = await compressVideo(
                     permanentPath,
-                    compressionPreset,
+                    currentPreset,
                     (progress) => setCompressionProgress(progress),
                 );
 
@@ -333,7 +337,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 timestamp: now.getTime(),
                 durationSec: elapsedRef.current,
                 fileSizeBytes: finalSizeBytes,
-                compressionPreset: compressionPreset,
+                compressionPreset: currentPreset,
                 originalFileSizeBytes: originalSizeBytes,
                 compressionPending: false,
             };
@@ -356,7 +360,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             console.error('Failed to save vlog:', err);
             navigation.goBack();
         }
-    };
+    }, [saveVlog, navigation]);
 
     /* ── Cleanup timers on unmount ──────────────────────────────────────── */
     useEffect(() => {
@@ -550,7 +554,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
     },
 
     /* ── Countdown Overlay ─────────────────────────────────────────────── */
@@ -558,18 +562,18 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: theme.colors.modalBackground,
         zIndex: 10,
     },
     countdownText: {
         fontSize: 120,
         fontWeight: '200',
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         letterSpacing: -2,
     },
     countdownLabel: {
         fontSize: 18,
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: theme.colors.textSecondary,
         fontWeight: '600',
         marginTop: 20,
         letterSpacing: 2,
@@ -588,11 +592,11 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: theme.colors.glassBorderMedium,
     },
     topBarTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+        backgroundColor: theme.colors.modalBackground,
     },
     topBarContent: {
         flexDirection: 'row',
@@ -612,10 +616,10 @@ const styles = StyleSheet.create({
         width: 10,
         height: 10,
         borderRadius: 5,
-        backgroundColor: '#FF2A2A',
+        backgroundColor: theme.colors.danger,
     },
     recText: {
-        color: '#FF2A2A',
+        color: theme.colors.danger,
         fontSize: 13,
         fontWeight: '800',
         letterSpacing: 1.5,
@@ -623,7 +627,7 @@ const styles = StyleSheet.create({
 
     /* ── Timer ─────────────────────────────────────────────────────────── */
     timerText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 28,
         fontWeight: '200',
         letterSpacing: 2,
@@ -635,15 +639,15 @@ const styles = StyleSheet.create({
 
     /* ── Duration badge ────────────────────────────────────────────────── */
     durationBadge: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: theme.colors.glassBackground,
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: theme.colors.glassSurfaceMedium,
     },
     durationBadgeText: {
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 13,
         fontWeight: '600',
     },
@@ -660,12 +664,12 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: theme.colors.glassBorderMedium,
         alignItems: 'center',
         paddingVertical: 24,
     },
     stopHintText: {
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 14,
         fontWeight: '500',
         marginBottom: 16,
@@ -676,7 +680,7 @@ const styles = StyleSheet.create({
         height: 72,
         borderRadius: 36,
         borderWidth: 4,
-        borderColor: '#FF2A2A',
+        borderColor: theme.colors.danger,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 2,
@@ -685,12 +689,12 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 8,
-        backgroundColor: '#FF2A2A',
+        backgroundColor: theme.colors.danger,
         justifyContent: 'center',
         alignItems: 'center',
     },
     stopBtnLabel: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 14,
         fontWeight: '700',
         marginTop: 12,
@@ -703,14 +707,14 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: theme.colors.overlayVideoMuted,
         zIndex: 20,
     },
     savingCard: {
         borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: theme.colors.glassBorderMedium,
         padding: 40,
         alignItems: 'center',
         minWidth: 200,
@@ -729,7 +733,7 @@ const styles = StyleSheet.create({
         height: 80,
         borderRadius: 40,
         borderWidth: 3,
-        borderColor: 'rgba(255, 255, 255, 0.15)',
+        borderColor: theme.colors.glassHighlight,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 2,
@@ -742,25 +746,25 @@ const styles = StyleSheet.create({
         height: 80,
         borderRadius: 40,
         borderWidth: 3,
-        borderColor: '#4ADE80',
+        borderColor: theme.colors.green,
         borderTopColor: 'transparent',
         borderRightColor: 'transparent',
     },
     compressionPercent: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '800',
         fontVariant: ['tabular-nums'] as ('tabular-nums')[] | undefined,
     },
     compressionSubtext: {
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: theme.colors.textDim,
         fontSize: 13,
         marginTop: 8,
         zIndex: 2,
         textAlign: 'center',
     },
     compressionSavingsText: {
-        color: '#4ADE80',
+        color: theme.colors.green,
         fontSize: 13,
         fontWeight: '600',
         marginTop: 8,
@@ -770,20 +774,20 @@ const styles = StyleSheet.create({
     /* ── Permission States ─────────────────────────────────────────────── */
     permissionDenied: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 40,
     },
     permissionTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '900',
         marginTop: 20,
         marginBottom: 10,
     },
     permissionSubtitle: {
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: theme.colors.textDim,
         fontSize: 15,
         textAlign: 'center',
         lineHeight: 22,
@@ -796,7 +800,7 @@ const styles = StyleSheet.create({
         marginTop: 30,
     },
     permissionBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontWeight: 'bold',
         fontSize: 16,
     },
@@ -804,7 +808,7 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
     },
 
     /* ── Cancel Button ─────────────────────────────────────────────────── */
@@ -818,9 +822,9 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: 'rgba(255, 255, 255, 0.12)',
+        backgroundColor: theme.colors.glassBorderMedium,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderColor: theme.colors.grey,
         justifyContent: 'center',
         alignItems: 'center',
     },

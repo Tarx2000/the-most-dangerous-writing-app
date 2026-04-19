@@ -189,7 +189,7 @@ export const SandboxScreen: React.FC<Props> = ({ navigation }) => {
                                 <Switch
                                     value={testSwitchOn}
                                     onValueChange={setTestSwitchOn}
-                                    trackColor={{ false: 'rgba(255,255,255,0.1)', true: theme.colors.primaryAction }}
+                                    trackColor={{ false: theme.colors.glassBorder, true: theme.colors.primaryAction }}
                                 />
                             </View>
                         </SettingsCard>
@@ -226,7 +226,7 @@ export const SandboxScreen: React.FC<Props> = ({ navigation }) => {
                             The ConfirmDialog is used for destructive actions like deleting notes or clearing data.
                         </Text>
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: 'rgba(255,77,77,0.15)' }]}
+                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.dangerFill }]}
                             onPress={() => setTestDialogVisible(true)}
                         >
                             <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>Show Destructive Dialog</Text>
@@ -305,7 +305,7 @@ export const SandboxScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: theme.colors.surfaceDark,
         paddingTop: Platform.OS === 'ios' ? 50 : 30,
     },
     header: {
@@ -315,33 +315,33 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.1)',
+        borderBottomColor: theme.colors.glassBorder,
     },
     headerTitle: {
-        color: '#fff',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: '800',
     },
     backBtn: {
-        backgroundColor: 'rgba(255,100,100,0.2)',
+        backgroundColor: theme.colors.dangerFillLight,
         paddingVertical: 8,
         paddingHorizontal: 14,
         borderRadius: 20,
     },
     backBtnText: {
-        color: '#ff6666',
+        color: theme.colors.suggestionError,
         fontWeight: 'bold',
         fontSize: 13,
     },
     selectorBtn: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: theme.colors.glassBorder,
         paddingVertical: 8,
         paddingHorizontal: 14,
         borderRadius: 20,
         maxWidth: 160,
     },
     selectorBtnText: {
-        color: '#fff',
+        color: theme.colors.textPrimary,
         fontWeight: 'bold',
         fontSize: 12,
     },
@@ -371,21 +371,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.15)',
+        borderColor: theme.colors.glassHighlight,
     },
     swatchLabel: {
-        color: '#fff',
+        color: theme.colors.textPrimary,
         fontSize: 12,
         fontWeight: '700',
-        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowColor: theme.colors.overlayVideoStrong,
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 3,
     },
     swatchHex: {
-        color: 'rgba(255,255,255,0.7)',
+        color: theme.colors.textBodyDim,
         fontSize: 9,
         fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowColor: theme.colors.overlayVideoStrong,
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 3,
     },
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     scaleBoxText: {
-        color: '#000',
+        color: theme.colors.background,
         fontWeight: '900',
         fontSize: 16,
     },

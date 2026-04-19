@@ -90,7 +90,7 @@ function isTransientError(error: Error): boolean {
     if (msg.includes('timed out')) return true;
 
     // 5xx server errors — retryable (server is having a bad time)
-    if (/API error [5]\d\d/.test(msg)) return true;
+    if (/Ollama API error [5]\d\d/.test(msg)) return true;
 
     // Everything else (4xx, auth errors, parse errors, etc.) — not retryable
     return false;

@@ -18,7 +18,7 @@ export const EmptyLibraryState: React.FC<Props> = ({ icon, title, description, a
         <View style={styles.container}>
             <View style={styles.iconContainer}>
                 <LinearGradient
-                    colors={['rgba(255, 42, 42, 0.2)', 'transparent']}
+                    colors={[theme.colors.dangerFill, 'transparent']}
                     style={StyleSheet.absoluteFillObject}
                 />
                 <MaterialCommunityIcons name={icon} size={48} color={theme.colors.primaryAction} />
@@ -29,7 +29,7 @@ export const EmptyLibraryState: React.FC<Props> = ({ icon, title, description, a
             {actionLabel && onAction && (
                 <AnimatedScaleButton style={styles.actionButton} onPress={onAction}>
                     <Text style={styles.actionButtonText}>{actionLabel}</Text>
-                    <MaterialCommunityIcons name="arrow-right" size={16} color="#000" />
+                    <MaterialCommunityIcons name="arrow-right" size={16} color={theme.colors.background} />
                 </AnimatedScaleButton>
             )}
         </View>
@@ -49,16 +49,16 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 50,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: theme.colors.glassSurfaceMinimal,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: theme.colors.glassSurfaceMedium,
         overflow: 'hidden',
     },
     title: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '800',
         marginBottom: 12,
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     description: {
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 15,
         lineHeight: 24,
         textAlign: 'center',
@@ -76,19 +76,19 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#FFF',
+        backgroundColor: theme.colors.textPrimary,
         paddingVertical: 14,
         paddingHorizontal: 24,
         borderRadius: 100,
         gap: 8,
-        shadowColor: '#FFF',
+        shadowColor: theme.colors.textPrimary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
         shadowRadius: 15,
         elevation: 8,
     },
     actionButtonText: {
-        color: '#000',
+        color: theme.colors.background,
         fontSize: 15,
         fontWeight: '800',
         letterSpacing: 0.5,

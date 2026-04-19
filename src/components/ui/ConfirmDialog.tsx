@@ -153,7 +153,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
                             <MaterialCommunityIcons
                                 name={icon}
                                 size={18}
-                                color="#FFF"
+                                color={theme.colors.textPrimary}
                             />
                             <Text style={styles.confirmText}>{confirmLabel}</Text>
                         </AnimatedScaleButton>
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
     /** Full-screen semi-transparent backdrop */
     backdrop: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backgroundColor: theme.colors.modalBackground,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 24,
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: theme.colors.glassBorderMedium,
         /** Subtle shadow for depth */
-        shadowColor: '#000',
+        shadowColor: theme.colors.background,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.4,
         shadowRadius: 24,
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
     confirmText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontWeight: '700',
         fontSize: 15,
     },

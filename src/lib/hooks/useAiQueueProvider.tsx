@@ -14,7 +14,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
-import { resetPingFailures } from '@/lib/aiService';
+import { resetConnectionState } from '@/lib/aiService';
 import { useNotes, useAiConfig, usePersons } from '@/lib/hooks/useStorage';
 import type { AiQueueState, AiJobCategory } from '@/types';
 
@@ -65,7 +65,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             () => depsRef.current.savedNotes,
             (personId) => depsRef.current.persons.find(p => p.id === personId)
         );
-    }, [aiApiKey, aiBaseUrl, aiModel, savedNotes.length]);
+    }, [aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes.length, persons.length]);
 
     // Single event subscription for the entire app
     useEffect(() => {
@@ -78,8 +78,12 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     // Shutdown queue on unmount (cleans up AppState listener + health checks)
+    // Also reset init flag so remount re-initializes (React Strict Mode double-mount)
     useEffect(() => {
-        return () => { aiQueue.shutdown(); };
+        return () => {
+            aiQueue.shutdown();
+            queueInitedRef.current = false;
+        };
     }, []);
 
     // Auto-initialize queue when notes are available

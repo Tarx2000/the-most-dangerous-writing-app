@@ -66,7 +66,9 @@ export const theme = {
         glassHighlight: 'rgba(255, 255, 255, 0.15)',
         glassSurface: 'rgba(255, 255, 255, 0.06)',
         glassSurfaceMedium: 'rgba(255, 255, 255, 0.08)',
+        glassSurfaceMinimal: 'rgba(255, 255, 255, 0.03)',
         glassSurfaceSubtle: 'rgba(255, 255, 255, 0.02)',
+        glassSurfaceLow: 'rgba(255, 255, 255, 0.04)',
         glassBorderSubtle: 'rgba(255, 255, 255, 0.06)',
         glassBorderMedium: 'rgba(255, 255, 255, 0.12)',
 
@@ -107,6 +109,45 @@ export const theme = {
         // Grammar suggestion accents
         suggestionBackground: 'rgba(255, 215, 0, 0.06)',
         suggestionBorder: 'rgba(255, 200, 50, 0.12)',
+
+        // Gold accents (used in dev tools, calendar highlights, etc.)
+        goldBackground: 'rgba(255, 215, 0, 0.05)',
+        goldBorder: 'rgba(255, 215, 0, 0.3)',
+        goldTint: 'rgba(255, 215, 0, 0.15)',
+        goldBorderLight: 'rgba(255, 215, 0, 0.08)',
+
+        // Success/green accents
+        successFill: 'rgba(74, 222, 128, 0.1)',
+        successBorder: 'rgba(74, 222, 128, 0.15)',
+
+        // Surface overlay (semi-transparent dark for cards over video/camera)
+        surfaceOverlay: 'rgba(18, 18, 18, 0.85)',
+        surfaceOverlayLight: 'rgba(0, 0, 0, 0.2)',
+
+        // Danger overlay for destructive actions (buttons, modals)
+        dangerOverlayStrong: 'rgba(255, 100, 100, 0.8)',
+        dangerIconOverlay: 'rgba(255, 100, 100, 0.8)',   // Alias — icon tint for locked/unsafe states
+        dangerFillLight: 'rgba(255, 100, 100, 0.2)',
+
+        // Developer / debug accents
+        devBlue: '#3296FF',
+        devPurple: '#6464FF',
+        devOrange: '#FFA500',
+
+        // Success/green accents (extended)
+        successTint: 'rgba(74, 222, 128, 0.1)',          // Light green tint (grammar apply btn, etc.)
+
+        // Gold accents (extended)
+        goldSubtle: 'rgba(255, 215, 0, 0.08)',
+        goldFill: 'rgba(255, 215, 0, 0.15)',
+        goldFillMedium: 'rgba(255, 215, 0, 0.2)',
+
+        // Orange accents (extended)
+        orangeFill: 'rgba(255, 165, 0, 0.15)',
+
+        // Info / semantic category fills
+        infoFill: 'rgba(50, 150, 255, 0.15)',
+        purpleFill: 'rgba(100, 100, 255, 0.15)',
 
         // Placeholder
         placeholder: '#555',

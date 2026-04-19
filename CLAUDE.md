@@ -94,11 +94,48 @@ useEffect(() => { sv.value = screenHeight; }, [screenHeight, sv]); // ✅
 - Immediate lock on `inactive` state (control center, notification overlay)
 
 ### Theme System
-All colors must come from `theme.colors` in `src/styles/theme.ts`. **Never use hardcoded hex/rgba values** in components — always reference a theme token. If a color doesn't exist, add it to `theme.ts` with a semantic name following the naming convention:
+**CRITICAL: Never use hardcoded hex/rgba color values anywhere in components, screens, or features.** Every color must come from `theme.colors` in `src/styles/theme.ts`. This includes `#FFF`, `#000`, `#fff`, `rgba(...)` values — ALL of them must be theme tokens. If a color doesn't exist in the theme, add it to `theme.ts` with a semantic name BEFORE using it.
+
+The ONLY exceptions are: (1) transparent (`'transparent'`), (2) dynamically-constructed colors in animation code (e.g., `rgba(r, g, b, blend)` in DangerOverlay which uses CONFIG values), and (3) color values inside `alignmentScores.ts` which is the single source of truth for alignment score visuals.
+
+**Common mappings (use these, NOT hardcoded values):**
+- `#FFF` / `#fff` / `#FFFFFF` → `theme.colors.textPrimary` (or `primaryActionText` for button text on danger bg)
+- `#000` / `#000000` → `theme.colors.background`
+- `rgba(255,255,255,0.6)` → `theme.colors.textSecondary`
+- `rgba(255,255,255,0.4)` → `theme.colors.textDim`
+- `rgba(255,255,255,0.3)` → `theme.colors.textMuted`
+- `rgba(255,255,255,0.5)` → `theme.colors.lightGrey`
+- `rgba(255,255,255,0.2)` → `theme.colors.grey`
+- `rgba(255,255,255,0.1)` → `theme.colors.glassBorder`
+- `rgba(255,255,255,0.05)` → `theme.colors.glassBackground`
+- `rgba(255,255,255,0.06)` → `theme.colors.glassSurface`
+- `rgba(255,255,255,0.08)` → `theme.colors.glassSurfaceMedium`
+- `rgba(255,255,255,0.12)` → `theme.colors.glassBorderMedium`
+- `rgba(255,255,255,0.15)` → `theme.colors.glassHighlight`
+- `rgba(0,0,0,0.6)` → `theme.colors.modalBackground`
+- `rgba(0,0,0,0.85)` → `theme.colors.overlayMedium`
+- `#FF2A2A` → `theme.colors.danger`
+- `#4ADE80` / `#4ade80` → `theme.colors.green`
+- `#FF6B35` → `theme.colors.orange`
+- `#FFD700` → `theme.colors.gold`
+
+**Naming convention for new tokens:**
 - **Danger scale**: `dangerSubtle` (0.06) → `dangerLight` (0.08) → `dangerTint` (0.1) → `dangerFill` (0.15) → `dangerBorderStrong` (0.3) → `dangerFillStrong` (0.3) → `dangerOverlayLight` (0.45)
 - **Glass scale**: `glassBackground` → `glassSurface` → `glassSurfaceMedium` → `glassBorder` → `glassBorderSubtle` → `glassBorderMedium` → `glassHighlight`
 - **Surface scale**: `background` (#000) → `surfaceDark` (#0A0A0A) → `surfaceRaised` (#1A1A1A) → `surfaceMedium` (#111) → `surfaceLight` (#222)
 - **Animation springs**: Use `theme.animation.springDefault/springSnappy/springGentle/springLight`
+
+### TypeScript Rules
+- **No `any` types** — always use proper interfaces. If a prop type is complex, use `ReturnType<typeof useHook>` to derive it from the hook. See `SettingsModal.tsx` for the pattern.
+- **Type guards**: Use `isAlignmentReflection(note)` to check note types. Never use `(note as any).isAlignmentReflection`.
+- **Fresh-read pattern**: Every state variable in `useStorage.tsx` must have a corresponding ref. When updating state in `storageOps.ts`, always update BOTH the setter AND the ref on the success path: `setter(newVal); ref.current = newVal;`
+- **React.memo**: Wrap components with expensive renders (SVG, animations, video) in `React.memo`. Always wrap `React.FC` exports that use gesture handlers or complex props.
+
+### Code Organization
+- **Alignment score logic**: Always use `getAlignmentScoreDetails()`, `getAlignmentScoreColor()`, or `getAlignmentScoreFeed()` from `@/lib/alignmentScores`. Never duplicate score-tier logic inline.
+- **Inline styles**: Prefer `StyleSheet.create()` over inline `style={{}}`. Only keep dynamic values (e.g., `width: progress + '%'`) inline.
+- **Dimensions**: Always use `useWindowDimensions()` hook, never module-level `Dimensions.get('window')`.
+- **Error handling**: Never use bare `catch (_) {}` or `.catch(() => {})` in production code. Always log the error with `console.error` or `console.warn` with context.
 
 ### Component Patterns
 - **Shared components**: `DeathOverlay` (writing death screen), `SettingsCard` (settings panel wrapper), `DangerOverlay` (idle danger progress), `SwipeableModal` (bottom sheet), `ErrorBoundary` (retry wrapper)

@@ -253,7 +253,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                                     <Image source={{ uri: dayVlogs![0].thumbnailPath }} style={styles.vlogThumbGradient} />
                                                 ) : (
                                                     <View style={styles.vlogThumbGradient}>
-                                                        <MaterialCommunityIcons name="play-circle-outline" size={20} color="rgba(255,255,255,0.7)" />
+                                                        <MaterialCommunityIcons name="play-circle-outline" size={20} color={theme.colors.textBodyDim} />
                                                     </View>
                                                 )}
 
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     lockTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '900',
         marginBottom: 8,
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     unlockBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: '800',
     },
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
         borderColor: theme.colors.glassBorder,
     },
     monthLabel: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 18,
         fontWeight: '800',
         letterSpacing: 0.3,
@@ -482,13 +482,13 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: theme.colors.glassSurfaceMinimal,
     },
     vlogThumbDay: {
         position: 'absolute',
         top: 4,
         left: 6,
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 11,
         fontWeight: '800',
     },
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 3,
         right: 4,
-        color: 'rgba(255,255,255,0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 9,
         fontWeight: '600',
     },
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     stackText: {
-        color: '#FFF',
+        color: theme.colors.primaryActionText,
         fontSize: 9,
         fontWeight: '900',
     },
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     statValue: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '800',
     },
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
     /* ── Expanded Playback Modal ───────────────────────────────────────── */
     expandedBackdrop: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backgroundColor: theme.colors.overlayMedium,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 16,
@@ -563,18 +563,18 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: theme.colors.glassBorderMedium,
     },
     expandedTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(18, 18, 18, 0.85)',
+        backgroundColor: theme.colors.surfaceOverlay,
     },
     expandedVideoContainer: {
         flex: 1,
         margin: 12,
         borderRadius: 16,
         overflow: 'hidden',
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
         zIndex: 2,
     },
     videoPlayer: {
@@ -587,11 +587,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingVertical: 12,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.06)',
+        borderTopColor: theme.colors.glassBorderSubtle,
         zIndex: 2,
     },
     expandedDate: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: '800',
     },
@@ -610,11 +610,11 @@ const styles = StyleSheet.create({
     },
     swipeBtn: {
         padding: 6,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: theme.colors.glassSurfaceMedium,
         borderRadius: 14,
     },
     swipeCounter: {
-        color: 'rgba(255,255,255,0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 13,
         fontWeight: '600',
         minWidth: 30,

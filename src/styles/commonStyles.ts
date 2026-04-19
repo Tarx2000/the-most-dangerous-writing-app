@@ -65,7 +65,7 @@ export const commonStyles = StyleSheet.create({
 
     versionBadge: { position: 'absolute', bottom: 20, right: 20 },
     versionText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: theme.typography.weightMedium },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
+    modalOverlay: { flex: 1, backgroundColor: theme.colors.overlayDark, justifyContent: 'center', padding: 20 },
     versionModalContent: {
         backgroundColor: theme.colors.modalBackground,
         borderRadius: theme.borderRadius.lg,

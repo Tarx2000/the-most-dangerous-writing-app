@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     activeTabText: {
-        color: '#000',
+        color: theme.colors.background,
     },
     contentContainer: {
         padding: 20,
@@ -181,14 +181,14 @@ const styles = StyleSheet.create({
         flexGrow: 1,
     },
     promptText: {
-        color: '#AAA',
+        color: theme.colors.textMuted,
         fontSize: 16,
         lineHeight: 24,
         marginBottom: 20,
     },
     textInput: {
         flex: 1,
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 18, // Overridden at render-time with user's preferred size
         lineHeight: 28,
         minHeight: 300,

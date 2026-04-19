@@ -6,9 +6,10 @@ import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { pingServer } from '@/lib/aiService';
 import { SettingsCard } from '@/components/ui/SettingsCard';
+import type { SavedNote, AiQueueState } from '@/types';
 
 type AiSettingsPanelProps = {
-    notes: { savedNotes: any[] };
+    notes: { savedNotes: SavedNote[] };
     aiConfig: {
         aiApiKey: string;
         aiBaseUrl: string;
@@ -19,7 +20,7 @@ type AiSettingsPanelProps = {
         saveAiBaseUrl: (url: string) => Promise<void>;
         updateAutoGenerateSummaries: (val: boolean) => Promise<void>;
     };
-    queueState: any;
+    queueState: AiQueueState;
     forceBatchOverwrite: boolean;
     setForceBatchOverwrite: (val: boolean) => void;
     /** Category filter toggles — which entry types to include in batch */
@@ -52,7 +53,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     const baseUrlRef = useRef(aiConfig.aiBaseUrl);
 
     const aiCoverageCount = useMemo(
-        () => notes.savedNotes.filter((n: any) => n.aiTitle).length,
+        () => notes.savedNotes.filter((n: SavedNote) => n.aiTitle).length,
         [notes.savedNotes]
     );
 
@@ -102,7 +103,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
 
             {/* Auto-Generate Toggle */}
             <AnimatedScaleButton
-                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 16 }}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 16 }}
                 onPress={() => {
                     aiConfig.updateAutoGenerateSummaries(!aiConfig.autoGenerateSummaries);
                     Vibration.vibrate(10);
@@ -115,8 +116,8 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Run AI automatically after writing</Text>
                     </View>
                 </View>
-                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: aiConfig.autoGenerateSummaries ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
-                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: aiConfig.autoGenerateSummaries ? 'flex-end' : 'flex-start' }} />
+                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: aiConfig.autoGenerateSummaries ? theme.colors.primaryAction : theme.colors.glassBorder, justifyContent: 'center', padding: 2 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.colors.textPrimary, alignSelf: aiConfig.autoGenerateSummaries ? 'flex-end' : 'flex-start' }} />
                 </View>
             </AnimatedScaleButton>
 
@@ -129,7 +130,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     disabled={queueState.isProcessing}
                 >
                     <View style={[styles.checkbox, { borderColor: forceBatchOverwrite ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: forceBatchOverwrite ? theme.colors.primaryAction : 'transparent' }]}>
-                        {forceBatchOverwrite && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                        {forceBatchOverwrite && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
                     </View>
                     <Text style={styles.overwriteLabel}>Force overwrite ALL entries (Slow)</Text>
                 </AnimatedScaleButton>
@@ -143,7 +144,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         disabled={queueState.isProcessing}
                     >
                         <View style={[styles.checkbox, { borderColor: batchJournals ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchJournals ? theme.colors.primaryAction : 'transparent' }]}>
-                            {batchJournals && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                            {batchJournals && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
                         </View>
                         <Text style={styles.categoryCheckLabel}>📓 Journals</Text>
                     </AnimatedScaleButton>
@@ -154,7 +155,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         disabled={queueState.isProcessing}
                     >
                         <View style={[styles.checkbox, { borderColor: batchCircles ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchCircles ? theme.colors.primaryAction : 'transparent' }]}>
-                            {batchCircles && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                            {batchCircles && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
                         </View>
                         <Text style={styles.categoryCheckLabel}>👥 Circles</Text>
                     </AnimatedScaleButton>
@@ -165,14 +166,14 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         disabled={queueState.isProcessing}
                     >
                         <View style={[styles.checkbox, { borderColor: batchCheckins ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchCheckins ? theme.colors.primaryAction : 'transparent' }]}>
-                            {batchCheckins && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                            {batchCheckins && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
                         </View>
                         <Text style={styles.categoryCheckLabel}>🧭 Check-ins</Text>
                     </AnimatedScaleButton>
                 </View>
 
                 <AnimatedScaleButton
-                    style={[styles.batchProcessBtn, { backgroundColor: queueState.isProcessing ? theme.colors.dangerFill : 'rgba(74, 222, 128, 0.15)', borderColor: queueState.isProcessing ? theme.colors.dangerBorderStrong : 'rgba(74, 222, 128, 0.3)' }]}
+                    style={[styles.batchProcessBtn, { backgroundColor: queueState.isProcessing ? theme.colors.dangerFill : theme.colors.successBorder, borderColor: queueState.isProcessing ? theme.colors.dangerBorderStrong : theme.colors.successBorder }]}
                     onPress={handleBatchProcess}
                 >
                     {queueState.isProcessing ? (
@@ -207,7 +208,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                             </View>
                         )}
                         {queueState.currentJob && (() => {
-                            const currentNote = notes.savedNotes.find((n: any) => n.id === queueState.currentJob?.noteId);
+                            const currentNote = notes.savedNotes.find((n: SavedNote) => n.id === queueState.currentJob?.noteId);
                             return currentNote ? (
                                 <Text style={styles.currentJobText} numberOfLines={1}>
                                     Now: "{currentNote.text.slice(0, 60)}..."
@@ -239,7 +240,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     </Text>
                 </View>
                 <Text style={styles.coverageText}>
-                    AI Coverage: {notes.savedNotes.filter((n: any) => n.aiTitle).length}/{notes.savedNotes.length} entries
+                    AI Coverage: {notes.savedNotes.filter((n: SavedNote) => n.aiTitle).length}/{notes.savedNotes.length} entries
                 </Text>
 
                 {queueState.serverOnline === false && queueState.lastError && (
@@ -320,7 +321,7 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     apiKeyInput: {
-        backgroundColor: 'rgba(0,0,0,0.3)',
+        backgroundColor: theme.colors.darkGrey,
         color: theme.colors.textPrimary,
         fontSize: 13,
         padding: 10,
@@ -337,7 +338,7 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     modelSelectBtn: {
-        backgroundColor: 'rgba(0,0,0,0.3)',
+        backgroundColor: theme.colors.darkGrey,
         padding: 12,
         borderRadius: 10,
         borderWidth: 1,
@@ -360,7 +361,7 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     batchSection: {
-        backgroundColor: 'rgba(0,0,0,0.2)',
+        backgroundColor: theme.colors.surfaceOverlayLight,
         padding: 12,
         borderRadius: 10,
         marginBottom: 16,
@@ -401,7 +402,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 6,
         paddingHorizontal: 10,
-        backgroundColor: 'rgba(255,255,255,0.04)',
+        backgroundColor: theme.colors.glassSurfaceLow,
         borderRadius: 8,
     },
     categoryCheckLabel: {
@@ -461,7 +462,7 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
     },
     statusSection: {
-        backgroundColor: 'rgba(0,0,0,0.2)',
+        backgroundColor: theme.colors.surfaceOverlayLight,
         padding: 12,
         borderRadius: 10,
         marginBottom: 16,
@@ -522,7 +523,7 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
     },
     baseUrlInput: {
-        backgroundColor: 'rgba(0,0,0,0.3)',
+        backgroundColor: theme.colors.darkGrey,
         color: theme.colors.textPrimary,
         fontSize: 13,
         padding: 10,

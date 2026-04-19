@@ -372,7 +372,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
     },
     /** Main content layer — Start + Library + NavBar */
     mainContent: {

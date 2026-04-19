@@ -18,6 +18,7 @@ import { usePreferences } from '@/lib/hooks/useStorage';
 import type { SavedNote, SavedVlog, Person, AlignmentReflection } from '@/types';
 import { isAlignmentReflection } from '@/types';
 import { formatRelativeTime } from '@/lib/utils';
+import { getAlignmentScoreFeed } from '@/lib/alignmentScores';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
@@ -71,14 +72,7 @@ const getWordCount = (text: string) => (text || '').split(/\s+/).filter(Boolean)
 
 
 /** Get score details for check-in entries */
-const getScoreDetails = (score: number) => {
-    if (score <= 2) return { emoji: '😵', color: '#ff4d4d', label: 'Struggling' };
-    if (score <= 4) return { emoji: '😕', color: '#ff9933', label: 'Drifting' };
-    if (score === 5) return { emoji: '😐', color: '#ffcc00', label: 'Okay' };
-    if (score <= 7) return { emoji: '😊', color: '#a2ff66', label: 'Good' };
-    if (score <= 9) return { emoji: '😄', color: '#66ffcc', label: 'Great' };
-    return { emoji: '😎', color: '#00ccff', label: 'Aligned' };
-};
+const getScoreDetails = getAlignmentScoreFeed;
 
 /** Truncate text to N words and add ellipsis */
 const truncateWords = (text: string, maxWords: number): string => {

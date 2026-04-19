@@ -90,7 +90,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
         <AnimatedPressable
             style={[
                 commonStyles.noteCard, 
-                isSelected && { borderColor: theme.colors.primaryAction, backgroundColor: 'rgba(255,255,255,0.06)' },
+                isSelected && { borderColor: theme.colors.primaryAction, backgroundColor: theme.colors.glassSurface },
                 pressStyle
             ]}
             onPress={() => !isLocked && onPress(note)}
@@ -152,7 +152,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
             )}
 
             {personName && (
-                <Text style={{ ...commonStyles.noteCardPreview, fontFamily: activeFont, marginTop: 8, color: '#aaa', fontStyle: 'italic' }}>
+                <Text style={{ ...commonStyles.noteCardPreview, fontFamily: activeFont, marginTop: 8, color: theme.colors.textMuted, fontStyle: 'italic' }}>
                     Linked to: {personName}
                 </Text>
             )}

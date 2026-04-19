@@ -511,11 +511,13 @@ export function createPreferencesOps(
         const prevVal = refs.devMode.current;
         const newVal = !prevVal;
         setters.setDevMode(newVal);
+        refs.devMode.current = newVal;
         setPerfEnabled(newVal);
         try { await storage.setItem('DEV_MODE', JSON.stringify(newVal)); }
         catch (error) {
             console.error('[Storage] Failed to toggle dev mode:', error);
             setters.setDevMode(prevVal);
+            refs.devMode.current = prevVal;
         }
     };
 
@@ -523,10 +525,12 @@ export function createPreferencesOps(
         const prevVal = refs.debugLayout.current;
         const newVal = !prevVal;
         setters.setDebugLayout(newVal);
+        refs.debugLayout.current = newVal;
         try { await storage.setItem('DEBUG_LAYOUT', JSON.stringify(newVal)); }
         catch (error) {
             console.error('[Storage] Failed to toggle debug layout:', error);
             setters.setDebugLayout(prevVal);
+            refs.debugLayout.current = prevVal;
         }
     };
 

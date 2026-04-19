@@ -46,7 +46,7 @@ export interface VlogViewerModalProps {
     onDelete?: (id: string) => void;
 }
 
-const VlogPlayer: React.FC<{ uri: string, sharedPlayer?: VideoPlayer }> = ({ uri, sharedPlayer }) => {
+const VlogPlayer = React.memo<{ uri: string, sharedPlayer?: VideoPlayer }>(({ uri, sharedPlayer }) => {
     const internalPlayer = useVideoPlayer(uri, p => {
         if (!sharedPlayer) {
             p.loop = true;
@@ -65,7 +65,7 @@ const VlogPlayer: React.FC<{ uri: string, sharedPlayer?: VideoPlayer }> = ({ uri
     );
 };
 
-export const VlogViewerModal: React.FC<VlogViewerModalProps> = ({
+const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     visible,
     vlogs,
     initialIndex = 0,
@@ -367,13 +367,13 @@ export const VlogViewerModal: React.FC<VlogViewerModalProps> = ({
 const styles = StyleSheet.create({
     expandedBackdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backgroundColor: theme.colors.overlayMedium,
     },
     expandedCard: {
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: theme.colors.glassBorderMedium,
         borderWidth: 1,
         overflow: 'hidden',
-        shadowColor: '#000',
+        shadowColor: theme.colors.background,
         shadowOffset: { width: 0, height: 12 },
         shadowOpacity: 0.5,
         shadowRadius: 30,
@@ -381,14 +381,14 @@ const styles = StyleSheet.create({
     },
     expandedTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(18, 18, 18, 0.85)',
+        backgroundColor: theme.colors.surfaceOverlay,
     },
     expandedVideoContainer: {
         flex: 1,
         margin: 12,
         borderRadius: 16,
         overflow: 'hidden',
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
         zIndex: 2,
         position: 'relative',
     },
@@ -396,28 +396,28 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 10,
         left: 10,
-        backgroundColor: 'rgba(255,100,100,0.8)',
+        backgroundColor: theme.colors.dangerOverlayStrong,
         padding: 6,
         borderRadius: 4,
         zIndex: 10,
         alignItems: 'flex-start',
     },
     devWatermarkText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 10,
         fontWeight: 'bold',
     },
     devCompressBtn: {
         marginTop: 6,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: theme.colors.overlayVideoMuted,
         paddingVertical: 4,
         paddingHorizontal: 8,
         borderRadius: 4,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)',
+        borderColor: theme.colors.grey,
     },
     devCompressBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 10,
         fontWeight: 'bold',
     },
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
         zIndex: 2,
     },
     expandedDate: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: '800',
     },
@@ -454,11 +454,11 @@ const styles = StyleSheet.create({
     },
     swipeBtn: {
         padding: 6,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: theme.colors.glassSurfaceMedium,
         borderRadius: 14,
     },
     swipeCounter: {
-        color: 'rgba(255,255,255,0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 13,
         fontWeight: '600',
         minWidth: 30,
@@ -474,12 +474,12 @@ const styles = StyleSheet.create({
     deleteBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 77, 77, 0.08)',
+        backgroundColor: theme.colors.dangerLight,
         paddingVertical: 10,
         paddingHorizontal: 18,
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255, 77, 77, 0.15)',
+        borderColor: theme.colors.dangerFill,
         gap: 6,
     },
     deleteBtnText: {
@@ -490,23 +490,23 @@ const styles = StyleSheet.create({
 
     deleteModalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.8)',
+        backgroundColor: theme.colors.overlayMedium,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
     },
     deleteModalCard: {
-        backgroundColor: '#1E1E1E',
+        backgroundColor: theme.colors.surfaceRaised,
         borderRadius: 24,
         padding: 24,
         width: '100%',
         maxWidth: 340,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: theme.colors.glassBorder,
         alignItems: 'center'
     },
     deleteModalTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: 'bold',
         marginBottom: 8

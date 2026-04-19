@@ -35,7 +35,7 @@ interface StreakPopupProps {
  * - Week day indicator with filled/empty dots
  * - AMOLED dark overlay with white-on-black design language
  */
-export const StreakPopup: React.FC<StreakPopupProps> = ({ visible, streak, streakHistory = [], onClose }) => {
+export const StreakPopup = React.memo<StreakPopupProps>(({ visible, streak, streakHistory = [], onClose }) => {
     /* ── Animation refs ── */
     const overlayFade = useSharedValue(0);
     const iconScale = useSharedValue(0.3);

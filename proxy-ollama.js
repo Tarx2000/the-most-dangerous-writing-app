@@ -10,7 +10,7 @@ const path = require('path');
 
 const API_KEY = "9631dbb8ec4943f186795fe379c5042c.foMnJFLHMULaahNkvf68vsFv";
 const CLOUD_HOST = "ollama.com";
-const DEFAULT_MODEL = "glm-5.1:cloud";
+const DEFAULT_MODEL = "minimax-m2.7:cloud";
 const PORT = 11434;
 const ERROR_LOG = path.join(__dirname, 'bridge-error.log');
 

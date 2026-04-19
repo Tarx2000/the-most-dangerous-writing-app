@@ -13,7 +13,7 @@ interface Props {
     isActive?: boolean;
 }
 
-export const AnimatedSymmetricalRing = ({ size, strokeWidth, color, backgroundColor = 'transparent', delay = 0, isActive = true }: Props) => {
+export const AnimatedSymmetricalRing = React.memo(function AnimatedSymmetricalRing({ size, strokeWidth, color, backgroundColor = 'transparent', delay = 0, isActive = true }: Props) {
     const radius = (size - strokeWidth) / 2;
     const center = size / 2;
     // Length of a half circle

@@ -183,13 +183,13 @@ const styles = StyleSheet.create({
     major: {
         width: 2.5,
         height: MAJ_H,
-        backgroundColor: 'rgba(255,255,255,0.50)',
+        backgroundColor: theme.colors.lightGrey,
         borderRadius: 1,
     },
     minor: {
         width: 1.5,
         height: MIN_H,
-        backgroundColor: 'rgba(255,255,255,0.13)',
+        backgroundColor: theme.colors.glassBorderMedium,
         borderRadius: 1,
     },
 });

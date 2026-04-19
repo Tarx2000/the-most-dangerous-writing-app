@@ -129,7 +129,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                                             </Text>
                                         </View>
                                         <AnimatedScaleButton style={styles.premiumNoteCloseBtn} onPress={onClose}>
-                                            <MaterialCommunityIcons name="close" size={22} color="#FFF" />
+                                            <MaterialCommunityIcons name="close" size={22} color={theme.colors.textPrimary} />
                                         </AnimatedScaleButton>
                                     </View>
                                 </Animated.View>
@@ -156,7 +156,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                                         </View>
                                     ))}
                                     {note.aiModelUsed && (
-                                        <Text style={{ textAlign: 'right', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 8 }}>
+                                        <Text style={{ textAlign: 'right', fontSize: 10, color: theme.colors.lightGrey, marginTop: 8 }}>
                                             {note.aiModelUsed}
                                         </Text>
                                     )}
@@ -232,7 +232,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
 const styles = StyleSheet.create({
     cardPopupBackdrop: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: theme.colors.overlayVideoStrong,
         justifyContent: 'flex-end',
     },
     cardPopupContainer: {
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 4,
         borderRadius: 2,
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        backgroundColor: theme.colors.grey,
         alignSelf: 'center',
         marginTop: 12,
         marginBottom: 8,
@@ -261,16 +261,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingBottom: 16,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.06)',
+        borderBottomColor: theme.colors.glassSurface,
     },
     premiumNoteDate: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: '900',
         marginBottom: 4,
     },
     premiumNoteAiTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '900',
         marginBottom: 4,
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     premiumNoteCloseBtn: {
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: theme.colors.glassSurfaceMedium,
         width: 38,
         height: 38,
         borderRadius: 19,
@@ -296,18 +296,18 @@ const styles = StyleSheet.create({
         paddingTop: 16,
     },
     premiumNoteBody: {
-        color: 'rgba(255,255,255,0.9)',
+        color: theme.colors.textInput,
         fontSize: 17,
         lineHeight: 28,
         paddingBottom: 40,
     },
     aiSummaryCard: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: theme.colors.glassSurfaceMinimal,
         borderRadius: 16,
         padding: 16,
         marginBottom: 24,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)',
+        borderColor: theme.colors.glassSurface,
     },
     aiSummaryHeader: {
         flexDirection: 'row',
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     aiSummaryBulletText: {
-        color: 'rgba(255,255,255,0.85)',
+        color: theme.colors.textBody,
         fontSize: 15,
         lineHeight: 22,
         flex: 1,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         paddingHorizontal: 24,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.06)',
+        borderTopColor: theme.colors.glassSurface,
         backgroundColor: theme.colors.surfaceMedium,
     },
     premiumNoteDeleteBtn: {
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
         gap: 8,
         paddingVertical: 10,
         paddingHorizontal: 16,
-        backgroundColor: 'rgba(255, 42, 42, 0.1)',
+        backgroundColor: theme.colors.dangerTint,
         borderRadius: 12,
         borderWidth: 1,
         borderColor: theme.colors.dangerBorder,
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
         width: 34,
         height: 34,
         borderRadius: 17,
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: theme.colors.glassSurface,
         justifyContent: 'center',
         alignItems: 'center',
     },

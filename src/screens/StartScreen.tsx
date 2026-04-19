@@ -32,6 +32,7 @@ import { FlashList } from '@shopify/flash-list';
 import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
 import { SettingsModal } from '@/components/features/settings/SettingsModal';
 import { CirclePickerSheet } from '@/components/features/circles/CirclePickerSheet';
+import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
 import type { AiLogEntry } from '@/types';
 
 type StartScreenParams = undefined | { streakIncreased?: boolean; newStreak?: number };
@@ -129,14 +130,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
         });
     };
 
-    const getScoreDetails = (s: number) => {
-        if (s <= 2) return { icon: 'emoticon-dead-outline' as const, text: 'struggling', color: '#ff4d4d', glow: 'rgba(255, 77, 77, 0.3)' };
-        if (s <= 4) return { icon: 'emoticon-confused-outline' as const, text: 'drifting', color: '#ff9933', glow: 'rgba(255, 153, 51, 0.3)' };
-        if (s === 5) return { icon: 'emoticon-neutral-outline' as const, text: 'okay', color: '#ffcc00', glow: 'rgba(255, 204, 0, 0.3)' };
-        if (s <= 7) return { icon: 'emoticon-happy-outline' as const, text: 'good', color: '#a2ff66', glow: 'rgba(162, 255, 102, 0.3)' };
-        if (s <= 9) return { icon: 'emoticon-excited-outline' as const, text: 'great', color: '#66ffcc', glow: 'rgba(102, 255, 204, 0.3)' };
-        return { icon: 'emoticon-cool-outline' as const, text: 'perfectly aligned', color: '#00ccff', glow: 'rgba(0, 204, 255, 0.3)' };
-    };
+    const getScoreDetails = getAlignmentScoreDetails;
     
     const details = getScoreDetails(score);
 
@@ -161,7 +155,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
 
     return (
         <View style={commonStyles.startContainer}>
-            <StatusBar barStyle="light-content" backgroundColor="#000000" />
+            <StatusBar barStyle="light-content" backgroundColor={theme.colors.background} />
 
             {/* Dev Mode Toast Notification */}
             {devToast && (
@@ -175,7 +169,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             )}
 
             {/* Premium Header */}
-            <View style={[commonStyles.topBar, preferences.debugLayout && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.5)' }]}>
+            <View style={[commonStyles.topBar, preferences.debugLayout && { borderWidth: 1, borderColor: theme.colors.dangerBorder }]}>
                 <AnimatedScaleButton onPress={() => setShowCalendar(true)} style={commonStyles.iconButton}>
                     <Text style={{ color: theme.colors.danger, fontSize: 16 }}>🔥</Text>
                     <Text style={commonStyles.streakText}>{streak.currentStreak}</Text>
@@ -201,8 +195,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             }
                         }}
                     >
-                        <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={16} color={!security.isNotesUnlocked ? "rgba(255,100,100,0.8)" : theme.colors.textPrimary} style={{ marginRight: 4 }} />
-                        <Text style={[commonStyles.iconButtonText, !security.isNotesUnlocked && { color: 'rgba(255,100,100,0.8)' }]}>{!security.isNotesUnlocked ? '🔒' : 'Vision'}</Text>
+                        <MaterialCommunityIcons name={!security.isNotesUnlocked ? "star-off-outline" : "star-four-points"} size={16} color={!security.isNotesUnlocked ? theme.colors.dangerIconOverlay : theme.colors.textPrimary} style={{ marginRight: 4 }} />
+                        <Text style={[commonStyles.iconButtonText, !security.isNotesUnlocked && { color: theme.colors.dangerIconOverlay }]}>{!security.isNotesUnlocked ? '🔒' : 'Vision'}</Text>
                     </AnimatedScaleButton>
                     <View style={{ position: 'relative' }}>
                         <AnimatedScaleButton
@@ -239,7 +233,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             width: 8,
                             height: 8,
                             borderRadius: 4,
-                            backgroundColor: queueState.serverOnline === null ? '#888' : queueState.serverOnline ? theme.colors.green : theme.colors.danger,
+                            backgroundColor: queueState.serverOnline === null ? theme.colors.textMuted : queueState.serverOnline ? theme.colors.green : theme.colors.danger,
                             borderWidth: 1,
                             borderColor: theme.colors.background,
                         }} />
@@ -350,7 +344,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                     </Text>
                 </AnimatedScaleButton>
                 <AnimatedScaleButton style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
-                    <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
+                    <Text style={{ color: theme.colors.grey, fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
                 </AnimatedScaleButton>
             </View>
 
@@ -368,7 +362,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         data={VERSION_HISTORY}
                         keyExtractor={(v) => v.version}
                         renderItem={({ item: v }) => (
-                            <View style={[commonStyles.cardsRow, { marginTop: 20 }, preferences.debugLayout && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.5)' }]}>
+                            <View style={[commonStyles.cardsRow, { marginTop: 20 }, preferences.debugLayout && { borderWidth: 1, borderColor: theme.colors.dangerBorder }]}>
                                 <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>
                                 {v.changes.map((c, j) => <Text key={j} style={commonStyles.versionHistoryItem}>• {c}</Text>)}
                             </View>
@@ -516,21 +510,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: theme.colors.glassBackground,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
+        borderColor: theme.colors.glassBorder
     },
     diffPillActive: {
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        borderColor: 'rgba(255,255,255,0.4)'
+        backgroundColor: theme.colors.glassHighlight,
+        borderColor: theme.colors.textDim
     },
     diffPillText: {
-        color: 'rgba(255,255,255,0.5)',
+        color: theme.colors.lightGrey,
         fontSize: 13,
         fontWeight: '600'
     },
     diffPillTextActive: {
-        color: '#FFF'
+        color: theme.colors.textPrimary
     },
     /** Container for the standalone Start Writing button */
     startBtnContainer: {
@@ -538,42 +532,42 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     massiveStartBtn: {
-        backgroundColor: '#FFF',
+        backgroundColor: theme.colors.textPrimary,
         paddingHorizontal: 40,
         paddingVertical: 18,
         borderRadius: 30,
-        shadowColor: '#FFF',
+        shadowColor: theme.colors.textPrimary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 15,
         elevation: 10
     },
     massiveStartBtnText: {
-        color: '#000',
+        color: theme.colors.background,
         fontSize: 18,
         fontWeight: '900',
         letterSpacing: 1
     },
     // Inline Checkin specific styles
     glowRing: { width: 110, height: 110, borderRadius: 55, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 30, elevation: 15 },
-    iconCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)' },
+    iconCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: theme.colors.glassBorder },
     scoreText: { fontSize: 16, fontWeight: '900', marginTop: 15, letterSpacing: 2, fontFamily: theme.typography.fontFamily },
 
     // Premium UI Overrides for Select Person
     premiumPersonModal: { paddingTop: Platform.OS === 'ios' ? 20 : 0 },
     premiumPersonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, paddingTop: 20, paddingBottom: 25 },
-    premiumPersonTitle: { color: '#FFF', fontSize: 24, fontWeight: '900', letterSpacing: 0.5 },
-    premiumPersonCloseBtn: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 8, borderRadius: 20 },
+    premiumPersonTitle: { color: theme.colors.textPrimary, fontSize: 24, fontWeight: '900', letterSpacing: 0.5 },
+    premiumPersonCloseBtn: { backgroundColor: theme.colors.glassBorder, padding: 8, borderRadius: 20 },
     premiumSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.glassSurface, borderRadius: 16, paddingHorizontal: 15, height: 55, borderWidth: 1, borderColor: theme.colors.glassBorder },
-    premiumSearchInput: { flex: 1, color: '#FFF', fontSize: 16, paddingVertical: 0 },
-    premiumPersonItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-    premiumPersonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    premiumSearchInput: { flex: 1, color: theme.colors.textPrimary, fontSize: 16, paddingVertical: 0 },
+    premiumPersonItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.colors.glassBackground },
+    premiumPersonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.glassBorder, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
     premiumPersonAvatarText: { color: theme.colors.primaryAction, fontSize: 18, fontWeight: '800' },
-    premiumPersonName: { color: '#FFF', fontSize: 17, fontWeight: '600' },
+    premiumPersonName: { color: theme.colors.textPrimary, fontSize: 17, fontWeight: '600' },
     premiumCreateBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30 },
-    premiumCreateBtnText: { color: '#000', fontSize: 16, fontWeight: 'bold', marginLeft: 6 },
-    premiumFloatCreateBtn: { position: 'absolute', bottom: Platform.OS === 'ios' ? 40 : 20, right: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingHorizontal: 20, paddingVertical: 14, borderRadius: 30, shadowColor: '#FFF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
-    premiumFloatCreateBtnText: { color: '#000', fontSize: 15, fontWeight: 'bold', marginLeft: 6 }
+    premiumCreateBtnText: { color: theme.colors.background, fontSize: 16, fontWeight: 'bold', marginLeft: 6 },
+    premiumFloatCreateBtn: { position: 'absolute', bottom: Platform.OS === 'ios' ? 40 : 20, right: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryAction, paddingHorizontal: 20, paddingVertical: 14, borderRadius: 30, shadowColor: theme.colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
+    premiumFloatCreateBtnText: { color: theme.colors.background, fontSize: 15, fontWeight: 'bold', marginLeft: 6 }
 });
 
 /**

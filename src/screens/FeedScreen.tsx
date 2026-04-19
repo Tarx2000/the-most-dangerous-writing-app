@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 4,
         borderRadius: 2,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        backgroundColor: theme.colors.grey,
         alignSelf: 'center',
         marginBottom: 16,
     },

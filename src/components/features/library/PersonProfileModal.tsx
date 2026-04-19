@@ -27,7 +27,7 @@ const MAX_RECENT_NOTES = 3;
  * CONFIGURABLE: Gradient colors for the avatar ring.
  * Creates a premium glowing border effect around the initials.
  */
-const AVATAR_GRADIENT = ['#FF2A2A', '#FF6B35', '#FF2A2A'] as const;
+const AVATAR_GRADIENT = [theme.colors.primaryAction, theme.colors.orange, theme.colors.primaryAction] as const;
 
 /**
  * PersonProfileModal — Premium full-screen profile sheet for a person in Circles.
@@ -221,7 +221,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
                 const success = await onUnlock();
                 if (success) Vibration.vibrate(50);
             }}>
-                <MaterialCommunityIcons name="fingerprint" size={24} color="#FFF" style={{ marginRight: 10 }} />
+                <MaterialCommunityIcons name="fingerprint" size={24} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
                 <Text style={styles.unlockBtnText}>Unlock Profile</Text>
             </AnimatedScaleButton>
         </View>
@@ -302,7 +302,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
                                 onPress={handleAddCustomRelationship}
                                 disabled={!customRelInputRef.current.trim()}
                             >
-                                <MaterialCommunityIcons name="plus" size={20} color="#000" />
+                                <MaterialCommunityIcons name="plus" size={20} color={theme.colors.background} />
                             </AnimatedScaleButton>
                         </View>
                     </View>
@@ -341,7 +341,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
                         style={styles.editSaveBtn}
                         onPress={handleSave}
                     >
-                        <MaterialCommunityIcons name="check" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                        <MaterialCommunityIcons name="check" size={20} color={theme.colors.textPrimary} style={{ marginRight: 8 }} />
                         <Text style={styles.editSaveBtnText}>Save Changes</Text>
                     </AnimatedScaleButton>
                     <AnimatedScaleButton
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 30,
     },
     lockedName: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 28,
         fontWeight: '900',
         marginTop: 20,
@@ -514,7 +514,7 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     unlockBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 17,
         fontWeight: '800',
     },
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
     avatarText: {
         fontSize: 36,
         fontWeight: '900',
-        color: '#FFF',
+        color: theme.colors.textPrimary,
     },
 
     /* ── Profile view ──────────────────────────────────────────────── */
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
         paddingTop: 5,
     },
     profileName: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 28,
         fontWeight: '900',
         marginTop: 16,
@@ -600,7 +600,7 @@ const styles = StyleSheet.create({
         borderColor: theme.colors.glassBorder,
     },
     statValue: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 18,
         fontWeight: '800',
         marginBottom: 4,
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     infoText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 15,
         fontWeight: '500',
     },
@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     bioText: {
-        color: 'rgba(255,255,255,0.85)',
+        color: theme.colors.textBody,
         fontSize: 15,
         lineHeight: 24,
     },
@@ -702,13 +702,13 @@ const styles = StyleSheet.create({
         marginTop: 18,
     },
     editInput: {
-        backgroundColor: 'rgba(255,255,255,0.06)',
-        color: '#FFF',
+        backgroundColor: theme.colors.glassSurface,
+        color: theme.colors.textPrimary,
         fontSize: 16,
         padding: 16,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: theme.colors.glassBorder,
     },
     editTextArea: {
         minHeight: 120,
@@ -724,24 +724,24 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: theme.colors.glassSurface,
         padding: 16,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: theme.colors.glassBorder,
     },
     editDropdownText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
     },
 
     /* ── Relationship picker ───────────────────────────────────────── */
     relPickerContainer: {
-        backgroundColor: 'rgba(255,255,255,0.04)',
+        backgroundColor: theme.colors.glassSurfaceLow,
         borderRadius: 12,
         marginTop: 8,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: theme.colors.glassSurfaceMedium,
         overflow: 'hidden',
     },
     relOption: {
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         paddingHorizontal: 16,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
+        borderBottomColor: theme.colors.glassBackground,
     },
     relOptionActive: {
         backgroundColor: theme.colors.dangerLight,
@@ -773,13 +773,13 @@ const styles = StyleSheet.create({
     },
     addCustomRelInput: {
         flex: 1,
-        backgroundColor: 'rgba(255,255,255,0.06)',
-        color: '#FFF',
+        backgroundColor: theme.colors.glassSurface,
+        color: theme.colors.textPrimary,
         fontSize: 14,
         padding: 12,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: theme.colors.glassSurfaceMedium,
     },
     addCustomRelBtn: {
         backgroundColor: theme.colors.primaryAction,
@@ -809,7 +809,7 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     editSaveBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontWeight: '800',
         fontSize: 16,
     },
@@ -838,8 +838,8 @@ const styles = StyleSheet.create({
         marginTop: 20,
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255, 60, 60, 0.2)',
-        backgroundColor: 'rgba(255, 60, 60, 0.06)',
+        borderColor: theme.colors.dangerBorder,
+        backgroundColor: theme.colors.dangerSubtle,
     },
     deleteDangerBtnText: {
         color: theme.colors.danger,

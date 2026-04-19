@@ -82,7 +82,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
 
     const [isPlaying, setIsPlaying] = useState(autoPlay);
     const [isMuted, setIsMuted] = useState(true);
-    const accentColor = '#FF6B35'; // Orange for video clips
+    const accentColor = theme.colors.orange; // Orange for video clips
     const { devMode } = usePreferences();
 
     const flashOpacity = useSharedValue(0);
@@ -396,13 +396,13 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 8,
         left: 8,
-        backgroundColor: 'rgba(255,100,100,0.8)',
+        backgroundColor: theme.colors.dangerOverlayStrong,
         padding: 4,
         borderRadius: 4,
         zIndex: 10,
     },
     devWatermarkText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 10,
         fontWeight: 'bold',
     },
