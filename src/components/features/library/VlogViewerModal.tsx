@@ -46,7 +46,12 @@ export interface VlogViewerModalProps {
     onDelete?: (id: string) => void;
 }
 
-const VlogPlayer = React.memo<{ uri: string, sharedPlayer?: VideoPlayer }>(({ uri, sharedPlayer }) => {
+interface VlogPlayerProps {
+    uri: string;
+    sharedPlayer?: VideoPlayer;
+}
+
+const VlogPlayer = React.memo(({ uri, sharedPlayer }: VlogPlayerProps) => {
     const internalPlayer = useVideoPlayer(uri, p => {
         if (!sharedPlayer) {
             p.loop = true;
@@ -63,7 +68,7 @@ const VlogPlayer = React.memo<{ uri: string, sharedPlayer?: VideoPlayer }>(({ ur
             nativeControls
         />
     );
-};
+});
 
 const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     visible,

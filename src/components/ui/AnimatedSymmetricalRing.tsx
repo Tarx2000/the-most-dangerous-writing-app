@@ -79,4 +79,4 @@ export const AnimatedSymmetricalRing = React.memo(function AnimatedSymmetricalRi
             />
         </Svg>
     );
-};
+});
