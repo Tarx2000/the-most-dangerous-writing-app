@@ -369,6 +369,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     );
 };
 
+export const VlogViewerModal = React.memo(VlogViewerModalInner);
+
 const styles = StyleSheet.create({
     expandedBackdrop: {
         ...StyleSheet.absoluteFillObject,
