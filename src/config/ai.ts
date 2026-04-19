@@ -109,7 +109,7 @@ Reply with ONLY valid JSON, no markdown code fences, no extra text.`,
      * Avoids repeating the person's name (entry is already filed under them).
      * {{PERSON_NAME}} and {{RELATIONSHIP_STATUS}} are replaced at runtime.
      */
-    relationshipTitle: `You are a short label generator for a relationship journal. Read the following entry about {{PERSON_NAME}} ({{RELATIONSHIP_STATUS}}) and generate a very short, event-focused label of 2 to 5 words that captures what happened or what the key topic was. Do NOT include the person's name in the label — the reader already knows who the entry is about. Do NOT capitalize like a book title. Use plain lowercase. Do not use punctuation or quotes. Always respond in the same language the entry was written in. Reply with ONLY the label, nothing else.`,
+    relationshipTitle: `You are a short label generator for a relationship journal. Read the following entry about {{PERSON_NAME}} ({{RELATIONSHIP_STATUS}}) and generate a very short, event-focused label of 2 to 5 words that captures what happened or what the key topic was. Do NOT include the person's name in the label — the reader already knows who the entry is about. Capitalize the first letter normally. Do not use punctuation or quotes. Always respond in the same language the entry was written in. Reply with ONLY the label, nothing else.`,
 
     /**
      * RELATIONSHIP SUMMARY — Warm inner-voice summary about another person.

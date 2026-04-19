@@ -56,6 +56,8 @@ describe('AiQueueManager', () => {
     jest.clearAllMocks();
     // Reset singleton state fully
     aiQueue.shutdown();
+    // Re-create the processNote mock so each test gets a fresh hanging promise
+    (processNote as jest.Mock).mockImplementation(() => new Promise(r => { processNoteResolve = r; }));
   });
 
   const initQueue = () => aiQueue.initialize(mockGetAiConfig, mockGetNoteById, mockUpdateNote, mockGetAllNotes);

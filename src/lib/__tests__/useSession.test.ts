@@ -1,4 +1,5 @@
 import { renderHook, act } from '@testing-library/react-native';
+import { Vibration } from 'react-native';
 import { useSession } from '@/lib/hooks/useSession';
 
 // Mock CONFIG
@@ -84,22 +85,15 @@ describe('useSession', () => {
     it('should trigger haptic at caution threshold (70%)', () => {
         const { result } = renderHook(() => useSession(0, 2)); // HARD (5s limit)
         act(() => { result.current.startSession(); });
-        // 70% of 5000ms = 3500ms → 35 ticks at 100ms
+        (Vibration.vibrate as jest.Mock).mockClear();
+        // 70% of 5000ms = 3500ms → cross the caution threshold
         act(() => { jest.advanceTimersByTime(3600); });
-        // Haptic feedback should have been triggered (tested via the mock)
-        // This verifies the haptic threshold logic works
+        // Caution haptic should have fired (single short pulse at 70%)
+        expect(Vibration.vibrate).toHaveBeenCalled();
     });
 
     it('should allow skipping timer in dev mode', () => {
         const { result } = renderHook(() => useSession(0, 1));
-        act(() => { result.current.startSession(); });
-        expect(result.current.sessionTimeRemaining).toBe(180);
-        act(() => { result.current.skipTimer(); });
-        expect(result.current.sessionTimeRemaining).toBe(0);
-    });
-
-    it('should resume writing after death', () => {
-        const { result } = renderHook(() => useSession(0, 2));
         act(() => { result.current.startSession(); });
         expect(result.current.sessionTimeRemaining).toBe(180);
         act(() => { result.current.skipTimer(); });
@@ -118,13 +112,12 @@ describe('useSession', () => {
     });
 
     it('should clear timers on unmount', () => {
-        const { result } = renderHook(() => useSession(0, 1));
+        const { result, unmount } = renderHook(() => useSession(0, 1));
         act(() => { result.current.startSession(); });
-        const { unmount } = renderHook(() => useSession(0, 1));
+        expect(result.current.sessionTimeRemaining).toBe(180);
         unmount();
-        // No more timer ticks should fire after unmount
-        const remainingBefore = result.current.sessionTimeRemaining;
         act(() => { jest.advanceTimersByTime(2000); });
-        // Timer should not have advanced (it was cleaned up)
+        // Timer should not have advanced after unmount
+        expect(result.current.sessionTimeRemaining).toBe(180);
     });
 });
