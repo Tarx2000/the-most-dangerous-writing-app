@@ -258,7 +258,7 @@ describe('Hardcoded color detection', () => {
         // Progressive enforcement: threshold starts at current count and decreases
         // as hardcoded colors are replaced with theme tokens.
         // GOAL: Reduce this to 0 over time.
-        const MAX_ALLOWED = 220;
+        const MAX_ALLOWED = 80;
         if (violations.length > MAX_ALLOWED) {
             console.log(`\n❌ Found ${violations.length} hardcoded color violations (max allowed: ${MAX_ALLOWED}):\n`);
             violations.slice(0, 20).forEach(v => console.log(`  ${v}`));
