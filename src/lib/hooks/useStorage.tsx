@@ -184,7 +184,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [bookmarkedNoteIds, setBookmarkedNoteIds] = useState<string[]>([]);
     const [feedComments, setFeedComments] = useState<Record<string, string>>({});
     const [autoPlayFeedVideos, setAutoPlayFeedVideos] = useState<boolean>(true);
-    const [aiApiKey, setAiApiKey] = useState<string>(DEFAULT_AI_PROMPTS.title ? '' : '');
+    const [aiApiKey, setAiApiKey] = useState<string>('');
     const [aiBaseUrl, setAiBaseUrl] = useState<string>('');
     const [aiModel, setAiModel] = useState<string>('');
     const [aiGrammarModel, setAiGrammarModel] = useState<string>('');

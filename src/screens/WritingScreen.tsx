@@ -28,13 +28,13 @@ import { generateId, formatSessionDate } from '@/lib/utils';
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 
 /** Derive the status label and style based on session state */
-function getStatusDisplay(hasLost: boolean, isQuickNote: boolean, timeRemaining: number) {
+function getStatusDisplay(hasLost: boolean, isQuickNote: boolean | undefined, timeRemaining: number) {
     if (hasLost) return { text: 'YOU DIED', style: commonStyles.lossText };
     if (isQuickNote) return { text: 'QUICK NOTE', style: styles.quickNoteLabel };
     if (timeRemaining === 0) return { text: 'YOU SURVIVED', style: styles.winText };
     const mins = Math.floor(timeRemaining / 60);
     const secs = (timeRemaining % 60).toString().padStart(2, '0');
-    return { text: `${mins}:${secs}`, style: commonStyles.timerText };
+    return { text: `${mins}:${secs}`, style: styles.timerText };
 }
 
 export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -132,7 +132,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     hasLost={hasLost}
                     isContinuingAfterLoss={isContinuingAfterLoss}
                     sessionTimeRemaining={sessionTimeRemaining}
-                    isDisabled={isQuickNote}
+                    isDisabled={isQuickNote ?? false}
                 />
 
                 <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
@@ -238,6 +238,11 @@ const styles = StyleSheet.create({
     },
     winText: {
         color: theme.colors.success,
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    timerText: {
+        color: theme.colors.textDim,
         fontSize: 18,
         fontWeight: 'bold',
     },

@@ -14,7 +14,7 @@ export function useHomeModals() {
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [viewVlogModal, setViewVlogModal] = useState<SavedVlog | null>(null);
     const [vlogSourceRect, setVlogSourceRect] = useState<LayoutRect | null>(null);
-    const [vlogPlayerInst, setVlogPlayerInst] = useState<VideoPlayer | null>(null);
+    const [vlogPlayerInst, setVlogPlayerInst] = useState<VideoPlayer | undefined>(undefined);
 
     const handleOpenNoteModal = useCallback((note: SavedNote) => {
         setViewNoteModal(note);
@@ -31,7 +31,7 @@ export function useHomeModals() {
 
     const handleOpenVlogModal = useCallback((vlog: SavedVlog, rect?: LayoutRect, player?: VideoPlayer) => {
         setVlogSourceRect(rect || null);
-        setVlogPlayerInst(player || null);
+        setVlogPlayerInst(player || undefined);
         setViewVlogModal(vlog);
     }, []);
 

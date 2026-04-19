@@ -16,7 +16,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { storage } from '@/lib/storage';
 import { CONFIG } from '@/config';
 import { generateId, toLocalDateString } from '@/lib/utils';
-import { cleanupOrphanedVlogs } from '@/lib/storageManager';
+import { cleanupOrphanedVlogs as cleanupOrphanFiles } from '@/lib/storageManager';
 import { DEFAULT_AI_PROMPTS, AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
 import { processPendingCompressions } from '@/lib/videoCompressor';
@@ -331,7 +331,7 @@ export function createVlogOps(
 
     const cleanupOrphanedVlogs = async (): Promise<number> => {
         const knownPaths = new Set(vlogsRef.current.map(v => v.filePath));
-        return cleanupOrphanedVlogs(knownPaths);
+        return cleanupOrphanFiles(knownPaths);
     };
 
     const getStorageSummary = () => ({

@@ -285,16 +285,28 @@ async function ollamaChat(
  * @param config - Optional config overrides (apiKey, model, prompts)
  * @returns A headline string (max 8 words)
  */
+/**
+ * Context for relationship journal entries.
+ * Passed when processing Circle (person) entries to inject person-specific data into prompts.
+ */
+export interface RelationshipContext {
+    /** The person's name (e.g. "Sarah") */
+    personName: string;
+    /** The relationship label (e.g. "Friend", "Family") */
+    relationshipStatus: string;
+}
+
 export async function generateTitle(
     text: string,
     config: AiConfig = {},
     onChunk?: (text: string) => void,
-    relationshipStatus?: string
+    relationship?: RelationshipContext
 ): Promise<string> {
     let prompt = config.prompts?.title || DEFAULT_AI_PROMPTS.title;
-    if (relationshipStatus !== undefined) {
+    if (relationship) {
         prompt = (config.prompts?.relationshipTitle || DEFAULT_AI_PROMPTS.relationshipTitle)
-            .replace('{{RELATIONSHIP_STATUS}}', relationshipStatus || 'an unknown person');
+            .replace(/\{\{PERSON_NAME\}\}/g, relationship.personName)
+            .replace(/\{\{RELATIONSHIP_STATUS\}\}/g, relationship.relationshipStatus);
     }
     // Removed num_predict to prevent empty outputs
     const title = await ollamaChat(prompt, text, config, {}, onChunk);
@@ -313,12 +325,13 @@ export async function generateSummary(
     text: string,
     config: AiConfig = {},
     onChunk?: (text: string) => void,
-    relationshipStatus?: string
+    relationship?: RelationshipContext
 ): Promise<string[]> {
     let prompt = config.prompts?.summary || DEFAULT_AI_PROMPTS.summary;
-    if (relationshipStatus !== undefined) {
+    if (relationship) {
         prompt = (config.prompts?.relationshipSummary || DEFAULT_AI_PROMPTS.relationshipSummary)
-            .replace('{{RELATIONSHIP_STATUS}}', relationshipStatus || 'an unknown person');
+            .replace(/\{\{PERSON_NAME\}\}/g, relationship.personName)
+            .replace(/\{\{RELATIONSHIP_STATUS\}\}/g, relationship.relationshipStatus);
     }
     const raw = await ollamaChat(prompt, text, config, {}, onChunk);
 
@@ -440,11 +453,11 @@ export interface AiProcessResult {
 export async function processNote(
     text: string,
     config: AiConfig = {},
-    relationshipStatus?: string
+    relationship?: RelationshipContext
 ): Promise<AiProcessResult> {
     try {
-        const title = await generateTitle(text, config, undefined, relationshipStatus);
-        const summary = await generateSummary(text, config, undefined, relationshipStatus);
+        const title = await generateTitle(text, config, undefined, relationship);
+        const summary = await generateSummary(text, config, undefined, relationship);
         return { title, summary, failed: false };
     } catch (error: any) {
         console.warn('[AI] processNote failed — returning empty result:', error.message);

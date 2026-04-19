@@ -1,10 +1,3 @@
-/**
- * storageOps tests — Unit tests for extracted CRUD operations.
- *
- * Tests the pure logic functions (createNotesOps, createPersonsOps, etc.)
- * using mock refs and setters, verifying optimistic updates and rollback.
- */
-
 import { createNotesOps, createPersonsOps, createFeedOps, safeParse } from '../storageOps';
 import { storage } from '../storage';
 
@@ -41,11 +34,7 @@ jest.mock('expo-file-system/legacy', () => ({
     deleteAsync: jest.fn(),
 }));
 
-// Mock Vibration
-jest.mock('react-native', () => ({
-    Vibration: { vibrate: jest.fn() },
-    Alert: { alert: jest.fn() },
-}));
+
 
 describe('safeParse', () => {
     it('should return fallback for null input', () => {
@@ -213,7 +202,7 @@ describe('createPersonsOps', () => {
 
     describe('deletePerson', () => {
         it('should remove person and unlink their notes', async () => {
-            const personId = await ops.addPerson('Carol');
+            const personId = (await ops.addPerson('Carol')) as string;
             notesRef.current = [{ id: 'n1', personId, text: 'Test', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true }];
             setNotes.mockClear();
 

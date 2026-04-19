@@ -23,7 +23,7 @@
 
 import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'react-native';
 import { storage } from '@/lib/storage';
-import { processNote, pingServer, type AiConfig } from '@/lib/aiService';
+import { processNote, pingServer, type AiConfig, type RelationshipContext } from '@/lib/aiService';
 import { logAi } from '@/lib/aiLogger';
 import {
     AI_STORAGE_KEYS,
@@ -454,13 +454,16 @@ class AiQueueManager {
         });
 
         try {
-            let relationshipStatus: string | undefined = undefined;
+            let relationship: RelationshipContext | undefined = undefined;
             if (nextJob.category === 'circle' && note.personId) {
                 const person = this.getPersonById(note.personId);
-                relationshipStatus = person?.relationship || 'an unknown person';
+                relationship = {
+                    personName: person?.name || 'this person',
+                    relationshipStatus: person?.relationship || 'an unknown person',
+                };
             }
 
-            const result = await processNote(note.text, config, relationshipStatus);
+            const result = await processNote(note.text, config, relationship);
 
             // Save results to the note
             await this.updateNote(nextJob.noteId, {
