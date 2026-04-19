@@ -9,9 +9,9 @@ import {
     Vibration,
     Platform,
     StatusBar,
-    Dimensions,
     ActivityIndicator,
     DeviceEventEmitter,
+    useWindowDimensions,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -38,9 +38,6 @@ import { RootStackParamList } from '@/types/navigation.types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
-
-/** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
-const { height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 type Props = {
     navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -379,9 +376,9 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                                     <View style={styles.reflectionHeader}>
                                                         <View>
                                                             <Text style={styles.reflectionDate}>{note.dateStr}</Text>
-                                                            <Text style={styles.reflectionScore}>Score: {(note as any).alignmentScore}/10</Text>
+                                                            <Text style={styles.reflectionScore}>Score: {isAlignmentRef(note) ? note.alignmentScore : 0}/10</Text>
                                                         </View>
-                                                        <MaterialCommunityIcons name={getScoreDetails((note as any).alignmentScore).icon} size={36} color={getScoreDetails((note as any).alignmentScore).color} />
+                                                        <MaterialCommunityIcons name={getScoreDetails(isAlignmentRef(note) ? note.alignmentScore : 0).icon} size={36} color={getScoreDetails(isAlignmentRef(note) ? note.alignmentScore : 0).color} />
                                                     </View>
                                                     <Text style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={2}>
                                                         {!security.isNotesUnlocked ? '•••• •••••••• •••••' : note.text}
@@ -696,55 +693,6 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 16,
         fontWeight: '800',
-    },
-
-    /* ── Card Popup (Liquid Glass Note Viewer) ────────────────────── */
-    cardPopupBackdrop: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 16,
-    },
-    cardPopupContainer: {
-        width: '100%',
-        height: DEFAULT_HEIGHT * 0.88,
-        borderRadius: 28,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.5,
-        shadowRadius: 30,
-        elevation: 25,
-    },
-    cardPopupTint: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: theme.colors.surfaceMedium,
-    },
-    cardPopupHandle: {
-        width: 40,
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        alignSelf: 'center',
-        marginTop: 12,
-        marginBottom: 8,
-    },
-    cardPopupHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.06)',
-    },
-    cardPopupScroll: {
-        paddingHorizontal: 24,
-        paddingTop: 16,
-        flex: 1,
     },
 
     /* ── Note Content Styles ──────────────────────────────────────── */

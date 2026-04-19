@@ -124,15 +124,24 @@ async function ollamaChatSingle(
 
         let processedLength = 0;
         let rawBuffer = '';
-
         let fullResponse = '';
         let streamedResponse = '';
         let wordBuffer = '';
+        let settled = false;
+
+        /** Guard against double-resolve/reject — clears timeout on first settlement */
+        const settle = (fn: 'resolve' | 'reject', value: string | Error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            if (fn === 'resolve') resolve(value as string);
+            else reject(value as Error);
+        };
 
         xhr.onreadystatechange = () => {
             if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
                 if (xhr.status !== 200) {
-                    reject(new Error(`Ollama API error ${xhr.status}`));
+                    settle('reject', new Error(`Ollama API error ${xhr.status}`));
                 }
             } else if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) {
                 if (!xhr.responseText) return;
@@ -148,7 +157,7 @@ async function ollamaChatSingle(
                         try {
                             const parsed = JSON.parse(line);
                             if (parsed.error) {
-                                reject(new Error(`Ollama Error: ${parsed.error}`));
+                                settle('reject', new Error(`Ollama Error: ${parsed.error}`));
                                 return;
                             }
                             const chunkStr = parsed.message?.content || '';
@@ -178,31 +187,20 @@ async function ollamaChatSingle(
                         wordBuffer = '';
                         onChunk(streamedResponse);
                     }
-                    resolve(fullResponse.trim());
+                    settle('resolve', fullResponse.trim());
                 }
             }
         };
         xhr.onerror = () => {
             console.warn('[AI] XHR Error occurred. ReadyState:', xhr.readyState, 'Status:', xhr.status);
-            reject(new Error(`Network request failed (connection dropped or unreachable)`));
+            settle('reject', new Error(`Network request failed (connection dropped or unreachable)`));
         };
 
         // Abort after timeout to prevent hanging requests
         const timeoutId = setTimeout(() => {
             xhr.abort();
-            reject(new Error(`AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s`));
+            settle('reject', new Error(`AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s`));
         }, AI_REQUEST_TIMEOUT_MS);
-
-        // Clear timeout on completion — wraps the existing handler
-        const originalOnReady = xhr.onreadystatechange;
-        xhr.onreadystatechange = function (this: XMLHttpRequest, ev: Event) {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
-                clearTimeout(timeoutId);
-            }
-            if (typeof originalOnReady === 'function') {
-                originalOnReady.call(this, ev);
-            }
-        };
 
         xhr.send(JSON.stringify({
             model,
@@ -290,9 +288,14 @@ async function ollamaChat(
 export async function generateTitle(
     text: string,
     config: AiConfig = {},
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    relationshipStatus?: string
 ): Promise<string> {
-    const prompt = config.prompts?.title || DEFAULT_AI_PROMPTS.title;
+    let prompt = config.prompts?.title || DEFAULT_AI_PROMPTS.title;
+    if (relationshipStatus !== undefined) {
+        prompt = (config.prompts?.relationshipTitle || DEFAULT_AI_PROMPTS.relationshipTitle)
+            .replace('{{RELATIONSHIP_STATUS}}', relationshipStatus || 'an unknown person');
+    }
     // Removed num_predict to prevent empty outputs
     const title = await ollamaChat(prompt, text, config, {}, onChunk);
     // Clean up: remove surrounding quotes if the model adds them
@@ -309,9 +312,14 @@ export async function generateTitle(
 export async function generateSummary(
     text: string,
     config: AiConfig = {},
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    relationshipStatus?: string
 ): Promise<string[]> {
-    const prompt = config.prompts?.summary || DEFAULT_AI_PROMPTS.summary;
+    let prompt = config.prompts?.summary || DEFAULT_AI_PROMPTS.summary;
+    if (relationshipStatus !== undefined) {
+        prompt = (config.prompts?.relationshipSummary || DEFAULT_AI_PROMPTS.relationshipSummary)
+            .replace('{{RELATIONSHIP_STATUS}}', relationshipStatus || 'an unknown person');
+    }
     const raw = await ollamaChat(prompt, text, config, {}, onChunk);
 
     // Parse bullet points: split by newline, strip "• " or "- " prefixes
@@ -421,16 +429,25 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
  * @param config - Optional config overrides
  * @returns Object with title string and summary bullet array
  */
+/** Result of AI processing a note — distinguishes success from failure */
+export interface AiProcessResult {
+    title: string;
+    summary: string[];
+    /** True when the AI call failed or returned empty results */
+    failed: boolean;
+}
+
 export async function processNote(
     text: string,
     config: AiConfig = {},
-): Promise<{ title: string; summary: string[] }> {
+    relationshipStatus?: string
+): Promise<AiProcessResult> {
     try {
-        const title = await generateTitle(text, config);
-        const summary = await generateSummary(text, config);
-        return { title, summary };
+        const title = await generateTitle(text, config, undefined, relationshipStatus);
+        const summary = await generateSummary(text, config, undefined, relationshipStatus);
+        return { title, summary, failed: false };
     } catch (error: any) {
         console.warn('[AI] processNote failed — returning empty result:', error.message);
-        return { title: '', summary: [] };
+        return { title: '', summary: [], failed: true };
     }
 }

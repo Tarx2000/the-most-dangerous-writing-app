@@ -32,3 +32,37 @@ export function formatRelativeTime(timestamp: number): string {
     if (weeks < 4) return `${weeks}w ago`;
     return new Date(timestamp).toLocaleDateString('default', { month: 'short', day: 'numeric' });
 }
+
+/**
+ * Get a local-date string (YYYY-MM-DD) in the user's timezone.
+ *
+ * Unlike `toISOString().slice(0, 10)` which returns UTC dates,
+ * this uses the local timezone so that a user writing at 11pm EST
+ * gets credit for today, not tomorrow in UTC.
+ */
+export function toLocalDateString(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Format a timestamp into a locale-aware display string for session dates.
+ *
+ * Produces strings like "4/19/2026, 11:30 PM" consistently across locales.
+ * Avoids the locale-inconsistency of `toLocaleDateString() + ' ' + toLocaleTimeString()`.
+ */
+export function formatSessionDate(timestamp: number): string {
+    const date = new Date(timestamp);
+    const dateStr = date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+    });
+    const timeStr = date.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+    return `${dateStr} ${timeStr}`;
+}

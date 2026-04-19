@@ -60,9 +60,11 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
     setAiLogEntries,
     clearAiLog,
 }) => {
-    const titlePromptRef = useRef(aiConfig.aiPrompts.title);
-    const summaryPromptRef = useRef(aiConfig.aiPrompts.summary);
-    const grammarPromptRef = useRef(aiConfig.aiPrompts.grammar);
+    const titlePromptRef = useRef(aiConfig.aiPrompts.title || DEFAULT_AI_PROMPTS.title);
+    const summaryPromptRef = useRef(aiConfig.aiPrompts.summary || DEFAULT_AI_PROMPTS.summary);
+    const grammarPromptRef = useRef(aiConfig.aiPrompts.grammar || DEFAULT_AI_PROMPTS.grammar);
+    const relationshipTitlePromptRef = useRef(aiConfig.aiPrompts.relationshipTitle || DEFAULT_AI_PROMPTS.relationshipTitle);
+    const relationshipSummaryPromptRef = useRef(aiConfig.aiPrompts.relationshipSummary || DEFAULT_AI_PROMPTS.relationshipSummary);
 
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -287,7 +289,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Title Prompt</Text>
                         <TextInput
                             style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
-                            defaultValue={aiConfig.aiPrompts.title}
+                            defaultValue={aiConfig.aiPrompts.title || DEFAULT_AI_PROMPTS.title}
                             onChangeText={(v) => titlePromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, title: titlePromptRef.current })}
                             multiline
@@ -295,15 +297,31 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Summary Prompt</Text>
                         <TextInput
                             style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
-                            defaultValue={aiConfig.aiPrompts.summary}
+                            defaultValue={aiConfig.aiPrompts.summary || DEFAULT_AI_PROMPTS.summary}
                             onChangeText={(v) => summaryPromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, summary: summaryPromptRef.current })}
+                            multiline
+                        />
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Relationship Title Prompt</Text>
+                        <TextInput
+                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            defaultValue={aiConfig.aiPrompts.relationshipTitle || DEFAULT_AI_PROMPTS.relationshipTitle}
+                            onChangeText={(v) => relationshipTitlePromptRef.current = v}
+                            onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, relationshipTitle: relationshipTitlePromptRef.current })}
+                            multiline
+                        />
+                        <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Relationship Summary Prompt</Text>
+                        <TextInput
+                            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
+                            defaultValue={aiConfig.aiPrompts.relationshipSummary || DEFAULT_AI_PROMPTS.relationshipSummary}
+                            onChangeText={(v) => relationshipSummaryPromptRef.current = v}
+                            onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, relationshipSummary: relationshipSummaryPromptRef.current })}
                             multiline
                         />
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>Grammar Prompt</Text>
                         <TextInput
                             style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: theme.colors.textPrimary, fontSize: 11, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.15)', marginBottom: 8, minHeight: 60, textAlignVertical: 'top' }}
-                            defaultValue={aiConfig.aiPrompts.grammar}
+                            defaultValue={aiConfig.aiPrompts.grammar || DEFAULT_AI_PROMPTS.grammar}
                             onChangeText={(v) => grammarPromptRef.current = v}
                             onEndEditing={() => aiConfig.saveAiPrompts({ ...aiConfig.aiPrompts, grammar: grammarPromptRef.current })}
                             multiline

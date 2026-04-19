@@ -102,7 +102,7 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
 
                 {/* Layer 3: Specular highlight — top-edge gradient simulating glass refraction */}
                 <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)', 'transparent']}
+                    colors={[theme.colors.navSpecularHighlightStart, theme.colors.navSpecularHighlightMid, 'transparent']}
                     style={styles.specularHighlight}
                 />
 
@@ -130,9 +130,9 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
                                         <View style={styles.urgentDot} />
                                     )}
                                     <MaterialCommunityIcons
-                                        name={item.icon as any}
+                                        name={item.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
                                         size={ICON_SIZE}
-                                        color={isActive ? theme.colors.textPrimary : 'rgba(255,255,255,0.35)'}
+                                        color={isActive ? theme.colors.navIconActive : theme.colors.navIconInactive}
                                     />
                                 </View>
                             </Pressable>
@@ -169,9 +169,9 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         // Liquid glass border — slightly brighter for more definition
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.18)',
+        borderColor: theme.colors.navPillBorder,
         // Stronger glow shadow for floating effect
-        shadowColor: 'rgba(0, 0, 0, 0.9)',
+        shadowColor: theme.colors.navPillShadow,
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.7,
         shadowRadius: 24,
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
      */
     tintOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(10, 10, 10, 0.75)',
+        backgroundColor: theme.colors.navPillBackground,
     },
 
     /**
@@ -206,9 +206,9 @@ const styles = StyleSheet.create({
         top: 7,
         height: PILL_HEIGHT - 14,
         borderRadius: (PILL_HEIGHT - 14) / 2,
-        backgroundColor: 'rgba(255, 255, 255, 0.12)',
+        backgroundColor: theme.colors.navIndicatorBackground,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: theme.colors.navIndicatorBorder,
     },
 
     /** Row of tab buttons */

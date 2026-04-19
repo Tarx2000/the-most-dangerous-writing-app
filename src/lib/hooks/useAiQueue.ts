@@ -26,8 +26,8 @@ interface UseAiQueueReturn {
     isNoteQueued: (noteId: string) => boolean;
     /** Enqueue a single note for AI processing */
     enqueueNote: (noteId: string, category: AiJobCategory) => Promise<void>;
-    /** Start batch processing all unprocessed notes */
-    startBatch: (forceOverwrite?: boolean) => Promise<number>;
+    /** Start batch processing, optionally filtered by category */
+    startBatch: (forceOverwrite?: boolean, categoryFilter?: Set<AiJobCategory>) => Promise<number>;
     /** Cancel the current batch (finishes current job) */
     cancelBatch: () => Promise<void>;
     /** Initialize the queue manager (call once from HomeScreen) */
@@ -106,8 +106,8 @@ export function useAiQueue(deps: UseAiQueueDeps): UseAiQueueReturn {
 
     /** Start batch processing */
     const startBatch = useCallback(
-        async (forceOverwrite: boolean = false) => {
-            return await aiQueue.enqueueBatch(forceOverwrite);
+        async (forceOverwrite: boolean = false, categoryFilter?: Set<AiJobCategory>) => {
+            return await aiQueue.enqueueBatch(forceOverwrite, categoryFilter);
         },
         []
     );

@@ -23,6 +23,7 @@ import {
     Platform,
     ActivityIndicator,
     Vibration,
+    type DimensionValue,
 } from 'react-native';
 import ReanimatedAnimated, {
     useSharedValue,
@@ -69,7 +70,7 @@ const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: a
     }));
 
     return (
-        <ReanimatedAnimated.View style={[{ width: width as any, height, borderRadius: 8, backgroundColor: theme.colors.textPrimary }, animatedStyle, style]} />
+        <ReanimatedAnimated.View style={[{ width: width as DimensionValue, height, borderRadius: 8, backgroundColor: theme.colors.textPrimary }, animatedStyle, style]} />
     );
 };
 

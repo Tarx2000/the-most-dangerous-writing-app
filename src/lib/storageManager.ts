@@ -82,7 +82,7 @@ export async function cleanupOrphanedVlogs(
 
     try {
         const info = await FileSystem.getInfoAsync(vlogDir);
-        if (!info.exists || !(info as any).isDirectory) return 0;
+        if (!info.exists || !('isDirectory' in info && info.isDirectory)) return 0;
 
         const files = await FileSystem.readDirectoryAsync(vlogDir);
         for (const file of files) {

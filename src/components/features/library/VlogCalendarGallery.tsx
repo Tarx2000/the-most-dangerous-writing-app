@@ -4,11 +4,11 @@ import {
     Text,
     Image,
     StyleSheet,
-    Dimensions,
     Modal,
     ScrollView,
     Platform,
     Vibration,
+    useWindowDimensions,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -26,8 +26,9 @@ import { VlogViewerModal, LayoutRect } from './VlogViewerModal';
 import { useVlogs } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 
-/** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+/** Static fallback for StyleSheet — dimensions may change at runtime via useWindowDimensions */
+const FALLBACK_WIDTH = 400;
+const FALLBACK_HEIGHT = 800;
 
 /** Mini component to asynchronously fetch missing thumbnails without causing entire calendar re-renders */
 const ThumbnailFetcher: React.FC<{ vlog: SavedVlog }> = ({ vlog }) => {
@@ -46,10 +47,6 @@ const ThumbnailFetcher: React.FC<{ vlog: SavedVlog }> = ({ vlog }) => {
  * ──────────────────────────────────────────────────────────────────────────── */
 /** Days of the week starting with Monday (as requested) */
 const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-/** Width of each calendar cell (auto-calculated from screen width with padding) */
-const CELL_SIZE = (SCREEN_WIDTH - 48) / 7;
-/** Height of the thumbnail on calendar cells that have vlogs */
-const THUMB_HEIGHT = CELL_SIZE * 1.15;
 
 interface Props {
     vlogs: SavedVlog[];
@@ -77,6 +74,12 @@ export const VlogCalendarGallery: React.FC<Props> = ({
     onDeleteVlog,
 }) => {
     /* ── Current displayed month ───────────────────────────────────────── */
+    const { width: screenWidth } = useWindowDimensions();
+    /** Width of each calendar cell (computed from live screen width with padding) */
+    const cellSize = (screenWidth - 48) / 7;
+    /** Height of the thumbnail on calendar cells that have vlogs */
+    const thumbHeight = cellSize * 1.15;
+
     const [displayDate, setDisplayDate] = useState(new Date());
     const currentYear = displayDate.getFullYear();
     const currentMonth = displayDate.getMonth();
@@ -212,7 +215,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                 {/* Weekday header row */}
                 <View style={styles.weekdayRow}>
                     {WEEKDAYS.map(day => (
-                        <View key={day} style={styles.weekdayCell}>
+                        <View key={day} style={[styles.weekdayCell, { width: cellSize }]}>
                             <Text style={styles.weekdayText}>{day}</Text>
                         </View>
                     ))}
@@ -228,7 +231,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                         return (
                             <AnimatedScaleButton
                                 key={idx}
-                                style={styles.dayCell}
+                                style={[styles.dayCell, { width: cellSize, height: thumbHeight + 10 }]}
                                 onPress={() => hasVlogs ? openDay(cell.dateKey) : null}
                                 activeOpacity={hasVlogs ? 0.7 : 1}
                                 disabled={!hasVlogs}
@@ -237,11 +240,12 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                     <>
                                         {hasVlogs ? (
                                             /* Day with vlog — gradient or thumbnail */
-                                            <View 
+                                            <View
                                                 ref={el => { if (cell.dateKey) cellRefs.current[cell.dateKey] = el; }}
                                                 collapsable={false}
                                                 style={[
                                                 styles.vlogThumb,
+                                                { width: cellSize - 6, height: thumbHeight },
                                                 isToday(cell.day) && styles.vlogThumbToday,
                                             ]}>
                                                 {/* Image Thumbnail or Gradient background as placeholder */}
@@ -420,7 +424,6 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     weekdayCell: {
-        width: CELL_SIZE,
         alignItems: 'center',
     },
     weekdayText: {
@@ -436,8 +439,6 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
     },
     dayCell: {
-        width: CELL_SIZE,
-        height: THUMB_HEIGHT + 10,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 6,
@@ -467,8 +468,6 @@ const styles = StyleSheet.create({
 
     /* ── Vlog Thumbnail Card ───────────────────────────────────────────── */
     vlogThumb: {
-        width: CELL_SIZE - 6,
-        height: THUMB_HEIGHT,
         borderRadius: 10,
         overflow: 'hidden',
         backgroundColor: theme.colors.dangerFill,
@@ -560,7 +559,7 @@ const styles = StyleSheet.create({
     },
     expandedCard: {
         width: '100%',
-        height: SCREEN_HEIGHT * 0.75,
+        height: FALLBACK_HEIGHT * 0.75,
         borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1,

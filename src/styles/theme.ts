@@ -93,6 +93,17 @@ export const theme = {
         videoAccentBorder: 'rgba(255, 107, 53, 0.15)', // Video card avatar border
         videoFlashBackground: 'rgba(0, 0, 0, 0.4)',   // Play/pause flash icon background
 
+        // Navigation bar
+        navIconActive: 'rgba(255, 255, 255, 1)',
+        navIconInactive: 'rgba(255, 255, 255, 0.35)',
+        navPillBackground: 'rgba(10, 10, 10, 0.75)',
+        navPillBorder: 'rgba(255, 255, 255, 0.18)',
+        navPillShadow: 'rgba(0, 0, 0, 0.9)',
+        navIndicatorBackground: 'rgba(255, 255, 255, 0.12)',
+        navIndicatorBorder: 'rgba(255, 255, 255, 0.08)',
+        navSpecularHighlightStart: 'rgba(255, 255, 255, 0.08)',
+        navSpecularHighlightMid: 'rgba(255, 255, 255, 0.02)',
+
         // Grammar suggestion accents
         suggestionBackground: 'rgba(255, 215, 0, 0.06)',
         suggestionBorder: 'rgba(255, 200, 50, 0.12)',

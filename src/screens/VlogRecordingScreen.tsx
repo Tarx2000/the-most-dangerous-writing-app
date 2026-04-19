@@ -286,7 +286,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
             // Get raw file size before compression
             const rawInfo = await FileSystem.getInfoAsync(permanentPath);
-            const rawSizeBytes = (rawInfo as any).size || 0;
+            const rawSizeBytes = ('size' in rawInfo ? (rawInfo as { size: number }).size : 0);
 
             // ── Compression phase ──────────────────────────────────────
             let finalSizeBytes = rawSizeBytes;
@@ -401,7 +401,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 style={StyleSheet.absoluteFillObject}
                 facing="front"
                 mode="video"
-                videoQuality={(vlogQuality as any) || CONFIG.VLOG_VIDEO_QUALITY}
+                videoQuality={(vlogQuality as '2160p' | '1080p' | '720p' | '480p' | '4:3') || CONFIG.VLOG_VIDEO_QUALITY}
                 videoBitrate={CONFIG.VLOG_BITRATE_MAP[vlogQuality] || 4_500_000}
             />
 
@@ -750,7 +750,7 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 22,
         fontWeight: '800',
-        fontVariant: ['tabular-nums'] as any,
+        fontVariant: ['tabular-nums'] as ('tabular-nums')[] | undefined,
     },
     compressionSubtext: {
         color: 'rgba(255, 255, 255, 0.5)',

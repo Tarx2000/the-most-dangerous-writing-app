@@ -102,6 +102,25 @@ Format: start each bullet with "• ". Reply with ONLY the bullet points, nothin
 
 If there are no issues, return an empty array: []
 Reply with ONLY valid JSON, no markdown code fences, no extra text.`,
+
+    /**
+     * RELATIONSHIP TITLE — For entries about other people.
+     */
+    relationshipTitle: `You are a minimalist title generator. Read the following journal entry written by the author about their {{RELATIONSHIP_STATUS}} and generate a title of EXACTLY 3 to 6 words. Capitalize it like a book title. Do not use punctuation. Do not use quotes. Make the title direct and descriptive of the situation or person. Reply with ONLY the title, nothing else.`,
+
+    /**
+     * RELATIONSHIP SUMMARY — Objective overview of interactions/feelings about another person.
+     */
+    relationshipSummary: `You are an objective, analytical observer. Summarize the following journal entry written about another person.
+Rules:
+- Focus primarily on the other person and secondly on the underlying relationship dynamic.
+- The author's relationship to this person is: {{RELATIONSHIP_STATUS}}. Keep this context in mind.
+- Maintain an objective and neutral tone. Do not give advice, do not validate, do not criticize.
+- Scale length with the input: 1-2 bullet points for short texts, up to 5-6 for long entries.
+- If a conflict or issue is mentioned, identify the core underlying root cause objectively without picking sides or offering solutions.
+- ONLY include a "Call to Action" or next step if the author explicitly mentions one in the text.
+- Use bold (**text**) to highlight key words.
+Format: start each bullet with "• ". Reply with ONLY the bullet points, nothing else.`,
 } as const;
 
 /** Type for user-customizable prompt overrides */
@@ -109,4 +128,6 @@ export type AiPrompts = {
     title: string;
     summary: string;
     grammar: string;
+    relationshipTitle: string;
+    relationshipSummary: string;
 };

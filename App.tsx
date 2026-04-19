@@ -13,6 +13,8 @@ import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { StorageProvider } from '@/lib/hooks/useStorage';
 import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
+import { PinProvider } from '@/lib/hooks/usePinProvider';
+import { PinPadModal } from '@/components/ui/PinPadModal';
 import { ErrorBoundary, withErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useFonts } from 'expo-font';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
@@ -25,9 +27,35 @@ import { CrimsonPro_400Regular } from '@expo-google-fonts/crimson-pro';
 import { DMSans_400Regular } from '@expo-google-fonts/dm-sans';
 import { EagleLake_400Regular } from '@expo-google-fonts/eagle-lake';
 import { initHapticsMiddleware } from '@/lib/haptics';
+import { mark as perfMark } from '@/lib/perf';
 
 // Initialize global haptics middleware
 initHapticsMiddleware();
+
+// Mark app entry for perf tracking (dev-mode only, gated inside perf module)
+perfMark('app.entry');
+
+// Global error handlers — catch unhandled errors that escape React boundaries
+if (typeof ErrorUtils !== 'undefined') {
+  const originalHandler = ErrorUtils.getGlobalHandler();
+  ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+    console.error('[GlobalErrorHandler]', isFatal ? 'FATAL' : 'NON-FATAL', error);
+    if (originalHandler) originalHandler(error, isFatal);
+  });
+}
+
+// Catch unhandled promise rejections that escape try/catch
+if (typeof globalThis !== 'undefined') {
+  const originalRejectionHandler = (globalThis as any). HermesInternal?.getUnhandledRejectionHandler?.();
+  // React Native (Hermes) fires unhandled promise events through the global error handler
+  // above — this is a safety net for any that slip through
+  const rejectionTracking = (globalThis as any).__rejectionTracking;
+  if (rejectionTracking?.setUnhandledRejectionHandler) {
+    rejectionTracking.setUnhandledRejectionHandler((id: string, error: Error) => {
+      console.error('[UnhandledPromise]', id, error);
+    });
+  }
+}
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -53,11 +81,14 @@ function AppContent() {
     );
   }
 
+  perfMark('fonts.loaded');
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StorageProvider>
-        <AiQueueProvider>
-          <NavigationContainer theme={DarkTheme}>
+        <PinProvider>
+          <AiQueueProvider>
+            <NavigationContainer theme={DarkTheme}>
             <StatusBar hidden={true} translucent={true} />
             <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: '#000' } }}>
               <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
@@ -69,7 +100,9 @@ function AppContent() {
               <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
             </Stack.Navigator>
           </NavigationContainer>
-        </AiQueueProvider>
+          <PinPadModal />
+          </AiQueueProvider>
+        </PinProvider>
       </StorageProvider>
     </GestureHandlerRootView>
   );

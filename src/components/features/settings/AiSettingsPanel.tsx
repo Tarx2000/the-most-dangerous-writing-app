@@ -22,6 +22,13 @@ type AiSettingsPanelProps = {
     queueState: any;
     forceBatchOverwrite: boolean;
     setForceBatchOverwrite: (val: boolean) => void;
+    /** Category filter toggles — which entry types to include in batch */
+    batchJournals: boolean;
+    setBatchJournals: (val: boolean) => void;
+    batchCircles: boolean;
+    setBatchCircles: (val: boolean) => void;
+    batchCheckins: boolean;
+    setBatchCheckins: (val: boolean) => void;
     handleBatchProcess: () => void;
     setChoosingModelFor: (val: 'summary' | 'grammar' | null) => void;
 };
@@ -32,6 +39,12 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     queueState,
     forceBatchOverwrite,
     setForceBatchOverwrite,
+    batchJournals,
+    setBatchJournals,
+    batchCircles,
+    setBatchCircles,
+    batchCheckins,
+    setBatchCheckins,
     handleBatchProcess,
     setChoosingModelFor
 }: AiSettingsPanelProps) {
@@ -121,6 +134,43 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     <Text style={styles.overwriteLabel}>Force overwrite ALL entries (Slow)</Text>
                 </AnimatedScaleButton>
 
+                {/* Category Filter Checkboxes */}
+                <Text style={styles.categoryFilterLabel}>Include Categories:</Text>
+                <View style={styles.categoryFilterRow}>
+                    <AnimatedScaleButton
+                        style={styles.categoryCheckRow}
+                        onPress={() => !queueState.isProcessing && setBatchJournals(!batchJournals)}
+                        disabled={queueState.isProcessing}
+                    >
+                        <View style={[styles.checkbox, { borderColor: batchJournals ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchJournals ? theme.colors.primaryAction : 'transparent' }]}>
+                            {batchJournals && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                        </View>
+                        <Text style={styles.categoryCheckLabel}>📓 Journals</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={styles.categoryCheckRow}
+                        onPress={() => !queueState.isProcessing && setBatchCircles(!batchCircles)}
+                        disabled={queueState.isProcessing}
+                    >
+                        <View style={[styles.checkbox, { borderColor: batchCircles ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchCircles ? theme.colors.primaryAction : 'transparent' }]}>
+                            {batchCircles && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                        </View>
+                        <Text style={styles.categoryCheckLabel}>👥 Circles</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={styles.categoryCheckRow}
+                        onPress={() => !queueState.isProcessing && setBatchCheckins(!batchCheckins)}
+                        disabled={queueState.isProcessing}
+                    >
+                        <View style={[styles.checkbox, { borderColor: batchCheckins ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchCheckins ? theme.colors.primaryAction : 'transparent' }]}>
+                            {batchCheckins && <MaterialCommunityIcons name="check" size={14} color="#FFF" />}
+                        </View>
+                        <Text style={styles.categoryCheckLabel}>🧭 Check-ins</Text>
+                    </AnimatedScaleButton>
+                </View>
+
                 <AnimatedScaleButton
                     style={[styles.batchProcessBtn, { backgroundColor: queueState.isProcessing ? theme.colors.dangerFill : 'rgba(74, 222, 128, 0.15)', borderColor: queueState.isProcessing ? theme.colors.dangerBorderStrong : 'rgba(74, 222, 128, 0.3)' }]}
                     onPress={handleBatchProcess}
@@ -145,7 +195,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                             <View style={styles.progressBlock}>
                                 <View style={styles.progressRow}>
                                     <Text style={styles.progressCategoryLabel}>
-                                        {queueState.currentCategory === 'journal' ? '📓 Journals' : queueState.currentCategory === 'circle' ? '👥 Circles' : '🧭 Check-ins'}
+                                        {queueState.currentCategory === 'journal' ? '📓 Journals' : queueState.currentCategory === 'circle' ? '👥 Circles' : queueState.currentCategory === 'checkin' ? '🧭 Check-ins' : '⏳ Processing...'}
                                     </Text>
                                     <Text style={styles.progressCountLabel}>
                                         {queueState.batchProgress.current}/{queueState.batchProgress.total}
@@ -333,6 +383,30 @@ const styles = StyleSheet.create({
         color: theme.colors.textPrimary,
         fontSize: 13,
         flex: 1,
+    },
+    categoryFilterLabel: {
+        color: theme.colors.textMuted,
+        fontSize: 11,
+        fontWeight: '600',
+        marginBottom: 8,
+    },
+    categoryFilterRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginBottom: 14,
+    },
+    categoryCheckRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderRadius: 8,
+    },
+    categoryCheckLabel: {
+        color: theme.colors.textPrimary,
+        fontSize: 12,
     },
     batchProcessBtn: {
         paddingVertical: 12,

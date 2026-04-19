@@ -32,7 +32,8 @@
       "Bash(node -e \"const mci = require\\('@expo/vector-icons/build/MaterialCommunityIcons'\\); console.log\\('font prop:', JSON.stringify\\(mci.default.font\\)\\); console.log\\('getFontFamily:', mci.default.getFontFamily\\(\\)\\);\")",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(grep -c \"style={{\" src/components/features/settings/DeveloperToolsPanel.tsx)",
-      "Bash(grep -c \"style={{\" src/components/features/settings/AiSettingsPanel.tsx)"
+      "Bash(grep -c \"style={{\" src/components/features/settings/AiSettingsPanel.tsx)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

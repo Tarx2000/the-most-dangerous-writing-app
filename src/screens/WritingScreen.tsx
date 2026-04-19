@@ -23,9 +23,19 @@ import { SavedNote } from '@/types';
 import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
 import { DeathOverlay } from '@/components/features/writing/DeathOverlay';
 import { theme } from '@/styles/theme';
-import { generateId } from '@/lib/utils';
+import { generateId, formatSessionDate } from '@/lib/utils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
+
+/** Derive the status label and style based on session state */
+function getStatusDisplay(hasLost: boolean, isQuickNote: boolean, timeRemaining: number) {
+    if (hasLost) return { text: 'YOU DIED', style: commonStyles.lossText };
+    if (isQuickNote) return { text: 'QUICK NOTE', style: styles.quickNoteLabel };
+    if (timeRemaining === 0) return { text: 'YOU SURVIVED', style: styles.winText };
+    const mins = Math.floor(timeRemaining / 60);
+    const secs = (timeRemaining % 60).toString().padStart(2, '0');
+    return { text: `${mins}:${secs}`, style: commonStyles.timerText };
+}
 
 export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { timeIndex, diffIndex, mode, personId, isQuickNote } = route.params;
@@ -70,7 +80,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         const newNote: SavedNote = {
             id: generateId(),
             text: currentText,
-            dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            dateStr: formatSessionDate(Date.now()),
             timestamp: Date.now(),
             durationMin: isQuickNote ? 0 : sessionTimeSelected / 60,
             won: noteWon,
@@ -128,16 +138,17 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
                     <View style={commonStyles.header}>
                         <Text style={commonStyles.wordCount}>{wordCount} Words</Text>
-                        <Text style={hasLost ? commonStyles.lossText : (sessionTimeRemaining === 0 && !isQuickNote) ? commonStyles.winText : isQuickNote ? { color: theme.colors.textMuted, fontSize: 14 } : { color: theme.colors.textDim, fontSize: 18, fontWeight: 'bold' }}>
-                            {hasLost ? 'YOU DIED' : isQuickNote ? 'QUICK NOTE' : sessionTimeRemaining === 0 ? 'YOU SURVIVED' : `${Math.floor(sessionTimeRemaining / 60)}:${(sessionTimeRemaining % 60).toString().padStart(2, '0')}`}
-                        </Text>
+                        {(() => {
+                            const { text, style } = getStatusDisplay(hasLost, isQuickNote, sessionTimeRemaining);
+                            return <Text style={style}>{text}</Text>;
+                        })()}
                         {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
                         {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNote && (
                             <AnimatedScaleButton
                                 onPress={skipTimer}
-                                style={{ backgroundColor: theme.colors.gold, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginLeft: 8 }}
+                                style={styles.skipButton}
                             >
-                                <Text style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>⏩ Skip</Text>
+                                <Text style={styles.skipButtonText}>⏩ Skip</Text>
                             </AnimatedScaleButton>
                         )}
                     </View>
@@ -219,3 +230,27 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
 // Extracted from original App.tsx - needed for absolute fill compatibility
 export default WritingScreen;
+
+const styles = StyleSheet.create({
+    quickNoteLabel: {
+        color: theme.colors.textMuted,
+        fontSize: 14,
+    },
+    winText: {
+        color: theme.colors.success,
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    skipButton: {
+        backgroundColor: theme.colors.gold,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        marginLeft: 8,
+    },
+    skipButtonText: {
+        color: theme.colors.background,
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+});

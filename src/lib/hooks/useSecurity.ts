@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Platform, DeviceEventEmitter, AppState, type AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { usePinContext } from './usePinProvider';
+import { usePreferences } from './useStorage';
 
 /**
  * useSecurity — Biometric-only security hook with central unlock.
@@ -38,6 +40,7 @@ const AUTO_LOCK_TIMEOUT_MS = 180000;
 const BACKGROUND_LOCK_GRACE_MS = 30000;
 
 export function useSecurity(timeoutMins: number = 3) {
+    const { preferPinAuth } = usePreferences();
     /** Stage 2: full unlock — notes readable, delete available */
     const [isNotesUnlocked, setIsNotesUnlocked] = useState<boolean>(false);
     /** Stage 1.5: person profile details visible */
@@ -46,6 +49,8 @@ export function useSecurity(timeoutMins: number = 3) {
     const [isCirclesUnlocked, setIsCirclesUnlocked] = useState<boolean>(false);
     /** Feed access: controlled by the central unlock (Stage 2) */
     const [isFeedUnlocked, setIsFeedUnlocked] = useState<boolean>(false);
+
+    const { requestPin } = usePinContext();
 
     /** Auto-lock timer ref (inactivity timeout for full unlock, duration set by timeoutMins) */
     const lockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -82,20 +87,17 @@ export function useSecurity(timeoutMins: number = 3) {
     const authenticate = useCallback(async (promptMessage: string): Promise<boolean> => {
         try {
             // Check biometric hardware availability
-            const hasHardware = await LocalAuthentication.hasHardwareAsync();
-            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+            let hasHardware = false;
+            let isEnrolled = false;
+            
+            if (Platform.OS !== 'web') {
+                hasHardware = await LocalAuthentication.hasHardwareAsync();
+                isEnrolled = await LocalAuthentication.isEnrolledAsync();
+            }
 
-            if (!hasHardware || !isEnrolled) {
-                // No biometric hardware or not enrolled
-                if (Platform.OS === 'web') {
-                    // Web has no biometric API — bypass is acceptable
-                    console.warn('[Security] No biometric support on web — access granted by default');
-                    return true;
-                }
-                // On native: hardware exists but no enrollment → deny access
-                // User must enroll biometrics in device settings first
-                console.warn('[Security] Biometric hardware available but not enrolled — access denied');
-                return false;
+            // Fallback to 4-Digit PIN when biometrics not available, web, or manually preferred
+            if (preferPinAuth || !hasHardware || !isEnrolled || Platform.OS === 'web') {
+                return await requestPin(promptMessage);
             }
 
             const result = await LocalAuthentication.authenticateAsync({
@@ -108,7 +110,7 @@ export function useSecurity(timeoutMins: number = 3) {
             console.warn('Authentication error:', e);
             return false;
         }
-    }, []);
+    }, [requestPin, preferPinAuth]);
 
     /**
      * Stage 1: Unlock Circles tab only.

@@ -33,6 +33,8 @@ const TWEET_THRESHOLD = 50;
  * the list on every parent re-render. Creating animated components inside
  * render is a critical performance anti-pattern (rerender-no-inline-components).
  */
+// Animated.createAnimatedComponent loses generic types — this is a known
+// React Native typing limitation. The component works correctly at runtime.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
@@ -68,6 +70,8 @@ interface Props {
     onOpenVlog?: (vlog: SavedVlog, rect?: LayoutRect) => void;
     /** Callback to commit feed close state (lightweight, no animation) */
     onClose: () => void;
+    /** Callback to commit feed open state (lightweight, no animation) */
+    onOpen: () => void;
     /** Shared value from HomeScreen driving feed translation */
     feedProgress?: SharedValue<number>;
     /** Whether the feed layer is currently visible (from HomeScreen state) */
@@ -82,6 +86,7 @@ const FeedScreenInner: React.FC<Props> = ({
     onOpenNote,
     onOpenVlog,
     onClose,
+    onOpen,
     feedProgress,
     isFeedVisible = true,
     listScrollY: listScrollYProp,
@@ -214,17 +219,45 @@ const FeedScreenInner: React.FC<Props> = ({
         }
     );
 
+    /**
+     * Safety net: if feedProgress is stranded at a mid-value with no gesture
+     * active and no animation running, snap to the nearest end.
+     * This catches edge cases from rapid gesture switching.
+     */
+    useAnimatedReaction(
+        () => {
+            if (!feedProgress) return 0;
+            const p = feedProgress.value;
+            if (isFeedGestureActive.value) return 0; // gesture is handling it
+            if (p < 0.01 || p > 0.99) return 0;       // already at an end
+            return p;                                  // stranded mid-value
+        },
+        (current, prev) => {
+            if (current === prev || current === 0) return;
+            // Stranded — snap to nearest end
+            const target = current > 0.5 ? 1 : 0;
+            feedProgress!.value = withSpring(target, theme.animation.springFeed);
+            if (target === 0) runOnJS(onClose)();
+            else runOnJS(onOpen)();
+        }
+    );
+
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e: any) => {
             listScrollY.value = e.contentOffset.y;
         }
     });
 
-    /** Follow-finger drag-down to close — coexists with FlashList scroll */
+    /** Follow-finger drag-down to close — coexists with FlashList scroll.
+     *  DOWNWARD-only activation (activeOffsetY) ensures the list scrolls
+     *  normally when swiping up. Only starts driving feedProgress when
+     *  the list is at the top AND the user pulls down past the content
+     *  boundary. Normal scrolling is never intercepted.
+     *  Activates from any feedProgress position (including mid-rescue). */
     const feedPanGesture = useMemo(() => Gesture.Pan()
         .simultaneousWithExternalGesture(listRef)
-        .activeOffsetY([-15, 15])
-        .failOffsetX([-20, 20])
+        .activeOffsetY([-10000, 15])    // Only activate on DOWNWARD movement
+        .failOffsetX([-12, 12])          // Fail on any horizontal movement
         .onStart(() => {
             if (!feedProgress) return;
             cancelAnimation(feedProgress);
@@ -235,13 +268,14 @@ const FeedScreenInner: React.FC<Props> = ({
         .onUpdate((e) => {
             if (!feedProgress) return;
 
-            // Smart activation: start closing when at top of list + swiping down
+            // Activate when at top of list + swiping down (from any feedProgress)
             if (!isFeedGestureActive.value) {
                 const atTopOfList = listScrollY.value <= 0;
-                const swipingDown = e.translationY > 10;
+                const swipingDown = e.translationY > 8;
 
                 if (atTopOfList && swipingDown) {
                     isFeedGestureActive.value = true;
+                    gestureStartProgress.value = feedProgress.value;
                     startTranslationOffset.value = e.translationY;
                 }
                 return;
@@ -255,26 +289,27 @@ const FeedScreenInner: React.FC<Props> = ({
         })
         .onEnd((e) => {
             if (!feedProgress) return;
+            if (!isFeedGestureActive.value) return;
+            isFeedGestureActive.value = false;
 
-            if (isFeedGestureActive.value) {
-                isFeedGestureActive.value = false;
-                const shouldClose = feedProgress.value < 0.5 || e.velocityY > 500;
-                const target = shouldClose ? 0 : 1;
-                feedProgress.value = withSpring(target, theme.animation.springFeed, (finished) => {
-                    if (finished && shouldClose) runOnJS(onClose)();
-                });
-            } else {
-                // Mid-scroll dismiss: fast downward fling from any scroll position
-                if (e.velocityY > 1500 && e.translationY > 0) {
-                    feedProgress.value = withSpring(0, theme.animation.springFeed, (finished) => {
-                        if (finished) runOnJS(onClose)();
-                    });
-                }
-            }
+            const shouldClose = feedProgress.value < 0.5 || e.velocityY > 500;
+            const target = shouldClose ? 0 : 1;
+            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            if (shouldClose) runOnJS(onClose)();
+            else runOnJS(onOpen)();
         })
         .onFinalize(() => {
             isFeedGestureActive.value = false;
-        }), [onClose, feedProgress, screenHeightSV, listScrollY]);
+        }), [onClose, onOpen, feedProgress, screenHeightSV, listScrollY]);
+
+    /** Close button — cancel in-flight animation, spring closed, set state immediately */
+    const handleCloseButton = useCallback(() => {
+        if (!feedProgress) return;
+        cancelAnimation(feedProgress);
+        feedProgress.value = withSpring(0, theme.animation.springFeed);
+        onClose();
+    }, [onClose, feedProgress]);
+
     const renderFeedItem = useCallback(({ item }: { item: any }) => {
         const itemId = item.note?.id || item.vlog?.id || '';
         // A video should only auto-play if: (1) auto-play is enabled in settings,
@@ -311,28 +346,43 @@ const FeedScreenInner: React.FC<Props> = ({
     }, [bookmarkSet, feedComments, autoPlayFeedVideos, visibleItemIds, isFeedVisible, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
-    /** Lock screen pan gesture: follow-finger drag down to dismiss.
-     *  Updates feedProgress in real-time so the entire feed layer
-     *  follows the finger, then snaps open or closed on release. */
+    /** Lock screen pan gesture: follow-finger drag down to dismiss. */
     const lockPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 10])
+        .activeOffsetY([-10000, 15])   // Only activate on DOWNWARD movement
+        .onStart(() => {
+            if (!feedProgress) return;
+            cancelAnimation(feedProgress);
+            gestureStartProgress.value = feedProgress.value;
+            startTranslationOffset.value = 0;
+            isFeedGestureActive.value = false;
+        })
         .onUpdate((e) => {
-            if (feedProgress && e.translationY > 0) {
-                const dragProgress = 1 - Math.min(e.translationY / screenHeightSV.value, 1);
-                feedProgress.value = Math.pow(dragProgress, 0.85);
+            if (!feedProgress) return;
+            if (!isFeedGestureActive.value) {
+                if (e.translationY > 8) {
+                    isFeedGestureActive.value = true;
+                    gestureStartProgress.value = feedProgress.value;
+                    startTranslationOffset.value = e.translationY;
+                }
+                return;
             }
+            const delta = e.translationY - startTranslationOffset.value;
+            const progressDelta = delta / screenHeightSV.value;
+            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
+            feedProgress.value = newProgress;
         })
         .onEnd((e) => {
-            if (!feedProgress) return;
-            if (feedProgress.value < 0.5 || e.velocityY > 500) {
-                // Snap closed — dismiss the feed
-                feedProgress.value = withSpring(0, { damping: 28, stiffness: 180, mass: 0.9 });
-                runOnJS(onClose)();
-            } else {
-                // Snap back open
-                feedProgress.value = withSpring(1, { damping: 28, stiffness: 180, mass: 0.9 });
-            }
-        }), [onClose, feedProgress, screenHeightSV]);
+            if (!feedProgress || !isFeedGestureActive.value) return;
+            isFeedGestureActive.value = false;
+            const shouldClose = feedProgress.value < 0.5 || e.velocityY > 500;
+            const target = shouldClose ? 0 : 1;
+            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            if (shouldClose) runOnJS(onClose)();
+            else runOnJS(onOpen)();
+        })
+        .onFinalize(() => {
+            isFeedGestureActive.value = false;
+        }), [onClose, onOpen, feedProgress, screenHeightSV]);
 
 
     if (!isUnlocked) {
@@ -370,7 +420,7 @@ const FeedScreenInner: React.FC<Props> = ({
                             {feedItems.length} {feedItems.length === 1 ? 'entry' : 'entries'}
                         </Text>
                     </View>
-                    <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
+                    <AnimatedScaleButton style={styles.closeBtn} onPress={handleCloseButton}>
                         <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
                     </AnimatedScaleButton>
                 </View>

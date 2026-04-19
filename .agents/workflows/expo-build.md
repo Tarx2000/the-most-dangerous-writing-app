@@ -1,87 +1,75 @@
 ---
-description: Expo Build & Deploy - Step-by-step guide to build APKs and deploy the app
+description: Local Android Build — runs all tests first, then builds a release APK locally. No implementation plan needed.
 ---
 
-# Expo Build & Deploy Skill
+<!-- 
+  WORKFLOW: Local Android Release Build
+  
+  This workflow is fully automated (turbo-all). When invoked via /expo-build:
+  1. Run the full test suite — ALL tests must pass
+  2. Build a local release APK via Gradle
+  3. Report the APK location with a clickable link
+  
+  NO implementation plan is generated. Execution starts immediately.
+-->
 
-## Prerequisites
-- Expo account (free at expo.dev)
-- EAS CLI installed: `npm install -g eas-cli`
-- Logged in: `eas login`
+// turbo-all
 
-## Build APK (Android)
+# Local Android Release Build
 
-### 1. Configure `eas.json`
-Ensure your `eas.json` has a preview profile that outputs an APK:
-```json
-{
-  "build": {
-    "preview": {
-      "android": {
-        "buildType": "apk"
-      }
-    },
-    "production": {
-      "android": {
-        "buildType": "app-bundle"
-      }
-    }
-  }
-}
-```
+> **No implementation plan required.** This workflow executes immediately when invoked.
 
-### 2. Bump Version
-In `app.json`, increment `expo.version` and `expo.android.versionCode`:
-```json
-"version": "1.1.0",
-"android": {
-  "versionCode": 2
-}
-```
+---
 
-### 3. Build
-// turbo
+## Step 1 — Run Test Suite
+
+Run all project tests. **Every single test must pass before proceeding.**
+
 ```bash
-eas build -p android --profile preview
+npm test
 ```
 
-### 4. Download
-After the build completes (~5-10 min), download the APK from the Expo dashboard or use:
-// turbo
-```bash
-eas build:list --platform android --limit 1
-```
+> [!CAUTION]
+> **STOP HERE if any test fails.** Do NOT proceed to Step 2.  
+> Instead, report the failing tests to the user and help them fix the issues.  
+> Only continue to the build step after re-running tests and confirming 100% pass rate.
 
-## Build iOS (requires Apple Developer account)
-// turbo
-```bash
-eas build -p ios --profile preview
-```
+**What this runs:** `jest` with the project's `jest.config.js`, which discovers all `*.test.ts` / `*.test.tsx` files under `src/lib/__tests__/`.
 
-## Local Development Build (no cloud)
-For testing native modules locally without EAS cloud:
-// turbo
-```bash
-npx expo run:android
-```
+---
 
-### Generating Local Release APK (Optimized)
-To build a local release APK quickly, targeting only 64-bit modern devices (significant time reduction):
-// turbo
+## Step 2 — Build Release APK
+
+Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction):
+
 ```bash
 cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
-The resulting APK will be located at `android/app/build/outputs/apk/release/app-release.apk`.
 
-### Hardware Acceleration & Parallelization
+---
+
+## Step 3 — Report APK Location
+
+After a successful build, report the APK location to the user with a clickable link:
+
+**APK output path:** [app-release.apk](file:///c:/Users/Tarik/.gemini/antigravity/scratch/the-most-dangerous-writing-app/android/app/build/outputs/apk/release/app-release.apk)
+
+---
+
+## Hardware Acceleration & Parallelization
+
 To fully utilize PC performance (e.g. bundling 1500+ modules in seconds), ensure `android/gradle.properties` contains:
+
 ```properties
 org.gradle.parallel=true
 org.gradle.daemon=true
 org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
 ```
 
+---
+
 ## Common Issues
+
 - **"App not installed as package conflicts with an existing package"**: When installing a locally built APK over an EAS Cloud build (or vice-versa), Android blocks the installation because the cryptographic signing keys do not match. **Fix:** Simply uninstall the existing version of the app from your smartphone first, then install the new APK.
 - **"ninja: error: manifest 'build.ninja' still dirty after 100 tries" (Windows)**: A notorious bug caused by the Android SDK shipping an outdated Ninja executable (v1.10) that ignores the Windows 260-character Long Path Registry override. **Fix:** Download Ninja v1.12.1+ from GitHub and replace the bundled executable at `%LOCALAPPDATA%\Android\Sdk\cmake\3.22.1\bin\ninja.exe`.
 - **"Metro bundler error after installing native modules"**: Run `npx expo start -c` to clear cache.

@@ -132,7 +132,7 @@ export async function compressVideo(
 ): Promise<CompressionResult> {
     // Get original file size
     const originalInfo = await FileSystem.getInfoAsync(inputUri);
-    const originalSizeBytes = (originalInfo as any).size || 0;
+    const originalSizeBytes = ('size' in originalInfo ? (originalInfo as { size: number }).size : 0);
 
     const preset = getPreset(presetId);
 
@@ -158,7 +158,6 @@ export async function compressVideo(
             inputUri,
             {
                 compressionMethod: 'manual',
-                maxSize: preset.maxSize,
                 bitrate: preset.bitrate,
             },
             (progress: number) => {
@@ -168,7 +167,7 @@ export async function compressVideo(
 
         // Get compressed file size
         const compressedInfo = await FileSystem.getInfoAsync(compressedUri);
-        const compressedSizeBytes = (compressedInfo as any).size || 0;
+        const compressedSizeBytes = ('size' in compressedInfo ? (compressedInfo as { size: number }).size : 0);
 
         // If compression somehow made the file bigger, use the original
         if (compressedSizeBytes >= originalSizeBytes) {

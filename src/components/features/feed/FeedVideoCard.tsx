@@ -11,7 +11,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
-import { useVlogs } from '@/lib/hooks/useStorage';
+import { useVlogs, usePreferences } from '@/lib/hooks/useStorage';
 import { formatRelativeTime } from '@/lib/utils';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
@@ -83,6 +83,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     const [isPlaying, setIsPlaying] = useState(autoPlay);
     const [isMuted, setIsMuted] = useState(true);
     const accentColor = '#FF6B35'; // Orange for video clips
+    const { devMode } = usePreferences();
 
     const flashOpacity = useSharedValue(0);
     const [flashIcon, setFlashIcon] = useState<'volume-off' | 'volume-high'>('volume-off');
@@ -109,13 +110,24 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
      *  This is the source of truth — autoPlay always wins over manual state. */
     useEffect(() => {
         userPausedRef.current = false;
-        if (autoPlay) {
-            player.play();
-        } else {
-            player.pause();
-        }
+        try {
+            if (autoPlay) {
+                player.play();
+            } else {
+                player.pause();
+            }
+        } catch (_) { /* native object may already be released */ }
         setIsPlaying(autoPlay);
     }, [autoPlay, player]);
+
+    /** Pause the player on unmount to prevent background decoding.
+     *  Guard against "shared object already released" errors that occur
+     *  when the native VideoPlayer has been deallocated before this cleanup runs. */
+    useEffect(() => {
+        return () => {
+            try { player.pause(); } catch (_) { /* native object may already be released */ }
+        };
+    }, [player]);
 
     /** Tap anywhere on video to toggle mute.
      *  Play/pause is fully viewport-driven (autoPlay prop) — no manual toggle needed.
@@ -152,7 +164,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     useEffect(() => {
         const subscription = player.addListener('playingChange', (event) => {
             if (autoPlay && !userPausedRef.current && !event.isPlaying) {
-                player.play();
+                try { player.play(); } catch (_) { /* native object may already be released */ }
             }
         });
         return () => subscription.remove();
@@ -193,7 +205,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                         </View>
                     ) : (
                         <VideoView
-                            style={[styles.videoPlayer, { position: 'absolute', pointerEvents: 'none' } as any]}
+                            style={[styles.videoPlayer, { position: 'absolute' as const, pointerEvents: 'none' as const }]}
                             player={player}
                             nativeControls={false}
                         />
@@ -227,6 +239,19 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                     <View style={styles.durationBadge} pointerEvents="none">
                         <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
                     </View>
+
+                    {/* Dev watermark overlay */}
+                    {devMode && (
+                        <View style={styles.devWatermark} pointerEvents="none">
+                            <Text style={styles.devWatermarkText}>
+                                DEV: {vlog.compressionPreset || 'Uncompressed'}{' '}
+                                {vlog.originalFileSizeBytes ? 
+                                    `(${Math.round(100 - (vlog.fileSizeBytes / vlog.originalFileSizeBytes) * 100)}% saved)`
+                                    : ''
+                                }
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Footer — actions */}
@@ -366,6 +391,20 @@ const styles = StyleSheet.create({
         color: theme.colors.textPrimary,
         fontSize: 11,
         fontWeight: '700',
+    },
+    devWatermark: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        backgroundColor: 'rgba(255,100,100,0.8)',
+        padding: 4,
+        borderRadius: 4,
+        zIndex: 10,
+    },
+    devWatermarkText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
 
     /* ── Footer ─────────────────────────────────────────────────────── */

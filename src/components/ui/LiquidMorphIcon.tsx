@@ -82,6 +82,33 @@ interface Props {
 }
 
 /**
+ * Parse hex/rgba to numeric array for fast interpolation.
+ */
+function parseColorStr(c: string): [number, number, number, number] {
+    if (c.startsWith('#')) {
+        let hex = c.replace('#', '');
+        if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+        return [parseInt(hex.slice(0,2), 16), parseInt(hex.slice(2,4), 16), parseInt(hex.slice(4,6), 16), 1];
+    }
+    if (c.startsWith('rgba') || c.startsWith('rgb')) {
+        const parts = c.replace(/rgba?\(|\)/g, '').split(',').map(x => parseFloat(x));
+        return [parts[0] || 0, parts[1] || 0, parts[2] || 0, parts[3] ?? 1];
+    }
+    return [255, 255, 255, 1]; // Fallback
+}
+
+/** Manual color interpolation to bypass Reanimated jitter */
+function lerpColor(c1: string, c2: string, t: number): string {
+    const a = parseColorStr(c1);
+    const b = parseColorStr(c2);
+    const r = Math.round(a[0] + (b[0] - a[0]) * t);
+    const g = Math.round(a[1] + (b[1] - a[1]) * t);
+    const b_ = Math.round(a[2] + (b[2] - a[2]) * t);
+    const alpha = a[3] + (b[3] - a[3]) * t;
+    return `rgba(${r}, ${g}, ${b_}, ${alpha})`;
+}
+
+/**
  * Sanitize an interpolated SVG path string for the native renderer.
  * Fixes numeric edge cases from flubber: NaN, scientific notation, excessive decimals.
  */
@@ -133,8 +160,52 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
     /** Direct ref to the wrapper <View> element for scale bouncing */
     const viewRef = useRef<any>(null);
 
-    /** Active animation frame ID — stored so we can cancel on interruption */
+    /** Active animation frame ID for shape morphs */
     const rafIdRef = useRef<number | null>(null);
+
+    /** Current painted color on screen, allowing interruption mapping */
+    const currentColorStr = useRef<string>(color);
+    /** Target color we are trying to reach */
+    const targetColorStr = useRef<string>(color);
+    /** Color animation frame track */
+    const colorRafIdRef = useRef<number | null>(null);
+
+    /** Exclusive non-blocking color transition loop for sliding toggles */
+    useEffect(() => {
+        if (color !== targetColorStr.current) {
+            if (colorRafIdRef.current) cancelAnimationFrame(colorRafIdRef.current);
+            
+            const startColor = currentColorStr.current;
+            const endColor = color;
+            targetColorStr.current = color;
+            const startTime = performance.now();
+
+            const animateColor = () => {
+                const elapsed = performance.now() - startTime;
+                const progress = Math.min(elapsed / 150, 1);
+                
+                // cubic-out
+                const easedT = progress < 0.5 
+                    ? 4 * progress * progress * progress 
+                    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+                const interpolated = lerpColor(startColor, endColor, easedT);
+                currentColorStr.current = interpolated;
+
+                if (pathRef.current) {
+                    pathRef.current.setNativeProps({ fill: interpolated });
+                }
+
+                if (progress < 1) {
+                    colorRafIdRef.current = requestAnimationFrame(animateColor);
+                } else {
+                    colorRafIdRef.current = null;
+                }
+            };
+            
+            colorRafIdRef.current = requestAnimationFrame(animateColor);
+        }
+    }, [color]);
 
     useEffect(() => {
         if (mode !== currentModeRef.current) {
@@ -258,7 +329,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
                 <Path
                     ref={pathRef}
                     d={pathStringRef.current}
-                    fill={color}
+                    fill={currentColorStr.current}
                 />
             </Svg>
         </View>

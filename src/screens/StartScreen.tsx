@@ -16,8 +16,9 @@ import {
     Pressable,
 } from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import Animated, { FadeInUp, FadeOutUp, FadeIn } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
+import { AnimatedSymmetricalRing } from '@/components/ui/AnimatedSymmetricalRing';
 import { clearAiLog, getAiLog } from '@/lib/aiLogger';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { pingServer } from '@/lib/aiService';
@@ -89,6 +90,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
 
     // AI Batch UI State (processing is handled by the queue)
     const [forceBatchOverwrite, setForceBatchOverwrite] = useState(false);
+    /** Category filters for batch processing — which entry types to include */
+    const [batchJournals, setBatchJournals] = useState(true);
+    const [batchCircles, setBatchCircles] = useState(true);
+    const [batchCheckins, setBatchCheckins] = useState(true);
     const [choosingModelFor, setChoosingModelFor] = useState<'summary' | 'grammar' | null>(null);
     /** AI log entries for the Dev Tools panel */
     const [aiLogEntries, setAiLogEntries] = useState<AiLogEntry[]>([]);
@@ -155,6 +160,16 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
     
     const details = getScoreDetails(score);
 
+    const animatedGlowStyle = useAnimatedStyle(() => ({
+        // Remove backgroundColor so the solid circle ring is gone
+        shadowColor: withTiming(details.color, { duration: 150 }),
+        opacity: withTiming(sessionMode === 'checkin' ? 1 : 0, { duration: 400 })
+    }), [details.color, sessionMode]);
+
+    const animatedTextStyle = useAnimatedStyle(() => ({
+        color: withTiming(details.color, { duration: 150 })
+    }), [details.color]);
+
     const activeFont = CONFIG.FONTS[preferences.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[preferences.sizeIndex]?.value || 18;
 
@@ -165,9 +180,24 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             return;
         }
 
-        const count = await startBatch(forceBatchOverwrite);
+        // Build category filter from checkbox state
+        const selectedCategories = new Set<'journal' | 'circle' | 'checkin'>();
+        if (batchJournals) selectedCategories.add('journal');
+        if (batchCircles) selectedCategories.add('circle');
+        if (batchCheckins) selectedCategories.add('checkin');
+
+        // If nothing is selected, alert the user
+        if (selectedCategories.size === 0) {
+            alert('Please select at least one category to process.');
+            return;
+        }
+
+        // If all are selected, pass undefined to process everything (slightly faster path)
+        const filter = selectedCategories.size === 3 ? undefined : selectedCategories;
+
+        const count = await startBatch(forceBatchOverwrite, filter);
         if (count === 0) {
-            alert('All entries are already fully processed by AI!');
+            alert('All entries in the selected categories are already fully processed!');
         }
     };
 
@@ -292,14 +322,19 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                 <View style={styles.heroWidgetContainer}>
                     {/* The Morphing Vector Icon - Always Mounted */}
                     <View style={{ position: 'relative', marginBottom: 12, marginTop: 0, width: 80, height: 80, justifyContent: 'center', alignItems: 'center' }}>
-                        {/* Glow ring - behind the icon, only visible on checkin */}
-                        {sessionMode === 'checkin' && (
-                            <View style={[styles.glowRing, { position: 'absolute', backgroundColor: details.glow, shadowColor: details.color, width: 80, height: 80, borderRadius: 40 }]} />
-                        )}
-                        {/* Inner Circle - behind the icon, only visible on checkin */}
-                        {sessionMode === 'checkin' && (
-                            <View style={[styles.iconCircle, { position: 'absolute', width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: theme.colors.background }]} />
-                        )}
+                        {/* Glow ring - behind the icon. Uses animated opacity to trace out backwards. */}
+                        <Animated.View style={[styles.glowRing, { position: 'absolute', width: 60, height: 60, borderRadius: 30 }, animatedGlowStyle]} />
+
+                        {/* Inner Circle - behind the icon. IsActive prop handles stable retracting draws. */}
+                        <View style={[styles.iconCircle, { position: 'absolute', width: 68, height: 68, justifyContent: 'center', alignItems: 'center', borderWidth: 0 }]}>
+                            <AnimatedSymmetricalRing 
+                                size={68} 
+                                strokeWidth={4} 
+                                color={details.color} 
+                                backgroundColor={sessionMode === 'checkin' ? theme.colors.background : 'transparent'}
+                                isActive={sessionMode === 'checkin'}
+                            />
+                        </View>
                         
                     {/* The Icon itself - permanently mounted so it can morph */}
                         <LiquidMorphIcon 
@@ -338,7 +373,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         )}
                         {sessionMode === 'checkin' && (
                             <Animated.View entering={FadeIn.duration(400)} exiting={FadeOutUp.duration(200)} style={{ position: 'absolute', alignItems: 'center', width: '100%' }}>
-                                <Text style={[styles.scoreText, { color: details.color, fontSize: 14, marginTop: 8, marginBottom: -6 }]}>{details.text.toUpperCase()}</Text>
+                                <Animated.Text style={[styles.scoreText, { fontSize: 14, marginTop: 8, marginBottom: -6 }, animatedTextStyle]}>{details.text.toUpperCase()}</Animated.Text>
                                 <View style={{ transform: [{ scale: 0.9 }], marginTop: -14, marginBottom: -40, width: '100%' }}>
                                     <CustomSlider value={score} onValueChange={setScore} />
                                 </View>
@@ -481,6 +516,26 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         </View>
                         <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 16, lineHeight: 20 }}>Notes and Circles are protected by biometric authentication (fingerprint / face).</Text>
 
+                        {/* Force PIN Authentication Toggle */}
+                        <AnimatedScaleButton
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
+                            onPress={() => {
+                                preferences.updatePreferPinAuth(!preferences.preferPinAuth);
+                                Vibration.vibrate(10);
+                            }}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                                <MaterialCommunityIcons name="dialpad" size={20} color={theme.colors.textSecondary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Force PIN Auth</Text>
+                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Always ask for PIN instead of Biometrics</Text>
+                                </View>
+                            </View>
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: preferences.preferPinAuth ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: preferences.preferPinAuth ? 'flex-end' : 'flex-start' }} />
+                            </View>
+                        </AnimatedScaleButton>
+
                         {/* Lock Timeout Selection */}
                         <AnimatedScaleButton
                             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
@@ -613,6 +668,12 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                         queueState={queueState}
                         forceBatchOverwrite={forceBatchOverwrite}
                         setForceBatchOverwrite={setForceBatchOverwrite}
+                        batchJournals={batchJournals}
+                        setBatchJournals={setBatchJournals}
+                        batchCircles={batchCircles}
+                        setBatchCircles={setBatchCircles}
+                        batchCheckins={batchCheckins}
+                        setBatchCheckins={setBatchCheckins}
                         handleBatchProcess={handleBatchProcess}
                         setChoosingModelFor={setChoosingModelFor}
                     />

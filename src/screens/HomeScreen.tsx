@@ -1,8 +1,9 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo, useTransition } from 'react';
-import { View, Dimensions, useWindowDimensions, StyleSheet, Vibration, NativeSyntheticEvent, NativeScrollEvent, StatusBar, Platform } from 'react-native';
+import { View, useWindowDimensions, StyleSheet, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { ScrollView, Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, cancelAnimation, runOnJS, type SharedValue } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedReaction, withSpring, cancelAnimation, runOnJS, type SharedValue } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { Route } from '@react-navigation/native';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StartScreen } from './StartScreen';
 import { LibraryScreen } from './LibraryScreen';
@@ -13,13 +14,12 @@ import { VlogViewerModal, LayoutRect } from '@/components/features/library/VlogV
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
+import { useHomeModals } from '@/lib/hooks/useHomeModals';
 import { theme } from '@/styles/theme';
-import type { SavedNote } from '@/types';
+import type { SavedNote, SavedVlog } from '@/types';
+import type { VideoPlayer } from 'expo-video';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
-
-/** Static fallback for StyleSheet defaults — dimensions may change at runtime via useWindowDimensions */
-const { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
@@ -78,12 +78,18 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     const security = useSecurity(lockTimeoutMins);
     const { enqueueNote, isNoteActive } = useAiQueueContext();
 
-    /** Note Viewer State for the Feed Screen */
-    const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
-    const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
-    const [viewVlogModal, setViewVlogModal] = useState<any | null>(null);
-    const [vlogSourceRect, setVlogSourceRect] = useState<LayoutRect | null>(null);
-    const [vlogPlayerInst, setVlogPlayerInst] = useState<any | null>(null);
+    const {
+        viewNoteModal,
+        noteToDelete,
+        viewVlogModal,
+        vlogSourceRect,
+        vlogPlayerInst,
+        handleOpenNoteModal,
+        handleCloseNoteModal,
+        handleDeleteNoteModal,
+        handleOpenVlogModal,
+        handleCloseVlogModal,
+    } = useHomeModals();
 
     /** Navigate to Library page (scroll right) */
     const goToLibrary = useCallback(() => {
@@ -110,7 +116,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      */
     const handleModeChange = useCallback((mode: string) => {
         // Immediate nav update
-        setActiveTabId(mode as any);
+        setActiveTabId(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
         
         // Defer heavier screen content re-renders
         startTransition(() => {
@@ -179,15 +185,17 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     /**
      * Pan gesture: follow-finger feed reveal on the Start page.
-     * Smart activation — only starts driving feedProgress when swiping up.
-     * Once active, tracks finger in BOTH directions (including reversal).
-     * Uses cancelAnimation on start for rapid switching.
+     * UPWARD-only activation (activeOffsetY) + fail on horizontal (failOffsetX)
+     * ensures strictly vertical swipes only — no diagonal.
+     * No simultaneousWithExternalGesture — horizontal scroll and vertical pan
+     * are mutually exclusive (failOffsetX makes pan fail on horizontal movement).
+     * Activates on upward swipe from any feedProgress position (including mid-transition
+     * rescue). cancelAnimation on start enables rapid switching without stuck states.
      */
     const feedPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-15, 15])
-        .failOffsetX([-20, 20])
-        .simultaneousWithExternalGesture(scrollViewRef)
-        .enabled(currentPage === 0 && !feedVisible)
+        .activeOffsetY([-15, 10000])   // Only activate on UPWARD movement
+        .failOffsetX([-12, 12])         // Fail on any horizontal movement
+        .enabled(currentPage === 0)
         .onStart(() => {
             cancelAnimation(feedProgress);
             gestureStartProgress.value = feedProgress.value;
@@ -196,8 +204,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         })
         .onUpdate((e) => {
             if (!isFeedGestureActive.value) {
-                if (e.translationY < -10) {
+                // Activate on upward swipe from any position (including mid-rescue)
+                if (e.translationY < -8) {
                     isFeedGestureActive.value = true;
+                    gestureStartProgress.value = feedProgress.value;
                     startTranslationOffset.value = e.translationY;
                 }
                 return;
@@ -212,13 +222,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
             isFeedGestureActive.value = false;
             const shouldOpen = feedProgress.value > 0.5 || e.velocityY < -500;
             const target = shouldOpen ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springFeed, (finished) => {
-                if (finished) runOnJS(shouldOpen ? openFeed : closeFeed)();
-            });
+            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            if (shouldOpen) runOnJS(openFeed)();
+            else runOnJS(closeFeed)();
         })
         .onFinalize(() => {
             isFeedGestureActive.value = false;
-        }), [currentPage, feedVisible, feedProgress, screenHeightSV, openFeed, closeFeed]);
+        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed]);
 
     /** Main content animates UP (to -screenHeight) when feed opens */
     const mainContentAnimStyle = useAnimatedStyle(() => ({
@@ -239,33 +249,32 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
-    /** Close the feed — cancel in-flight animation, spring closed, defer state */
+    /**
+     * Safety net: if feedProgress is stranded at a mid-value with no gesture
+     * active and no animation running, snap to the nearest end.
+     */
+    useAnimatedReaction(
+        () => {
+            const p = feedProgress.value;
+            if (isFeedGestureActive.value) return 0;
+            if (p < 0.01 || p > 0.99) return 0;
+            return p;
+        },
+        (current, prev) => {
+            if (current === prev || current === 0) return;
+            const target = current > 0.5 ? 1 : 0;
+            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            if (target === 0) runOnJS(closeFeed)();
+            else runOnJS(openFeed)();
+        }
+    );
+
+    /** Close the feed — cancel in-flight animation, spring closed, set state immediately */
     const handleCloseFeed = useCallback(() => {
         cancelAnimation(feedProgress);
-        feedProgress.value = withSpring(0, theme.animation.springFeed, (finished) => {
-            if (finished) runOnJS(closeFeed)();
-        });
+        feedProgress.value = withSpring(0, theme.animation.springFeed);
+        closeFeed();
     }, [closeFeed, feedProgress]);
-
-    /** Stable references for Modals to prevent re-renders */
-    const handleOpenNoteModal = useCallback((note: any) => {
-        setViewNoteModal(note);
-    }, []);
-
-    const handleOpenVlogModal = useCallback((vlog: any, rect?: LayoutRect, player?: any) => {
-        setVlogSourceRect(rect || null);
-        setVlogPlayerInst(player || null);
-        setViewVlogModal(vlog);
-    }, []);
-
-    const handleCloseNoteModal = useCallback(() => {
-        setViewNoteModal(null);
-    }, []);
-
-    const handleDeleteNoteModal = useCallback((id: string) => {
-        setViewNoteModal(null);
-        setNoteToDelete(id);
-    }, []);
 
     const handleRegenerateAi = useCallback((note: any, category: any) => {
         enqueueNote(note.id, category);
@@ -281,6 +290,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                     onOpenNote={handleOpenNoteModal}
                     onOpenVlog={handleOpenVlogModal}
                     onClose={closeFeed}
+                    onOpen={openFeed}
                     feedProgress={feedProgress}
                     isFeedVisible={feedVisible}
                     listScrollY={listScrollY}
@@ -303,7 +313,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 vlogs={viewVlogModal ? [viewVlogModal] : []}
                 sourceRect={vlogSourceRect}
                 player={vlogPlayerInst}
-                onClose={() => setViewVlogModal(null)}
+                onClose={handleCloseVlogModal}
             />
 
             {/* Main Content — Start + Library horizontal scroll */}
@@ -326,7 +336,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         <View style={[styles.page, { width: screenWidth }]}>
                             <StartScreen
                                 navigation={navigation}
-                                route={route as any}
+                                route={route as Route<string, RootStackParamList['Home']>}
                                 onGoToLibrary={goToLibrary}
                                 setHomeScrollEnabled={setScrollEnabled}
                                 sessionMode={sessionMode}
@@ -338,7 +348,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         <View style={[styles.page, { width: screenWidth }]}>
                             <LibraryScreen
                                 navigation={navigation}
-                                route={route as any}
+                                route={route as Route<string, RootStackParamList['Home']>}
                                 onGoToStart={goToStart}
                                 sessionMode={sessionMode}
                             />
@@ -372,7 +382,6 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     page: {
-        width: DEFAULT_WIDTH,
         height: '100%',
     },
     /**
@@ -386,7 +395,6 @@ const styles = StyleSheet.create({
         top: 0,
         left: 0,
         right: 0,
-        height: DEFAULT_HEIGHT,
         zIndex: 100,
     },
 });

@@ -31,7 +31,7 @@ import {
     AI_MAX_RETRIES,
     AI_HEALTH_CHECK_INTERVAL_MS,
 } from '@/config/ai';
-import type { AiJob, AiJobCategory, AiQueueState, SavedNote } from '@/types';
+import type { AiJob, AiJobCategory, AiQueueState, SavedNote, Person } from '@/types';
 import { isAlignmentReflection } from '@/types';
 
 /* ── Event Names ──────────────────────────────────────────────────────── */
@@ -49,6 +49,7 @@ type GetAiConfigFn = () => AiConfig;
 type GetNoteByIdFn = (noteId: string) => SavedNote | undefined;
 type UpdateNoteFn = (noteId: string, updates: Partial<SavedNote>) => Promise<void>;
 type GetAllNotesFn = () => SavedNote[];
+type GetPersonByIdFn = (personId: string) => Person | undefined;
 
 /* ── Queue Manager Class ──────────────────────────────────────────────── */
 
@@ -89,6 +90,7 @@ class AiQueueManager {
     private getNoteById: GetNoteByIdFn = () => undefined;
     private updateNote: UpdateNoteFn = async () => {};
     private getAllNotes: GetAllNotesFn = () => [];
+    private getPersonById: GetPersonByIdFn = () => undefined;
 
     /* ── Initialization ────────────────────────────────────────────── */
 
@@ -107,11 +109,13 @@ class AiQueueManager {
         getNoteById: GetNoteByIdFn,
         updateNote: UpdateNoteFn,
         getAllNotes: GetAllNotesFn,
+        getPersonById?: GetPersonByIdFn
     ): Promise<void> {
         this.getAiConfig = getAiConfig;
         this.getNoteById = getNoteById;
         this.updateNote = updateNote;
         this.getAllNotes = getAllNotes;
+        if (getPersonById) this.getPersonById = getPersonById;
         this.initialized = true;
 
         // Load persisted queue
@@ -211,11 +215,13 @@ class AiQueueManager {
         getNoteById: GetNoteByIdFn,
         updateNote: UpdateNoteFn,
         getAllNotes: GetAllNotesFn,
+        getPersonById?: GetPersonByIdFn
     ): void {
         this.getAiConfig = getAiConfig;
         this.getNoteById = getNoteById;
         this.updateNote = updateNote;
         this.getAllNotes = getAllNotes;
+        if (getPersonById) this.getPersonById = getPersonById;
     }
 
     /* ── Public API ────────────────────────────────────────────────── */
@@ -260,8 +266,9 @@ class AiQueueManager {
      * and within each category by newest first.
      *
      * @param forceOverwrite - If true, also re-process notes that already have AI data
+     * @param categoryFilter - Optional set of categories to include (e.g. only 'journal'). If omitted, all categories are processed.
      */
-    async enqueueBatch(forceOverwrite: boolean = false): Promise<number> {
+    async enqueueBatch(forceOverwrite: boolean = false, categoryFilter?: Set<AiJobCategory>): Promise<number> {
         const allNotes = this.getAllNotes();
 
         // Filter notes that need processing
@@ -275,11 +282,13 @@ class AiQueueManager {
 
         if (notesToProcess.length === 0) return 0;
 
-        // Categorize notes
-        const categorized = notesToProcess.map(note => ({
-            note,
-            category: this.categorizeNote(note),
-        }));
+        // Categorize notes and apply optional category filter
+        const categorized = notesToProcess
+            .map(note => ({
+                note,
+                category: this.categorizeNote(note),
+            }))
+            .filter(({ category }) => !categoryFilter || categoryFilter.has(category));
 
         // Sort: category order (journal → circle → checkin), then newest first within category
         const categoryOrder: AiJobCategory[] = ['journal', 'circle', 'checkin'];
@@ -445,7 +454,13 @@ class AiQueueManager {
         });
 
         try {
-            const result = await processNote(note.text, config);
+            let relationshipStatus: string | undefined = undefined;
+            if (nextJob.category === 'circle' && note.personId) {
+                const person = this.getPersonById(note.personId);
+                relationshipStatus = person?.relationship || 'an unknown person';
+            }
+
+            const result = await processNote(note.text, config, relationshipStatus);
 
             // Save results to the note
             await this.updateNote(nextJob.noteId, {

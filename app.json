@@ -2,7 +2,7 @@
   "expo": {
     "name": "the-most-dangerous-writing-app",
     "slug": "the-most-dangerous-writing-app",
-    "version": "1.5.6",
+    "version": "1.5.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -23,7 +23,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.themostdangerouswritingapp",
-      "versionCode": 15,
+      "versionCode": 16,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"

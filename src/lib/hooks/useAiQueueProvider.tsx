@@ -14,8 +14,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
-import { useNotes } from '@/lib/hooks/useStorage';
-import { useAiConfig } from '@/lib/hooks/useStorage';
+import { useNotes, useAiConfig, usePersons } from '@/lib/hooks/useStorage';
 import type { AiQueueState, AiJobCategory } from '@/types';
 
 /* ── Context Type ──────────────────────────────────────────────────────── */
@@ -29,8 +28,8 @@ interface AiQueueContextType {
     isNoteQueued: (noteId: string) => boolean;
     /** Enqueue a single note for AI processing */
     enqueueNote: (noteId: string, category: AiJobCategory) => Promise<void>;
-    /** Start batch processing all unprocessed notes */
-    startBatch: (forceOverwrite?: boolean) => Promise<number>;
+    /** Start batch processing, optionally filtered by category */
+    startBatch: (forceOverwrite?: boolean, categoryFilter?: Set<AiJobCategory>) => Promise<number>;
     /** Cancel the current batch (finishes current job) */
     cancelBatch: () => Promise<void>;
     /** Initialize the queue manager (call once on app startup) */
@@ -44,11 +43,12 @@ const AiQueueContext = createContext<AiQueueContextType | null>(null);
 export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     const { savedNotes, updateNote } = useNotes();
     const { aiApiKey, aiBaseUrl, aiModel, aiPrompts } = useAiConfig();
+    const { persons } = usePersons();
     const [queueState, setQueueState] = useState<AiQueueState>(aiQueue.getState());
 
     // Keep a ref so callbacks always see the latest deps without re-creating
-    const depsRef = useRef({ aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes, updateNote });
-    depsRef.current = { aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes, updateNote };
+    const depsRef = useRef({ aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes, updateNote, persons });
+    depsRef.current = { aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes, updateNote, persons };
 
     // Update queue dependencies when AI config or notes change
     useEffect(() => {
@@ -62,6 +62,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
             depsRef.current.updateNote,
             () => depsRef.current.savedNotes,
+            (personId) => depsRef.current.persons.find(p => p.id === personId)
         );
     }, [aiApiKey, aiBaseUrl, aiModel, savedNotes.length]);
 
@@ -102,8 +103,8 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     /** Start batch processing */
-    const startBatch = useCallback(async (forceOverwrite: boolean = false) => {
-        return await aiQueue.enqueueBatch(forceOverwrite);
+    const startBatch = useCallback(async (forceOverwrite: boolean = false, categoryFilter?: Set<AiJobCategory>) => {
+        return await aiQueue.enqueueBatch(forceOverwrite, categoryFilter);
     }, []);
 
     /** Cancel batch processing */
@@ -123,6 +124,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
             depsRef.current.updateNote,
             () => depsRef.current.savedNotes,
+            (personId) => depsRef.current.persons.find(p => p.id === personId)
         );
     }, []);
 

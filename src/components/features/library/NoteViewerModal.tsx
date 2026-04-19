@@ -8,7 +8,6 @@ import {
     Pressable,
     ActivityIndicator,
     Vibration,
-    Dimensions,
     useWindowDimensions,
     Platform,
 } from 'react-native';
@@ -29,9 +28,6 @@ import type { SavedNote, AiJobCategory } from '@/types';
 import { isAlignmentReflection } from '@/types';
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { CONFIG } from '@/config';
-
-/** Static fallback for StyleSheet defaults — dynamic dimensions come from useWindowDimensions */
-const { height: DEFAULT_HEIGHT } = Dimensions.get('window');
 
 interface Props {
     note: SavedNote | null;
@@ -115,7 +111,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                 <GestureHandlerRootView style={{ flex: 1 }}>
                     <View style={styles.cardPopupBackdrop}>
                         <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
-                        <Animated.View style={[styles.cardPopupContainer, animatedCardStyle]}>
+                        <Animated.View style={[styles.cardPopupContainer, { height: SCREEN_HEIGHT * 0.88 }, animatedCardStyle]}>
                             <View style={styles.cardPopupTint} />
 
                             {/* Swipeable Header Zone */}
@@ -241,7 +237,6 @@ const styles = StyleSheet.create({
     },
     cardPopupContainer: {
         width: '100%',
-        height: DEFAULT_HEIGHT * 0.88,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
         overflow: 'hidden',

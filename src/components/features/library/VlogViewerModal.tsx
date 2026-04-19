@@ -24,6 +24,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { usePreferences, useVlogs } from '@/lib/hooks/useStorage';
+import { compressVideo } from '@/lib/videoCompressor';
+import type { VideoPlayer } from 'expo-video';
 
 /** Represents a bounding box in window coordinates (from view.measureInWindow) */
 export interface LayoutRect {
@@ -38,12 +41,12 @@ export interface VlogViewerModalProps {
     vlogs: SavedVlog[];
     sourceRect: LayoutRect | null;
     initialIndex?: number;
-    player?: any; // Shared expo-video player for perfect sync
+    player?: VideoPlayer;
     onClose: () => void;
     onDelete?: (id: string) => void;
 }
 
-const VlogPlayer: React.FC<{ uri: string, sharedPlayer?: any }> = ({ uri, sharedPlayer }) => {
+const VlogPlayer: React.FC<{ uri: string, sharedPlayer?: VideoPlayer }> = ({ uri, sharedPlayer }) => {
     const internalPlayer = useVideoPlayer(uri, p => {
         if (!sharedPlayer) {
             p.loop = true;
@@ -78,6 +81,9 @@ export const VlogViewerModal: React.FC<VlogViewerModalProps> = ({
     const CARD_TARGET_Y = (SCREEN_HEIGHT - CARD_HEIGHT) / 2;
     const [expandedIndex, setExpandedIndex] = useState(initialIndex);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+    const [isCompressing, setIsCompressing] = useState(false);
+    const { devMode, compressionPreset: activeCompressionPreset } = usePreferences();
+    const { updateVlog } = useVlogs();
 
     // Keep visible state synced locally for enter/exit animations
     const [isRendered, setIsRendered] = useState(visible);
@@ -155,6 +161,27 @@ export const VlogViewerModal: React.FC<VlogViewerModalProps> = ({
         return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
+    const handleManualCompress = async () => {
+        const vlog = vlogs[expandedIndex];
+        if (!vlog || isCompressing) return;
+        setIsCompressing(true);
+        try {
+            const result = await compressVideo(vlog.filePath, activeCompressionPreset);
+            if (result.wasCompressed) {
+                await updateVlog(vlog.id, {
+                    fileSizeBytes: result.outputSizeBytes,
+                    originalFileSizeBytes: result.originalSizeBytes,
+                    compressionPreset: activeCompressionPreset,
+                    compressionPending: false,
+                });
+            }
+        } catch (error) {
+            console.error('Manual compression failed', error);
+        } finally {
+            setIsCompressing(false);
+        }
+    };
+
     // Card Animated Style (morphing width, height, top, left + pan dragging)
     const cardAnimatedStyle = useAnimatedStyle(() => {
         // Fallback rect if none provided (e.g., center screen scale effect)
@@ -219,6 +246,29 @@ export const VlogViewerModal: React.FC<VlogViewerModalProps> = ({
                         {/* Video Player Area */}
                         <View style={styles.expandedVideoContainer} pointerEvents="auto">
                             <VlogPlayer uri={vlogs[expandedIndex].filePath} sharedPlayer={player} />
+                            
+                            {/* Dev watermark overlay */}
+                            {devMode && (
+                                <View style={styles.devWatermark} pointerEvents="box-none">
+                                    <Text style={styles.devWatermarkText}>
+                                        DEV: {vlogs[expandedIndex].compressionPreset || 'Uncompressed'}{' '}
+                                        {vlogs[expandedIndex].originalFileSizeBytes ? 
+                                            `(${Math.round(100 - (vlogs[expandedIndex].fileSizeBytes / vlogs[expandedIndex].originalFileSizeBytes) * 100)}% saved)`
+                                            : ''
+                                        }
+                                    </Text>
+                                    {(vlogs[expandedIndex].compressionPreset === 'off' || !vlogs[expandedIndex].compressionPreset) && (
+                                        <AnimatedScaleButton 
+                                            style={styles.devCompressBtn} 
+                                            onPress={handleManualCompress}
+                                        >
+                                            <Text style={styles.devCompressBtnText}>
+                                                {isCompressing ? 'Compressing...' : 'Trigger Compression'}
+                                            </Text>
+                                        </AnimatedScaleButton>
+                                    )}
+                                </View>
+                            )}
                         </View>
 
                         {/* Info bar */}
@@ -340,6 +390,36 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         backgroundColor: '#000',
         zIndex: 2,
+        position: 'relative',
+    },
+    devWatermark: {
+        position: 'absolute',
+        top: 10,
+        left: 10,
+        backgroundColor: 'rgba(255,100,100,0.8)',
+        padding: 6,
+        borderRadius: 4,
+        zIndex: 10,
+        alignItems: 'flex-start',
+    },
+    devWatermarkText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    devCompressBtn: {
+        marginTop: 6,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    devCompressBtnText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
     videoPlayer: {
         flex: 1,
