@@ -592,7 +592,7 @@ class AiQueueManager {
             if (raw) {
                 this.jobs = JSON.parse(raw) as AiJob[];
             }
-        } catch {
+        } catch (err) { console.warn('[AI Queue] Failed to parse persisted queue, resetting:', err);
             this.jobs = [];
         }
     }
@@ -638,3 +638,4 @@ class AiQueueManager {
  * Import this wherever you need to interact with AI processing.
  */
 export const aiQueue = new AiQueueManager();
+

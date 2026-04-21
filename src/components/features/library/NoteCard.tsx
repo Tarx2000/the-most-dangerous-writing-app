@@ -77,7 +77,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
             backgroundColor: interpolateColor(
                 pulse.value,
                 [0, 1],
-                ['rgba(255, 42, 42, 0.0)', 'rgba(255, 42, 42, 0.04)']
+                ['transparent', theme.colors.dangerSubtle]
             ),
         };
     });
@@ -179,3 +179,5 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
 });
+
+

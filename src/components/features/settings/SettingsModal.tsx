@@ -173,7 +173,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                 <ScrollView
                     contentContainerStyle={{ paddingBottom: 150 }}
                     showsVerticalScrollIndicator={false}
-                    style={preferences.debugLayout && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.5)' }}
+                    style={preferences.debugLayout && { borderWidth: 1, borderColor: theme.colors.dangerBorderMedium }}
                 >
                     {/* Appearance & Typography Card */}
                     <View style={{ backgroundColor: theme.colors.glassBackground, borderRadius: theme.borderRadius.md, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.colors.glassBorder }}>
@@ -203,7 +203,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                         <View style={{ height: 1, backgroundColor: theme.colors.glassBorder, marginVertical: 20 }} />
 
                         <Text style={{ color: theme.colors.textSecondary, fontSize: 13, fontWeight: '500', marginBottom: 12 }}>Reading Size</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: theme.borderRadius.md, padding: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.md, padding: 4 }}>
                             {CONFIG.SIZES.map((s, i) => (
                                 <Pressable
                                     key={i}
@@ -241,7 +241,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
 
                         {/* Force PIN Authentication Toggle */}
                         <AnimatedScaleButton
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
                             onPress={() => {
                                 preferences.updatePreferPinAuth(!preferences.preferPinAuth);
                                 Vibration.vibrate(10);
@@ -254,14 +254,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Always ask for PIN instead of Biometrics</Text>
                                 </View>
                             </View>
-                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: preferences.preferPinAuth ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
-                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: preferences.preferPinAuth ? 'flex-end' : 'flex-start' }} />
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: preferences.preferPinAuth ? theme.colors.primaryAction : theme.colors.border, justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.colors.textPrimary, alignSelf: preferences.preferPinAuth ? 'flex-end' : 'flex-start' }} />
                             </View>
                         </AnimatedScaleButton>
 
                         {/* Lock Timeout Selection */}
                         <AnimatedScaleButton
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
                             onPress={() => setShowLockTimeoutModal(true)}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -280,7 +280,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                         </AnimatedScaleButton>
 
                         {/* Vlog Storage Usage Counter */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                                 <MaterialCommunityIcons name="server-network" size={20} color={theme.colors.textSecondary} />
                                 <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>Vlog Footprint</Text>
@@ -292,7 +292,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
 
                         {/* Vlog Video Quality */}
                         <AnimatedScaleButton
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14 }}
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14 }}
                             onPress={() => setShowVlogQualityModal(true)}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -312,7 +312,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
 
                         {/* Vlog Compression Preset */}
                         <AnimatedScaleButton
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginTop: 10, opacity: isCompressionAvailable() ? 1 : 0.35 }}
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginTop: 10, opacity: isCompressionAvailable() ? 1 : 0.35 }}
                             onPress={() => isCompressionAvailable() && setShowCompressionModal(true)}
                             disabled={!isCompressionAvailable()}
                         >
@@ -346,7 +346,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
 
                         {/* Haptic Feedback toggle */}
                         <AnimatedScaleButton
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
                             onPress={() => {
                                 preferences.updateHapticsPref(!preferences.enableHaptics);
                                 Vibration.vibrate(10);
@@ -359,14 +359,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Subtle vibrations on interaction</Text>
                                 </View>
                             </View>
-                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: preferences.enableHaptics ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
-                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: preferences.enableHaptics ? 'flex-end' : 'flex-start' }} />
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: preferences.enableHaptics ? theme.colors.primaryAction : theme.colors.border, justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.colors.textPrimary, alignSelf: preferences.enableHaptics ? 'flex-end' : 'flex-start' }} />
                             </View>
                         </AnimatedScaleButton>
 
                         {/* Auto-play videos toggle */}
                         <AnimatedScaleButton
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: theme.borderRadius.sm, padding: 14 }}
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14 }}
                             onPress={() => {
                                 feedData.toggleAutoPlayFeedVideos(!feedData.autoPlayFeedVideos);
                                 Vibration.vibrate(10);
@@ -379,8 +379,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Videos play muted while scrolling</Text>
                                 </View>
                             </View>
-                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: feedData.autoPlayFeedVideos ? theme.colors.primaryAction : 'rgba(255,255,255,0.1)', justifyContent: 'center', padding: 2 }}>
-                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', alignSelf: feedData.autoPlayFeedVideos ? 'flex-end' : 'flex-start' }} />
+                            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: feedData.autoPlayFeedVideos ? theme.colors.primaryAction : theme.colors.border, justifyContent: 'center', padding: 2 }}>
+                                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.colors.textPrimary, alignSelf: feedData.autoPlayFeedVideos ? 'flex-end' : 'flex-start' }} />
                             </View>
                         </AnimatedScaleButton>
                     </View>
@@ -491,3 +491,4 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
         </>
     );
 });
+

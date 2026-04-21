@@ -6,6 +6,7 @@ import {
     StatusBar,
     Vibration,
     Platform,
+    Alert,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence, withRepeat, cancelAnimation } from 'react-native-reanimated';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
@@ -217,11 +218,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             if (video?.uri) {
                 await handleRecordingComplete(video.uri);
             }
-        } catch (err) {
-            console.error('Recording error:', err);
-            isRecordingRef.current = false;
-            navigation.goBack();
-        }
+        } catch (err) { console.error('Recording error:', err); isRecordingRef.current = false; Alert.alert('Recording Failed', 'Unable to record video. Please try again.', [{ text: 'OK' }]); navigation.goBack(); }
     }, [totalDurationSec]);
 
     /* ── Stop recording (user taps stop button after timer completes) ─── */
@@ -266,7 +263,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         if (isCancelledRef.current) {
             try {
                 await FileSystem.deleteAsync(tempUri, { idempotent: true });
-            } catch (_) {}
+            } catch (err) { console.warn('[Vlog] Failed to delete temp file on cancel:', err); }
             navigation.goBack();
             return;
         }
@@ -356,10 +353,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                     },
                 }],
             });
-        } catch (err) {
-            console.error('Failed to save vlog:', err);
-            navigation.goBack();
-        }
+        } catch (err) { console.error('Failed to save vlog:', err); setPhase('idle'); Alert.alert('Save Failed', 'Unable to save your recording. Please try again.', [{ text: 'OK' }]); }
     }, [saveVlog, navigation]);
 
     /* ── Cleanup timers on unmount ──────────────────────────────────────── */
@@ -528,7 +522,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <View style={styles.savingCard}>
                                 <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
                                 <View style={styles.topBarTint} />
-                                <MaterialCommunityIcons name="check-circle" size={48} color="#4ADE80" />
+                                <MaterialCommunityIcons name="check-circle" size={48} color={theme.colors.green} />
                                 <Text style={styles.savingText}>Saving Vlog...</Text>
                                 {compressionSavings && (
                                     <Text style={styles.compressionSavingsText}>{compressionSavings}</Text>
@@ -720,7 +714,7 @@ const styles = StyleSheet.create({
         minWidth: 200,
     },
     savingText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 18,
         fontWeight: '700',
         marginTop: 16,
@@ -831,3 +825,8 @@ const styles = StyleSheet.create({
 });
 
 export default VlogRecordingScreen;
+
+
+
+
+

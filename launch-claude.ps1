@@ -1,31 +1,47 @@
-# 🚀 Claude Code + Ollama Cloud Bridge
-# This script automatically starts the background bridge and launches Claude Code.
-
-# Configuration
-$MODEL_NAME = "glm-5.1:cloud"
-$BRIDGE_PORT = 11434
+# 🚀 Claude Code + Antigravity Model Selector
+# This script manages the Ollama Cloud Bridge and providing a UI for switching models for Claude.
 
 # 1. 🛰️ Ensure the Bridge is running
-Write-Host "Checking Ollama Cloud Bridge..." -ForegroundColor Cyan
+$BRIDGE_PORT = 11434
 $portCheck = Get-NetTCPConnection -LocalPort $BRIDGE_PORT -ErrorAction SilentlyContinue
 
 if ($null -eq $portCheck) {
-    Write-Host "Starting Bridge in the background..." -ForegroundColor Gray
+    Write-Host "📡 Starting Antigravity Bridge..." -ForegroundColor Cyan
     Start-Process node -ArgumentList ".\proxy-ollama.js" -WindowStyle Hidden
     Start-Sleep -Seconds 1
-} else {
-    Write-Host "Bridge is already active." -ForegroundColor Gray
 }
 
-# 2. 🔌 Configure Environment (Pointing to our local Bridge)
-$env:ANTHROPIC_BASE_URL = "http://localhost:$BRIDGE_PORT"
-$env:ANTHROPIC_AUTH_TOKEN = "ollama"
+# 2. 🎨 UI Model Selector (only if no direct args are provided)
+$ModelFlag = ""
+if ($args.Count -eq 0) {
+    Clear-Host
+    Write-Host "   ____ _                      _      " -ForegroundColor Magenta
+    Write-Host "  / ___| | __ _ _   _  __| | ___  " -ForegroundColor Magenta
+    Write-Host " | |   | |/ _` | | | |/ _` |/ _ \ " -ForegroundColor Magenta
+    Write-Host " | |___| | (_| | |_| | (_| |  __/ " -ForegroundColor White
+    Write-Host "  \____|_|\__,_|\__,_|\__,_|\___| " -ForegroundColor White
+    Write-Host "                                   " -ForegroundColor White
+    Write-Host "  ======================================================" -ForegroundColor Gray
+    Write-Host "                🚀 CLAUDE MODEL SELECTOR" -ForegroundColor Green
+    Write-Host "  ======================================================" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  [1] 💎 Minimax     - (using Sonnet alias)" -ForegroundColor White
+    Write-Host "  [2] 🛰️ GLM         - (using Opus alias)" -ForegroundColor White
+    Write-Host ""
+    
+    $choice = Read-Host "  Select Model (1-2) [default: 1]"
+    
+    switch ($choice) {
+        "1" { $ModelFlag = "claude-3-5-sonnet" }
+        "2" { $ModelFlag = "claude-3-opus" }
+        ""  { $ModelFlag = "claude-3-5-sonnet" } # Default
+    }
+}
 
-# Clear any conflicting API key from the environment (the bridge handles it)
-Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
-
-Write-Host "Launching Claude Code ($MODEL_NAME)..." -ForegroundColor Green
-Write-Host "----------------------------------------" -ForegroundColor Gray
-
-# 3. 🏁 Start Claude Code
-claude --model $MODEL_NAME
+# 3. 🏁 Launch Claude
+if ($ModelFlag) {
+    Write-Host "`n🚀 Launching Claude with $ModelFlag (Aliased to Antigravity Cloud)..." -ForegroundColor Green
+    claude -m $ModelFlag $args
+} else {
+    claude $args
+}

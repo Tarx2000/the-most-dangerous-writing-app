@@ -258,7 +258,9 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
                         : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
                     frames[i] = sanitizePath(morphFn(easedT));
                 }
-            } catch {
+            } catch (err: unknown) {
+                console.warn('[LiquidMorphIcon] Flubber morph failed, falling back to instant swap:', err);
+
                 // Graceful fallback: instant swap if flubber fails
                 pathStringRef.current = endPath;
                 if (pathRef.current) {

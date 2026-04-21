@@ -6,7 +6,11 @@ module.exports = {
     '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
 
     // React best practices
-    'react/no-unstable-nested-components': 'off',
+    // Inline components (arrow fns returned from render fns) are flagged here.
+    // If you intentionally define a small purely-presentational component inline
+    // that never appears in a hot path, suppress it with a comment per-instance
+    // rather than blanket-disabling the rule.
+    'react/no-unstable-nested-components': ['error', { 'allowedForComponents': ['ShimmerLine'] }],
     'react/display-name': 'off',
 
     // React Hooks — already enabled by plugin:react-hooks/recommended

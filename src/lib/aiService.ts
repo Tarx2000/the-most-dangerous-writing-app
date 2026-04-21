@@ -385,8 +385,8 @@ export async function checkGrammar(
                 typeof item.suggestion === 'string' &&
                 typeof item.explanation === 'string'
         ) as GrammarSuggestion[];
-    } catch {
-        console.warn('[AI] Failed to parse grammar response as JSON:', raw);
+    } catch (err: unknown) {
+        console.warn('[AI] Failed to parse grammar response as JSON:', raw, err);
         return [];
     }
 }

@@ -192,7 +192,8 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
             if (parts.length !== 3) return dateStr;
             const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
             return date.toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' });
-        } catch {
+        } catch (err: unknown) {
+            console.warn("[PersonProfileModal] Failed to parse birthday:", dateStr, err);
             return dateStr;
         }
     };

@@ -500,11 +500,11 @@ const styles = StyleSheet.create({
     },
     errorBox: {
         marginTop: 12,
-        backgroundColor: 'rgba(255, 42, 42, 0.15)',
+        backgroundColor: theme.colors.dangerFill,
         padding: 10,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: 'rgba(255, 42, 42, 0.3)',
+        borderColor: theme.colors.dangerBorderStrong,
     },
     errorTitle: {
         color: theme.colors.danger,
@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
         fontSize: 11,
     },
     errorHint: {
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 10,
         marginTop: 4,
         fontStyle: 'italic',
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     testConnectionBtn: {
-        backgroundColor: 'rgba(255, 42, 42, 0.1)',
+        backgroundColor: theme.colors.dangerTint,
         marginTop: 0,
         flexDirection: 'row',
         alignItems: 'center',

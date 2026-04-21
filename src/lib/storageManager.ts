@@ -91,12 +91,12 @@ export async function cleanupOrphanedVlogs(
                 try {
                     await FileSystem.deleteAsync(fullPath, { idempotent: true });
                     cleaned++;
-                } catch {
+                } catch (err: unknown) {
                     // File may be locked — skip
                 }
             }
         }
-    } catch {
+    } catch (err: unknown) {
         // Directory read failed — nothing to clean
     }
 

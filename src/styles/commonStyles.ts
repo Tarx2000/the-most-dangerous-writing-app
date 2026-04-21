@@ -183,7 +183,7 @@ export const commonStyles = StyleSheet.create({
         paddingVertical: 14,
         paddingHorizontal: 24,
         borderRadius: theme.borderRadius.round,
-        shadowColor: '#000',
+        shadowColor: theme.colors.background,
         shadowOpacity: 0.15,
         shadowRadius: 15,
         shadowOffset: { width: 0, height: 5 },
@@ -281,7 +281,7 @@ export const commonStyles = StyleSheet.create({
     },
     addPersonFloatBtnText: { color: theme.colors.textPrimary, fontSize: 16, fontWeight: theme.typography.weightBold },
     addPersonInput: {
-        backgroundColor: 'rgba(0,0,0,0.2)',
+        backgroundColor: theme.colors.surfaceOverlayLight,
         color: theme.colors.textPrimary,
         fontSize: 20,
         padding: 16,
@@ -292,3 +292,5 @@ export const commonStyles = StyleSheet.create({
         textAlign: 'center'
     },
 });
+
+

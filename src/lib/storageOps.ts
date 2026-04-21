@@ -297,7 +297,7 @@ export function createVlogOps(
             const newBytes = Math.max(0, prevBytes - (vlog.fileSizeBytes || 0));
             setTotalBytes(newBytes);
             totalBytesRef.current = newBytes;
-            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch(() => {});
+            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch((err) => console.warn('[Storage] Failed to delete vlog file:', err));
         }
 
         try {
@@ -444,6 +444,8 @@ export function createPreferencesOps(
         const prevSize = refs.sizeIndex.current;
         setters.setFontIndex(fIdx);
         setters.setSizeIndex(sIdx);
+        refs.fontIndex.current = fIdx;
+        refs.sizeIndex.current = sIdx;
         try {
             await storage.multiSet([
                 ['USER_FONT_IDX', fIdx.toString()],
@@ -973,7 +975,7 @@ export function createCrossCuttingOps(
         refs.autoGenerateSummaries.current = true;
 
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
-        try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (_) {}
+        try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (err) { console.warn('[Storage] Failed to delete vlog directory:', err); }
     };
 
     const saveAlignmentReflection = async (
@@ -989,3 +991,4 @@ export function createCrossCuttingOps(
 
     return { clearAllData, saveAlignmentReflection };
 }
+

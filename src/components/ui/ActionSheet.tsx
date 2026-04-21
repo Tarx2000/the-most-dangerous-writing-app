@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     handlePill: {
         width: 40,
         height: 5,
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        backgroundColor: theme.colors.glassHighlight,
         borderRadius: 3,
         marginBottom: 12,
     },
@@ -295,3 +295,4 @@ const styles = StyleSheet.create({
         marginLeft: 'auto',
     },
 });
+

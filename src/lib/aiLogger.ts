@@ -60,7 +60,8 @@ export async function getAiLog(): Promise<AiLogEntry[]> {
         const raw = await storage.getItem(AI_STORAGE_KEYS.LOG);
         if (!raw) return [];
         return JSON.parse(raw) as AiLogEntry[];
-    } catch {
+    } catch (err: unknown) {
+        console.warn("[aiLogger] Failed to read AI log:", err);
         return [];
     }
 }

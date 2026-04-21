@@ -173,7 +173,7 @@ export async function compressVideo(
         if (compressedSizeBytes >= originalSizeBytes) {
             console.log('[Compressor] Compressed file is larger than original — keeping original');
             // Clean up the compressed file
-            try { await FileSystem.deleteAsync(compressedUri, { idempotent: true }); } catch (_) {}
+            try { await FileSystem.deleteAsync(compressedUri, { idempotent: true }); } catch (err) { console.warn('[Compressor] Failed to delete compressed file:', err); }
             onProgress?.(1);
             return {
                 outputUri: inputUri,
@@ -317,3 +317,4 @@ export async function processPendingCompressions(
 
     return processed;
 }
+

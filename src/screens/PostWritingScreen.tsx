@@ -14,30 +14,15 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-    View,
-    Text,
-    TextInput,
-    ScrollView,
-    StyleSheet,
-    Platform,
-    ActivityIndicator,
-    Vibration,
-    type DimensionValue,
-} from 'react-native';
-import ReanimatedAnimated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withRepeat,
-    withSequence,
-    withTiming,
-} from 'react-native-reanimated';
+import { StyleSheet, Platform, ActivityIndicator, Vibration } from 'react-native';
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { ShimmerLine } from '@/components/ui/ShimmerLine';
 import { theme } from '@/styles/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CONFIG } from '@/config';
@@ -47,33 +32,6 @@ import type { AiJobCategory } from '@/types';
 import { isAlignmentReflection } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PostWriting'>;
-
-/* ── Shimmer Loading Animation ───────────────────────────────────────── */
-
-/** Simple shimmer placeholder for loading states — runs on UI thread */
-const ShimmerLine: React.FC<{ width: number | string; height?: number; style?: any }> = ({ width, height = 16, style }) => {
-    const pulse = useSharedValue(0);
-
-    useEffect(() => {
-        pulse.value = withRepeat(
-            withSequence(
-                withTiming(1, { duration: 1000 }),
-                withTiming(0, { duration: 1000 }),
-            ),
-            -1,
-            false
-        );
-        return () => { pulse.value = 0; };
-    }, [pulse]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        opacity: 0.15 + pulse.value * 0.2,
-    }));
-
-    return (
-        <ReanimatedAnimated.View style={[{ width: width as DimensionValue, height, borderRadius: 8, backgroundColor: theme.colors.textPrimary }, animatedStyle, style]} />
-    );
-};
 
 export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;

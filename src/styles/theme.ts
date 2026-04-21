@@ -63,6 +63,7 @@ export const theme = {
         // Deep Glassmorphism Containers
         glassBackground: 'rgba(255, 255, 255, 0.05)',
         glassBorder: 'rgba(255, 255, 255, 0.1)',
+        glassBorderFaint: 'rgba(255, 255, 255, 0.05)',   // Ultra-subtle border (0.05 opacity)
         glassHighlight: 'rgba(255, 255, 255, 0.15)',
         glassSurface: 'rgba(255, 255, 255, 0.06)',
         glassSurfaceMedium: 'rgba(255, 255, 255, 0.08)',

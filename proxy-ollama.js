@@ -1,6 +1,7 @@
 /**
  * 🛰️ Massive Ollama Cloud Bridge
  * Includes expanded model spoofing for Antigravity UI.
+ * Universal Mode: Supports both OpenAI/Ollama (/v1/chat/completions) and Claude (/v1/messages)
  */
 
 const http = require('http');
@@ -19,20 +20,33 @@ process.on('uncaughtException', (err) => {
 });
 
 http.createServer((req, res) => {
-    // 🎭 1. Massive Model Spoofing (Make the UI think we have everything)
-    if (req.method === 'GET' && req.url === '/v1/models') {
+    // 🪵 Log every request
+    fs.appendFileSync(ERROR_LOG, `[${new Date().toISOString()}] REQ: ${req.method} ${req.url}\n`);
+
+    // 🎭 1. Massive Model Spoofing
+    if (req.method === 'GET' && (req.url === '/v1/models' || req.url === '/models')) {
         const models = {
             data: [
+                { id: "gpt-4o-glm", object: "model", created: 1712952000, owned_by: "ollama" },
+                { id: "gpt-4o-minimax", object: "model", created: 1712952000, owned_by: "ollama" },
                 { id: "glm-5.1:cloud", object: "model", created: 1712952000, owned_by: "ollama" },
-                { id: "claude-sonnet-4-6", object: "model", created: 1712952000, owned_by: "ollama" },
+                { id: "minimax-m2.7:cloud", object: "model", created: 1712952000, owned_by: "ollama" },
                 { id: "claude-3-5-sonnet", object: "model", created: 1712952000, owned_by: "ollama" },
-                { id: "claude-3-5-sonnet-20241022", object: "model", created: 1712952000, owned_by: "ollama" },
-                { id: "qwen3-coder:cloud", object: "model", created: 1712952000, owned_by: "ollama" }
+                { id: "claude-3-opus", object: "model", created: 1712952000, owned_by: "ollama" }
             ]
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(models));
     }
+
+    // 🎯 Use Signal File for dynamic model routing
+    let targetModel = DEFAULT_MODEL;
+    try {
+        const signalFile = path.join(__dirname, 'model.txt');
+        if (fs.existsSync(signalFile)) {
+            targetModel = fs.readFileSync(signalFile, 'utf8').trim();
+        }
+    } catch (e) {}
 
     let bodyChunks = [];
     req.on('data', chunk => { bodyChunks.push(chunk); });
@@ -40,17 +54,26 @@ http.createServer((req, res) => {
     req.on('end', () => {
         const body = Buffer.concat(bodyChunks).toString();
         
-        // 🔄 Aggressive Model Aliasing
-        // Replaces claude-sonnet-4-6, claude-3-5-sonnet, etc. with glm-5.1:cloud
+        // 🔄 Universal Redirection & Aliasing
         let modifiedBody = body;
-        if (body.includes('sonnet') || body.includes('claude-')) {
-            modifiedBody = body.replace(/claude-(3-5-)?sonnet(-\d+|-4-6)?/g, DEFAULT_MODEL);
+        
+        // Translate Claude /v1/messages to Ollama /v1/chat/completions body if needed
+        // (Our cloud host understands both, but we ensure the model name is correct)
+        
+        if (body.includes('gpt-4o-minimax')) {
+            modifiedBody = body.replace(/"model":\s*"gpt-4o-minimax"/g, `"model": "minimax-m2.7:cloud"`);
+        } else if (body.includes('gpt-4o-glm')) {
+            modifiedBody = body.replace(/"model":\s*"gpt-4o-glm"/g, `"model": "glm-5.1:cloud"`);
+        } else if (body.includes('opus')) {
+            modifiedBody = body.replace(/claude-3-opus(-\d+)?/g, "glm-5.1:cloud");
+        } else if (body.includes('sonnet') || body.includes('claude-')) {
+            modifiedBody = body.replace(/claude-(3-5-)?sonnet(-\d+|-4-6)?/g, targetModel);
         }
 
         const options = {
             hostname: CLOUD_HOST,
             port: 443,
-            path: req.url,
+            path: req.url, // Cloud host handles both Anthropic and OpenAI protocols
             method: req.method,
             headers: {
                 ...req.headers,
@@ -82,6 +105,6 @@ http.createServer((req, res) => {
         proxyReq.end();
     });
 
-}).listen(PORT, '127.0.0.1', () => {
-    console.log(`✅ Massive Bridge active on http://127.0.0.1:${PORT}`);
+}).listen(PORT, '::', () => {
+    console.log(`✅ Universal Bridge active on http://[::]:${PORT}`);
 });

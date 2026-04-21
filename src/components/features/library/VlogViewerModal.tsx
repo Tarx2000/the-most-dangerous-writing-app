@@ -340,7 +340,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                     style={[styles.deleteModalBtn, { backgroundColor: theme.colors.glassBackground }]}
                                     onPress={() => setShowDeleteConfirm(null)}
                                 >
-                                    <MaterialCommunityIcons name="close" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                                    <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
                                     <Text style={styles.deleteModalBtnText}>Cancel</Text>
                                 </AnimatedScaleButton>
                                 <AnimatedScaleButton
@@ -357,7 +357,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                         }
                                     }}
                                 >
-                                    <MaterialCommunityIcons name="delete-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
                                     <Text style={styles.deleteModalBtnText}>Delete</Text>
                                 </AnimatedScaleButton>
                             </View>
@@ -519,7 +519,7 @@ const styles = StyleSheet.create({
         marginBottom: 8
     },
     deleteModalSub: {
-        color: 'rgba(255,255,255,0.6)',
+        color: theme.colors.textSecondary,
         fontSize: 15,
         textAlign: 'center',
         lineHeight: 22
@@ -533,8 +533,10 @@ const styles = StyleSheet.create({
         borderRadius: 16
     },
     deleteModalBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: 'bold'
     }
 });
+
+

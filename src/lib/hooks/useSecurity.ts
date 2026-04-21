@@ -30,7 +30,7 @@ import { usePreferences } from './useStorage';
  */
 
 /** Default inactivity auto-lock timeout — overridden by timeoutMins parameter */
-const AUTO_LOCK_TIMEOUT_MS = 180000;
+
 
 /** Grace period before locking when app goes to background.
  * Allows brief interruptions like responding to a message or switching
@@ -225,3 +225,4 @@ export function useSecurity(timeoutMins: number = 3) {
         keepAlive: resetLockTimeout,
     };
 }
+

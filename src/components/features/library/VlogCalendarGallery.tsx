@@ -630,28 +630,28 @@ const styles = StyleSheet.create({
     closeBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: theme.colors.glassBorder,
         paddingVertical: 10,
         paddingHorizontal: 18,
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: theme.colors.glassBorder,
         gap: 6,
     },
     closeBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontWeight: '600',
         fontSize: 14,
     },
     deleteBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 77, 77, 0.08)',
+        backgroundColor: theme.colors.dangerSubtle,
         paddingVertical: 10,
         paddingHorizontal: 18,
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255, 77, 77, 0.15)',
+        borderColor: theme.colors.dangerBorderLight,
         gap: 6,
     },
     deleteBtnText: {
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
     /* ── Delete Confirmation Modal ─────────────────────────────────────── */
     deleteModalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
+        backgroundColor: theme.colors.overlayVideoStrong,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 30,
@@ -674,10 +674,10 @@ const styles = StyleSheet.create({
         padding: 25,
         width: '100%',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
+        borderColor: theme.colors.glassBorderMedium,
     },
     deleteModalTitle: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: '900',
         marginBottom: 10,
@@ -696,8 +696,9 @@ const styles = StyleSheet.create({
         borderRadius: 100,
     },
     deleteModalBtnText: {
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontWeight: 'bold',
         fontSize: 15,
     },
 });
+

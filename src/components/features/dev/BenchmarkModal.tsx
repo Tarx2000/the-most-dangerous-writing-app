@@ -186,7 +186,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                         onPress={runBenchmark}
                         disabled={running}
                     >
-                        {running ? <ActivityIndicator color="#fff" /> : (
+                        {running ? <ActivityIndicator color={theme.colors.textPrimary} /> : (
                             <Text style={styles.runBtnText}>Run Benchmark Race</Text>
                         )}
                     </AnimatedScaleButton>
@@ -195,7 +195,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                     <View style={styles.phaseContainer}>
                         <View style={styles.phaseHeader}>
                             <Text style={styles.phaseTitle}>1. Title Generation</Text>
-                            {currentPhase === 'title' && <ActivityIndicator color="#FFD700" size="small" />}
+                            {currentPhase === 'title' && <ActivityIndicator color={theme.colors.gold} size="small" />}
                         </View>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
                             {MODELS.map(model => {
@@ -229,7 +229,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                     <View style={styles.phaseContainer}>
                         <View style={styles.phaseHeader}>
                             <Text style={styles.phaseTitle}>2. Summary Generation</Text>
-                            {currentPhase === 'summary' && <ActivityIndicator color="#FFD700" size="small" />}
+                            {currentPhase === 'summary' && <ActivityIndicator color={theme.colors.gold} size="small" />}
                         </View>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
                             {MODELS.map(model => {
@@ -262,7 +262,7 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                     <View style={styles.phaseContainer}>
                         <View style={styles.phaseHeader}>
                             <Text style={styles.phaseTitle}>3. Grammar Evaluation</Text>
-                            {currentPhase === 'grammar' && <ActivityIndicator color="#FFD700" size="small" />}
+                            {currentPhase === 'grammar' && <ActivityIndicator color={theme.colors.gold} size="small" />}
                         </View>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
                             {MODELS.map(model => {
@@ -309,17 +309,17 @@ const styles = StyleSheet.create({
         padding: 24,
         paddingTop: 40,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
+        borderBottomColor: 'theme.colors.glassBorderFaint',
     },
     headerTitle: {
-        color: '#fff',
+        color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: 'bold',
     },
     closeBtn: {
         width: 40, height: 40,
         justifyContent: 'center', alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: 'theme.colors.glassBorderFaint',
         borderRadius: 20,
     },
     scrollContent: {
@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
         marginBottom: 30,
     },
     runBtnText: {
-        color: '#fff',
+        color: theme.colors.textPrimary,
         fontSize: 16,
         fontWeight: 'bold',
     },
@@ -365,9 +365,9 @@ const styles = StyleSheet.create({
         gap: 16,
     },
     phaseCard: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: 'theme.colors.glassSurfaceMinimal',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: 'theme.colors.glassBorder',
         borderRadius: 12,
         padding: 16,
         width: 260,
@@ -375,8 +375,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     winnerCard: {
-        borderColor: 'rgba(255,215,0,0.4)',
-        backgroundColor: 'rgba(255,215,0,0.05)',
+        borderColor: 'theme.colors.goldBorder',
+        backgroundColor: 'theme.colors.goldBackground',
         borderWidth: 2,
     },
     cardHeader: {
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 12,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
+        borderBottomColor: 'theme.colors.glassBorderFaint',
         paddingBottom: 8,
     },
     modelName: {
@@ -422,3 +422,5 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     }
 });
+
+

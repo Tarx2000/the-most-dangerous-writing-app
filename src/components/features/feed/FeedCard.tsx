@@ -59,10 +59,10 @@ export interface FeedItem {
 /* ── COLOR ACCENTS — strong visual distinction per type ───────────────────── */
 
 const TYPE_COLORS: Record<string, string> = {
-    journal: 'rgba(255, 255, 255, 0.6)',
-    circle: '#FF2A2A',
-    checkin: '#FFD700',
-    clip: '#FF6B35',
+    journal: theme.colors.textSecondary,
+    circle: theme.colors.danger,
+    checkin: theme.colors.gold,
+    clip: theme.colors.orange,
 };
 
 /* ── HELPERS ──────────────────────────────────────────────────────────────── */
@@ -176,8 +176,8 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
         }
         // Journal — star icon
         return (
-            <View style={[styles.avatar, { borderColor: 'rgba(255,255,255,0.2)' }]}>
-                <MaterialCommunityIcons name="star-four-points" size={16} color="rgba(255,255,255,0.6)" />
+            <View style={[styles.avatar, { borderColor: theme.colors.border }]}>
+                <MaterialCommunityIcons name="star-four-points" size={16} color={theme.colors.textSecondary} />
             </View>
         );
     };
@@ -505,12 +505,12 @@ const styles = StyleSheet.create({
     },
     commentInput: {
         backgroundColor: theme.colors.glassSurface,
-        color: '#FFF',
+        color: theme.colors.textPrimary,
         fontSize: 14,
         padding: 12,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: theme.colors.glassBorder,
         minHeight: 60,
         textAlignVertical: 'top',
     },
@@ -545,7 +545,7 @@ const styles = StyleSheet.create({
         marginTop: 12,
         paddingTop: 10,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255, 255, 255, 0.04)',
+        borderTopColor: theme.colors.glassSurfaceMinimal,
     },
     metaRow: {
         flexDirection: 'row',
@@ -563,3 +563,7 @@ const styles = StyleSheet.create({
         padding: 4,
     },
 });
+
+
+
+

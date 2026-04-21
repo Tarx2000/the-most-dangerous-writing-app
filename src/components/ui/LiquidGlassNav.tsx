@@ -238,7 +238,8 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: '#FFD700',
+        backgroundColor: theme.colors.gold,
         zIndex: 3,
     },
 });
+

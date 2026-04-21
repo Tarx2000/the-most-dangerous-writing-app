@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, Vibration, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Vibration, useWindowDimensions } from 'react-native';
 import Animated, { 
     useSharedValue, 
     useAnimatedStyle, 
@@ -15,7 +15,7 @@ import { theme } from '@/styles/theme';
 import { storage } from '@/lib/storage';
 import { CONFIG } from '@/config';
 
-const { width } = Dimensions.get('window');
+
 
 const DialButton = ({ num, onPress, icon }: { num?: number; onPress: () => void; icon?: string }) => {
     return (
@@ -255,3 +255,5 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     }
 });
+
+
