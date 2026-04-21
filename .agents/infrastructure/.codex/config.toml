@@ -1,0 +1,26 @@
+model_provider = "ollama-bridge"
+model = "minimax-m2.7:cloud"
+model_reasoning_effort = "high"
+
+[model_providers.ollama-bridge]
+name = "Ollama Bridge"
+base_url = "http://127.0.0.1:4000/v1"
+
+[profiles.glm]
+model = "glm-5.1:cloud"
+model_provider = "ollama-bridge"
+
+[profiles.minimax]
+model = "minimax-m2.7:cloud"
+model_provider = "ollama-bridge"
+
+[profiles.minimax.features]
+js_repl = true
+guardian_approval = false
+prevent_idle_sleep = false
+
+[projects.'C:\Users\Tarik\Documents\MDWA App Antigravity Project\the-most-dangerous-writing-app']
+trust_level = "trusted"
+
+[windows]
+sandbox = "elevated"

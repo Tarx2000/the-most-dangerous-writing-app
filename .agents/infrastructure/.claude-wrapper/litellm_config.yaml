@@ -1,0 +1,12 @@
+model_list:
+  - model_name: minimax-m2.7:cloud
+    litellm_params:
+      model: ollama_chat/minimax-m2.7:cloud
+      api_base: https://ollama.com
+  - model_name: glm-5.1:cloud
+    litellm_params:
+      model: ollama_chat/glm-5.1:cloud
+      api_base: https://ollama.com
+
+litellm_settings:
+  drop_params: true
