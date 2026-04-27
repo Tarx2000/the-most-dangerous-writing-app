@@ -1,11 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import {View,
-    Text,
-    StyleSheet,
-    StatusBar,
-    Platform,
+import { View, Text, StyleSheet, StatusBar, Platform, Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    Alert,, vibrate} from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence, withRepeat, cancelAnimation } from 'react-native-reanimated';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
