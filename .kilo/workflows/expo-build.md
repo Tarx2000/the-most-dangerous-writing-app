@@ -21,7 +21,21 @@ description: Local Android Build — runs all tests first, then builds a release
 
 ---
 
-## Step 1 — Run Test Suite
+## Step 1 — Lint Check (Zero Errors Required)
+
+Run ESLint. **The build is blocked if any errors are present.**
+
+```bash
+npm run lint
+```
+
+> [!CAUTION]
+> **STOP HERE if ESLint reports any errors.** Do NOT proceed to Step 2.  
+> Warnings are acceptable, but **errors must be zero**. Report the error output and help the user fix it. Only continue after `npm run lint` exits clean.
+
+---
+
+## Step 2 — Run Test Suite
 
 Run all project tests. **Every single test must pass before proceeding.**
 
@@ -30,7 +44,7 @@ npm test
 ```
 
 > [!CAUTION]
-> **STOP HERE if any test fails.** Do NOT proceed to Step 2.  
+> **STOP HERE if any test fails.** Do NOT proceed to Step 3.  
 > Instead, report the failing tests to the user and help them fix the issues. But dont fix anything yourself! ONLY REPORT THE ISSUE!
 > Only continue to the build step after re-running tests and confirming 100% pass rate.
 
