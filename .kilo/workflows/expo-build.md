@@ -44,7 +44,7 @@ npm test
 ```
 
 > [!CAUTION]
-> **STOP HERE if any test fails.** Do NOT proceed to Step 3.  
+> **STOP HERE if any test fails.** Do NOT proceed to Step 4.  
 > Instead, report the failing tests to the user and help them fix the issues. But dont fix anything yourself! ONLY REPORT THE ISSUE!
 > Only continue to the build step after re-running tests and confirming 100% pass rate.
 
