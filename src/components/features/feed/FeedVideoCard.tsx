@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {View,
+import { View,
     Text,
     Image,
     StyleSheet,
+Pressable
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    Pressable,, vibrate} from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import {View,
+import { View,
     Text,
     TextInput,
     KeyboardAvoidingView,
@@ -7,8 +7,9 @@ import {View,
     ScrollView,
     StyleSheet,
     Pressable,
+DeviceEventEmitter
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    DeviceEventEmitter, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';

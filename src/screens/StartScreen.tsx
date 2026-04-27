@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {View,
+import { View,
     Text,
     StatusBar,
     ScrollView,
     Platform,
+StyleSheet
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    StyleSheet,, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';

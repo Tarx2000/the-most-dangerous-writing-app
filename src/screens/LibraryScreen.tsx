@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import {View,
+import { View,
     Text,
     Pressable,
     ScrollView,
@@ -9,8 +9,9 @@ import {View,
     StatusBar,
     ActivityIndicator,
     DeviceEventEmitter,
+useWindowDimensions
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    useWindowDimensions,, vibrate} from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { FlashList } from '@shopify/flash-list';

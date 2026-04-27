@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {View,
+import { View,
     Text,
     StyleSheet,
     Modal,
@@ -7,8 +7,9 @@ import {View,
     Pressable,
     ActivityIndicator,
     useWindowDimensions,
+Platform
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    Platform,, vibrate} from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,

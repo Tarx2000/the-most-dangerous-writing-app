@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, useWindowDimensions
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import {View, Text, StyleSheet, useWindowDimensions, vibrate} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS, withSpring } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';

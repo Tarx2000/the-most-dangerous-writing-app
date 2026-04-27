@@ -30,8 +30,9 @@ import {Modal,
     useWindowDimensions,
     Platform,
     TouchableWithoutFeedback,
+ScrollView
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    ScrollView,, vibrate} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {

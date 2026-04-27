@@ -1,12 +1,13 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import {View,
+import { View,
     Text,
     StyleSheet,
     useWindowDimensions,
     ScrollView,
     NativeSyntheticEvent,
+NativeScrollEvent
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    NativeScrollEvent,, vibrate} from 'react-native';
 import { theme } from '@/styles/theme';
 
 /* ────────────────────────────────────────────────────────────────────────────

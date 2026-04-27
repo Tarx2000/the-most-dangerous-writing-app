@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {View,
+import { View,
     Text,
     StyleSheet,
     useWindowDimensions,
     Modal,
+Platform
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    Platform,, vibrate} from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,

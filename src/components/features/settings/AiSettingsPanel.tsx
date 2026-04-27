@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useCallback } from 'react';
+import { View, Text, TextInput, ActivityIndicator, Platform, StyleSheet
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import {View, Text, TextInput, ActivityIndicator, Platform, StyleSheet, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { commonStyles } from '@/styles/commonStyles';

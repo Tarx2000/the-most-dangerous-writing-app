@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
+import { View, Text, ScrollView, TextInput
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import {View, Text, ScrollView, TextInput, vibrate} from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';

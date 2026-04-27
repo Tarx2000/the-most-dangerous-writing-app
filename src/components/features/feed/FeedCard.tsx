@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import {View,
+import { View,
     Text,
     TextInput,
     StyleSheet,
     Modal,
     Pressable,
+Platform
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    Platform,, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RichText } from '@/components/ui/RichText';

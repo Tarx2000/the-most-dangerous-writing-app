@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import {View,
+import { View,
     Text,
     ScrollView,
+Pressable
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    Pressable,, vibrate} from 'react-native';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
 import { ActionSheet } from '@/components/ui/ActionSheet';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';

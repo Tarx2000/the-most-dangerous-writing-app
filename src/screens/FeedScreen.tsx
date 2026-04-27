@@ -1,13 +1,14 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import {View,
+import { View,
     Text,
     StyleSheet,
     Platform,
     StatusBar,
     Pressable,
     useWindowDimensions,
+DeviceEventEmitter
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
-    DeviceEventEmitter,, vibrate} from 'react-native';
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
