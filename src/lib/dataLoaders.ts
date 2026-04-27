@@ -152,6 +152,53 @@ export interface LoadContext {
     setAutoGenerateSummaries: Setter<boolean>;
 }
 
+/**
+ * Run an emergency check: if SQLite is empty but AsyncStorage
+ * still holds legacy data, re-run the migration. This catches
+ * the "done flag set late / crash during first run" failure mode.
+ */
+export async function detectAndRepairEmptySqlite(): Promise<{ repaired: boolean; notesRecovered: number; personsRecovered: number; vlogsRecovered: number }> {
+    const alreadyDone = await storage.getItem(MIGRATION_DONE_KEY);
+    // Only auto-repair if we previously claimed migration was done
+    if (alreadyDone !== 'true') {
+        return { repaired: false, notesRecovered: 0, personsRecovered: 0, vlogsRecovered: 0 };
+    }
+
+    const sqliteNotes = await getAllNotes();
+    const sqlitePersons = await getAllPersons();
+    const sqliteVlogs = await getAllVlogs();
+
+    const rawNotes = await storage.getItem('SAVED_NOTES');
+    const rawPersons = await storage.getItem('SAVED_PERSONS');
+    const rawVlogs = await storage.getItem('SAVED_VLOGS');
+
+    let legacyNotes: LegacyNote[] = [];
+    let legacyPersons: Person[] = [];
+    let legacyVlogs: SavedVlog[] = [];
+
+    try { if (rawNotes) legacyNotes = JSON.parse(rawNotes); } catch { /**/ }
+    try { if (rawPersons) legacyPersons = JSON.parse(rawPersons); } catch { /**/ }
+    try { if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs); } catch { /**/ }
+
+    const hasAsyncData = legacyNotes.length > 0 || legacyPersons.length > 0 || legacyVlogs.length > 0;
+    const sqliteEmpty = sqliteNotes.length === 0 && sqlitePersons.length === 0 && sqliteVlogs.length === 0;
+
+    if (hasAsyncData && sqliteEmpty) {
+        logger('warn', 'Migration', 'SQLite empty but AsyncStorage has data — re-running migration');
+        // Clear the done flag so migration re-runs
+        await storage.removeItem(MIGRATION_DONE_KEY);
+        await migrateAsyncStorageToSqlite();
+        return {
+            repaired: true,
+            notesRecovered: legacyNotes.length,
+            personsRecovered: legacyPersons.length,
+            vlogsRecovered: legacyVlogs.length,
+        };
+    }
+
+    return { repaired: false, notesRecovered: 0, personsRecovered: 0, vlogsRecovered: 0 };
+}
+
 export async function loadNotes(ctx: LoadContext): Promise<void> {
     const notes = await getAllNotes();
     ctx.setSavedNotes(notes);
@@ -288,9 +335,20 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
    CROSS-CUTTING OPERATIONS (using repositories)
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-export async function clearAllDataSqlite(): Promise<void> {
+export async function clearAndReMigrateAsyncStorage(): Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number }> {
+    logger('info', 'Migration', 'Starting manual re-migration from AsyncStorage');
+    await storage.removeItem(MIGRATION_DONE_KEY);
     await deleteAllNotes();
     await deleteAllPersons();
     await deleteAllVlogs();
     await (await import('@/lib/repositories/settingsRepository')).deleteAllSettings();
+    await migrateAsyncStorageToSqlite();
+    const notes = await getAllNotes();
+    const persons = await getAllPersons();
+    const vlogs = await getAllVlogs();
+    return {
+        notesRecovered: notes.length,
+        personsRecovered: persons.length,
+        vlogsRecovered: vlogs.length,
+    };
 }

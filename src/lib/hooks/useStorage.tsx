@@ -42,7 +42,8 @@ import {
     createAiConfigOps,
     createCrossCuttingOps,
 } from '@/lib/storageOps';
-import { loadAllData as loadAllDataFromDataLoaders } from '@/lib/dataLoaders';
+import { loadAllData as loadAllDataFromDataLoaders, detectAndRepairEmptySqlite, clearAndReMigrateAsyncStorage } from '@/lib/dataLoaders';
+import { logger } from '@/lib/logger';
 import { processPendingCompressions } from '@/lib/videoCompressor';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -141,6 +142,7 @@ interface StorageActionsContextType {
     clearAllData: () => Promise<void>;
     saveAlignmentReflection: (reflection: AlignmentReflection) => Promise<{ streakIncreased: boolean; newStreak: number }>;
     loadAllData: () => Promise<void>;
+    repairMigration: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number }>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -275,6 +277,13 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
+        // 1. Auto-detect and repair empty SQLite with lingering AsyncStorage data
+        const repair = await detectAndRepairEmptySqlite();
+        if (repair.repaired) {
+            logger('info', 'Storage', `Recovered ${repair.notesRecovered} notes, ${repair.personsRecovered} persons, ${repair.vlogsRecovered} vlogs from AsyncStorage`);
+        }
+
+        // 2. Normal data load
         await loadAllDataFromDataLoaders({
             setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
             setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
@@ -388,6 +397,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     const actionsValue = useMemo<StorageActionsContextType>(() => ({
         ...crossCuttingOps, loadAllData,
+        repairMigration: clearAndReMigrateAsyncStorage,
     }), [crossCuttingOps, loadAllData]);
 
     /* ══════════════════════════════════════════════════════════════════════

@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput
-} from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
@@ -31,7 +30,7 @@ type DeveloperToolsPanelProps = {
     preferences: { devMode: boolean; debugLayout: boolean; fontIndex: number; sizeIndex: number; toggleDevMode: () => Promise<void>; toggleDebugLayout: () => Promise<void> };
     aiConfig: { aiPrompts: AiPrompts; saveAiPrompts: (prompts: AiPrompts) => Promise<void> };
     vlogs: { savedVlogs: SavedVlog[]; totalVlogStorageBytes: number };
-    storageActions: { clearAllData: () => Promise<void> };
+    storageActions: { clearAllData: () => Promise<void>; repairMigration: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number }> };
     queueState: AiQueueState;
     devModeUnlocked: boolean;
     setNewStreakParam: (val: number) => void;
@@ -152,7 +151,32 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             setShowSettings(false);
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>🗑 Clear All Data</Text>
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>ðŸ—‘ Clear All Data</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.purpleFill, marginTop: 0 }]}
+                        onPress={async () => {
+                            vibrate(50);
+                            const result = await storageActions.repairMigration();
+                            Alert.alert(
+                                'Recovery Complete',
+                                `Recovered from AsyncStorage:\nâ€¢ ${result.notesRecovered} notes\nâ€¢ ${result.personsRecovered} persons\nâ€¢ ${result.vlogsRecovered} vlogs`,
+                                [{ text: 'OK' }]
+                            );
+                        }}
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>ðŸ› Restore from AsyncStorage</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.orangeFill, marginTop: 0 }]}
+                        onPress={() => {
+                            notes.clearAllAiMetadata();
+                            vibrate(50);
+                        }}
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devOrange }]}>ðŸ—‘ Reset all AI Entries</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
