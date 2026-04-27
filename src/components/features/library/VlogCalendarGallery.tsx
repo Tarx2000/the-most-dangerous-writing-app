@@ -1,15 +1,13 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import {
-    View,
+import {View,
     Text,
     Image,
     StyleSheet,
     Modal,
     ScrollView,
     Platform,
-    Vibration,
-    useWindowDimensions,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    useWindowDimensions,, vibrate} from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -147,12 +145,12 @@ export const VlogCalendarGallery: React.FC<Props> = ({
             cellRef.measureInWindow((x, y, width, height) => {
                 setSourceRect({ x, y, width, height });
                 setExpandedDayVlogs(dayVlogs);
-                Vibration.vibrate(20);
+                vibrate(20);
             });
         } else {
             setSourceRect(null);
             setExpandedDayVlogs(dayVlogs);
-            Vibration.vibrate(20);
+            vibrate(20);
         }
     }, [vlogsByDate]);
 
@@ -186,7 +184,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                         style={styles.unlockBtn}
                         onPress={async () => {
                             const success = await onUnlock();
-                            if (success) Vibration.vibrate(50);
+                            if (success) vibrate(50);
                         }}
                     >
                         <MaterialCommunityIcons name="fingerprint" size={22} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />

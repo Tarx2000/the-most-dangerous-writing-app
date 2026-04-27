@@ -5,11 +5,11 @@ import {
     ScrollView,
     TextInput,
     StyleSheet,
-    Vibration,
     Platform,
     Dimensions,
-    KeyboardAvoidingView,
+    KeyboardAvoidingView
 } from 'react-native';
+import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -170,7 +170,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
             birthday: editBirthday.trim() || undefined,
             bio: editBio.trim() || undefined,
         });
-        Vibration.vibrate(30);
+        vibrate(30);
         setIsEditing(false);
     };
 
@@ -220,7 +220,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
 
             <AnimatedScaleButton style={styles.unlockBtn} onPress={async () => {
                 const success = await onUnlock();
-                if (success) Vibration.vibrate(50);
+                if (success) vibrate(50);
             }}>
                 <MaterialCommunityIcons name="fingerprint" size={24} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
                 <Text style={styles.unlockBtnText}>Unlock Profile</Text>
@@ -848,3 +848,4 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
 });
+

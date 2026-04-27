@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-    View,
+import {View,
     Text,
     StatusBar,
     ScrollView,
     Platform,
-    Vibration,
-    StyleSheet,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    StyleSheet,, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
@@ -182,16 +180,16 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                             if (security.isNotesUnlocked) {
                                 navigation.navigate('VisionBoard');
                             } else {
-                                Vibration.vibrate([0, 50, 100, 50]);
+                                vibrate([0, 50, 100, 50]);
                             }
                         }}
                         onLongPress={async () => {
                             if (security.isNotesUnlocked) {
                                 security.lockAll();
-                                Vibration.vibrate(50);
+                                vibrate(50);
                             } else {
                                 const success = await security.unlockNotes();
-                                if (success) Vibration.vibrate(50);
+                                if (success) vibrate(50);
                             }
                         }}
                     >
@@ -207,9 +205,9 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                     const newState = !devModeUnlocked;
                                     setDevModeUnlocked(newState);
                                     if (newState) {
-                                        Vibration.vibrate([0, 50, 100, 50, 100, 150]);
+                                        vibrate([0, 50, 100, 50, 100, 150]);
                                     } else {
-                                        Vibration.vibrate([0, 150, 100, 150]);
+                                        vibrate([0, 150, 100, 150]);
                                     }
                                     setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
                                     setTimeout(() => setDevToast(null), 2000);
@@ -290,7 +288,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                     </Text>
                                 </AnimatedScaleButton>
                                 {selectedPersonId && (
-                                    <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { Vibration.vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
+                                    <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
                                         <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
                                         <Text style={styles.quickNoteText}>Quick Note</Text>
                                     </AnimatedScaleButton>

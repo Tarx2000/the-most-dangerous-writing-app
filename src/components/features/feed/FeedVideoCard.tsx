@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-    View,
+import {View,
     Text,
     Image,
     StyleSheet,
-    Vibration,
-    Pressable,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    Pressable,, vibrate} from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -140,7 +138,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
             withTiming(0.8, { duration: 50 }),
             withTiming(0, { duration: 600 })
         );
-        Vibration.vibrate(10);
+        vibrate(10);
     }, [isMuted, flashOpacity]);
 
     const handleExpandMedia = useCallback(() => {
@@ -151,7 +149,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
         } else {
             onOpenVlog(vlog, undefined, player);
         }
-        Vibration.vibrate(10);
+        vibrate(10);
     }, [vlog, onOpenVlog, player]);
 
     const { updateVlog } = useVlogs();
@@ -263,7 +261,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                         <AnimatedScaleButton
                             onPress={() => {
                                 onToggleBookmark(vlog.id);
-                                Vibration.vibrate(10);
+                                vibrate(10);
                             }}
                             style={styles.actionBtn}
                         >

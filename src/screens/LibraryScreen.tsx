@@ -1,18 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import {
-    View,
+import {View,
     Text,
     Pressable,
     ScrollView,
     Modal,
     StyleSheet,
-    Vibration,
     Platform,
     StatusBar,
     ActivityIndicator,
     DeviceEventEmitter,
-    useWindowDimensions,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    useWindowDimensions,, vibrate} from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { FlashList } from '@shopify/flash-list';
@@ -187,7 +185,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
      * Replaces the old direct generateTitle/generateSummary calls.
      */
     const handleRegenerateAi = useCallback(async (note: SavedNote) => {
-        Vibration.vibrate(30);
+        vibrate(30);
         const category: AiJobCategory = isAlignmentRef(note)
             ? 'checkin'
             : note.personId
@@ -250,7 +248,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.primaryAction, borderColor: theme.colors.primaryAction }]}
                         onPress={async () => {
                             const success = await security.unlockNotes();
-                            if (success) Vibration.vibrate(50);
+                            if (success) vibrate(50);
                         }}
                     >
                         <MaterialCommunityIcons name="lock-open-variant" size={16} color={theme.colors.primaryActionText} style={styles.iconMarginRight} />
@@ -408,7 +406,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                                         style={styles.circlesUnlockBtn}
                                         onPress={async () => {
                                             const success = await security.unlockCircles();
-                                            if (success) Vibration.vibrate(50);
+                                            if (success) vibrate(50);
                                         }}
                                     >
                                         <MaterialCommunityIcons name="fingerprint" size={22} color={theme.colors.textPrimary} style={styles.iconMarginRight10} />

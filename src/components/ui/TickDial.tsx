@@ -1,14 +1,12 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import {
-    View,
+import {View,
     Text,
     StyleSheet,
     useWindowDimensions,
-    Vibration,
     ScrollView,
     NativeSyntheticEvent,
-    NativeScrollEvent,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    NativeScrollEvent,, vibrate} from 'react-native';
 import { theme } from '@/styles/theme';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -84,7 +82,7 @@ export const TickDial = React.memo(function TickDial({
      */
     useEffect(() => {
         if (hasMounted.current) {
-            Vibration.vibrate(10);
+            vibrate(10);
         }
     }, [selectedIndex]);
 

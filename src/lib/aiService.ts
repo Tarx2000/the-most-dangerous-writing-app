@@ -103,6 +103,31 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+
+
+/* ── Cancel Token ─────────────────────────────────────────────────── */
+
+/**
+ * Token for cancelling in-flight AI requests.
+ * Pass the same token instance to ollamaChat/ollamaChatSingle to allow
+ * external cancellation (e.g. user hits "Cancel" or queue cancels a job).
+ * Calling abort() will cause the in-flight XHR to be rejected with
+ * an "AI request cancelled" error.
+ */
+export class AiCancelToken {
+    public aborted = false;
+
+    /** Mark this token as cancelled and abort any in-flight request. */
+    abort(): void {
+        this.aborted = true;
+    }
+
+    /** Reset the token so it can be reused for a new request. */
+    reset(): void {
+        this.aborted = false;
+    }
+}
+
 /* ── Internal Helpers ─────────────────────────────────────────────────── */
 
 /**
@@ -114,7 +139,8 @@ async function ollamaChatSingle(
     userMessage: string,
     config: AiConfig = {},
     optionsOverwrite: Record<string, any> = {},
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    cancelToken?: AiCancelToken
 ): Promise<string> {
     const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
     const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
@@ -129,6 +155,7 @@ async function ollamaChatSingle(
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', url);
+
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
 
@@ -138,12 +165,14 @@ async function ollamaChatSingle(
         let streamedResponse = '';
         let wordBuffer = '';
         let settled = false;
+        let cancelCheckInterval: ReturnType<typeof setInterval> | null = null;
 
         /** Guard against double-resolve/reject — clears timeout on first settlement */
         const settle = (fn: 'resolve' | 'reject', value: string | Error) => {
             if (settled) return;
             settled = true;
             clearTimeout(timeoutId);
+            if (cancelCheckInterval) { clearInterval(cancelCheckInterval); cancelCheckInterval = null; }
             if (fn === 'resolve') resolve(value as string);
             else reject(value as Error);
         };
@@ -213,6 +242,21 @@ async function ollamaChatSingle(
             settle('reject', new Error(`AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s`));
         }, AI_REQUEST_TIMEOUT_MS);
 
+        // Cancel token: poll for external abort (e.g. user cancels or queue cancels)
+        if (cancelToken) {
+            if (cancelToken.aborted) {
+                clearTimeout(timeoutId);
+                return Promise.reject(new Error('AI request cancelled'));
+            }
+            cancelCheckInterval = setInterval(() => {
+                if (cancelToken!.aborted) {
+                    if (cancelCheckInterval) clearInterval(cancelCheckInterval);
+                    xhr.abort();
+                    settle('reject', new Error('AI request cancelled'));
+                }
+            }, 200);
+        }
+
         xhr.send(JSON.stringify({
             model,
             messages: [
@@ -241,7 +285,8 @@ async function ollamaChat(
     userMessage: string,
     config: AiConfig = {},
     optionsOverwrite: Record<string, any> = {},
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    cancelToken?: AiCancelToken
 ): Promise<string> {
     const maxAttempts = AI_MAX_RETRIES + 1; // e.g. AI_MAX_RETRIES=2 → 3 attempts
     let lastError: Error = new Error('Unknown error');
@@ -260,6 +305,7 @@ async function ollamaChat(
                 config,
                 optionsOverwrite,
                 chunkCb,
+                cancelToken,
             );
             return result;
         } catch (error: any) {
@@ -278,6 +324,10 @@ async function ollamaChat(
                     `[AI] Transient error (attempt ${attempt + 1}/${maxAttempts}), ` +
                     `retrying in ${delayMs}ms: ${error.message}`
                 );
+                // If cancelled, don't retry
+                if (cancelToken && cancelToken.aborted) {
+                    throw new Error('AI request cancelled');
+                }
                 await sleep(delayMs);
             }
         }
@@ -311,7 +361,8 @@ export async function generateTitle(
     text: string,
     config: AiConfig = {},
     onChunk?: (text: string) => void,
-    relationship?: RelationshipContext
+    relationship?: RelationshipContext,
+    cancelToken?: AiCancelToken
 ): Promise<string> {
     let prompt = config.prompts?.title || DEFAULT_AI_PROMPTS.title;
     if (relationship) {
@@ -320,7 +371,7 @@ export async function generateTitle(
             .replace(/\{\{RELATIONSHIP_STATUS\}\}/g, relationship.relationshipStatus);
     }
     // Removed num_predict to prevent empty outputs
-    const title = await ollamaChat(prompt, text, config, {}, onChunk);
+    const title = await ollamaChat(prompt, text, config, {}, onChunk, cancelToken);
     // Clean up: remove surrounding quotes if the model adds them
     return title.replace(/^["']+|["']+$/g, '').trim();
 }
@@ -336,7 +387,8 @@ export async function generateSummary(
     text: string,
     config: AiConfig = {},
     onChunk?: (text: string) => void,
-    relationship?: RelationshipContext
+    relationship?: RelationshipContext,
+    cancelToken?: AiCancelToken
 ): Promise<string[]> {
     let prompt = config.prompts?.summary || DEFAULT_AI_PROMPTS.summary;
     if (relationship) {
@@ -344,7 +396,7 @@ export async function generateSummary(
             .replace(/\{\{PERSON_NAME\}\}/g, relationship.personName)
             .replace(/\{\{RELATIONSHIP_STATUS\}\}/g, relationship.relationshipStatus);
     }
-    const raw = await ollamaChat(prompt, text, config, {}, onChunk);
+    const raw = await ollamaChat(prompt, text, config, {}, onChunk, cancelToken);
 
     // Parse bullet points: split by newline, strip "• " or "- " prefixes
     const bullets = raw
@@ -366,10 +418,11 @@ export async function generateSummary(
 export async function checkGrammar(
     text: string,
     config: AiConfig = {},
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    cancelToken?: AiCancelToken
 ): Promise<GrammarSuggestion[]> {
     const prompt = config.prompts?.grammar || DEFAULT_AI_PROMPTS.grammar;
-    const raw = await ollamaChat(prompt, text, config, {}, onChunk);
+    const raw = await ollamaChat(prompt, text, config, {}, onChunk, cancelToken);
 
     try {
         // Try to extract JSON from the response (model might wrap in code fences)
@@ -464,11 +517,12 @@ export interface AiProcessResult {
 export async function processNote(
     text: string,
     config: AiConfig = {},
-    relationship?: RelationshipContext
+    relationship?: RelationshipContext,
+    cancelToken?: AiCancelToken
 ): Promise<AiProcessResult> {
     try {
-        const title = await generateTitle(text, config, undefined, relationship);
-        const summary = await generateSummary(text, config, undefined, relationship);
+        const title = await generateTitle(text, config, undefined, relationship, cancelToken);
+        const summary = await generateSummary(text, config, undefined, relationship, cancelToken);
         return { title, summary, failed: false };
     } catch (error: any) {
         console.warn('[AI] processNote failed — returning empty result:', error.message);

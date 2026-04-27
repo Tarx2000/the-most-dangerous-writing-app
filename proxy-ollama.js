@@ -31,6 +31,7 @@ http.createServer((req, res) => {
                 { id: "gpt-4o-minimax", object: "model", created: 1712952000, owned_by: "ollama" },
                 { id: "glm-5.1:cloud", object: "model", created: 1712952000, owned_by: "ollama" },
                 { id: "minimax-m2.7:cloud", object: "model", created: 1712952000, owned_by: "ollama" },
+                { id: "kimi-k2.6:cloud", object: "model", created: 1712952000, owned_by: "ollama" },
                 { id: "claude-3-5-sonnet", object: "model", created: 1712952000, owned_by: "ollama" },
                 { id: "claude-3-opus", object: "model", created: 1712952000, owned_by: "ollama" }
             ]

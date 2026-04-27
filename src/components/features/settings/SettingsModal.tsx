@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import {
-    View,
+import {View,
     Text,
     ScrollView,
-    Pressable,
-    Vibration,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    Pressable,, vibrate} from 'react-native';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
 import { ActionSheet } from '@/components/ui/ActionSheet';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -210,7 +208,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                                     style={{ flex: 1, paddingVertical: 14, alignItems: 'center', backgroundColor: preferences.sizeIndex === i ? theme.colors.primaryAction : 'transparent', borderRadius: theme.borderRadius.sm }}
                                     onPress={() => {
                                         preferences.savePreferences(preferences.fontIndex, i);
-                                        Vibration.vibrate(10);
+                                        vibrate(10);
                                     }}
                                 >
                                     <Text style={{ color: preferences.sizeIndex === i ? theme.colors.primaryActionText : theme.colors.textSecondary, fontSize: 12 + (i * 4), fontWeight: preferences.sizeIndex === i ? 'bold' : '500' }}>
@@ -244,7 +242,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
                             onPress={() => {
                                 preferences.updatePreferPinAuth(!preferences.preferPinAuth);
-                                Vibration.vibrate(10);
+                                vibrate(10);
                             }}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -349,7 +347,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 10 }}
                             onPress={() => {
                                 preferences.updateHapticsPref(!preferences.enableHaptics);
-                                Vibration.vibrate(10);
+                                vibrate(10);
                             }}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -369,7 +367,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceMinimal, borderRadius: theme.borderRadius.sm, padding: 14 }}
                             onPress={() => {
                                 feedData.toggleAutoPlayFeedVideos(!feedData.autoPlayFeedVideos);
-                                Vibration.vibrate(10);
+                                vibrate(10);
                             }}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>

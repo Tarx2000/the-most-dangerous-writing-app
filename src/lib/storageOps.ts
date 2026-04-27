@@ -11,7 +11,8 @@
  */
 
 import React from 'react';
-import { Alert, Vibration } from 'react-native';
+import {Alert} from 'react-native';
+import {vibrate} from '@/lib/haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { storage } from '@/lib/storage';
 import { CONFIG } from '@/config';
@@ -102,7 +103,7 @@ export function createNotesOps(
             await storage.multiSet(writes);
         } catch (error) {
             console.error('[Storage] Failed to save note:', error);
-            Vibration.vibrate([0, 500]);
+            vibrate([0, 500]);
             notesRef.current = prevNotes;
             setNotes(prevNotes);
             currentStreakRef.current = prevStreak;
@@ -126,7 +127,7 @@ export function createNotesOps(
             await storage.setItem('SAVED_NOTES', JSON.stringify(updatedNotes));
         } catch (error) {
             console.error('[Storage] Failed to delete note:', error);
-            Vibration.vibrate([0, 500]);
+            vibrate([0, 500]);
             notesRef.current = prevNotes;
             setNotes(prevNotes);
         }
@@ -195,7 +196,7 @@ export function createPersonsOps(
             await storage.setItem('SAVED_PERSONS', JSON.stringify(updatedPersons));
         } catch (error) {
             console.error('[Storage] Failed to add person:', error);
-            Vibration.vibrate([0, 500]);
+            vibrate([0, 500]);
             personsRef.current = prevPersons;
             setPersons(prevPersons);
         }
@@ -226,7 +227,7 @@ export function createPersonsOps(
             notesRef.current = prevNotes;
             setPersons(prevPersons);
             setNotes(prevNotes);
-            Vibration.vibrate([0, 500]);
+            vibrate([0, 500]);
             Alert.alert('Error', 'Failed to delete person. Please try again.');
         }
     };
@@ -308,7 +309,7 @@ export function createVlogOps(
             setVlogs(prevVlogs);
             setTotalBytes(prevBytes);
             totalBytesRef.current = prevBytes;
-            Vibration.vibrate([0, 500]);
+            vibrate([0, 500]);
         }
     };
 
@@ -366,12 +367,12 @@ export function createFeedOps(
 
         try {
             await storage.setItem('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
-            Vibration.vibrate([0, 20, 0, 20]);
+            vibrate([0, 20, 0, 20]);
         } catch (error) {
             console.error('[Storage] Failed to toggle bookmark:', error);
             bookmarksRef.current = prev;
             setBookmarks(prev);
-            Vibration.vibrate([0, 500]);
+            vibrate([0, 500]);
         }
     };
 

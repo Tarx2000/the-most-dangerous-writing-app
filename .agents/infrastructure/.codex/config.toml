@@ -1,26 +1,45 @@
+# ============================================================================
+# Codex CLI Configuration — Ollama Cloud Bridge
+# ============================================================================
+# Connects Codex CLI to Ollama Cloud via the LiteLLM proxy on port 4000.
+# Profiles let you switch models via: codex -p minimax / codex -p glm / codex -p kimi
+# ============================================================================
+
 model_provider = "ollama-bridge"
 model = "minimax-m2.7:cloud"
 model_reasoning_effort = "high"
 
+# Path to custom model metadata (eliminates 'model metadata not found' warnings)
+# Now configured per-profile using absolute paths.
+
+# ── Custom Provider: LiteLLM Bridge ────────────────────────────────────────
 [model_providers.ollama-bridge]
 name = "Ollama Bridge"
 base_url = "http://127.0.0.1:4000/v1"
 
+# ── Model Profiles ─────────────────────────────────────────────────────────
+# Switch with: codex -p glm / codex -p minimax / codex -p kimi
+
 [profiles.glm]
 model = "glm-5.1:cloud"
 model_provider = "ollama-bridge"
+model_catalog_json = "C:/Users/Tarik/.codex/model-catalog.json"
 
 [profiles.minimax]
 model = "minimax-m2.7:cloud"
 model_provider = "ollama-bridge"
+model_catalog_json = "C:/Users/Tarik/.codex/model-catalog.json"
 
 [profiles.minimax.features]
 js_repl = true
 guardian_approval = false
 prevent_idle_sleep = false
 
-[projects.'C:\Users\Tarik\Documents\MDWA App Antigravity Project\the-most-dangerous-writing-app']
-trust_level = "trusted"
+[profiles.kimi]
+model = "kimi-k2.6:cloud"
+model_provider = "ollama-bridge"
+model_catalog_json = "C:/Users/Tarik/.codex/model-catalog.json"
 
+# ── Trust Settings ─────────────────────────────────────────────────────────
 [windows]
 sandbox = "elevated"

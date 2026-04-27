@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Vibration } from 'react-native';
+import { vibrate } from '@/lib/haptics';
+import {View, Text, ScrollView, TextInput, vibrate} from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -114,7 +115,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
             <AnimatedScaleButton
                 style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.devMode ? theme.colors.goldFillMedium : theme.colors.glassHighlight, marginTop: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
                 onPress={() => {
-                    Vibration.vibrate(preferences.devMode ? [0, 100, 50, 100] : [0, 50, 100, 50, 100, 150]);
+                    vibrate(preferences.devMode ? [0, 100, 50, 100] : [0, 50, 100, 50, 100, 150]);
                     preferences.toggleDevMode();
                 }}
             >
@@ -157,7 +158,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.orangeFill, marginTop: 0 }]}
                         onPress={() => {
                             notes.clearAllAiMetadata();
-                            Vibration.vibrate(50);
+                            vibrate(50);
                         }}
                     >
                         <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devOrange }]}>🗑 Reset all AI Entries</Text>

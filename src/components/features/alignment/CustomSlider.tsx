@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions, Vibration } from 'react-native';
+import { vibrate } from '@/lib/haptics';
+import {View, Text, StyleSheet, useWindowDimensions, vibrate} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS, withSpring } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
@@ -34,7 +35,7 @@ export const CustomSlider = React.memo(function CustomSlider({ value, onValueCha
 
     const handleValueChange = useCallback((v: number) => {
         if (v !== lastVibratedValue.current) {
-            Vibration.vibrate(10); // subtle haptic feedback
+            vibrate(10); // subtle haptic feedback
             lastVibratedValue.current = v;
             onValueChange(v);
         }

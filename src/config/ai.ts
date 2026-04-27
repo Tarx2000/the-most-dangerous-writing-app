@@ -42,6 +42,7 @@ export const AI_REQUEST_TIMEOUT_MS = 60_000;
 
 export const AI_AVAILABLE_MODELS = [
     'kimi-k2.5:cloud',
+    'kimi-k2.6:cloud',
     'qwen3.5:397b-cloud',
     'glm-5:cloud',
     'minimax-m2.7:cloud',

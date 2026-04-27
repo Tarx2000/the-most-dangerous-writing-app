@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import {
-    View,
+import {View,
     Text,
     TextInput,
     KeyboardAvoidingView,
@@ -8,9 +7,8 @@ import {
     ScrollView,
     StyleSheet,
     Pressable,
-    Vibration,
-    DeviceEventEmitter
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    DeviceEventEmitter, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -65,7 +63,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     // On mount, start the session immediately
     useEffect(() => {
         startSession(isQuickNote);
-        Vibration.vibrate(50);
+        vibrate(50);
         return () => clearTimers();
     }, [startSession, clearTimers, isQuickNote]);
 

@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import {
-    View,
+import {View,
     Text,
     TextInput,
     StyleSheet,
-    Vibration,
     Modal,
     Pressable,
-    Platform,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    Platform,, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RichText } from '@/components/ui/RichText';
@@ -254,7 +252,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
     const handleSaveComment = () => {
         onSaveComment(noteId, commentText);
         setShowCommentInput(false);
-        Vibration.vibrate(15);
+        vibrate(15);
     };
 
     return (
@@ -333,7 +331,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                             onPress={(e) => {
                                 e?.stopPropagation?.();
                                 onToggleBookmark(noteId);
-                                Vibration.vibrate(10);
+                                vibrate(10);
                             }}
                             style={styles.actionBtn}
                         >

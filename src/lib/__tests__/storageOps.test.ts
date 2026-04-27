@@ -14,6 +14,7 @@ jest.mock('../storage', () => ({
 // Mock haptics
 jest.mock('../haptics', () => ({
     setGlobalHapticsEnabled: jest.fn(),
+    vibrate: jest.fn(),
 }));
 
 // Mock perf
@@ -198,6 +199,15 @@ describe('createPersonsOps', () => {
             await ops.addPerson('  Bob  ');
             expect(personsRef.current[0].name).toBe('Bob');
         });
+
+        it('should rollback on storage failure', async () => {
+            (storage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            const id = await ops.addPerson('Alice');
+            expect(id).toBeTruthy(); // function still returns id even though storage failed
+            // State should have been rolled back
+            expect(personsRef.current).toHaveLength(0);
+            expect(setPersons).toHaveBeenLastCalledWith([]);
+        });
     });
 
     describe('deletePerson', () => {
@@ -208,6 +218,37 @@ describe('createPersonsOps', () => {
 
             await ops.deletePerson(personId);
             expect(personsRef.current).toHaveLength(0);
+            expect(notesRef.current[0].personId).toBeUndefined();
+        });
+
+        it('should rollback on storage failure', async () => {
+            const personId = (await ops.addPerson('Carol')) as string;
+            notesRef.current = [{ id: 'n1', personId, text: 'Test', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true }];
+
+            (storage.multiSet as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+
+            await ops.deletePerson(personId);
+            // Both persons and notes should be rolled back
+            expect(personsRef.current).toHaveLength(1);
+            expect(personsRef.current[0].name).toBe('Carol');
+            expect(notesRef.current[0].personId).toBe(personId);
+        });
+    });
+
+    describe('updatePerson', () => {
+        it('should update a person with partial fields', async () => {
+            const personId = (await ops.addPerson('Carol')) as string;
+            await ops.updatePerson(personId, { relationship: 'Friend' });
+            expect(personsRef.current[0].relationship).toBe('Friend');
+            expect(personsRef.current[0].name).toBe('Carol');
+        });
+
+        it('should rollback on storage failure', async () => {
+            const personId = (await ops.addPerson('Carol')) as string;
+            (storage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            await ops.updatePerson(personId, { relationship: 'Friend' });
+            expect(personsRef.current[0].relationship).toBeUndefined();
+            expect(personsRef.current[0].name).toBe('Carol');
         });
     });
 });

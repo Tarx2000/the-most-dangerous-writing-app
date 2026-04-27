@@ -1,16 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-    View,
+import {View,
     Text,
     StyleSheet,
     Modal,
     ScrollView,
     Pressable,
     ActivityIndicator,
-    Vibration,
     useWindowDimensions,
-    Platform,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    Platform,, vibrate} from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -93,7 +91,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
 
     const handleRegenerateAi = useCallback(() => {
         if (!note) return;
-        Vibration.vibrate(30);
+        vibrate(30);
         const category: AiJobCategory = isAlignmentReflection(note)
             ? 'checkin'
             : note.personId

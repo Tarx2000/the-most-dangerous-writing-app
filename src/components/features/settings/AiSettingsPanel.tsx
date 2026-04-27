@@ -1,5 +1,6 @@
 import React, { useRef, useMemo, useCallback } from 'react';
-import { View, Text, TextInput, ActivityIndicator, Vibration, Platform, StyleSheet } from 'react-native';
+import { vibrate } from '@/lib/haptics';
+import {View, Text, TextInput, ActivityIndicator, Platform, StyleSheet, vibrate} from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { commonStyles } from '@/styles/commonStyles';
@@ -106,7 +107,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 16 }}
                 onPress={() => {
                     aiConfig.updateAutoGenerateSummaries(!aiConfig.autoGenerateSummaries);
-                    Vibration.vibrate(10);
+                    vibrate(10);
                 }}
             >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -276,7 +277,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 style={[commonStyles.closeVersionBtn, styles.testConnectionBtn]}
                 onPress={async () => {
                     const result = await pingServer({ apiKey: aiConfig.aiApiKey, baseUrl: aiConfig.aiBaseUrl });
-                    Vibration.vibrate(result.online ? 20 : [0, 50, 50, 50]);
+                    vibrate(result.online ? 20 : [0, 50, 50, 50]);
                     alert(result.online ? '✅ AI server is reachable!' : `❌ Cannot reach AI server.\n\nError: ${result.error}`);
                 }}
             >

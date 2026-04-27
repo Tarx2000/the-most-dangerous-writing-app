@@ -1,13 +1,11 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import {
-    View,
+import {View,
     Text,
     StyleSheet,
     StatusBar,
-    Vibration,
     Platform,
-    Alert,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    Alert,, vibrate} from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence, withRepeat, cancelAnimation } from 'react-native-reanimated';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -139,7 +137,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             countdownScale.value = withSpring(1, { damping: 12, stiffness: 180 });
             countdownOpacity.value = withTiming(1, { duration: 200 });
 
-            Vibration.vibrate(50);
+            vibrate(50);
         };
 
         animateNumber();
@@ -203,7 +201,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 clearInterval(timerRef.current!);
                 timerRef.current = null;
                 setPhase('canStop');
-                Vibration.vibrate([0, 100, 50, 100]); // Double vibrate to signal timer done
+                vibrate([0, 100, 50, 100]); // Double vibrate to signal timer done
 
                 // Slide in the stop button
                 stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });

@@ -161,7 +161,7 @@ const StorageActionsContext = createContext<StorageActionsContextType | null>(nu
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const StorageProvider = ({ children }: { children: ReactNode }) => {
-    /* ── State ────────────────────────────────────────────────────── */
+    /* ── State ----------------------------------------------------── */
     const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
     const [persons, setPersons] = useState<Person[]>([]);
     const [currentStreak, setCurrentStreak] = useState<number>(0);
@@ -191,7 +191,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [aiPrompts, setAiPrompts] = useState<AiPrompts>({ ...DEFAULT_AI_PROMPTS });
     const [autoGenerateSummaries, setAutoGenerateSummaries] = useState<boolean>(true);
 
-    /* ── Refs (fresh-read pattern) ─────────────────────────────────── */
+    /* ── Refs (fresh-read pattern) --------------------------------─── */
     const savedNotesRef = useRef(savedNotes); savedNotesRef.current = savedNotes;
     const personsRef = useRef(persons); personsRef.current = persons;
     const currentStreakRef = useRef(currentStreak); currentStreakRef.current = currentStreak;
@@ -220,7 +220,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const autoPlayFeedVideosRef = useRef(autoPlayFeedVideos); autoPlayFeedVideosRef.current = autoPlayFeedVideos;
     const totalVlogStorageBytesRef = useRef(totalVlogStorageBytes); totalVlogStorageBytesRef.current = totalVlogStorageBytes;
 
-    /* ── Operation factories ──────────────────────────────────────── */
+    /* ── Operation factories ---------------------------------------- */
     const notesOps = useMemo(() => createNotesOps(
         savedNotesRef, setSavedNotes,
         currentStreakRef, setCurrentStreak,
@@ -273,7 +273,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         },
     ), []);
 
-    /* ── Load data ────────────────────────────────────────────────── */
+    /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
         await loadAllDataFromOps(
             {
@@ -307,7 +307,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => { loadAllData(); }, [loadAllData]);
 
-    /* ── Cross-cutting ops ─────────────────────────────────────────── */
+    /* ── Cross-cutting ops ----------------------------------------─── */
     const crossCuttingOps = useMemo(() => createCrossCuttingOps(notesOps,
         {
             savedNotes: savedNotesRef, persons: personsRef,
@@ -329,7 +329,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         },
     ), [notesOps]);
 
-    /* ── Pending compressions on startup ──────────────────────────── */
+    /* ── Pending compressions on startup ---------------------------- */
     useEffect(() => {
         const timer = setTimeout(async () => {
             try {
@@ -348,7 +348,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         return () => clearTimeout(timer);
     }, [vlogOps.updateVlog]);
 
-    /* ── Vlog storage summary (cross-domain) ──────────────────────── */
+    /* ── Vlog storage summary (cross-domain) ------------------------ */
     const getStorageSummary = useCallback(() => ({
         vlogCount: savedVlogsRef.current.length,
         vlogBytes: savedVlogsRef.current.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0),

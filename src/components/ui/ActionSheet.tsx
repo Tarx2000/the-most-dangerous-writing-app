@@ -23,17 +23,15 @@
  *   />
  */
 import React, { useEffect, useCallback, useMemo } from 'react';
-import {
-    Modal,
+import {Modal,
     StyleSheet,
     View,
     Text,
     useWindowDimensions,
     Platform,
     TouchableWithoutFeedback,
-    Vibration,
-    ScrollView,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    ScrollView,, vibrate} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -146,7 +144,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = React.memo(({
 
     /* ── Option press handler with haptic ── */
     const handleOptionPress = useCallback((id: string) => {
-        Vibration.vibrate(10);
+        vibrate(10);
         onSelect(id);
     }, [onSelect]);
 

@@ -1,27 +1,33 @@
 import { Vibration } from 'react-native';
 
-const originalVibrate = Vibration.vibrate;
 let _hapticsEnabled = true;
 
 /**
- * Globally monkey-patches React Native's Vibration module
- * to respect the user's global haptics preference.
+ * Vibrates the device with the given pattern, respecting the user's global
+ * haptics preference. Use this instead of Vibration.vibrate() directly.
+ *
+ * @param pattern - Duration in ms, or array of [vibrate, pause, ...] intervals
+ * @param repeat  - Whether to repeat the pattern indefinitely
  */
-export const initHapticsMiddleware = () => {
-    Vibration.vibrate = (pattern?: number | number[] | null, repeat?: boolean) => {
-        if (!_hapticsEnabled) return;
-        
-        if (pattern === undefined || pattern === null) {
-            originalVibrate();
-        } else {
-            originalVibrate(pattern, repeat);
-        }
-    };
-};
+export function vibrate(pattern?: number | number[] | null, repeat?: boolean): void {
+    if (!_hapticsEnabled) return;
+    if (pattern === undefined || pattern === null) {
+        Vibration.vibrate();
+    } else {
+        Vibration.vibrate(pattern, repeat);
+    }
+}
+
+/**
+ * Cancels any ongoing vibration.
+ */
+export function cancel(): void {
+    Vibration.cancel();
+}
 
 /**
  * Toggles whether vibrations are allowed to proceed.
  */
-export const setGlobalHapticsEnabled = (enabled: boolean) => {
+export function setGlobalHapticsEnabled(enabled: boolean): void {
     _hapticsEnabled = enabled;
-};
+}

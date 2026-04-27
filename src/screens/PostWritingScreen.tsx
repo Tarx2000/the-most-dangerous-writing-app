@@ -14,8 +14,8 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, Platform, ActivityIndicator, Vibration } from 'react-native';
-
+import { StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import { vibrate } from '@/lib/haptics';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
@@ -105,14 +105,14 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         aiEnqueuedRef.current = true;
         const category: AiJobCategory = isAlignmentReflection(note) ? 'checkin' : note.personId ? 'circle' : 'journal';
         enqueueNote(noteId, category);
-        Vibration.vibrate(20);
+        vibrate(20);
     }, [note, noteId, enqueueNote]);
 
     /* ── Grammar Check (user-triggered) ─────────────────────────────── */
     const handleGrammarCheck = useCallback(async () => {
         if (grammarLoading || !editableTextRef.current.trim()) return;
         setGrammarLoading(true);
-        Vibration.vibrate(30);
+        vibrate(30);
 
         try {
             const suggestions = await checkGrammar(editableTextRef.current, {
@@ -136,7 +136,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         editableTextRef.current = newText;
         setRenderKey(prev => prev + 1);
         setGrammarSuggestions(prev => prev.filter(s => s !== suggestion));
-        Vibration.vibrate(20);
+        vibrate(20);
     }, []);
 
     const handleSaveAndClose = useCallback(async () => {

@@ -33,6 +33,7 @@ jest.mock('@/lib/aiService', () => ({
   pingServer: jest.fn(() => Promise.resolve({ online: true })),
   isServerPersistentlyOffline: jest.fn(() => false),
   resetAiServiceState: jest.fn(),
+  AiCancelToken: class AiCancelToken { aborted = false; abort() { this.aborted = true; } reset() { this.aborted = false; } },
 }));
 
 // Mock aiLogger

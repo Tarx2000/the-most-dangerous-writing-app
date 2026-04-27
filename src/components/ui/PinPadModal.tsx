@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, Vibration, useWindowDimensions } from 'react-native';
+import { vibrate } from '@/lib/haptics';
+import {View, Text, StyleSheet, Pressable, useWindowDimensions, vibrate} from 'react-native';
 import Animated, { 
     useSharedValue, 
     useAnimatedStyle, 
@@ -21,7 +22,7 @@ const DialButton = ({ num, onPress, icon }: { num?: number; onPress: () => void;
     return (
         <Pressable 
             onPress={() => {
-                Vibration.vibrate(30);
+                vibrate(30);
                 onPress();
             }}
             style={({ pressed }) => [
@@ -66,7 +67,7 @@ export const PinPadModal: React.FC = () => {
     }, [isVisible, mode, promptText]);
 
     const triggerShake = useCallback(() => {
-        Vibration.vibrate([0, 50, 50, 50]); // Error vibration pattern
+        vibrate([0, 50, 50, 50]); // Error vibration pattern
         shakeSV.value = withSequence(
             withTiming(-10, { duration: 50 }),
             withTiming(10, { duration: 50 }),

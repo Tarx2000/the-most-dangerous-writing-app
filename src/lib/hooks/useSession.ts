@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Vibration } from 'react-native';
-import { useSharedValue, withTiming, withSequence, Easing } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import { vibrate } from '@/lib/haptics';
+import { useSharedValue, withTiming, withSequence, Easing, runOnJS } from 'react-native-reanimated';
 import { CONFIG } from '@/config';
 
 /**
@@ -49,9 +48,9 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     const [hasLost, setHasLost] = useState<boolean>(false);
     const [isContinuingAfterLoss, setIsContinuingAfterLoss] = useState<boolean>(false);
 
-    const sessionIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const idleIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const deathTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const sessionIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const idleIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const deathTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const hasLostRef = useRef(hasLost);
     hasLostRef.current = hasLost;
@@ -76,7 +75,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     }, []);
 
     const triggerDeathState = useCallback(() => {
-        Vibration.vibrate([0, 200, 100, 200]);
+        vibrate([0, 200, 100, 200]);
         setHasLost(true);
         clearTimers();
 
@@ -150,19 +149,19 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
                 if (ratio >= HAPTIC_CRITICAL_THRESHOLD && lastHapticLevelRef.current !== 'critical') {
                     // Escalating rapid buzz — panic-inducing, nearly dead
                     lastHapticLevelRef.current = 'critical';
-                    Vibration.vibrate([0, 50, 25, 50, 25, 50, 25, 80]);
+                    vibrate([0, 50, 25, 50, 25, 50, 25, 80]);
                 } else if (ratio >= HAPTIC_URGENT_THRESHOLD && lastHapticLevelRef.current === 'warning') {
                     // Urgent triple rapid pulse
                     lastHapticLevelRef.current = 'urgent';
-                    Vibration.vibrate([0, 40, 25, 40]);
+                    vibrate([0, 40, 25, 40]);
                 } else if (ratio >= HAPTIC_WARNING_THRESHOLD && lastHapticLevelRef.current === 'caution') {
                     // Double-tap — clear warning, danger is building
                     lastHapticLevelRef.current = 'warning';
-                    Vibration.vibrate([0, 30, 50, 30]);
+                    vibrate([0, 30, 50, 30]);
                 } else if (ratio >= HAPTIC_CAUTION_THRESHOLD && lastHapticLevelRef.current === 'none') {
                     // Single short pulse — gentle nudge to keep going
                     lastHapticLevelRef.current = 'caution';
-                    Vibration.vibrate(20);
+                    vibrate(20);
                 }
             }
         }, CONFIG.TICK_RATE_MS);
@@ -188,7 +187,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
 
         lossOverlayOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
             if (finished) {
-                scheduleOnRN(finishResume);
+                runOnJS(finishResume)();
             }
         });
         idleTimeMsShared.value = 0;

@@ -1,7 +1,7 @@
-import React, { useRef, useState, useCallback, useEffect, useMemo, useTransition } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useTransition } from 'react';
 import { View, useWindowDimensions, StyleSheet, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
-import { ScrollView, Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, useAnimatedReaction, withSpring, cancelAnimation, runOnJS, type SharedValue } from 'react-native-reanimated';
+import { ScrollView, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { type SharedValue } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Route } from '@react-navigation/native';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -15,47 +15,43 @@ import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { useHomeModals } from '@/lib/hooks/useHomeModals';
+import { useHomeGestures } from '@/lib/hooks/useHomeGestures';
 import { theme } from '@/styles/theme';
 import type { SavedNote, SavedVlog } from '@/types';
 import type { VideoPlayer } from 'expo-video';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-/* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
+/* -- CONFIGURABLE ---------------------------------------------------------- */
 
 /**
- * HomeScreen — Root container wrapping horizontal Start ↔ Library scroll
+ * HomeScreen � Root container wrapping horizontal Start ? Library scroll
  * and the vertical pull-down Feed page.
  *
  * Architecture:
- * ┌──────────────────────────┐
- * │      Feed (hidden above) │  ← revealed by swiping DOWN from Start
- * ├──────────────────────────┤
- * │  Start  │  Library       │  ← horizontal paging scroll
- * ├──────────────────────────┤
- * │  LiquidGlassNav (float)  │  ← persistent bottom nav
- * └──────────────────────────┘
+ * +--------------------------+
+ * �      Feed (hidden above) �  ? revealed by swiping DOWN from Start
+ * +--------------------------�
+ * �  Start  �  Library       �  ? horizontal paging scroll
+ * +--------------------------�
+ * �  LiquidGlassNav (float)  �  ? persistent bottom nav
+ * +--------------------------+
  *
  * The Feed page starts at translateY = -SCREEN_HEIGHT (above viewport).
  * When the user swipes down from the Start page, the entire content
  * (Start + Library) slides down while the Feed slides into view from above.
  *
  * Closing: When at the bottom of the Feed (newest entries), swiping up
- * past the content boundary triggers the dismiss — the Feed slides back
+ * past the content boundary triggers the dismiss � the Feed slides back
  * up and the HomeScreen returns to its original position.
  */
 export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
-    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-    /** SharedValue for screen height — used in Reanimated worklets (animated styles / gesture handlers) */
-    const screenHeightSV = useSharedValue(screenHeight);
-    /** Keep the SharedValue in sync when the window resizes (e.g. rotation) */
-    useEffect(() => { screenHeightSV.value = screenHeight; }, [screenHeight, screenHeightSV]);
+    const { width: screenWidth } = useWindowDimensions();
 
     const scrollViewRef = useRef<ScrollView>(null);
-    const [scrollEnabled, setScrollEnabled] = useState(true);
 
     /**
-     * Shared session mode — drives both Start hero content and Library tab.
+     * Shared session mode � drives both Start hero content and Library tab.
      * 'journal' = free writing / notes
      * 'circles' = relationship journal / circles tab
      * 'checkin' = alignment check-in / checkins tab
@@ -70,9 +66,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * Feed pull-down is only available on the Start page.
      */
     const [currentPage, setCurrentPage] = useState(0);
-
-    /** Whether the Feed page is currently revealed */
-    const [feedVisible, setFeedVisible] = useState(false);
 
     const { lastReflectionDate, lockTimeoutMins } = usePreferences();
     const security = useSecurity(lockTimeoutMins);
@@ -152,129 +145,26 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
     ], [isCheckinUrgent]);
 
-    /* ═══════════════════════════════════════════════════════════════════
-       FEED PULL-UP GESTURE
-       
-       The feed starts hidden BELOW the viewport. The user swipes UP
-       on the Start page to reveal it. 
-       ═══════════════════════════════════════════════════════════════════ */
+    /* --------------------------------------------------------------------------
+       FEED GESTURE � delegated to useHomeGestures hook
+       -------------------------------------------------------------------------- */
 
-    /**
-     * Animated progress for the feed reveal (0 to 1)
-     * 0 = normal (HomeScreen visible)
-     * 1 = Feed fully revealed (content pushed up)
-     */
-    const feedProgress = useSharedValue(0);
-
-    /** Gesture coordination SharedValues */
-    const gestureStartProgress = useSharedValue(0);
-    const startTranslationOffset = useSharedValue(0);
-    const isFeedGestureActive = useSharedValue(false);
-    const listScrollY = useSharedValue(0);
-
-    /** JS callbacks — lightweight state-only commits, called on spring completion */
-    const openFeed = useCallback(() => {
-        setFeedVisible(true);
-        setScrollEnabled(false);
-    }, []);
-
-    const closeFeed = useCallback(() => {
-        setFeedVisible(false);
-        setScrollEnabled(true);
-    }, []);
-
-    /**
-     * Pan gesture: follow-finger feed reveal on the Start page.
-     * UPWARD-only activation (activeOffsetY) + fail on horizontal (failOffsetX)
-     * ensures strictly vertical swipes only — no diagonal.
-     * No simultaneousWithExternalGesture — horizontal scroll and vertical pan
-     * are mutually exclusive (failOffsetX makes pan fail on horizontal movement).
-     * Activates on upward swipe from any feedProgress position (including mid-transition
-     * rescue). cancelAnimation on start enables rapid switching without stuck states.
-     */
-    const feedPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-15, 10000])   // Only activate on UPWARD movement
-        .failOffsetX([-12, 12])         // Fail on any horizontal movement
-        .enabled(currentPage === 0)
-        .onStart(() => {
-            cancelAnimation(feedProgress);
-            gestureStartProgress.value = feedProgress.value;
-            startTranslationOffset.value = 0;
-            isFeedGestureActive.value = false;
-        })
-        .onUpdate((e) => {
-            if (!isFeedGestureActive.value) {
-                // Activate on upward swipe from any position (including mid-rescue)
-                if (e.translationY < -8) {
-                    isFeedGestureActive.value = true;
-                    gestureStartProgress.value = feedProgress.value;
-                    startTranslationOffset.value = e.translationY;
-                }
-                return;
-            }
-            const delta = e.translationY - startTranslationOffset.value;
-            const progressDelta = -delta / screenHeightSV.value;
-            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value + progressDelta));
-            feedProgress.value = newProgress;
-        })
-        .onEnd((e) => {
-            if (!isFeedGestureActive.value) return;
-            isFeedGestureActive.value = false;
-            const shouldOpen = feedProgress.value > 0.5 || e.velocityY < -500;
-            const target = shouldOpen ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
-            if (shouldOpen) runOnJS(openFeed)();
-            else runOnJS(closeFeed)();
-        })
-        .onFinalize(() => {
-            isFeedGestureActive.value = false;
-        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed]);
-
-    /** Main content animates UP (to -screenHeight) when feed opens */
-    const mainContentAnimStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: feedProgress.value * -screenHeightSV.value }],
-        pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
-    }));
-
-    /** Feed layer animates UP (from screenHeight to 0) */
-    const feedAnimStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: (1 - feedProgress.value) * screenHeightSV.value }],
-        pointerEvents: feedProgress.value > 0.5 ? 'auto' : 'none',
-    }));
-
-    /** Nav bar fades out and slides down as feed opens — driven by feedProgress */
-    const navAnimStyle = useAnimatedStyle(() => ({
-        opacity: 1 - feedProgress.value,
-        transform: [{ translateY: feedProgress.value * 80 }],
-        pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
-    }));
-
-    /**
-     * Safety net: if feedProgress is stranded at a mid-value with no gesture
-     * active and no animation running, snap to the nearest end.
-     */
-    useAnimatedReaction(
-        () => {
-            const p = feedProgress.value;
-            if (isFeedGestureActive.value) return 0;
-            if (p < 0.01 || p > 0.99) return 0;
-            return p;
-        },
-        (current, prev) => {
-            if (current === prev || current === 0) return;
-            const target = current > 0.5 ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
-            if (target === 0) runOnJS(closeFeed)();
-            else runOnJS(openFeed)();
-        }
-    );
-
-    /** Close the feed — cancel in-flight animation, spring closed, set state immediately */
-    const handleCloseFeed = useCallback(() => {
-        cancelAnimation(feedProgress);
-        feedProgress.value = withSpring(0, theme.animation.springFeed);
-        closeFeed();
-    }, [closeFeed, feedProgress]);
+    const {
+        feedProgress,
+        feedVisible,
+        feedPanGesture,
+        mainContentAnimStyle,
+        feedAnimStyle,
+        navAnimStyle,
+        handleCloseFeed,
+        openFeed,
+        closeFeed,
+        scrollEnabled,
+        setScrollEnabled,
+        screenHeight,
+        screenHeightSV,
+        listScrollY,
+    } = useHomeGestures(currentPage);
 
     const handleRegenerateAi = useCallback((note: any, category: any) => {
         enqueueNote(note.id, category);
@@ -282,7 +172,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     return (
         <View style={styles.container}>
-            {/* Feed Page — positioned below viewport, slides up when revealed */}
+            {/* Feed Page � positioned below viewport, slides up when revealed */}
             <Animated.View style={[styles.feedLayer, feedAnimStyle, { height: screenHeight }]}>
                 <FeedScreen
                     isUnlocked={security.isFeedUnlocked}
@@ -316,7 +206,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 onClose={handleCloseVlogModal}
             />
 
-            {/* Main Content — Start + Library horizontal scroll */}
+            {/* Main Content � Start + Library horizontal scroll */}
             <GestureDetector gesture={feedPanGesture}>
                 <Animated.View style={[styles.mainContent, mainContentAnimStyle]}>
                     <ScrollView
@@ -332,7 +222,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         scrollEventThrottle={16}
                         decelerationRate="fast"
                     >
-                        {/* Start Screen — writing mode setup */}
+                        {/* Start Screen � writing mode setup */}
                         <View style={[styles.page, { width: screenWidth }]}>
                             <StartScreen
                                 navigation={navigation}
@@ -344,7 +234,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                             />
                         </View>
 
-                        {/* Library Screen — saved notes & circles */}
+                        {/* Library Screen � saved notes & circles */}
                         <View style={[styles.page, { width: screenWidth }]}>
                             <LibraryScreen
                                 navigation={navigation}
@@ -357,7 +247,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 </Animated.View>
             </GestureDetector>
 
-            {/* Persistent Liquid Glass Navigation — fades out and slides down when feed opens */}
+            {/* Persistent Liquid Glass Navigation � fades out and slides down when feed opens */}
             <Animated.View style={navAnimStyle}>
                 <LiquidGlassNav
                     items={navItems}
@@ -374,7 +264,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
-    /** Main content layer — Start + Library + NavBar */
+    /** Main content layer � Start + Library + NavBar */
     mainContent: {
         flex: 1,
     },
@@ -385,7 +275,7 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     /**
-     * Feed layer — positioned absolutely to cover the full screen.
+     * Feed layer � positioned absolutely to cover the full screen.
      * Starts below the viewport (translateY = screenHeightSV via animated style)
      * and slides into view when the user swipes UP.
      * Height is overridden inline with useWindowDimensions().

@@ -23,7 +23,7 @@
 
 import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'react-native';
 import { storage } from '@/lib/storage';
-import { processNote, pingServer, type AiConfig, type RelationshipContext } from '@/lib/aiService';
+import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
 import { logAi } from '@/lib/aiLogger';
 import {
     AI_STORAGE_KEYS,
@@ -66,6 +66,9 @@ class AiQueueManager {
     /** Whether a batch cancel has been requested */
     private cancelRequested = false;
 
+    /** Cancel token for the currently in-flight AI request */
+    private currentCancelToken: AiCancelToken | null = null;
+
     /** Whether the queue has been initialized */
     private initialized = false;
 
@@ -78,7 +81,7 @@ class AiQueueManager {
     /** Last recorded error message when ping fails */
     private lastError?: string;
     /** Health check interval reference */
-    private healthCheckInterval: NodeJS.Timeout | null = null;
+    private healthCheckInterval: ReturnType<typeof setTimeout> | null = null;
     /** AppState listener subscription — pauses health checks when backgrounded */
     private appStateSubscription: NativeEventSubscription | null = null;
 
@@ -186,6 +189,30 @@ class AiQueueManager {
             clearInterval(this.healthCheckInterval);
             this.healthCheckInterval = null;
         }
+    }
+
+    /**
+     * Cancel a specific job's in-flight AI request.
+     * This aborts the XHR and marks the job as failed.
+     * Background processing is intentional — this is for user-initiated cancellation.
+     */
+    cancelJob(jobId: string): void {
+        const job = this.jobs.find(j => j.id === jobId && j.status === 'processing');
+        if (!job) {
+            console.warn('[AI Queue] Cannot cancel job ' + jobId + ': not currently processing');
+            return;
+        }
+        // Abort the in-flight XHR request
+        if (this.currentCancelToken) {
+            this.currentCancelToken.abort();
+            this.currentCancelToken = null;
+        }
+        // Mark job as failed
+        job.status = 'failed';
+        job.error = 'Cancelled by user';
+        job.completedAt = Date.now();
+        this.processing = false;
+        this.emitState();
     }
 
     /**
@@ -347,7 +374,10 @@ class AiQueueManager {
             });
         }
 
-        this.batchTotal = null;
+        if (this.currentCancelToken) {
+            this.currentCancelToken.abort();
+            this.currentCancelToken = null;
+        }
         this.batchCompleted = 0;
 
         await this.persistQueue();
@@ -467,7 +497,10 @@ class AiQueueManager {
                 };
             }
 
-            const result = await processNote(note.text, config, relationship);
+                    // Create a cancel token for this job's AI request
+        this.currentCancelToken = new AiCancelToken();
+        const result = await processNote(note.text, config, relationship, this.currentCancelToken);
+        this.currentCancelToken = null;
 
             if (result.failed) {
                 throw new Error('AI processing returned empty results');

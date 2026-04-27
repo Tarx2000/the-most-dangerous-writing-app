@@ -53,9 +53,9 @@ export function useSecurity(timeoutMins: number = 3) {
     const { requestPin } = usePinContext();
 
     /** Auto-lock timer ref (inactivity timeout for full unlock, duration set by timeoutMins) */
-    const lockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** Grace period timer ref — allows brief background interruptions before locking */
-    const backgroundGraceRef = useRef<NodeJS.Timeout | null>(null);
+    const backgroundGraceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     /* ── Auto-lock after inactivity ─────────────────────────────── */
     const resetLockTimeout = useCallback(() => {

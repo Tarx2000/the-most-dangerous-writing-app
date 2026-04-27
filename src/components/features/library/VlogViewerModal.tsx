@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-    View,
+import {View,
     Text,
     StyleSheet,
     useWindowDimensions,
     Modal,
-    Platform,
-    Vibration,
-} from 'react-native';
+import { vibrate } from '@/lib/haptics';
+    Platform,, vibrate} from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -156,7 +154,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         const newIdx = expandedIndex + direction;
         if (newIdx >= 0 && newIdx < vlogs.length) {
             setExpandedIndex(newIdx);
-            Vibration.vibrate(10);
+            vibrate(10);
         }
     }, [vlogs.length, expandedIndex]);
 
