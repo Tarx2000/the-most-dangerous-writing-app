@@ -1,0 +1,10 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "skills": {
+    "paths": [".agents/skills"]
+  },
+  "instructions": [
+    "AGENTS.md",
+    ".kilo/instructions/*.md"
+  ]
+}

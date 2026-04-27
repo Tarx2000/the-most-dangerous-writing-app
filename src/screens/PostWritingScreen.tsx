@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, Platform, ActivityIndicator, View, Text, ScrollView, TextInput } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';

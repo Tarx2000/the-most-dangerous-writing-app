@@ -1,0 +1,11 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "provider": {
+    "ollama": {
+      "options": {
+        "baseURL": "https://ollama.com",
+        "apiKey": "363471669aed429592d02e756ecea5eb.4NXF_zIWWrmHRyVfLjKmuhZ2"
+      }
+    }
+  }
+}

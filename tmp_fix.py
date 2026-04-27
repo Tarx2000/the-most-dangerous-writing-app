@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, SharedValue } from 'react-native-reanimated';
+import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
 import { theme } from '@/styles/theme';
 

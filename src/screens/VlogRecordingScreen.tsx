@@ -54,7 +54,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
     /* ── State machine ─────────────────────────────────────────────────── */
-    type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'compressing' | 'saving';
+    type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'compressing' | 'saving' | 'idle';
     const [phase, setPhase] = useState<RecordingPhase>('permissions');
     const [countdownNum, setCountdownNum] = useState(COUNTDOWN_SECONDS);
     const [timeRemaining, setTimeRemaining] = useState(totalDurationSec);

@@ -67,6 +67,7 @@ const ALIGNMENT_TEXT_LOWER = {
 } as const;
 
 type ScoreTier = keyof typeof ALIGNMENT_COLORS;
+type AlignmentIcon = typeof ALIGNMENT_ICONS[ScoreTier];
 
 function getTier(score: number): ScoreTier {
     if (score <= 2) return 'struggling';
@@ -79,7 +80,7 @@ function getTier(score: number): ScoreTier {
 
 /** Full score details — icon, text, color, glow (used by StartScreen) */
 export interface AlignmentScoreDetails {
-    icon: string;
+    icon: AlignmentIcon;
     text: string;
     color: string;
     glow: string;
@@ -100,7 +101,7 @@ export function getAlignmentScoreDetails(score: number): AlignmentScoreDetails {
 }
 
 /** Minimal score details — icon + color only (used by LibraryScreen) */
-export function getAlignmentScoreColor(score: number): { icon: string; color: string } {
+export function getAlignmentScoreColor(score: number): { icon: AlignmentIcon; color: string } {
     const tier = getTier(score);
     return { icon: ALIGNMENT_ICONS[tier], color: ALIGNMENT_COLORS[tier] };
 }

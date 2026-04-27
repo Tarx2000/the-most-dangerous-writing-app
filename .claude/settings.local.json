@@ -35,7 +35,9 @@
       "Bash(grep -c \"style={{\" src/components/features/settings/AiSettingsPanel.tsx)",
       "mcp__ide__getDiagnostics",
       "Bash(node *)",
-      "Bash(grep -rn --include=\"*.tsx\" --include=\"*.ts\" -E \"\\(?:'#|'\\\\\"\\)[0-9a-fA-F]{3,8}\\(?:'\\\\\"\\)|\\(?:\\\\\"#|\\\\\"\\)[0-9a-fA-F]{3,8}\\(?:\\\\\"\\)|rgba\\\\s*\\\\\\(\\\\s*\\\\d+\\\\s*,\\\\s*\\\\d+\\\\s*,\\\\s*\\\\d+\\\\s*,\\\\s*[\\\\d.]+\\\\s*\\\\\\)\" src/ --exclude-dir=__tests__)"
+      "Bash(grep -rn --include=\"*.tsx\" --include=\"*.ts\" -E \"\\(?:'#|'\\\\\"\\)[0-9a-fA-F]{3,8}\\(?:'\\\\\"\\)|\\(?:\\\\\"#|\\\\\"\\)[0-9a-fA-F]{3,8}\\(?:\\\\\"\\)|rgba\\\\s*\\\\\\(\\\\s*\\\\d+\\\\s*,\\\\s*\\\\d+\\\\s*,\\\\s*\\\\d+\\\\s*,\\\\s*[\\\\d.]+\\\\s*\\\\\\)\" src/ --exclude-dir=__tests__)",
+      "mcp__ide__executeCode",
+      "Bash(python *)"
     ]
   },
   "outputStyle": "Explanatory"

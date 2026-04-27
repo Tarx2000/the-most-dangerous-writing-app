@@ -20,7 +20,7 @@ interface FileSystemEntry {
     exists: boolean;
     isDirectory: boolean;
     size: number;
-    modificationTime: number;
+    modificationTime?: number;
     uri: string;
 }
 
