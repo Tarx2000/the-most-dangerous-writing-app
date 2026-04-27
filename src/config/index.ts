@@ -87,4 +87,30 @@ export const CONFIG = {
 
     /** AsyncStorage key for storing the fallback 4-digit security PIN */
     SECURITY_PIN_KEY: '@mda_security_pin',
+
+    /* ── Check-in urgency ────────────────────────────────────────────── */
+    /** Days before a check-in is flagged as urgent in the UI */
+    CHECKIN_URGENT_DAYS: 7,
+    /** Milliseconds equivalent of CHECKIN_URGENT_DAYS */
+    CHECKIN_URGENT_MS: 7 * 24 * 60 * 60 * 1000,
+
+    /* ── Dev Mode ────────────────────────────────────────────────────── */
+    /** Milliseconds to long-press the settings button to toggle dev mode */
+    DEV_MODE_LONG_PRESS_MS: 5_000,
+    /** Milliseconds to show the dev mode toast notification */
+    DEV_MODE_TOAST_DURATION_MS: 2_000,
+
+    /* ── Pin Pad ─────────────────────────────────────────────────────── */
+    /** Milliseconds to delay before processing a completed 4-digit PIN */
+    PIN_DOT_DELAY_MS: 150,
+
+    /* ── Permission & Countdown Delays ───────────────────────────────── */
+    /** Milliseconds to wait after camera permission is granted before starting countdown */
+    PERMISSION_GRANTED_DELAY_MS: 500,
+    /** Milliseconds interval for the 3-2-1 countdown ticks */
+    COUNTDOWN_INTERVAL_MS: 1_000,
+
+    /* ── Startup Compression Delay ───────────────────────────────────── */
+    /** Milliseconds to wait on app startup before checking for pending vlog compressions */
+    PENDING_COMPRESSION_DELAY_MS: 2_000,
 };

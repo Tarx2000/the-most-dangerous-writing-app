@@ -7,6 +7,7 @@ Pressable
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import type { VideoPlayer } from 'expo-video';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
@@ -53,7 +54,7 @@ interface FeedVideoCardProps {
     /** Save comment callback */
     onSaveComment: (id: string, comment: string) => void;
     /** Open full-screen vlog player */
-    onOpenVlog: (vlog: SavedVlog, rect?: LayoutRect, player?: any) => void;
+    onOpenVlog: (vlog: SavedVlog, rect?: LayoutRect, player?: VideoPlayer) => void;
 }
 
 /**
@@ -115,7 +116,9 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
             } else {
                 player.pause();
             }
-        } catch (_) { /* native object may already be released */ }
+        } catch (err) {
+            console.error('[FeedVideoCard] Failed to control player playback:', err instanceof Error ? err.message : String(err));
+        }
         setIsPlaying(autoPlay);
     }, [autoPlay, player]);
 
@@ -124,7 +127,9 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
      *  when the native VideoPlayer has been deallocated before this cleanup runs. */
     useEffect(() => {
         return () => {
-            try { player.pause(); } catch (_) { /* native object may already be released */ }
+            try { player.pause(); } catch (err) {
+                console.error('[FeedVideoCard] Failed to pause player on unmount:', err instanceof Error ? err.message : String(err));
+            }
         };
     }, [player]);
 
@@ -163,7 +168,9 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
     useEffect(() => {
         const subscription = player.addListener('playingChange', (event) => {
             if (autoPlay && !userPausedRef.current && !event.isPlaying) {
-                try { player.play(); } catch (_) { /* native object may already be released */ }
+                try { player.play(); } catch (err) {
+                    console.error('[FeedVideoCard] Failed to force-resume player:', err instanceof Error ? err.message : String(err));
+                }
             }
         });
         return () => subscription.remove();

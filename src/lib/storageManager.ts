@@ -14,12 +14,14 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { CONFIG } from '@/config';
 import type { SavedVlog } from '@/types';
+import { generateId } from '@/lib/utils';
+import { insertVlog } from '@/lib/repositories/vlogsRepository';
 
 /** Default storage warning threshold in bytes (2 GB) */
-export const DEFAULT_VLOG_STORAGE_CAP_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_VLOG_STORAGE_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
 /** Minimum free space required before a new recording (500 MB) */
-export const MIN_FREE_SPACE_BYTES = 500 * 1024 * 1024;
+const MIN_FREE_SPACE_BYTES = 500 * 1024 * 1024;
 
 /**
  * Get the total size of all vlog files.
@@ -101,4 +103,106 @@ export async function cleanupOrphanedVlogs(
     }
 
     return cleaned;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ORPHAN VLOG RECOVERY — Re-attach video files that exist on disk
+   but have no database entry. This happens when AsyncStorage metadata
+   is lost during a crash, reinstall, or failed migration, but the
+   actual video files were left on disk.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export interface OrphanVlogInfo {
+    filePath: string;
+    fileName: string;
+    fileSizeBytes: number;
+    modificationTime: number;
+}
+
+/**
+ * Scan the vlog directory for files that do NOT have a corresponding
+ * database entry. Returns a list of orphaned files found.
+ *
+ * NOTE: This is purely diagnostic — it does NOT modify the database.
+ */
+export async function scanOrphanVlogFiles(
+    knownVlogPaths: Set<string>,
+): Promise<OrphanVlogInfo[]> {
+    const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
+    const orphans: OrphanVlogInfo[] = [];
+
+    try {
+        const info = await FileSystem.getInfoAsync(vlogDir);
+        if (!info.exists || !('isDirectory' in info && info.isDirectory)) return orphans;
+
+        const entries = await FileSystem.readDirectoryAsync(vlogDir);
+        for (const entry of entries) {
+            // Skip thumbnails and non-video files
+            if (entry.endsWith('.jpg') || entry.endsWith('.png')) continue;
+
+            const fullPath = `${vlogDir}${entry}`;
+            if (knownVlogPaths.has(fullPath)) continue;
+
+            const fileInfo = await FileSystem.getInfoAsync(fullPath);
+            if (!fileInfo.exists || !('size' in fileInfo)) continue;
+
+            const modTime = 'modificationTime' in fileInfo
+                ? (fileInfo.modificationTime as number) * 1000
+                : Date.now();
+
+            orphans.push({
+                filePath: fullPath,
+                fileName: entry,
+                fileSizeBytes: fileInfo.size as number,
+                modificationTime: modTime,
+            });
+        }
+    } catch (err: unknown) {
+        // Directory read failed — return empty list
+    }
+
+    // Sort newest first (most recently recorded first)
+    return orphans.sort((a, b) => b.modificationTime - a.modificationTime);
+}
+
+/**
+ * Re-attach orphaned video files to the library by creating new SavedVlog
+ * metadata entries. The original durationSec and thumbnail are lost, but
+ * the file itself, its size, and its modification date are recovered.
+ *
+ * Returns the number of vlogs successfully re-attached.
+ */
+export async function reattachOrphanVlogFiles(
+    orphans: OrphanVlogInfo[],
+): Promise<{ reattached: number; failed: number }> {
+    let reattached = 0;
+    let failed = 0;
+
+    for (const o of orphans) {
+        const id = generateId();
+        const date = new Date(o.modificationTime);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+        const savedVlog: SavedVlog = {
+            id,
+            filePath: o.filePath,
+            dateStr,
+            timestamp: o.modificationTime,
+            durationSec: 0, // Original duration lost — user can see it in video player
+            fileSizeBytes: o.fileSizeBytes,
+            thumbnailPath: undefined,
+            compressionPreset: undefined,
+            originalFileSizeBytes: undefined,
+            compressionPending: false,
+        };
+
+        try {
+            await insertVlog(savedVlog);
+            reattached++;
+        } catch (err: unknown) {
+            failed++;
+        }
+    }
+
+    return { reattached, failed };
 }

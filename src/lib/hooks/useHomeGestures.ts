@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useMemo } from 'react';
+﻿import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -30,11 +30,11 @@ export function useHomeGestures(currentPage: number) {
     const screenHeightSV = useSharedValue(screenHeight);
 
     // Keep SharedValue in sync when window resizes (e.g. rotation)
-    // Note: useEffect cannot be used here for SharedValues in Reanimated
-    // because the hook doesn't have access to React's useEffect.
-    // The consuming component must keep screenHeightSV in sync if needed.
-    // However, since we own the SharedValue here, we update it directly.
-    screenHeightSV.value = screenHeight;
+    // SharedValues must be updated inside useEffect, not during render,
+    // to avoid "Writing to value during component render" strict-mode warnings.
+    useEffect(() => {
+        screenHeightSV.value = screenHeight;
+    }, [screenHeight, screenHeightSV]);
 
     /** Animated progress for the feed reveal (0 to 1) */
     const feedProgress = useSharedValue(0);

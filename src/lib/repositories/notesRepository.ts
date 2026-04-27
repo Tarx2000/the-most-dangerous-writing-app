@@ -110,7 +110,10 @@ export async function deleteAllNotes(): Promise<void> {
     await run(`DELETE FROM notes`);
 }
 
-export function noteToStreakHistory(notes: SavedNote[]): Set<string> {
+/** Convert notes to a set of "won" dates for streak calculation.
+ *  Used internally within this module; not exported.
+ */
+function noteToStreakHistory(notes: SavedNote[]): Set<string> {
     const set = new Set<string>();
     for (const n of notes) {
         if (n.won && n.durationMin >= 3 && !n.isQuickNote) {

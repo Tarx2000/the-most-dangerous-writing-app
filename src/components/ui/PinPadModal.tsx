@@ -134,8 +134,6 @@ export const PinPadModal: React.FC = () => {
         transform: [{ translateX: shakeSV.value }]
     }));
 
-    if (!isVisible && opacitySV.value === 0) return null;
-
     return (
         <Animated.View style={[StyleSheet.absoluteFill, styles.container, animatedStyle, { pointerEvents: isVisible ? 'auto' : 'none' }]}>
             <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />

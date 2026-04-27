@@ -13,6 +13,7 @@
  */
 
 import { storage } from '@/lib/storage';
+import { logger } from '@/lib/logger';
 import { AI_STORAGE_KEYS, AI_LOG_MAX_ENTRIES } from '@/config/ai';
 import type { AiLogEntry } from '@/types';
 
@@ -41,13 +42,15 @@ export async function logAi(
 
         await storage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
 
-        // Also log to console for real-time debugging
-        const emoji = LOG_EMOJIS[entry.action] || '📝';
-        console.log(
-            `[AI ${emoji}] ${entry.action.toUpperCase()} | note=${entry.noteId} | model=${entry.model} | phase=${entry.phase}${entry.durationMs ? ` | ${entry.durationMs}ms` : ''}${entry.error ? ` | ERROR: ${entry.error}` : ''}`
-        );
+        // Also log to console for real-time debugging (dev-only)
+        if (__DEV__) {
+            const emoji = LOG_EMOJIS[entry.action] || '📝';
+            console.log(
+                `[AI ${emoji}] ${entry.action.toUpperCase()} | note=${entry.noteId} | model=${entry.model} | phase=${entry.phase}${entry.durationMs ? ` | ${entry.durationMs}ms` : ''}${entry.error ? ` | ERROR: ${entry.error}` : ''}`
+            );
+        }
     } catch (err) {
-        console.warn('[AI Logger] Failed to persist log entry:', err);
+        logger("warn", "AI Logger", "Failed to persist log entry:", err);
     }
 }
 
@@ -61,7 +64,7 @@ export async function getAiLog(): Promise<AiLogEntry[]> {
         if (!raw) return [];
         return JSON.parse(raw) as AiLogEntry[];
     } catch (err: unknown) {
-        console.warn("[aiLogger] Failed to read AI log:", err);
+        logger("warn", "AI Logger", "Failed to read AI log:", err);
         return [];
     }
 }

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert, Share } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
@@ -30,7 +30,14 @@ type DeveloperToolsPanelProps = {
     preferences: { devMode: boolean; debugLayout: boolean; fontIndex: number; sizeIndex: number; toggleDevMode: () => Promise<void>; toggleDebugLayout: () => Promise<void> };
     aiConfig: { aiPrompts: AiPrompts; saveAiPrompts: (prompts: AiPrompts) => Promise<void> };
     vlogs: { savedVlogs: SavedVlog[]; totalVlogStorageBytes: number };
-    storageActions: { clearAllData: () => Promise<void>; repairMigration: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number }> };
+    storageActions: {
+        clearAllData: () => Promise<void>;
+        inspectAsyncStorage: () => Promise<{ keys: string[]; keySizes: Record<string, number>; maybeJson: Record<string, { length: number; sample: string }> }>;
+        safeReMigrateAsyncStorage: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number; skipped: boolean; errors: string[] }>;
+        exportAsyncStorageToFile: () => Promise<{ filePath: string; fileSizeKB: number; keyCount: number }>;
+        scanOrphanVlogs: () => Promise<{ orphans: { fileName: string; fileSizeBytes: number; modDate: string }[] }>;
+        reattachOrphanVlogs: () => Promise<{ reattached: number; failed: number }>;
+    };
     queueState: AiQueueState;
     devModeUnlocked: boolean;
     setNewStreakParam: (val: number) => void;
@@ -155,18 +162,118 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.purpleFill, marginTop: 0 }]}
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 0 }]}
                         onPress={async () => {
                             vibrate(50);
-                            const result = await storageActions.repairMigration();
-                            Alert.alert(
-                                'Recovery Complete',
-                                `Recovered from AsyncStorage:\nâ€¢ ${result.notesRecovered} notes\nâ€¢ ${result.personsRecovered} persons\nâ€¢ ${result.vlogsRecovered} vlogs`,
-                                [{ text: 'OK' }]
-                            );
+                            try {
+                                const result = await storageActions.inspectAsyncStorage();
+                                const jsonList = Object.entries(result.maybeJson)
+                                    .map(([k, v]) => `• ${k}: ${v.length} items (${v.sample.substring(0, 80)}...)`)
+                                    .join('\n');
+                                const otherKeys = result.keys
+                                    .filter(k => !result.maybeJson[k])
+                                    .map(k => `• ${k}: ${result.keySizes[k] || 0} bytes`)
+                                    .join('\n');
+                                Alert.alert(
+                                    'AsyncStorage Inspector',
+                                    `Total keys: ${result.keys.length}\n\nJSON-like data:\n${jsonList || 'None'}\n\nOther keys:\n${otherKeys || 'None'}`
+                                );
+                            } catch (err) {
+                                Alert.alert('Inspector Error', String(err));
+                            }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>ðŸ› Restore from AsyncStorage</Text>
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>ðŸ” Inspect AsyncStorage (Safe)</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.successFill, marginTop: 0 }]}
+                        onPress={async () => {
+                            vibrate(50);
+                            try {
+                                const result = await storageActions.safeReMigrateAsyncStorage();
+                                if (result.skipped) {
+                                    Alert.alert('Safe Recovery', 'No legacy data found in AsyncStorage. Nothing to recover.');
+                                } else {
+                                    const errorMsg = result.errors.length > 0
+                                        ? `\n\nErrors (${result.errors.length}):\n${result.errors.join('\n')}`
+                                        : '';
+                                    Alert.alert(
+                                        'Safe Recovery Complete',
+                                        `• ${result.notesRecovered} notes recovered\n• ${result.personsRecovered} persons recovered\n• ${result.vlogsRecovered} vlogs recovered${errorMsg}`,
+                                        [{ text: 'OK' }]
+                                    );
+                                }
+                            } catch (err) {
+                                Alert.alert('Recovery Error', String(err));
+                            }
+                        }}
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.green }]}>âš¡ Safe Recover from AsyncStorage</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 0 }]}
+                        onPress={async () => {
+                            vibrate(50);
+                            try {
+                                const result = await storageActions.exportAsyncStorageToFile();
+                                Alert.alert(
+                                    'Export Complete',
+                                    `Exported ${result.keyCount} keys (${result.fileSizeKB} KB).\n\nUse "Save" in the share sheet to keep the file, then send it for analysis.\n\nFile: ${result.filePath}`
+                                );
+                            } catch (err) {
+                                Alert.alert('Export Error', String(err));
+                            }
+                        }}
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>📤 Export All AsyncStorage Data</Text>
+                    </AnimatedScaleButton>
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>ðŸ› Restore from AsyncStorage (Destructive)</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.goldFill, marginTop: 0 }]}
+                        onPress={async () => {
+                            vibrate(50);
+                            try {
+                                const result = await storageActions.scanOrphanVlogs();
+                                if (result.orphans.length === 0) {
+                                    Alert.alert('Orphan Scan', 'No orphaned video files found on disk.\n\nAll files are already tracked in the database.');
+                                } else {
+                                    const list = result.orphans.map(o => `• ${o.fileName} (${(o.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB, ${o.modDate})`).join('\n');
+                                    Alert.alert(
+                                        `Found ${result.orphans.length} Orphaned Video(s)`,
+                                        `${list}\n\nTap "Re-attach Orphan Videos" to recover them.`,
+                                        [{ text: 'OK' }]
+                                    );
+                                }
+                            } catch (err) {
+                                Alert.alert('Scan Error', String(err));
+                            }
+                        }}
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.gold }]}>ðŸŽ¥ Scan Orphan Videos</Text>
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.successFill, marginTop: 0 }]}
+                        onPress={async () => {
+                            vibrate(50);
+                            try {
+                                const result = await storageActions.reattachOrphanVlogs();
+                                Alert.alert(
+                                    'Orphan Recovery Complete',
+                                    `Re-attached ${result.reattached} video(s).\nFailed: ${result.failed}.\n\nRestart the app or go to the Vlog Calendar to see them.`,
+                                    [{ text: 'OK' }]
+                                );
+                            } catch (err) {
+                                Alert.alert('Recovery Error', String(err));
+                            }
+                        }}
+                    >
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.green }]}>ðŸŽ¬ Re-attach Orphan Videos</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
@@ -177,16 +284,6 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         }}
                     >
                         <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devOrange }]}>ðŸ—‘ Reset all AI Entries</Text>
-                    </AnimatedScaleButton>
-
-                    <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.orangeFill, marginTop: 0 }]}
-                        onPress={() => {
-                            notes.clearAllAiMetadata();
-                            vibrate(50);
-                        }}
-                    >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devOrange }]}>🗑 Reset all AI Entries</Text>
                     </AnimatedScaleButton>
 
                     <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>

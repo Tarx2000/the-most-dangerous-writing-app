@@ -6,10 +6,10 @@ import { View,
     StatusBar,
     Pressable,
     useWindowDimensions,
-DeviceEventEmitter
+    DeviceEventEmitter,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ViewToken, type FlashListProps } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
@@ -242,7 +242,7 @@ const FeedScreenInner: React.FC<Props> = ({
     );
 
     const handleScroll = useAnimatedScrollHandler({
-        onScroll: (e: any) => {
+        onScroll: (e) => {
             listScrollY.value = e.contentOffset.y;
         }
     });
@@ -309,7 +309,7 @@ const FeedScreenInner: React.FC<Props> = ({
         onClose();
     }, [onClose, feedProgress]);
 
-    const renderFeedItem = useCallback(({ item }: { item: any }) => {
+    const renderFeedItem = useCallback(({ item }: { item: FeedItem }) => {
         const itemId = item.note?.id || item.vlog?.id || '';
         // A video should only auto-play if: (1) auto-play is enabled in settings,
         // (2) the item is visible in the viewport, AND (3) the feed is fully revealed
@@ -491,7 +491,7 @@ const FeedScreenInner: React.FC<Props> = ({
                 ListFooterComponent={renderFooter}
                 ListEmptyComponent={renderEmpty}
                 estimatedItemSize={250}
-                keyExtractor={(item: any) => item.note?.id || item.vlog?.id || String(item.timestamp)}
+                keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
                 bounces={false}
                 overScrollMode="never"
                 scrollEnabled={feedScrollEnabled}

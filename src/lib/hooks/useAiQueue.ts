@@ -1,16 +1,5 @@
-/**
- * useAiQueue — React Hook for the AI Queue Manager
- *
- * Provides reactive access to the central AI Queue state.
- * Components subscribe to queue events and re-render when state changes.
- *
- * This hook is the ONLY way UI components should interact with AI processing.
- * Never call aiService directly for background processing.
- *
- * Usage:
- *   const { queueState, isNoteProcessing, enqueueNote, startBatch, cancelBatch } = useAiQueue(storage);
- */
-
+import type { AiPrompts } from '@/config/ai';
+import type { SavedNote } from '@/types';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
@@ -39,9 +28,9 @@ interface UseAiQueueDeps {
     aiApiKey: string;
     aiBaseUrl: string;
     aiModel: string;
-    aiPrompts: any;
-    savedNotes: any[];
-    updateNote: (id: string, updates: any) => Promise<void>;
+    aiPrompts: AiPrompts;
+    savedNotes: SavedNote[];
+    updateNote: (id: string, updates: Partial<SavedNote>) => Promise<void>;
 }
 
 /**
@@ -65,7 +54,7 @@ export function useAiQueue(deps: UseAiQueueDeps): UseAiQueueReturn {
                 model: depsRef.current.aiModel,
                 prompts: depsRef.current.aiPrompts,
             }),
-            (noteId) => depsRef.current.savedNotes.find((n: any) => n.id === noteId),
+            (noteId) => depsRef.current.savedNotes.find((n: SavedNote) => n.id === noteId),
             depsRef.current.updateNote,
             () => depsRef.current.savedNotes,
         );
@@ -129,7 +118,7 @@ export function useAiQueue(deps: UseAiQueueDeps): UseAiQueueReturn {
                 model: depsRef.current.aiModel,
                 prompts: depsRef.current.aiPrompts,
             }),
-            (noteId) => depsRef.current.savedNotes.find((n: any) => n.id === noteId),
+            (noteId) => depsRef.current.savedNotes.find((n: SavedNote) => n.id === noteId),
             depsRef.current.updateNote,
             () => depsRef.current.savedNotes,
         );

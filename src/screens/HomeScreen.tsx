@@ -17,8 +17,9 @@ import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { useHomeModals } from '@/lib/hooks/useHomeModals';
 import { useHomeGestures } from '@/lib/hooks/useHomeGestures';
 import { theme } from '@/styles/theme';
-import type { SavedNote, SavedVlog } from '@/types';
+import type { SavedNote, SavedVlog, AiJobCategory } from '@/types';
 import type { VideoPlayer } from 'expo-video';
+import { CONFIG } from '@/config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -166,7 +167,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         listScrollY,
     } = useHomeGestures(currentPage);
 
-    const handleRegenerateAi = useCallback((note: any, category: any) => {
+    const handleRegenerateAi = useCallback((note: SavedNote, category: AiJobCategory) => {
         enqueueNote(note.id, category);
     }, [enqueueNote]);
 

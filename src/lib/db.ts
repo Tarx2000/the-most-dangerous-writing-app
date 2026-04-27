@@ -19,7 +19,7 @@ export async function closeDb(): Promise<void> {
     }
 }
 
-export function resetDbInstance(): void {
+function resetDbInstance(): void {
     dbInstance = null;
 }
 
@@ -151,18 +151,43 @@ async function migrate(db: SQLiteDatabase): Promise<void> {
 
 export type BindValue = string | number | null;
 
+/**
+ * Convert `null` bind params into **holes** in a sparse array.
+ *
+ * expo-sqlite v15 on Android receives bind params as `Map<String, Any>` — a
+ * **non-nullable** Kotlin map. Its `AnyTypeConverter` maps BOTH `null` AND
+ * `undefined` to `ReadableType.Null` and throws `NullArgumentException`.
+ *
+ * `normalizeParams()` uses `reduce()` to index-key the array. `reduce()`
+ * **skips holes entirely**, so the key is never emitted. The native
+ * `sqlite3_clear_bindings()` call (executed before every run) defaults all
+ * unbound positions to SQL NULL — exactly what we need.
+ */
+function sanitizeBindParams(params: BindValue[] | undefined): (string | number | boolean | undefined)[] {
+    if (!params) return [];
+    const out = [...params] as (string | number | boolean | undefined)[];
+    for (let i = 0; i < out.length; i++) {
+        if (out[i] === null) {
+            // `delete` on a TypedArray index creates a sparse hole.
+            // `reduce()` skips holes, so normalizeParams never emits this key.
+            delete (out as unknown as Record<number, unknown>)[i];
+        }
+    }
+    return out;
+}
+
 export async function run(sql: string, params?: BindValue[]): Promise<void> {
     const db = await getDb();
-    await db.runAsync(sql, params ?? []);
+    await db.runAsync(sql, sanitizeBindParams(params) as (string | number | null | boolean)[]);
 }
 
 export async function getAll<T>(sql: string, params?: BindValue[]): Promise<T[]> {
     const db = await getDb();
-    return db.getAllAsync<T>(sql, params ?? []);
+    return db.getAllAsync<T>(sql, sanitizeBindParams(params) as (string | number | null | boolean)[]);
 }
 
 export async function getFirst<T>(sql: string, params?: BindValue[]): Promise<T | undefined> {
     const db = await getDb();
-    const rows = await db.getAllAsync<T>(sql, params ?? []);
+    const rows = await db.getAllAsync<T>(sql, sanitizeBindParams(params) as (string | number | null | boolean)[]);
     return rows[0];
 }

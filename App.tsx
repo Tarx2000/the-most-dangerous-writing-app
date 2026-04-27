@@ -27,6 +27,7 @@ import { CrimsonPro_400Regular } from '@expo-google-fonts/crimson-pro';
 import { DMSans_400Regular } from '@expo-google-fonts/dm-sans';
 import { EagleLake_400Regular } from '@expo-google-fonts/eagle-lake';
 import { mark as perfMark } from '@/lib/perf';
+import { theme } from '@/styles/theme';
 
 // Initialize global haptics middleware
 
@@ -80,8 +81,8 @@ function AppContent() {
 
   if (!fontsLoaded) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#fff" />
+      <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={theme.colors.textPrimary} />
       </View>
     );
   }
@@ -95,7 +96,7 @@ function AppContent() {
           <AiQueueProvider>
             <NavigationContainer theme={DarkTheme}>
             <StatusBar hidden={true} translucent={true} />
-            <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: '#000' } }}>
+            <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: theme.colors.background } }}>
               <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
               <Stack.Screen name="Writing" component={withErrorBoundary(WritingScreen)} />
               <Stack.Screen name="PostWriting" component={withErrorBoundary(PostWritingScreen)} />

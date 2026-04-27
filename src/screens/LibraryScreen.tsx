@@ -239,12 +239,12 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         {/* Dissolve/Fade out mask at the top of the list to prevent the hard line */}
                         <LinearGradient
                             colors={[
-                                'rgba(0,0,0, 1)', 
-                                'rgba(0,0,0, 0.9)', 
-                                'rgba(0,0,0, 0.7)', 
-                                'rgba(0,0,0, 0.4)', 
-                                'rgba(0,0,0, 0.1)', 
-                                'rgba(0,0,0, 0)'
+                                theme.colors.background,
+                                'rgba(0,0,0, 0.9)',
+                                'rgba(0,0,0, 0.7)',
+                                'rgba(0,0,0, 0.4)',
+                                'rgba(0,0,0, 0.1)',
+                                'rgba(0,0,0, 0)',
                             ]}
                             style={{
                                 position: 'absolute',
@@ -260,12 +260,12 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         {/* Dissolve/Fade out mask at the bottom of the list */}
                         <LinearGradient
                             colors={[
-                                'rgba(0,0,0, 0)', 
-                                'rgba(0,0,0, 0.1)', 
-                                'rgba(0,0,0, 0.4)', 
-                                'rgba(0,0,0, 0.7)', 
-                                'rgba(0,0,0, 0.9)', 
-                                'rgba(0,0,0, 1)'
+                                'rgba(0,0,0, 0)',
+                                'rgba(0,0,0, 0.1)',
+                                'rgba(0,0,0, 0.4)',
+                                'rgba(0,0,0, 0.7)',
+                                'rgba(0,0,0, 0.9)',
+                                theme.colors.background,
                             ]}
                             style={{
                                 position: 'absolute',

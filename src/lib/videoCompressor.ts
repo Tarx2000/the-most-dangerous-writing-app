@@ -42,8 +42,8 @@ try {
     VideoCompressor = mod.Video;
     isNativeModuleAvailable = true;
     logger("info", "Compressor", "Native module loaded successfully");
-} catch (_) {
-    console.warn('[Compressor] Native module not available (Expo Go mode) â€” compression will be skipped');
+} catch (err) {
+    console.warn('[Compressor] Native module not available (Expo Go mode) — compression will be skipped. Reason:', err instanceof Error ? err.message : String(err));
 }
 
 /**
@@ -140,7 +140,7 @@ export async function compressVideo(
     // Skip compression if preset is 'off', missing config, or native module unavailable
     if (preset.id === 'off' || preset.maxSize === 0 || !isNativeModuleAvailable) {
         if (!isNativeModuleAvailable && preset.id !== 'off') {
-            console.log('[Compressor] Skipping compression â€” native module not available (Expo Go)');
+            logger("info", "Compressor", "Skipping compression — native module not available (Expo Go)");
         }
         onProgress?.(1);
         return {
@@ -172,7 +172,7 @@ export async function compressVideo(
 
         // If compression somehow made the file bigger, use the original
         if (compressedSizeBytes >= originalSizeBytes) {
-            console.log('[Compressor] Compressed file is larger than original â€” keeping original');
+            logger("warn", "Compressor", "Compressed file is larger than original — keeping original");
             // Clean up the compressed file
             try { await FileSystem.deleteAsync(compressedUri, { idempotent: true }); } catch (err) { logger("warn", "Compressor", "Failed to delete compressed file:", err); }
             onProgress?.(1);
@@ -186,7 +186,9 @@ export async function compressVideo(
         }
 
         const savingsPercent = Math.round((1 - compressedSizeBytes / originalSizeBytes) * 100);
-        console.log(`[Compressor] Done: ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB â†’ ${(compressedSizeBytes / 1024 / 1024).toFixed(1)}MB (${savingsPercent}% saved)`);
+        const origMb = (originalSizeBytes / 1024 / 1024).toFixed(1);
+        const compMb = (compressedSizeBytes / 1024 / 1024).toFixed(1);
+        logger("info", "Compressor", `Done: ${origMb}MB → ${compMb}MB (${savingsPercent}% saved)`);
 
         // Replace the original file with the compressed version
         await FileSystem.deleteAsync(inputUri, { idempotent: true });

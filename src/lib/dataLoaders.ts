@@ -1,8 +1,8 @@
-﻿import { Alert } from 'react-native';
-import { vibrate } from '@/lib/haptics';
+﻿import { Alert, Share } from 'react-native';
 import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
-import { getDb, getAll } from '@/lib/db';
+import { getDb, getAll, run } from '@/lib/db';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
     getAllNotes, insertNote, deleteAllNotes,
 } from '@/lib/repositories/notesRepository';
@@ -26,86 +26,9 @@ import { processPendingCompressions } from '@/lib/videoCompressor';
 export type Ref<T> = { current: T };
 export type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   MIGRATION FROM AsyncStorage TO SQLite
-   Run once per device. After success, AsyncStorage data keys are cleared.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-
-const MIGRATION_DONE_KEY = '__MIGRATED_TO_SQLITE_V2__';
-
-interface LegacyNote extends SavedNote {
-    aiProcessing?: unknown;
-}
-
-export async function migrateAsyncStorageToSqlite(): Promise<void> {
-    const alreadyDone = await storage.getItem(MIGRATION_DONE_KEY);
-    if (alreadyDone === 'true') return;
-
-    try {
-        const rawNotes = await storage.getItem('SAVED_NOTES');
-        const rawPersons = await storage.getItem('SAVED_PERSONS');
-        const rawVlogs = await storage.getItem('SAVED_VLOGS');
-
-        // Migrate notes (strip deprecated aiProcessing field inline)
-        if (rawNotes) {
-            let legacyNotes: LegacyNote[] = [];
-            try { legacyNotes = JSON.parse(rawNotes); } catch { /**/ }
-            for (const n of legacyNotes) {
-                const mutable = n as unknown as Record<string, unknown>;
-                delete mutable.aiProcessing;
-                await insertNote(mutable as unknown as SavedNote);
-            }
-        }
-
-        // Migrate persons
-        if (rawPersons) {
-            let legacyPersons: Person[] = [];
-            try { legacyPersons = JSON.parse(rawPersons); } catch { /**/ }
-            for (const p of legacyPersons) {
-                await insertPerson(p);
-            }
-        }
-
-        // Migrate vlogs
-        if (rawVlogs) {
-            let legacyVlogs: SavedVlog[] = [];
-            try { legacyVlogs = JSON.parse(rawVlogs); } catch { /**/ }
-            for (const v of legacyVlogs) {
-                await insertVlog(v);
-            }
-        }
-
-        // Migrate simple settings
-        const simpleSettings = [
-            'USER_FONT_IDX', 'USER_SIZE_IDX', 'USE_BIOMETRICS',
-            'CURRENT_STREAK', 'LAST_WIN_DATE', 'STREAK_HISTORY',
-            'DEV_MODE', 'DEBUG_LAYOUT', 'VISION_BOARD',
-            'LAST_REFLECTION_DATE', 'PREFER_PIN_AUTH', 'ENABLE_HAPTICS',
-            'LOCK_TIMEOUT_MINS', 'VLOG_QUALITY', 'COMPRESSION_PRESET',
-            'SAVED_NOTES', 'SAVED_PERSONS', 'SAVED_VLOGS',
-            'BOOKMARKED_NOTE_IDS', 'FEED_COMMENTS', 'AUTO_PLAY_FEED_VIDEOS',
-            'AUTO_GENERATE_SUMMARIES',
-            AI_STORAGE_KEYS.API_KEY, AI_STORAGE_KEYS.BASE_URL,
-            AI_STORAGE_KEYS.MODEL, AI_STORAGE_KEYS.GRAMMAR_MODEL,
-            AI_STORAGE_KEYS.PROMPTS,
-        ];
-
-        for (const key of simpleSettings) {
-            const val = await storage.getItem(key);
-            if (val !== null && val !== undefined) {
-                await setSetting(key, val);
-            }
-        }
-
-        await storage.setItem(MIGRATION_DONE_KEY, 'true');
-    } catch (err) {
-        logger("error", "Migration", "Failed to migrate AsyncStorage to SQLite:", err);
-    }
-}
-
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ═══════════════════════════════════════════════════════════════════════════
    SAFE JSON PARSE
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 export function safeParse<T>(key: string, raw: string | null | undefined, fallback: T): T {
     if (raw == null) return fallback;
@@ -117,9 +40,9 @@ export function safeParse<T>(key: string, raw: string | null | undefined, fallba
     }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   DATA LOADERS â€” One per domain, fully typed, testable
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════════════════════════════════════════════════════════════════
+   DATA LOADERS — One per domain, fully typed, testable
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 export interface LoadContext {
     setSavedNotes: Setter<SavedNote[]>;
@@ -152,53 +75,6 @@ export interface LoadContext {
     setAutoGenerateSummaries: Setter<boolean>;
 }
 
-/**
- * Run an emergency check: if SQLite is empty but AsyncStorage
- * still holds legacy data, re-run the migration. This catches
- * the "done flag set late / crash during first run" failure mode.
- */
-export async function detectAndRepairEmptySqlite(): Promise<{ repaired: boolean; notesRecovered: number; personsRecovered: number; vlogsRecovered: number }> {
-    const alreadyDone = await storage.getItem(MIGRATION_DONE_KEY);
-    // Only auto-repair if we previously claimed migration was done
-    if (alreadyDone !== 'true') {
-        return { repaired: false, notesRecovered: 0, personsRecovered: 0, vlogsRecovered: 0 };
-    }
-
-    const sqliteNotes = await getAllNotes();
-    const sqlitePersons = await getAllPersons();
-    const sqliteVlogs = await getAllVlogs();
-
-    const rawNotes = await storage.getItem('SAVED_NOTES');
-    const rawPersons = await storage.getItem('SAVED_PERSONS');
-    const rawVlogs = await storage.getItem('SAVED_VLOGS');
-
-    let legacyNotes: LegacyNote[] = [];
-    let legacyPersons: Person[] = [];
-    let legacyVlogs: SavedVlog[] = [];
-
-    try { if (rawNotes) legacyNotes = JSON.parse(rawNotes); } catch { /**/ }
-    try { if (rawPersons) legacyPersons = JSON.parse(rawPersons); } catch { /**/ }
-    try { if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs); } catch { /**/ }
-
-    const hasAsyncData = legacyNotes.length > 0 || legacyPersons.length > 0 || legacyVlogs.length > 0;
-    const sqliteEmpty = sqliteNotes.length === 0 && sqlitePersons.length === 0 && sqliteVlogs.length === 0;
-
-    if (hasAsyncData && sqliteEmpty) {
-        logger('warn', 'Migration', 'SQLite empty but AsyncStorage has data — re-running migration');
-        // Clear the done flag so migration re-runs
-        await storage.removeItem(MIGRATION_DONE_KEY);
-        await migrateAsyncStorageToSqlite();
-        return {
-            repaired: true,
-            notesRecovered: legacyNotes.length,
-            personsRecovered: legacyPersons.length,
-            vlogsRecovered: legacyVlogs.length,
-        };
-    }
-
-    return { repaired: false, notesRecovered: 0, personsRecovered: 0, vlogsRecovered: 0 };
-}
-
 export async function loadNotes(ctx: LoadContext): Promise<void> {
     const notes = await getAllNotes();
     ctx.setSavedNotes(notes);
@@ -219,15 +95,12 @@ export async function loadVlogs(ctx: LoadContext): Promise<void> {
 export async function loadAllData(ctx: LoadContext): Promise<void> {
     perfMark('storage.start');
 
-    // Ensure AsyncStorage â†’ SQLite migration has run
-    await migrateAsyncStorageToSqlite();
-
     await loadNotes(ctx);
     await loadPersons(ctx);
 
     const allSettings = await getAllSettings();
 
-    /* â”€â”€ Preferences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Preferences ─────────────────────────────────────────────────────── */
     const fontIdx = parseInt(allSettings['USER_FONT_IDX'] ?? '0', 10);
     if (!Number.isNaN(fontIdx)) ctx.setFontIndex(fontIdx);
 
@@ -254,17 +127,17 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     const lastReflectionDate = parseInt(allSettings['LAST_REFLECTION_DATE'] ?? '', 10);
     if (!Number.isNaN(lastReflectionDate)) ctx.setLastReflectionDate(lastReflectionDate);
 
-    /* â”€â”€ Streak â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Streak ──────────────────────────────────────────────────────────── */
     const storedStreak = parseInt(allSettings['CURRENT_STREAK'] ?? '', 10);
     ctx.setCurrentStreak(Number.isNaN(storedStreak) ? 0 : storedStreak);
     ctx.setLastWinDate(allSettings['LAST_WIN_DATE'] ?? '');
 
     perfMark('storage.critical');
 
-    /* â”€â”€ Deferred data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Deferred data ──────────────────────────────────────────────────── */
     await loadVlogs(ctx);
 
-    /* â”€â”€ AI Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── AI Config ──────────────────────────────────────────────────────── */
     ctx.setAiApiKey(allSettings[AI_STORAGE_KEYS.API_KEY] ?? '');
     ctx.setAiBaseUrl(allSettings[AI_STORAGE_KEYS.BASE_URL] ?? '');
     ctx.setAiModel(allSettings[AI_STORAGE_KEYS.MODEL] ?? '');
@@ -276,12 +149,12 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     ctx.setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...rawPrompts });
     ctx.setAutoGenerateSummaries(safeParse('AUTO_GENERATE_SUMMARIES', allSettings['AUTO_GENERATE_SUMMARIES'], true));
 
-    /* â”€â”€ Feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Feed ───────────────────────────────────────────────────────────── */
     ctx.setBookmarkedNoteIds(safeParse<string[]>('BOOKMARKED_NOTE_IDS', allSettings['BOOKMARKED_NOTE_IDS'], []));
     ctx.setFeedComments(safeParse<Record<string, string>>('FEED_COMMENTS', allSettings['FEED_COMMENTS'], {}));
     ctx.setAutoPlayFeedVideos(safeParse('AUTO_PLAY_FEED_VIDEOS', allSettings['AUTO_PLAY_FEED_VIDEOS'], true));
 
-    /* â”€â”€ Streak History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Streak History ──────────────────────────────────────────────────── */
     const rawHistory = safeParse<string[]>('STREAK_HISTORY', allSettings['STREAK_HISTORY'], []);
     if (rawHistory.length > 0) {
         ctx.setStreakHistory(rawHistory);
@@ -300,7 +173,7 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
         await setSetting('STREAK_HISTORY', JSON.stringify(backfilled));
     }
 
-    /* â”€â”€ Recalculate streak if stale â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Recalculate streak if stale ─────────────────────────────────────── */
     const notes = await getAllNotes();
     const noteHistory = new Set<string>();
     for (const n of notes) {
@@ -331,24 +204,210 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     perfLog();
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ═══════════════════════════════════════════════════════════════════════════
    CROSS-CUTTING OPERATIONS (using repositories)
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-export async function clearAndReMigrateAsyncStorage(): Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number }> {
-    logger('info', 'Migration', 'Starting manual re-migration from AsyncStorage');
-    await storage.removeItem(MIGRATION_DONE_KEY);
-    await deleteAllNotes();
-    await deleteAllPersons();
-    await deleteAllVlogs();
-    await (await import('@/lib/repositories/settingsRepository')).deleteAllSettings();
-    await migrateAsyncStorageToSqlite();
-    const notes = await getAllNotes();
-    const persons = await getAllPersons();
-    const vlogs = await getAllVlogs();
-    return {
-        notesRecovered: notes.length,
-        personsRecovered: persons.length,
-        vlogsRecovered: vlogs.length,
-    };
+/**
+ * NON-DESTRUCTIVE diagnostic: list every key in AsyncStorage with size.
+ * Does NOT delete or write anything. Safe to run repeatedly.
+ */
+export async function inspectAsyncStorage(): Promise<{ keys: string[]; keySizes: Record<string, number>; maybeJson: Record<string, { length: number; sample: string }> }> {
+    const keys = await storage.getAllKeys();
+    const allPairs = await storage.multiGet(keys);
+    const keySizes: Record<string, number> = {};
+    const maybeJson: Record<string, { length: number; sample: string }> = {};
+
+    for (const [key, val] of allPairs) {
+        const size = val ? val.length : 0;
+        keySizes[key] = size;
+        if (val && (val.startsWith('[') || val.startsWith('{'))) {
+            try {
+                const parsed = JSON.parse(val);
+                const length = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
+                maybeJson[key] = { length, sample: val.substring(0, 200) };
+            } catch {
+                maybeJson[key] = { length: 0, sample: val.substring(0, 200) };
+            }
+        }
+    }
+    return { keys, keySizes, maybeJson };
+}
+
+/**
+ * SAFE recovery: attempt to read AsyncStorage WITHOUT wiping SQLite first.
+ * NULL values are handled by sanitizeBindParams() in db.ts (sparse-array holes
+ * that normalizeParams.reduce() skips, resulting in SQL NULL via sqlite3_clear_bindings).
+ * Returns detailed error log if any insertion fails.
+ */
+export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number; skipped: boolean; errors: string[] }> {
+    logger('info', 'Migration', 'Starting safe re-migration from AsyncStorage (non-destructive)');
+
+    const rawNotes = await storage.getItem('SAVED_NOTES');
+    const rawPersons = await storage.getItem('SAVED_PERSONS');
+    const rawVlogs = await storage.getItem('SAVED_VLOGS');
+
+    interface LegacyNote extends SavedNote {
+        aiProcessing?: unknown;
+    }
+
+    let legacyNotes: LegacyNote[] = [];
+    let legacyPersons: Person[] = [];
+    let legacyVlogs: SavedVlog[] = [];
+
+    try { if (rawNotes) legacyNotes = JSON.parse(rawNotes); } catch { /**/ }
+    try { if (rawPersons) legacyPersons = JSON.parse(rawPersons); } catch { /**/ }
+    try { if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs); } catch { /**/ }
+
+    if (legacyNotes.length === 0 && legacyPersons.length === 0 && legacyVlogs.length === 0) {
+        return { notesRecovered: 0, personsRecovered: 0, vlogsRecovered: 0, skipped: true, errors: [] };
+    }
+
+    const errors: string[] = [];
+    let notesRecovered = 0;
+    let personsRecovered = 0;
+    let vlogsRecovered = 0;
+
+    // INSERT notes with raw SQL and explicit defaults — bypasses any type-guard bugs
+    for (const n of legacyNotes) {
+        try {
+            const safeNote: Record<string, unknown> = (n as unknown) as Record<string, unknown>;
+            const rawSummary = safeNote.aiSummary;
+            const summaryJson = Array.isArray(rawSummary) ? JSON.stringify(rawSummary) : (rawSummary ? JSON.stringify(rawSummary) : null);
+            const alignScore = (n as AlignmentReflection).alignmentScore ?? 0;
+            const stopT = (n as AlignmentReflection).stopText ?? '';
+            const startT = (n as AlignmentReflection).startText ?? '';
+            const contT = (n as AlignmentReflection).continueText ?? '';
+            const ts = typeof safeNote.timestamp === 'number' ? safeNote.timestamp : Date.now();
+
+            await run(
+                `INSERT INTO notes (id, text, date_str, timestamp, duration_min, won, person_id, is_quick_note, ai_title, ai_summary, ai_model_used, is_alignment_reflection, alignment_score, stop_text, start_text, continue_text)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    (safeNote.id ?? '') as string,
+                    (safeNote.text ?? '') as string,
+                    (safeNote.dateStr ?? new Date(ts).toISOString()) as string,
+                    (typeof safeNote.timestamp === 'number' ? safeNote.timestamp : Date.now()),
+                    (typeof safeNote.durationMin === 'number' ? safeNote.durationMin : 0),
+                    safeNote.won ? 1 : 0,
+                    (safeNote.personId ?? null) as string | null,
+                    safeNote.isQuickNote ? 1 : 0,
+                    (safeNote.aiTitle ?? null) as string | null,
+                    (summaryJson ?? null) as string | null,
+                    (safeNote.aiModelUsed ?? null) as string | null,
+                    safeNote.isAlignmentReflection ? 1 : 0,
+                    safeNote.isAlignmentReflection ? (alignScore ?? 0) : null,
+                    safeNote.isAlignmentReflection ? (stopT ?? '') : null,
+                    safeNote.isAlignmentReflection ? (startT ?? '') : null,
+                    safeNote.isAlignmentReflection ? (contT ?? '') : null,
+                ]
+            );
+            notesRecovered++;
+        } catch (err: unknown) {
+            const msg = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: string }).message) : String(err);
+            errors.push(`Note ${n.id}: ${msg}`);
+        }
+    }
+
+    // INSERT persons
+    for (const p of legacyPersons) {
+        try {
+            const safeP: Record<string, unknown> = (p as unknown) as Record<string, unknown>;
+            await run(
+                `INSERT INTO persons (id, name, created_at, nickname, relationship, birthday, bio, custom_relationships)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    (safeP.id ?? '') as string,
+                    (safeP.name ?? '') as string,
+                    (typeof safeP.createdAt === 'number' ? safeP.createdAt : Date.now()),
+                    (safeP.nickname ?? null) as string | null,
+                    (safeP.relationship ?? null) as string | null,
+                    (safeP.birthday ?? null) as string | null,
+                    (safeP.bio ?? null) as string | null,
+                    Array.isArray(safeP.customRelationships) ? JSON.stringify(safeP.customRelationships) : null,
+                ]
+            );
+            personsRecovered++;
+        } catch (err: unknown) {
+            const msg = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: string }).message) : String(err);
+            errors.push(`Person ${p.id}: ${msg}`);
+        }
+    }
+
+    // INSERT vlogs
+    for (const v of legacyVlogs) {
+        try {
+            const safeV: Record<string, unknown> = (v as unknown) as Record<string, unknown>;
+            await run(
+                `INSERT INTO vlogs (id, file_path, date_str, timestamp, duration_sec, file_size_bytes, thumbnail_path, compression_preset, original_file_size_bytes, compression_pending)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    (safeV.id ?? '') as string,
+                    (safeV.filePath ?? '') as string,
+                    (safeV.dateStr ?? '') as string,
+                    (typeof safeV.timestamp === 'number' ? safeV.timestamp : Date.now()),
+                    (typeof safeV.durationSec === 'number' ? safeV.durationSec : 0),
+                    (typeof safeV.fileSizeBytes === 'number' ? safeV.fileSizeBytes : 0),
+                    (safeV.thumbnailPath ?? null) as string | null,
+                    (safeV.compressionPreset ?? null) as string | null,
+                    (typeof safeV.originalFileSizeBytes === 'number' ? safeV.originalFileSizeBytes : null),
+                    safeV.compressionPending ? 1 : 0,
+                ]
+            );
+            vlogsRecovered++;
+        } catch (err: unknown) {
+            const msg = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: string }).message) : String(err);
+            errors.push(`Vlog ${v.id}: ${msg}`);
+        }
+    }
+
+    return { notesRecovered, personsRecovered, vlogsRecovered, skipped: false, errors };
+}
+
+/**
+ * Export ALL AsyncStorage data to a shareable JSON file.
+ * This lets users save their data externally so we can troubleshoot
+ * migration issues with the actual data structure.
+ * Writes to cache dir then uses Share API to let user pick destination.
+ * Returns the file URI on success.
+ */
+export async function exportAsyncStorageToFile(): Promise<{ filePath: string; fileSizeKB: number; keyCount: number }> {
+    const keys = await storage.getAllKeys();
+    const allPairs = await storage.multiGet(keys);
+
+    const exportData: Record<string, unknown> = {};
+    for (const [key, val] of allPairs) {
+        if (val === null) {
+            exportData[key] = null;
+            continue;
+        }
+        try {
+            exportData[key] = JSON.parse(val);
+        } catch {
+            exportData[key] = val;
+        }
+    }
+
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const fileName = `asyncstorage_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    const filePath = FileSystem.cacheDirectory + fileName;
+
+    await FileSystem.writeAsStringAsync(filePath, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
+
+    const fileInfo = await FileSystem.getInfoAsync(filePath);
+    const sizeBytes = fileInfo.exists && 'size' in fileInfo && typeof fileInfo.size === 'number' ? fileInfo.size : jsonStr.length;
+
+    try {
+        // On Android, file:// URIs cannot be shared without a FileProvider (requires expo-sharing).
+        // Since expo-sharing has peer-dependency conflicts, we share the raw JSON text directly.
+        // For ~268 KB this fits comfortably in the intent text field for email/notes/telegram/WhatsApp.
+        await Share.share({
+            message: jsonStr,
+            title: 'AsyncStorage Export',
+        });
+    } catch (err) {
+        logger('warn', 'Export', 'Share dialog failed, file still available at:', filePath, err);
+    }
+
+    return { filePath, fileSizeKB: Math.round(sizeBytes / 1024), keyCount: keys.length };
 }

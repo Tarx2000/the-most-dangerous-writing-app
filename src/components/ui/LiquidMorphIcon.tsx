@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { View } from 'react-native';
+import { View, type ViewStyle } from 'react-native';
+import type { StyleProp } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { interpolate } from 'flubber';
 import { theme } from '@/styles/theme';
@@ -78,7 +79,7 @@ interface Props {
     /** Fill color (default: primaryAction theme color) */
     color?: string;
     /** Additional styles for the outer container */
-    style?: any;
+    style?: StyleProp<ViewStyle>;
 }
 
 /**

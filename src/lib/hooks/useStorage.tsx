@@ -42,7 +42,7 @@ import {
     createAiConfigOps,
     createCrossCuttingOps,
 } from '@/lib/storageOps';
-import { loadAllData as loadAllDataFromDataLoaders, detectAndRepairEmptySqlite, clearAndReMigrateAsyncStorage } from '@/lib/dataLoaders';
+import { loadAllData as loadAllDataFromDataLoaders, inspectAsyncStorage, safeReMigrateAsyncStorage, exportAsyncStorageToFile } from '@/lib/dataLoaders';
 import { logger } from '@/lib/logger';
 import { processPendingCompressions } from '@/lib/videoCompressor';
 
@@ -142,7 +142,11 @@ interface StorageActionsContextType {
     clearAllData: () => Promise<void>;
     saveAlignmentReflection: (reflection: AlignmentReflection) => Promise<{ streakIncreased: boolean; newStreak: number }>;
     loadAllData: () => Promise<void>;
-    repairMigration: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number }>;
+    inspectAsyncStorage: () => Promise<{ keys: string[]; keySizes: Record<string, number>; maybeJson: Record<string, { length: number; sample: string }> }>;
+    safeReMigrateAsyncStorage: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number; skipped: boolean; errors: string[] }>;
+    exportAsyncStorageToFile: () => Promise<{ filePath: string; fileSizeKB: number; keyCount: number }>;
+    scanOrphanVlogs: () => Promise<{ orphans: { fileName: string; fileSizeBytes: number; modDate: string }[] }>;
+    reattachOrphanVlogs: () => Promise<{ reattached: number; failed: number }>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -277,13 +281,6 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
-        // 1. Auto-detect and repair empty SQLite with lingering AsyncStorage data
-        const repair = await detectAndRepairEmptySqlite();
-        if (repair.repaired) {
-            logger('info', 'Storage', `Recovered ${repair.notesRecovered} notes, ${repair.personsRecovered} persons, ${repair.vlogsRecovered} vlogs from AsyncStorage`);
-        }
-
-        // 2. Normal data load
         await loadAllDataFromDataLoaders({
             setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
             setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
@@ -334,7 +331,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             try {
                 const processed = await processPendingCompressions(vlogOps.updateVlog);
                 if (processed > 0) {
-                    console.log(`[Startup] Processed ${processed} pending compression(s)`);
+                    logger("info", "Startup", `Processed ${processed} pending compression(s)`);
                     const freshVlogs = savedVlogsRef.current;
                     const newTotal = freshVlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
                     setTotalVlogStorageBytes(newTotal);
@@ -397,7 +394,34 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     const actionsValue = useMemo<StorageActionsContextType>(() => ({
         ...crossCuttingOps, loadAllData,
-        repairMigration: clearAndReMigrateAsyncStorage,
+        inspectAsyncStorage,
+        safeReMigrateAsyncStorage,
+        exportAsyncStorageToFile,
+        scanOrphanVlogs: async () => {
+            const known = new Set(savedVlogsRef.current.map(v => v.filePath));
+            const { scanOrphanVlogFiles } = await import('@/lib/storageManager');
+            const orphans = await scanOrphanVlogFiles(known);
+            return { orphans: orphans.map(o => ({
+                fileName: o.fileName,
+                fileSizeBytes: o.fileSizeBytes,
+                modDate: new Date(o.modificationTime).toLocaleDateString(),
+            })) };
+        },
+        reattachOrphanVlogs: async () => {
+            const known = new Set(savedVlogsRef.current.map(v => v.filePath));
+            const { scanOrphanVlogFiles, reattachOrphanVlogFiles } = await import('@/lib/storageManager');
+            const orphans = await scanOrphanVlogFiles(known);
+            const result = await reattachOrphanVlogFiles(orphans);
+            // Refresh vlogs in state
+            const { getAllVlogs } = await import('@/lib/repositories/vlogsRepository');
+            const fresh = await getAllVlogs();
+            setSavedVlogs(fresh);
+            savedVlogsRef.current = fresh;
+            const totalBytes = fresh.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
+            setTotalVlogStorageBytes(totalBytes);
+            totalVlogStorageBytesRef.current = totalBytes;
+            return result;
+        },
     }), [crossCuttingOps, loadAllData]);
 
     /* ══════════════════════════════════════════════════════════════════════

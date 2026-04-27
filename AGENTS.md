@@ -6,7 +6,7 @@ React Native (Expo SDK 55) journaling app where stopping typing destroys your te
 - **Runtime**: React 19.2 + React Native 0.83.4 (Expo managed workflow)
 - **Navigation**: React Navigation v7 (Native Stack)
 - **Animation**: React Native Reanimated v4 + React Native Gesture Handler + Flubber (SVG path morphing)
-- **Storage**: AsyncStorage (all persistent state), expo-file-system (vlog video files)
+- **Storage**: SQLite (expo-sqlite v15) for structured data, AsyncStorage for legacy migration flags, expo-file-system (vlog video files)
 - **AI**: Ollama Cloud API (XHR streaming) with singleton queue manager (`aiQueue.ts`)
 - **Security**: expo-local-authentication (3-tier biometric unlock)
 - **Build**: Babel with react-compiler plugin (target 19), TypeScript 5.9 strict mode
@@ -123,6 +123,7 @@ No `any` types. Use type guards. Fresh-read pattern: update BOTH setter AND ref.
 - **Expo managed workflow**: **Expo Go only** — packages requiring custom native builds (MMKV, Nitro Modules) will crash.
 - **Ollama Cloud API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
 - **Storage adapter**: `src/lib/storage.ts` wraps AsyncStorage. Swappable to MMKV in dev builds.
+- **expo-sqlite null/undefined bridge bug**: expo-sqlite v15 on Android receives bind params as `Map<String, Any>` via `AnyTypeConverter` — a non-nullable Kotlin map. The converter maps **both** JS `null` AND JS `undefined` to `ReadableType.Null` and throws `NullArgumentException`. The `run()`/`getAll()`/`getFirst()` wrappers in `src/lib/db.ts` automatically convert `null` → **array holes** (via `delete out[i]`) in a sparse array. `normalizeParams().reduce()` skips holes entirely, so the key is never emitted to the native bridge. `sqlite3_clear_bindings()` (called before every `run()`) defaults all unbound positions to SQL NULL. **Never bypass `run()` by calling `db.runAsync()` directly** — always use the `db.ts` wrappers.
 
 ## Version Pinning (Do NOT Upgrade)
 | Package | Version | Why |
