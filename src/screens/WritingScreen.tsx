@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View,
+import React, { useEffect, useState, useRef } from 'react';
+import {
+    View,
     Text,
     TextInput,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
     StyleSheet,
-    Pressable,
-DeviceEventEmitter
+    DeviceEventEmitter,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -39,7 +39,7 @@ function getStatusDisplay(hasLost: boolean, isQuickNote: boolean | undefined, ti
 export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { timeIndex, diffIndex, mode, personId, isQuickNote } = route.params;
 
-    const inputRef = React.useRef<TextInput>(null);
+    const inputRef = useRef<TextInput>(null);
     const [wordCount, setWordCount] = useState(0);
 
     const {
@@ -122,6 +122,19 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const currentSize = CONFIG.SIZES[sizeIndex]?.value || 18;
     const currentLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
 
+    // Apply font changes dynamically via setNativeProps to avoid remounting the TextInput
+    useEffect(() => {
+        const node = inputRef.current;
+        if (node) {
+            if (Platform.OS === 'android') {
+                node.setNativeProps({ style: { fontFamily: currentFont, fontSize: currentSize, lineHeight: currentLineHeight } });
+            } else {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                node.setNativeProps({ style: { fontFamily: currentFont, fontSize: currentSize, lineHeight: currentLineHeight } as any });
+            }
+        }
+    }, [currentFont, currentSize, currentLineHeight]);
+
     return (
         <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
             <KeyboardAvoidingView style={commonStyles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -160,13 +173,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             keyboardDismissMode="interactive"
                         >
                             <TextInput
-                                key={`input_${currentFont}`}
-                                ref={(node) => {
-                                    inputRef.current = node;
-                                    if (Platform.OS === 'android' && node) {
-                                        node.setNativeProps({ style: { fontFamily: currentFont } });
-                                    }
-                                }}
+                                ref={inputRef}
                                 style={[commonStyles.textInput, {
                                     flex: 1,
                                     fontSize: currentSize,

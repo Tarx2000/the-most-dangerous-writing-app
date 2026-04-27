@@ -26,23 +26,41 @@ import {
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
-/** Single grammar correction returned by checkGrammar() */
+/** Ollama chat request options */
+interface OllamaChatOptions {
+    num_ctx?: number;
+    temperature?: number;
+    top_p?: number;
+    seed?: number;
+    [key: string]: unknown;
+}
+
 export interface GrammarSuggestion {
-    /** The exact word/phrase in the original text that has an issue */
     original: string;
-    /** The corrected replacement */
     suggestion: string;
-    /** Short explanation of the fix */
     explanation: string;
 }
 
-/** Configuration overrides — pass user-customized values from AsyncStorage */
 export interface AiConfig {
     apiKey?: string;
     baseUrl?: string;
     model?: string;
     prompts?: Partial<AiPrompts>;
 }
+
+export interface RelationshipContext {
+    personName: string;
+    relationshipStatus: string;
+}
+
+export interface AiProcessResult {
+    title: string;
+    summary: string[];
+    /** True when the AI call failed or returned empty results */
+    failed: boolean;
+}
+
+
 
 /* ── Connection Health State ──────────────────────────────────────────── */
 
@@ -70,6 +88,9 @@ export function resetConnectionState(): void {
 export function resetStateForTesting(): void {
     _consecutivePingFailures = 0;
 }
+
+/** Alias for test consumers expecting a different name */
+export const resetAiServiceState = resetStateForTesting;
 
 /* ── Retry Utilities ─────────────────────────────────────────────────── */
 
@@ -138,7 +159,7 @@ async function ollamaChatSingle(
     systemPrompt: string,
     userMessage: string,
     config: AiConfig = {},
-    optionsOverwrite: Record<string, any> = {},
+    optionsOverwrite: Record<string, unknown> = {},
     onChunk?: (text: string) => void,
     cancelToken?: AiCancelToken
 ): Promise<string> {
@@ -284,7 +305,7 @@ async function ollamaChat(
     systemPrompt: string,
     userMessage: string,
     config: AiConfig = {},
-    optionsOverwrite: Record<string, any> = {},
+    optionsOverwrite: Record<string, unknown> = {},
     onChunk?: (text: string) => void,
     cancelToken?: AiCancelToken
 ): Promise<string> {
@@ -294,8 +315,6 @@ async function ollamaChat(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             // Only attach the streaming callback on the last attempt.
-            // On earlier attempts we skip it so a partial stream from a
-            // doomed request doesn't pollute the consumer's buffer.
             const isLastAttempt = attempt === maxAttempts - 1;
             const chunkCb = isLastAttempt ? onChunk : undefined;
 
@@ -308,11 +327,12 @@ async function ollamaChat(
                 cancelToken,
             );
             return result;
-        } catch (error: any) {
-            lastError = error;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                lastError = error;
+            }
 
-            // Don't retry non-transient errors (4xx, auth, parse errors, etc.)
-            if (!isTransientError(error)) {
+            if (!(error instanceof Error) || !isTransientError(error)) {
                 throw error;
             }
 
@@ -322,7 +342,7 @@ async function ollamaChat(
                 const delayMs = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s, ...
                 console.warn(
                     `[AI] Transient error (attempt ${attempt + 1}/${maxAttempts}), ` +
-                    `retrying in ${delayMs}ms: ${error.message}`
+                    `retrying in ${delayMs}ms: ${(error as Error)?.message}`
                 );
                 // If cancelled, don't retry
                 if (cancelToken && cancelToken.aborted) {
@@ -485,10 +505,10 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
         // Success — reset consecutive failure counter
         _consecutivePingFailures = 0;
         return { online: true };
-    } catch (err: any) {
+    } catch (err: unknown) {
         _consecutivePingFailures++;
         console.warn(`[AI] Ping failed (${_consecutivePingFailures} consecutive):`, err);
-        return { online: false, error: err.message || 'Network request failed' };
+        return { online: false, error: (err as Error | undefined)?.message || 'Network request failed' };
     }
 }
 
@@ -506,14 +526,6 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
  * @param config - Optional config overrides
  * @returns Object with title string and summary bullet array
  */
-/** Result of AI processing a note — distinguishes success from failure */
-export interface AiProcessResult {
-    title: string;
-    summary: string[];
-    /** True when the AI call failed or returned empty results */
-    failed: boolean;
-}
-
 export async function processNote(
     text: string,
     config: AiConfig = {},

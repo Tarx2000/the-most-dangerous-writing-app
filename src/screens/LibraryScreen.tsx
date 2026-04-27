@@ -32,6 +32,7 @@ import { PersonProfileModal } from '@/components/features/library/PersonProfileM
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
 import { SortOption, SavedNote, Person, AiJobCategory, isAlignmentReflection as isAlignmentRef } from '@/types';
+import { useLibraryNotes } from '@/lib/hooks/useLibraryNotes';
 import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -131,53 +132,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
         </View>
     ), [savedNotes, selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued]);
 
-    const getFlattenedNotes = useCallback((circleId?: string | null) => {
-        let notesToGroup = [...savedNotes];
-        
-        if (libraryTab === 'checkins') {
-            notesToGroup = notesToGroup.filter(n => isAlignmentRef(n));
-        } else if (circleId) {
-            notesToGroup = notesToGroup.filter(n => n.personId === circleId && !isAlignmentRef(n));
-        } else {
-            notesToGroup = notesToGroup.filter(n => !n.personId && !isAlignmentRef(n));
-        }
-
-        const sorted = notesToGroup.sort((a, b) => {
-            switch (sortBy) {
-                case 'newest': return b.timestamp - a.timestamp;
-                case 'oldest': return a.timestamp - b.timestamp;
-                case 'longest': return b.durationMin - a.durationMin;
-                case 'shortest': return a.durationMin - b.durationMin;
-                case 'longest-text': {
-                    const getWordCount = (text: string) => (text || '').split(/\s+/).filter(Boolean).length;
-                    return getWordCount(b.text) - getWordCount(a.text);
-                }
-                default: return b.timestamp - a.timestamp;
-            }
-        });
-
-        const flatData: (string | SavedNote)[] = [];
-        let currentGroup = '';
-
-        sorted.forEach(note => {
-            let groupTitle = '';
-            if (sortBy === 'newest' || sortBy === 'oldest') {
-                groupTitle = new Date(note.timestamp).toLocaleString('default', { month: 'long', year: 'numeric' });
-            } else if (sortBy === 'longest-text') {
-                groupTitle = 'By Length (Words)';
-            } else {
-                groupTitle = `${note.durationMin} Min Sessions`;
-            }
-
-            if (groupTitle !== currentGroup) {
-                flatData.push(groupTitle);
-                currentGroup = groupTitle;
-            }
-            flatData.push(note);
-        });
-
-        return flatData;
-    }, [savedNotes, libraryTab, sortBy]);
+    const { groupedNotes } = useLibraryNotes(savedNotes, libraryTab, sortBy, selectedCircleId);
 
     const getScoreDetails = getAlignmentScoreDetails;
 
@@ -328,7 +283,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 {/* Tab content — Notes & Check-ins */}
                 {(libraryTab === 'notes' || libraryTab === 'checkins') && (
                     <>
-                        {savedNotes.filter(n => libraryTab === 'checkins' ? isAlignmentRef(n) : (!n.personId && !isAlignmentRef(n))).length === 0 ? (
+                        {groupedNotes.length === 0 ? (
                             <EmptyLibraryState 
                                 icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
                                 title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
@@ -339,21 +294,21 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         ) : (
                             <FlashList
                                 style={{ marginHorizontal: -20 }}
-                                data={getFlattenedNotes()}
-                                keyExtractor={(item) => typeof item === 'string' ? `header-${item}` : item.id}
-                                getItemType={(item) => typeof item === 'string' ? 'header' : 'card'}
+                                data={groupedNotes}
+                                keyExtractor={(item) => item.type === 'header' ? `header-${item.title}` : item.note!.id}
+                                getItemType={(item) => item.type}
                                 contentContainerStyle={{ paddingBottom: 120, paddingTop: 12, paddingHorizontal: 20 }}
                                 showsVerticalScrollIndicator={false}
                                 renderItem={({ item }) => {
-                                    if (typeof item === 'string') {
+                                    if (item.type === 'header') {
                                         return (
                                             <View style={styles.dateHeader}>
-                                                <Text style={commonStyles.groupTitle}>{item}</Text>
+                                                <Text style={commonStyles.groupTitle}>{item.title}</Text>
                                             </View>
                                         );
                                     }
 
-                                    const note = item as SavedNote;
+                                    const note = item.note as SavedNote;
                                     const _isAlignment = isAlignmentRef(note);
 
                                     return (

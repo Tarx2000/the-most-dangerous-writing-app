@@ -1,11 +1,11 @@
-/**
- * Video Compressor — Post-recording video optimization service.
+﻿/**
+ * Video Compressor â€” Post-recording video optimization service.
  *
  * Uses `react-native-compressor` to transcode recorded vlogs into smaller
  * files while preserving visual quality. Supports:
  *
  * - 4 compression presets: Off, Light, Balanced, Max Savings
- * - Progress callbacks for UI feedback (0→1 float)
+ * - Progress callbacks for UI feedback (0â†’1 float)
  * - Graceful fallback: if compression fails, the original file is kept
  * - Pending queue: interrupted compressions are persisted to AsyncStorage
  *   and retried on next app startup
@@ -14,35 +14,36 @@
  *
  * Tech terms:
  * - Transcoding: Re-encoding a video with different quality/resolution settings
- * - Bitrate: Data rate (bits/second) — lower = smaller file, lower quality
- * - maxSize: Resolution cap — the compressor scales down to fit within this boundary
+ * - Bitrate: Data rate (bits/second) â€” lower = smaller file, lower quality
+ * - maxSize: Resolution cap â€” the compressor scales down to fit within this boundary
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { storage } from '@/lib/storage';
+import { logger } from '@/lib/logger';
 import { CONFIG } from '@/config';
 import type { SavedVlog } from '@/types';
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * NATIVE MODULE AVAILABILITY CHECK
  *
  * react-native-compressor requires a dev build (native code).
  * In Expo Go, the native module isn't linked, so we detect this at import
  * time and gracefully fall back to "no compression" mode.
- * ──────────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 let VideoCompressor: any = null;
 let isNativeModuleAvailable = false;
 
 try {
-    // Dynamic require — if the native module isn't linked (Expo Go),
+    // Dynamic require â€” if the native module isn't linked (Expo Go),
     // this throws and we catch it, leaving VideoCompressor as null.
     const mod = require('react-native-compressor');
     VideoCompressor = mod.Video;
     isNativeModuleAvailable = true;
-    console.log('[Compressor] Native module loaded successfully');
+    logger("info", "Compressor", "Native module loaded successfully");
 } catch (_) {
-    console.warn('[Compressor] Native module not available (Expo Go mode) — compression will be skipped');
+    console.warn('[Compressor] Native module not available (Expo Go mode) â€” compression will be skipped');
 }
 
 /**
@@ -53,9 +54,9 @@ export function isCompressionAvailable(): boolean {
     return isNativeModuleAvailable;
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * TYPES
- * ──────────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** A single compression preset configuration */
 export interface CompressionPreset {
@@ -94,9 +95,9 @@ export interface PendingCompression {
     createdAt: number;
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * PRESET LOOKUP
- * ──────────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Find a compression preset by its ID string.
@@ -108,9 +109,9 @@ export function getPreset(presetId: string): CompressionPreset {
     return found || CONFIG.VLOG_COMPRESSION_PRESETS[2];
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * CORE COMPRESSION
- * ──────────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Compress a video file using the specified preset.
@@ -122,7 +123,7 @@ export function getPreset(presetId: string): CompressionPreset {
  *
  * @param inputUri  - Absolute path to the raw video file
  * @param presetId  - ID of the compression preset ('off' | 'light' | 'balanced' | 'max')
- * @param onProgress - Optional callback for progress updates (0.0 → 1.0)
+ * @param onProgress - Optional callback for progress updates (0.0 â†’ 1.0)
  * @returns Compression result with output path and size stats
  */
 export async function compressVideo(
@@ -139,7 +140,7 @@ export async function compressVideo(
     // Skip compression if preset is 'off', missing config, or native module unavailable
     if (preset.id === 'off' || preset.maxSize === 0 || !isNativeModuleAvailable) {
         if (!isNativeModuleAvailable && preset.id !== 'off') {
-            console.log('[Compressor] Skipping compression — native module not available (Expo Go)');
+            console.log('[Compressor] Skipping compression â€” native module not available (Expo Go)');
         }
         onProgress?.(1);
         return {
@@ -152,7 +153,7 @@ export async function compressVideo(
     }
 
     try {
-        console.log(`[Compressor] Starting compression: preset=${preset.id}, maxSize=${preset.maxSize}, bitrate=${preset.bitrate}`);
+        logger("info", "Compressor", `Starting compression: preset=${preset.id}, maxSize=${preset.maxSize}, bitrate=${preset.bitrate}`);
 
         const compressedUri = await VideoCompressor.compress(
             inputUri,
@@ -171,9 +172,9 @@ export async function compressVideo(
 
         // If compression somehow made the file bigger, use the original
         if (compressedSizeBytes >= originalSizeBytes) {
-            console.log('[Compressor] Compressed file is larger than original — keeping original');
+            console.log('[Compressor] Compressed file is larger than original â€” keeping original');
             // Clean up the compressed file
-            try { await FileSystem.deleteAsync(compressedUri, { idempotent: true }); } catch (err) { console.warn('[Compressor] Failed to delete compressed file:', err); }
+            try { await FileSystem.deleteAsync(compressedUri, { idempotent: true }); } catch (err) { logger("warn", "Compressor", "Failed to delete compressed file:", err); }
             onProgress?.(1);
             return {
                 outputUri: inputUri,
@@ -185,7 +186,7 @@ export async function compressVideo(
         }
 
         const savingsPercent = Math.round((1 - compressedSizeBytes / originalSizeBytes) * 100);
-        console.log(`[Compressor] Done: ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB → ${(compressedSizeBytes / 1024 / 1024).toFixed(1)}MB (${savingsPercent}% saved)`);
+        console.log(`[Compressor] Done: ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB â†’ ${(compressedSizeBytes / 1024 / 1024).toFixed(1)}MB (${savingsPercent}% saved)`);
 
         // Replace the original file with the compressed version
         await FileSystem.deleteAsync(inputUri, { idempotent: true });
@@ -200,7 +201,7 @@ export async function compressVideo(
             savingsPercent,
         };
     } catch (error) {
-        console.error('[Compressor] Compression failed, keeping original:', error);
+        logger("error", "Compressor", "Compression failed, keeping original:", error);
         onProgress?.(1);
         return {
             outputUri: inputUri,
@@ -212,13 +213,13 @@ export async function compressVideo(
     }
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * PENDING COMPRESSION QUEUE
  *
  * When a compression is interrupted (app killed, crash, etc.), the vlog's
  * `compressionPending` flag stays true and the job is stored in AsyncStorage.
  * On next app launch, `processPendingCompressions()` picks up where it left off.
- * ──────────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Add a vlog to the pending compression queue.
@@ -233,7 +234,7 @@ export async function addToPendingQueue(entry: PendingCompression): Promise<void
         filtered.push(entry);
         await storage.setItem(CONFIG.PENDING_COMPRESSION_KEY, JSON.stringify(filtered));
     } catch (error) {
-        console.error('[Compressor] Failed to add to pending queue:', error);
+        logger("error", "Compressor", "Failed to add to pending queue:", error);
     }
 }
 
@@ -249,7 +250,7 @@ export async function removeFromPendingQueue(vlogId: string): Promise<void> {
         const filtered = queue.filter(p => p.vlogId !== vlogId);
         await storage.setItem(CONFIG.PENDING_COMPRESSION_KEY, JSON.stringify(filtered));
     } catch (error) {
-        console.error('[Compressor] Failed to remove from pending queue:', error);
+        logger("error", "Compressor", "Failed to remove from pending queue:", error);
     }
 }
 
@@ -279,14 +280,14 @@ export async function processPendingCompressions(
         const queue: PendingCompression[] = JSON.parse(raw);
         if (queue.length === 0) return 0;
 
-        console.log(`[Compressor] Found ${queue.length} pending compression(s), processing...`);
+        logger("info", "Compressor", `Found ${queue.length} pending compression(s), processing...`);
 
         for (const entry of queue) {
             try {
                 // Check if the file still exists
                 const fileInfo = await FileSystem.getInfoAsync(entry.inputUri);
                 if (!fileInfo.exists) {
-                    console.log(`[Compressor] Pending file missing, removing from queue: ${entry.vlogId}`);
+                    logger("info", "Compressor", `Pending file missing, removing from queue: ${entry.vlogId}`);
                     await removeFromPendingQueue(entry.vlogId);
                     continue;
                 }
@@ -306,13 +307,13 @@ export async function processPendingCompressions(
                 await removeFromPendingQueue(entry.vlogId);
                 processed++;
 
-                console.log(`[Compressor] Pending compression completed: ${entry.vlogId} (${result.savingsPercent}% saved)`);
+                logger("info", "Compressor", `Pending compression completed: ${entry.vlogId} (${result.savingsPercent}% saved)`);
             } catch (error) {
-                console.error(`[Compressor] Failed to process pending compression for ${entry.vlogId}:`, error);
+                logger("error", "Compressor", `Failed to process pending compression for ${entry.vlogId}:`, error);
             }
         }
     } catch (error) {
-        console.error('[Compressor] Failed to process pending queue:', error);
+        logger("error", "Compressor", "Failed to process pending queue:", error);
     }
 
     return processed;

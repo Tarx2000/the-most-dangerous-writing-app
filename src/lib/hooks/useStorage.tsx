@@ -41,8 +41,8 @@ import {
     createPreferencesOps,
     createAiConfigOps,
     createCrossCuttingOps,
-    loadAllData as loadAllDataFromOps,
 } from '@/lib/storageOps';
+import { loadAllData as loadAllDataFromDataLoaders } from '@/lib/dataLoaders';
 import { processPendingCompressions } from '@/lib/videoCompressor';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -275,50 +275,40 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
-        await loadAllDataFromOps(
-            {
-                savedNotes: savedNotesRef, persons: personsRef,
-                currentStreak: currentStreakRef, lastWinDate: lastWinDateRef,
-                streakHistory: streakHistoryRef, fontIndex: fontIndexRef,
-                sizeIndex: sizeIndexRef, useBiometrics: useBiometricsRef,
-                enableHaptics: enableHapticsRef, lockTimeoutMins: lockTimeoutMinsRef,
-                vlogQuality: vlogQualityRef, compressionPreset: compressionPresetRef,
-                devMode: devModeRef, debugLayout: debugLayoutRef,
-                visionBoard: visionBoardRef, preferPinAuth: preferPinAuthRef,
-                savedVlogs: savedVlogsRef, totalVlogStorageBytes: totalVlogStorageBytesRef,
-                bookmarkedNoteIds: bookmarkedNoteIdsRef, feedComments: feedCommentsRef,
-                autoPlayFeedVideos: autoPlayFeedVideosRef,
-                aiApiKey: aiApiKeyRef, aiBaseUrl: aiBaseUrlRef,
-                aiModel: aiModelRef, aiGrammarModel: aiGrammarModelRef,
-                aiPrompts: aiPromptsRef, autoGenerateSummaries: autoGenerateSummariesRef,
-            },
-            {
-                setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
-                setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
-                setEnableHaptics, setLockTimeoutMins, setVlogQuality, setCompressionPreset,
-                setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth,
-                setSavedVlogs, setTotalVlogStorageBytes,
-                setBookmarkedNoteIds, setFeedComments, setAutoPlayFeedVideos,
-                setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
-                setAiPrompts, setAutoGenerateSummaries, setLastReflectionDate,
-            },
-        );
+        await loadAllDataFromDataLoaders({
+            setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
+            setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
+            setEnableHaptics, setLockTimeoutMins, setVlogQuality, setCompressionPreset,
+            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth,
+            setLastReflectionDate, setSavedVlogs, setTotalVlogStorageBytes,
+            setBookmarkedNoteIds, setFeedComments, setAutoPlayFeedVideos,
+            setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
+            setAiPrompts, setAutoGenerateSummaries,
+        });
     }, []);
 
     useEffect(() => { loadAllData(); }, [loadAllData]);
 
     /* ── Cross-cutting ops ----------------------------------------─── */
-    const crossCuttingOps = useMemo(() => createCrossCuttingOps(notesOps,
+    const crossCuttingOps = useMemo(() => createCrossCuttingOps(
+        notesOps,
         {
-            savedNotes: savedNotesRef, persons: personsRef,
-            currentStreak: currentStreakRef, lastWinDate: lastWinDateRef,
-            streakHistory: streakHistoryRef, fontIndex: fontIndexRef,
-            sizeIndex: sizeIndexRef, useBiometrics: useBiometricsRef,
-            devMode: devModeRef, debugLayout: debugLayoutRef,
-            visionBoard: visionBoardRef, savedVlogs: savedVlogsRef,
-            totalVlogStorageBytes: totalVlogStorageBytesRef,
-            bookmarkedNoteIds: bookmarkedNoteIdsRef, feedComments: feedCommentsRef,
-            autoPlayFeedVideos: autoPlayFeedVideosRef,
+            notesRef: savedNotesRef,
+            personsRef: personsRef,
+            currentStreakRef: currentStreakRef,
+            lastWinDateRef: lastWinDateRef,
+            streakHistoryRef: streakHistoryRef,
+            fontIndexRef: fontIndexRef,
+            sizeIndexRef: sizeIndexRef,
+            useBiometricsRef: useBiometricsRef,
+            devModeRef: devModeRef,
+            debugLayoutRef: debugLayoutRef,
+            visionBoardRef: visionBoardRef,
+            savedVlogsRef: savedVlogsRef,
+            totalVlogStorageBytesRef: totalVlogStorageBytesRef,
+            bookmarkedNoteIdsRef: bookmarkedNoteIdsRef,
+            feedCommentsRef: feedCommentsRef,
+            autoPlayFeedVideosRef: autoPlayFeedVideosRef,
         },
         {
             setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,

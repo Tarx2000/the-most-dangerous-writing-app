@@ -1,4 +1,70 @@
-import { createNotesOps, createPersonsOps, createFeedOps, safeParse } from '../storageOps';
+// Mock expo-sqlite before any imports touch it
+jest.mock('expo-sqlite', () => ({
+    openDatabaseAsync: jest.fn(() => Promise.resolve({
+        withTransactionAsync: jest.fn((fn) => fn()),
+        execAsync: jest.fn(() => Promise.resolve()),
+        runAsync: jest.fn(() => Promise.resolve()),
+        getAllAsync: jest.fn(() => Promise.resolve([])),
+        closeAsync: jest.fn(() => Promise.resolve()),
+    })),
+}));
+
+// Mock expo-sqlite before any imports touch it
+jest.mock('expo-sqlite', () => ({
+    openDatabaseAsync: jest.fn(() => Promise.resolve({
+        withTransactionAsync: jest.fn((fn) => fn()),
+        execAsync: jest.fn(() => Promise.resolve()),
+        runAsync: jest.fn(() => Promise.resolve()),
+        getAllAsync: jest.fn(() => Promise.resolve([])),
+        closeAsync: jest.fn(() => Promise.resolve()),
+    })),
+}));
+
+// Mock repository layer so SQLite DB calls are no-ops in unit tests
+jest.mock('@/lib/repositories/notesRepository', () => ({
+    insertNote: jest.fn(() => Promise.resolve()),
+    deleteNote: jest.fn(() => Promise.resolve()),
+    updateNote: jest.fn(() => Promise.resolve()),
+    clearAllAiMetadata: jest.fn(() => Promise.resolve()),
+    getAllNotes: jest.fn(() => Promise.resolve([])),
+    deleteAllNotes: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('@/lib/repositories/personsRepository', () => ({
+    insertPerson: jest.fn(() => Promise.resolve()),
+    deletePerson: jest.fn(() => Promise.resolve()),
+    updatePerson: jest.fn(() => Promise.resolve()),
+    getAllPersons: jest.fn(() => Promise.resolve([])),
+    deleteAllPersons: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('@/lib/repositories/vlogsRepository', () => ({
+    insertVlog: jest.fn(() => Promise.resolve()),
+    deleteVlog: jest.fn(() => Promise.resolve()),
+    updateVlog: jest.fn(() => Promise.resolve()),
+    getAllVlogs: jest.fn(() => Promise.resolve([])),
+    deleteAllVlogs: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('@/lib/repositories/settingsRepository', () => ({
+    setSetting: jest.fn(() => Promise.resolve()),
+    getSetting: jest.fn(() => Promise.resolve(undefined)),
+    getAllSettings: jest.fn(() => Promise.resolve({})),
+    deleteAllSettings: jest.fn(() => Promise.resolve()),
+}));
+
+import {
+    createNotesOps, createPersonsOps, createFeedOps,
+} from '../storageOps';
+import { safeParse } from '../dataLoaders';
+import {
+    insertNote as repoInsertNote,
+} from '@/lib/repositories/notesRepository';
+import {
+    insertPerson as repoInsertPerson,
+    deletePerson as repoDeletePerson,
+    updatePerson as repoUpdatePerson,
+} from '@/lib/repositories/personsRepository';
 import { storage } from '../storage';
 
 // Mock storage
@@ -122,7 +188,7 @@ describe('createNotesOps', () => {
         });
 
         it('should rollback on storage failure', async () => {
-            (storage.multiSet as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            (repoInsertNote as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
             const note = { id: 'fail1', text: 'Will fail', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true };
             await ops.saveNote(note);
             // Notes should be rolled back to empty
@@ -201,7 +267,7 @@ describe('createPersonsOps', () => {
         });
 
         it('should rollback on storage failure', async () => {
-            (storage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            (repoInsertPerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
             const id = await ops.addPerson('Alice');
             expect(id).toBeTruthy(); // function still returns id even though storage failed
             // State should have been rolled back
@@ -225,7 +291,8 @@ describe('createPersonsOps', () => {
             const personId = (await ops.addPerson('Carol')) as string;
             notesRef.current = [{ id: 'n1', personId, text: 'Test', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true }];
 
-            (storage.multiSet as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            const { deletePerson } = require('@/lib/repositories/personsRepository');
+            (deletePerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
 
             await ops.deletePerson(personId);
             // Both persons and notes should be rolled back
@@ -245,7 +312,8 @@ describe('createPersonsOps', () => {
 
         it('should rollback on storage failure', async () => {
             const personId = (await ops.addPerson('Carol')) as string;
-            (storage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            const { updatePerson } = require('@/lib/repositories/personsRepository');
+            (updatePerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
             await ops.updatePerson(personId, { relationship: 'Friend' });
             expect(personsRef.current[0].relationship).toBeUndefined();
             expect(personsRef.current[0].name).toBe('Carol');

@@ -22,6 +22,7 @@
  */
 
 import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'react-native';
+import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
 import { logAi } from '@/lib/aiLogger';
@@ -199,7 +200,7 @@ class AiQueueManager {
     cancelJob(jobId: string): void {
         const job = this.jobs.find(j => j.id === jobId && j.status === 'processing');
         if (!job) {
-            console.warn('[AI Queue] Cannot cancel job ' + jobId + ': not currently processing');
+            logger("warn", "AI Queue", "Cannot cancel job " + jobId + ": not currently processing");
             return;
         }
         // Abort the in-flight XHR request
@@ -264,7 +265,7 @@ class AiQueueManager {
     async enqueueNote(noteId: string, category: AiJobCategory): Promise<void> {
         // Don't add duplicates
         if (this.jobs.some(j => j.noteId === noteId && j.status !== 'done' && j.status !== 'failed')) {
-            console.log(`[AI Queue] Note ${noteId} already in queue, skipping`);
+            logger("info", "AI Queue", `Note ${noteId} already in queue, skipping`);
             return;
         }
 
@@ -422,6 +423,9 @@ class AiQueueManager {
     /** Start the processing loop if not already running */
     private startProcessing(): void {
         if (this.processing || !this.initialized) return;
+        // Set processing flag synchronously BEFORE calling async processNext
+        // to prevent overlapping loops from rapid enqueue + health-check calls.
+        this.processing = true;
         this.processNext();
     }
 
@@ -614,7 +618,7 @@ class AiQueueManager {
                 JSON.stringify(toPersist)
             );
         } catch (err) {
-            console.warn('[AI Queue] Failed to persist queue:', err);
+            logger("warn", "AI Queue", "Failed to persist queue:", err);
         }
     }
 
@@ -625,7 +629,7 @@ class AiQueueManager {
             if (raw) {
                 this.jobs = JSON.parse(raw) as AiJob[];
             }
-        } catch (err) { console.warn('[AI Queue] Failed to parse persisted queue, resetting:', err);
+        } catch (err) { logger("warn", "AI Queue", "Failed to parse persisted queue, resetting:", err);
             this.jobs = [];
         }
     }
@@ -652,7 +656,7 @@ class AiQueueManager {
 
         if (orphans.length > 0) {
             await this.persistQueue();
-            console.log(`[AI Queue] Recovered ${orphans.length} orphaned job(s)`);
+            logger("info", "AI Queue", `Recovered ${orphans.length} orphaned job(s)`);
         }
     }
 
