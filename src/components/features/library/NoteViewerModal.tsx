@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View,
     Text,
     StyleSheet,
@@ -14,7 +14,6 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withSpring,
-    withTiming,
     runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -70,13 +69,6 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                 panY.value = withSpring(0, { damping: 20, stiffness: 200 });
             }
         });
-
-    /** Overscroll logic: allow pulling down the scrollview itself to close */
-    const handleScroll = useCallback((e: any) => {
-        if (e.nativeEvent.contentOffset.y < -50) {
-            onClose();
-        }
-    }, [onClose]);
 
     const animatedCardStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: panY.value }],

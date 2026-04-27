@@ -3,10 +3,9 @@ import { View,
     Text,
     TextInput,
     StyleSheet,
-    Modal,
-    Pressable,
 Platform
 } from 'react-native';
+
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -240,7 +239,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                 </Text>
                 <AnimatedScaleButton
                     style={styles.readMoreBtn}
-                    onPress={() => onOpenEntry(item.note!)}
+                    onPress={() => item.note && onOpenEntry(item.note)}
                 >
                     <Text style={styles.readMoreText}>Read more</Text>
                     <MaterialCommunityIcons name="arrow-right" size={14} color={theme.colors.primaryAction} />
@@ -562,7 +561,3 @@ const styles = StyleSheet.create({
         padding: 4,
     },
 });
-
-
-
-

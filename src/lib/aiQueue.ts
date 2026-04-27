@@ -533,7 +533,7 @@ class AiQueueManager {
             if (this.batchTotal !== null) {
                 this.batchCompleted++;
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             const duration = Date.now() - (nextJob.startedAt || Date.now());
 
             await logAi({

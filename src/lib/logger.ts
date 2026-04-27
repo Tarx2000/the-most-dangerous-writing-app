@@ -18,8 +18,11 @@ export function logger(level: LogLevel, tag: string, message: string, ...args: u
     if (level === 'error') {
         console.error(prefix, ...args);
     } else if (level === 'warn') {
-        if (isDev) console.warn(prefix, ...args);
+        if (isDev) {
+            console.warn(prefix, ...args);
+        }
     } else if (isDev) {
+        // eslint-disable-next-line no-console
         console.log(prefix, ...args);
     }
 }

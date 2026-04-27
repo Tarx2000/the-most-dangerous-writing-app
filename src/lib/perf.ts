@@ -49,12 +49,20 @@ export function log() {
     if (entries.length === 0) return;
 
     const first = entries[0][1];
+    // Intentional performance utility output
+    // eslint-disable-next-line no-console
     console.group('[Perf] Startup timing');
     let prev = first;
     for (const [label, ts] of entries) {
+        // Intentional performance utility output
+        // eslint-disable-next-line no-console
         console.log(`  ${label}: +${ts - first}ms (Δ${ts - prev}ms)`);
         prev = ts;
     }
+    // Intentional performance utility output
+    // eslint-disable-next-line no-console
     console.log(`  TOTAL: ${prev - first}ms`);
+    // Intentional performance utility output
+    // eslint-disable-next-line no-console
     console.groupEnd();
 }

@@ -82,13 +82,13 @@ export const AnimatedScaleButton: React.FC<AnimatedScaleButtonProps> = ({
         scale.value = withSpring(activeScale, SPRING_CONFIG);
         opacity.value = withTiming(activeOpacity, { duration: 100 });
         onPressIn?.(e);
-    }, [activeScale, activeOpacity, onPressIn]);
+    }, [activeScale, activeOpacity, onPressIn, scale, opacity]);
 
     const handlePressOut = useCallback((e: GestureResponderEvent) => {
         scale.value = withSpring(1, SPRING_CONFIG);
         opacity.value = withTiming(1, { duration: 150 });
         onPressOut?.(e);
-    }, [onPressOut]);
+    }, [onPressOut, scale, opacity]);
 
     /* ── Animated style runs entirely on the UI thread ──────────────── */
     const animatedStyle = useAnimatedStyle(() => ({

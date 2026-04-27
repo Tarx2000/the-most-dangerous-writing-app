@@ -4,12 +4,11 @@ import { View,
     StyleSheet,
     Platform,
     StatusBar,
-    Pressable,
     useWindowDimensions,
     DeviceEventEmitter,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import { FlashList, type FlashListRef, type ViewToken, type FlashListProps } from '@shopify/flash-list';
+import { FlashList, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
@@ -104,8 +103,8 @@ const FeedScreenInner: React.FC<Props> = ({
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
     /** Track which feed items are currently visible in the viewport for video auto-play */
     const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(new Set());
-    // FlashListRef and GestureType are incompatible — use any for gesture interop
-    const listRef = useRef<any>(null);
+    // FlashListRef and GestureType are incompatible — use unknown for gesture interop
+    const listRef = useRef<unknown>(null);
 
     /** When feed is hidden (user navigated to home/library), clear all visible items
      *  so videos stop playing immediately. */
@@ -235,7 +234,7 @@ const FeedScreenInner: React.FC<Props> = ({
             if (current === prev || current === 0) return;
             // Stranded — snap to nearest end
             const target = current > 0.5 ? 1 : 0;
-            feedProgress!.value = withSpring(target, theme.animation.springFeed);
+            feedProgress.value = withSpring(target, theme.animation.springFeed);
             if (target === 0) runOnJS(onClose)();
             else runOnJS(onOpen)();
         }
@@ -299,7 +298,7 @@ const FeedScreenInner: React.FC<Props> = ({
         })
         .onFinalize(() => {
             isFeedGestureActive.value = false;
-        }), [onClose, onOpen, feedProgress, screenHeightSV, listScrollY]);
+        }), [onClose, onOpen, feedProgress, screenHeightSV, listScrollY, gestureStartProgress, isFeedGestureActive, startTranslationOffset]);
 
     /** Close button — cancel in-flight animation, spring closed, set state immediately */
     const handleCloseButton = useCallback(() => {
@@ -381,7 +380,7 @@ const FeedScreenInner: React.FC<Props> = ({
         })
         .onFinalize(() => {
             isFeedGestureActive.value = false;
-        }), [onClose, onOpen, feedProgress, screenHeightSV]);
+        }), [onClose, onOpen, feedProgress, gestureStartProgress, isFeedGestureActive, screenHeightSV, startTranslationOffset]);
 
 
     if (!isUnlocked) {

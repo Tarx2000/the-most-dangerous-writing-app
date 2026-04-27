@@ -1,27 +1,19 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View,
+import React, { useState, useMemo, useCallback } from 'react';
+import {
+    View,
     Text,
-    Pressable,
-    ScrollView,
-    Modal,
     StyleSheet,
     Platform,
-    StatusBar,
     ActivityIndicator,
-    DeviceEventEmitter,
-useWindowDimensions
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { FlashList } from '@shopify/flash-list';
-import { BlurView } from 'expo-blur';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ActionSheet } from '@/components/ui/ActionSheet';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useNotes, usePersons, useVlogs, usePreferences } from '@/lib/hooks/useStorage';
 import { CONFIG } from '@/config';
 import { useSecurity } from '@/lib/hooks/useSecurity';
@@ -31,6 +23,7 @@ import { ExpandablePersonCard } from '@/components/features/library/ExpandablePe
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
+import { FlashList } from '@shopify/flash-list';
 import { SortOption, SavedNote, Person, AiJobCategory, isAlignmentReflection as isAlignmentRef } from '@/types';
 import { useLibraryNotes } from '@/lib/hooks/useLibraryNotes';
 import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
@@ -38,7 +31,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { RichText } from '@/components/ui/RichText';
 
 type Props = {
     navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -49,7 +41,7 @@ type Props = {
 };
 
 /** Sort options data — feeds into ActionSheet */
-const SORT_OPTIONS_DATA: { id: SortOption, label: string, icon: any }[] = [
+const SORT_OPTIONS_DATA: { id: SortOption, label: string, icon: string }[] = [
     { id: 'newest', label: 'Newest First', icon: 'sort-clock-descending-outline' },
     { id: 'oldest', label: 'Oldest First', icon: 'sort-clock-ascending-outline' },
     { id: 'longest', label: 'Longest Session', icon: 'timer-sand' },
@@ -57,7 +49,7 @@ const SORT_OPTIONS_DATA: { id: SortOption, label: string, icon: any }[] = [
     { id: 'longest-text', label: 'Most Words', icon: 'text-long' },
 ];
 
-const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, sessionMode }) => {
+const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     /**
      * Map shared sessionMode to library tab.
      * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins', 'vlog' -> 'vlogs'
@@ -130,7 +122,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                 isNoteQueued={isNoteQueued}
             />
         </View>
-    ), [savedNotes, selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued]);
+    ), [selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued, notesByPerson]);
 
     const { groupedNotes } = useLibraryNotes(savedNotes, libraryTab, sortBy, selectedCircleId);
 
@@ -156,7 +148,6 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
         setViewNoteModal(null);
         setNoteToDelete(id);
     }, []);
-    const handleCloseProfile = useCallback(() => setProfilePerson(null), []);
     const handleDeleteFromProfile = useCallback((id: string) => {
         setProfilePerson(null);
         setPersonToDelete(id);
@@ -240,11 +231,10 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         <LinearGradient
                             colors={[
                                 theme.colors.background,
-                                'rgba(0,0,0, 0.9)',
-                                'rgba(0,0,0, 0.7)',
-                                'rgba(0,0,0, 0.4)',
-                                'rgba(0,0,0, 0.1)',
-                                'rgba(0,0,0, 0)',
+                                theme.colors.overlayDark,
+                                'rgba(0,0,0,0.7)',
+                                theme.colors.overlaySubtle,
+                                'transparent',
                             ]}
                             style={{
                                 position: 'absolute',
@@ -260,11 +250,11 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                         {/* Dissolve/Fade out mask at the bottom of the list */}
                         <LinearGradient
                             colors={[
-                                'rgba(0,0,0, 0)',
-                                'rgba(0,0,0, 0.1)',
-                                'rgba(0,0,0, 0.4)',
-                                'rgba(0,0,0, 0.7)',
-                                'rgba(0,0,0, 0.9)',
+                                'transparent',
+                                'rgba(0,0,0,0.1)',
+                                'rgba(0,0,0,0.4)',
+                                'rgba(0,0,0,0.7)',
+                                'rgba(0,0,0,0.9)',
                                 theme.colors.background,
                             ]}
                             style={{
@@ -295,7 +285,7 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
                             <FlashList
                                 style={{ marginHorizontal: -20 }}
                                 data={groupedNotes}
-                                keyExtractor={(item) => item.type === 'header' ? `header-${item.title}` : item.note!.id}
+                                keyExtractor={(item) => item.type === 'header' ? `header-${item.title}` : (item.note?.id || `unknown-${Math.random()}`)}
                                 getItemType={(item) => item.type}
                                 contentContainerStyle={{ paddingBottom: 120, paddingTop: 12, paddingHorizontal: 20 }}
                                 showsVerticalScrollIndicator={false}
@@ -424,58 +414,66 @@ const LibraryScreenInner: React.FC<Props> = ({ navigation, route, onGoToStart, s
             />
 
             {/* Premium Note View — Reusable Modal */}
-            <NoteViewerModal
-                note={viewNoteModal}
-                visible={!!viewNoteModal}
-                onClose={handleCloseViewNote}
-                onDelete={handleDeleteFromViewer}
-                isNoteActive={isNoteActive}
-                onRegenerateAi={(note) => handleRegenerateAi(note)}
-            />
+            <ErrorBoundary>
+                <NoteViewerModal
+                    note={viewNoteModal}
+                    visible={!!viewNoteModal}
+                    onClose={handleCloseViewNote}
+                    onDelete={handleDeleteFromViewer}
+                    isNoteActive={isNoteActive}
+                    onRegenerateAi={(note) => handleRegenerateAi(note)}
+                />
+            </ErrorBoundary>
 
             {/* Delete Note Confirmation — unified ConfirmDialog */}
-            <ConfirmDialog
-                visible={!!noteToDelete}
-                title="Delete Entry?"
-                message="Are you sure you want to permanently delete this session? This cannot be undone."
-                confirmLabel="Delete"
-                cancelLabel="Cancel"
-                icon="delete-outline"
-                cancelIcon="close"
-                destructive
-                onConfirm={handleConfirmDeleteNote}
-                onCancel={() => setNoteToDelete(null)}
-            />
+            <ErrorBoundary>
+                <ConfirmDialog
+                    visible={!!noteToDelete}
+                    title="Delete Entry?"
+                    message="Are you sure you want to permanently delete this session? This cannot be undone."
+                    confirmLabel="Delete"
+                    cancelLabel="Cancel"
+                    icon="delete-outline"
+                    cancelIcon="close"
+                    destructive
+                    onConfirm={handleConfirmDeleteNote}
+                    onCancel={() => setNoteToDelete(null)}
+                />
+            </ErrorBoundary>
 
             {/* Delete Person Confirmation — unified ConfirmDialog */}
-            <ConfirmDialog
-                visible={!!personToDelete}
-                title="Delete Circle?"
-                message="Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!"
-                confirmLabel="Delete All"
-                cancelLabel="Cancel"
-                icon="delete-alert-outline"
-                cancelIcon="close"
-                destructive
-                onConfirm={handleConfirmDeletePerson}
-                onCancel={() => setPersonToDelete(null)}
-            />
+            <ErrorBoundary>
+                <ConfirmDialog
+                    visible={!!personToDelete}
+                    title="Delete Circle?"
+                    message="Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!"
+                    confirmLabel="Delete All"
+                    cancelLabel="Cancel"
+                    icon="delete-alert-outline"
+                    cancelIcon="close"
+                    destructive
+                    onConfirm={handleConfirmDeletePerson}
+                    onCancel={() => setPersonToDelete(null)}
+                />
+            </ErrorBoundary>
 
             {/* Person Profile Modal */}
-            <PersonProfileModal
-                visible={!!profilePerson}
-                onClose={() => setProfilePerson(null)}
-                person={profilePerson}
-                notes={profilePerson ? savedNotes.filter(n => n.personId === profilePerson.id) : []}
-                isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
-                onUnlock={security.unlockProfile}
-                onUpdatePerson={updatePerson}
-                onDeletePerson={handleDeleteFromProfile}
-                onNotePress={setViewNoteModal}
-                isNotesUnlocked={security.isNotesUnlocked}
-                isNoteActive={isNoteActive}
-                isNoteQueued={isNoteQueued}
-            />
+            <ErrorBoundary>
+                <PersonProfileModal
+                    visible={!!profilePerson}
+                    onClose={() => setProfilePerson(null)}
+                    person={profilePerson}
+                    notes={profilePerson ? savedNotes.filter(n => n.personId === profilePerson.id) : []}
+                    isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
+                    onUnlock={security.unlockProfile}
+                    onUpdatePerson={updatePerson}
+                    onDeletePerson={handleDeleteFromProfile}
+                    onNotePress={setViewNoteModal}
+                    isNotesUnlocked={security.isNotesUnlocked}
+                    isNoteActive={isNoteActive}
+                    isNoteQueued={isNoteQueued}
+                />
+            </ErrorBoundary>
 
         </View>
     );

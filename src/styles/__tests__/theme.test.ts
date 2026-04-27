@@ -134,7 +134,7 @@ describe('Theme tokens', () => {
         });
 
         it('no token should be empty string or undefined', () => {
-            for (const [key, value] of Object.entries(theme.colors)) {
+            for (const [, value] of Object.entries(theme.colors)) {
                 expect(value).toBeTruthy();
                 expect(typeof value).toBe('string');
                 expect(value.length).toBeGreaterThan(0);
@@ -155,7 +155,7 @@ describe('Theme tokens', () => {
         });
 
         it('should have valid spring values (damping, stiffness, mass > 0)', () => {
-            for (const [name, spring] of Object.entries(theme.animation)) {
+            for (const [, spring] of Object.entries(theme.animation)) {
                 expect(spring.damping).toBeGreaterThan(0);
                 expect(spring.stiffness).toBeGreaterThan(0);
                 expect(spring.mass).toBeGreaterThan(0);
@@ -187,10 +187,8 @@ describe('Hardcoded color detection', () => {
     const allowlistedFiles = [
         'theme.ts',
         'alignmentScores.ts',
-        
         'index.ts',
         'LibraryScreen.tsx',
-        
     ];
 
     // Directories to skip entirely
@@ -213,13 +211,14 @@ describe('Hardcoded color detection', () => {
         return files;
     }
 
-    // Patterns that indicate a hardcoded color (but NOT a theme.colors reference)
-    const hardcodedPatterns = [
-        // Hex colors: #FFF, #FFFFFF, #000, #000000 (but not in comments or strings like '#')
-        /(?<![a-zA-Z_.])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b/g,
-        // rgba() with literal numbers
-        /rgba\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\)/g,
-    ];
+    // Patterns that indicate a hardcoded color (but NOT a theme.colors reference).
+    // These patterns are kept as documentation for future linting/refactoring tools.
+    // const hardcodedPatterns = [
+    //     // Hex colors: #FFF, #FFFFFF, #000, #000000 (but not in comments or strings like '#')
+    //     /(?<![a-zA-Z_.])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b/g,
+    //     // rgba() with literal numbers
+    //     /rgba\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\)/g,
+    // ];
 
     it('should not contain hardcoded hex colors in component/screen files', () => {
         const tsFiles = getAllTsFiles(srcDir);
@@ -263,16 +262,16 @@ describe('Hardcoded color detection', () => {
         // GOAL: Reduce this to 0 over time.
         const MAX_ALLOWED = 0;
         if (violations.length > MAX_ALLOWED) {
-            console.log(`\n❌ Found ${violations.length} hardcoded color violations (max allowed: ${MAX_ALLOWED}):\n`);
-            violations.slice(0, 20).forEach(v => console.log(`  ${v}`));
-            if (violations.length > 20) console.log(`  ... and ${violations.length - 20} more`);
+            console.warn(`\nFound ${violations.length} hardcoded color violations (max allowed: ${MAX_ALLOWED}):\n`);
+            violations.slice(0, 20).forEach(v => {
+                console.warn(`  ${v}`);
+            });
+            if (violations.length > 20) {
+                console.warn(`  ... and ${violations.length - 20} more`);
+            }
             throw new Error(`Too many hardcoded colors: ${violations.length} > ${MAX_ALLOWED}`);
         } else if (violations.length > 0) {
-            console.log(`\n⚠️  Found ${violations.length} hardcoded color violations (threshold: ${MAX_ALLOWED}). Fix these to reach 0.`);
+            console.warn(`\nFound ${violations.length} hardcoded color violations (threshold: ${MAX_ALLOWED}). Fix these to reach 0.`);
         }
     });
 });
-
-
-
-

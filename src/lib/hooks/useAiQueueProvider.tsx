@@ -14,7 +14,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
-import { resetConnectionState } from '@/lib/aiService';
 import { useNotes, useAiConfig, usePersons } from '@/lib/hooks/useStorage';
 import type { AiQueueState, AiJobCategory } from '@/types';
 
@@ -93,7 +92,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             queueInitedRef.current = true;
             initializeQueue();
         }
-    }, [savedNotes.length]);
+    }, [savedNotes.length, initializeQueue]);
 
     /** Check if a specific note is actively processing */
     const isNoteActive = useCallback(

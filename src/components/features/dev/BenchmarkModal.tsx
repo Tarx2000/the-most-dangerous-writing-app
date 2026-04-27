@@ -3,7 +3,6 @@ import { View, Text, Modal, ScrollView, StyleSheet, ActivityIndicator } from 're
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
-import { commonStyles } from '@/styles/commonStyles';
 import { useNotes, useAiConfig } from '@/lib/hooks/useStorage';
 import { generateTitle, generateSummary, checkGrammar } from '@/lib/aiService';
 
@@ -97,8 +96,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                 });
                 const titleTime = Date.now() - startTitle;
                 setResults(prev => ({ ...prev, [model]: { ...prev[model], title, titleTimeMs: titleTime } }));
-            } catch (err: any) {
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: err.message || 'Failed' } }));
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Failed';
+                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
             }
         }));
 
@@ -116,8 +116,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                 });
                 const sumTime = Date.now() - startSum;
                 setResults(prev => ({ ...prev, [model]: { ...prev[model], summary, summaryTimeMs: sumTime } }));
-            } catch (err: any) {
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: err.message || 'Failed' } }));
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Failed';
+                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
             }
         }));
 
@@ -137,8 +138,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                     ...prev, 
                     [model]: { ...prev[model], grammarFixes: grammarRes.length, grammarTimeMs: gramTime, status: 'done' } 
                 }));
-            } catch (err: any) {
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: err.message || 'Failed' } }));
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Failed';
+                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
             }
         }));
 

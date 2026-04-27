@@ -1,5 +1,3 @@
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-
 export type RootStackParamList = {
     Home: { streakIncreased?: boolean; newStreak?: number } | undefined;
     Start: { streakIncreased?: boolean; newStreak?: number } | undefined;

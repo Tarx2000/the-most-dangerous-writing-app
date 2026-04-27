@@ -28,7 +28,6 @@ import {Modal,
     View,
     Text,
     useWindowDimensions,
-    Platform,
     TouchableWithoutFeedback,
 ScrollView
 } from 'react-native';

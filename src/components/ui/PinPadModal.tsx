@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, useWindowDimensions
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import Animated, { 
     useSharedValue, 
@@ -8,7 +7,6 @@ import Animated, {
     withSpring, 
     withTiming, 
     withSequence,
-    runOnJS
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -65,7 +63,7 @@ export const PinPadModal: React.FC = () => {
             opacitySV.value = withTiming(0, { duration: 200 });
             translateYSV.value = withSpring(50);
         }
-    }, [isVisible, mode, promptText]);
+    }, [isVisible, mode, promptText, opacitySV, translateYSV]);
 
     const triggerShake = useCallback(() => {
         vibrate([0, 50, 50, 50]); // Error vibration pattern
@@ -110,10 +108,10 @@ export const PinPadModal: React.FC = () => {
             const newPin = enteredPin + num;
             setEnteredPin(newPin);
             if (newPin.length === 4) {
-                // Short timeout to allow the 4th dot to render before resetting
+                // Short delay to allow the 4th dot to render before resetting
                 setTimeout(() => {
                     handlePinComplete(newPin);
-                }, 150);
+                }, CONFIG.PIN_DOT_DELAY_MS);
             }
         }
     }, [enteredPin, handlePinComplete]);

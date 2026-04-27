@@ -109,17 +109,3 @@ export async function clearAllAiMetadata(): Promise<void> {
 export async function deleteAllNotes(): Promise<void> {
     await run(`DELETE FROM notes`);
 }
-
-/** Convert notes to a set of "won" dates for streak calculation.
- *  Used internally within this module; not exported.
- */
-function noteToStreakHistory(notes: SavedNote[]): Set<string> {
-    const set = new Set<string>();
-    for (const n of notes) {
-        if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
-            const d = new Date(n.timestamp);
-            set.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-        }
-    }
-    return set;
-}

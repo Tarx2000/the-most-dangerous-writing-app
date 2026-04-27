@@ -52,7 +52,6 @@ interface CirclePickerSheetProps {
 export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
     visible,
     onClose,
-    selectedPersonId,
     onSelectPerson,
     persons,
     addPerson,

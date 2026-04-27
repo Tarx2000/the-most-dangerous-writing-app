@@ -5,8 +5,6 @@
  * in afterEach. We also mock all native/service dependencies.
  */
 
-import { AI_STORAGE_KEYS } from '@/config/ai';
-
 // Mock storage adapter
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(() => Promise.resolve(null)),
@@ -27,7 +25,7 @@ jest.mock('react-native', () => ({
 }));
 
 // Mock aiService — processNote hangs by default to prevent auto-completion
-let processNoteResolve: (value: any) => void;
+let processNoteResolve: (value: Record<string, unknown>) => void;
 jest.mock('@/lib/aiService', () => ({
   processNote: jest.fn(() => new Promise(r => { processNoteResolve = r; })),
   pingServer: jest.fn(() => Promise.resolve({ online: true })),
@@ -43,7 +41,7 @@ jest.mock('@/lib/aiLogger', () => ({
 
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue } from '@/lib/aiQueue';
-import { processNote, pingServer, resetAiServiceState } from '@/lib/aiService';
+import { processNote, resetAiServiceState } from '@/lib/aiService';
 
 describe('AiQueueManager', () => {
   const mockGetAiConfig = () => ({ model: 'test-model', apiKey: 'key', baseUrl: 'http://test', prompts: { title: 't', summary: 's', grammar: 'g' } });
@@ -105,7 +103,6 @@ describe('AiQueueManager', () => {
       await initQueue();
       await aiQueue.enqueueNote('n1', 'journal');
       // Job may be processing (since processNote hangs), check it's known
-      const state = aiQueue.getState();
       const isInQueue = aiQueue.isNoteActive('n1') || aiQueue.isNoteQueued('n1');
       expect(isInQueue).toBe(true);
       expect(DeviceEventEmitter.emit).toHaveBeenCalled();
@@ -147,7 +144,7 @@ describe('AiQueueManager', () => {
     it('should enqueue all notes with forceOverwrite', async () => {
       await initQueue();
       // Resolve any pending jobs from previous test
-      try { processNoteResolve({ title: 'T', summary: [] }); } catch (_) {}
+      try { processNoteResolve({ title: 'T', summary: [] }); } catch { /* ignore abort error */ }
       await new Promise(r => setTimeout(r, 100));
       await aiQueue.cancelBatch();
 

@@ -1,15 +1,4 @@
-/**
- * NoteCard — Library entry card with AI processing animation.
- *
- * Displays a journal entry in the Library list.
- * When AI title is available, shows it as the primary preview (bold, larger).
- * Falls back to a truncated raw text preview if no AI title exists.
- *
- * Processing state is derived from the AI Queue (via `isProcessing` prop).
- * When processing, shows a smooth pulsing glow border animation.
- */
-
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, { 
     useSharedValue, 
@@ -47,7 +36,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
     const { fontIndex } = usePreferences();
     const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
 
-    /* ── Pulsing Glow Animation ─────────────────────────────────────── */
+    /* ━━ Pulsing Glow Animation ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
     const pulse = useSharedValue(0);
     const scale = useSharedValue(1);
 
@@ -65,7 +54,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
             pulse.value = withTiming(0, { duration: 300 });
         }
         return () => { pulse.value = 0; };
-    }, [isProcessing]);
+    }, [isProcessing, pulse]);
 
     const overlayStyle = useAnimatedStyle(() => {
         return {
@@ -143,7 +132,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
                     <RichText
                         style={{ color: theme.colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, fontFamily: activeFont, marginBottom: 4 }}
                         numberOfLines={2}
-                        text={note.aiTitle!}
+                        text={note.aiTitle || ''}
                     />
                     <RichText style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={1} text={note.text} />
                 </>
@@ -160,7 +149,7 @@ export const NoteCard: React.FC<Props> = React.memo(({ note, onPress, onLongPres
     );
 });
 
-/* ── Styles ───────────────────────────────────────────────────────────── */
+/* ━━ Styles ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 const styles = StyleSheet.create({
     processingOverlay: {
@@ -179,5 +168,3 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
 });
-
-

@@ -36,7 +36,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PostWriting'>;
 export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
     const { savedNotes, updateNote } = useNotes();
-    const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries } = useAiConfig();
+    const { aiApiKey, aiBaseUrl, aiGrammarModel, aiPrompts, autoGenerateSummaries } = useAiConfig();
 
     /** User typography — applied to entry text only, not AI chrome */
     const { fontIndex, sizeIndex } = usePreferences();
@@ -62,6 +62,14 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /** Track if AI processing was already enqueued */
     const aiEnqueuedRef = useRef(false);
     const noteSavedRef = useRef(false);
+
+    /** Unmount guard to prevent setState on unmounted component */
+    const isMountedRef = useRef(true);
+    useEffect(() => {
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
 
     // Data is auto-loaded by StorageProvider
     /** Find the note once data is loaded */
@@ -121,12 +129,15 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 model: aiGrammarModel,
                 prompts: aiPrompts,
             });
+            if (!isMountedRef.current) return;
             setGrammarSuggestions(suggestions);
             setGrammarChecked(true);
         } catch (err) {
             console.warn('[AI] Grammar check failed:', err);
         } finally {
-            setGrammarLoading(false);
+            if (isMountedRef.current) {
+                setGrammarLoading(false);
+            }
         }
     }, [aiApiKey, aiBaseUrl, aiGrammarModel, aiPrompts, grammarLoading]);
 
@@ -155,7 +166,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     : undefined,
             }],
         });
-    }, [noteId, navigation, route.params]);
+    }, [noteId, navigation, route.params, updateNote]);
 
     /* ── Render ──────────────────────────────────────────────────────── */
 
@@ -201,7 +212,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             </View>
                         )
                     ) : (
-                        <RichText style={styles.aiTitleText} text={note!.aiTitle || 'Untitled Entry'} />
+                        <RichText style={styles.aiTitleText} text={note?.aiTitle || 'Untitled Entry'} />
                     )}
                 </View>
 
@@ -228,7 +239,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         )
                     ) : (
                         <View style={styles.bulletsContainer}>
-                            {(note!.aiSummary || []).map((bullet, i) => (
+                            {(note?.aiSummary || []).map((bullet, i) => (
                                 <View key={i} style={styles.bulletRow}>
                                     <Text style={styles.bulletDot}>•</Text>
                                     <RichText style={styles.bulletText} text={bullet} />

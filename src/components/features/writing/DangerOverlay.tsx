@@ -36,9 +36,6 @@ export const DangerOverlay: React.FC<Props> = React.memo(({
     sessionTimeRemaining,
     isDisabled
 }) => {
-    // Don't render anything if disabled
-    if (isDisabled) return null;
-
     /**
      * Red glow layer style — runs entirely on UI thread.
      * Starts visible at 30% idle, reaches 0.6 opacity at 100%.
@@ -95,6 +92,11 @@ export const DangerOverlay: React.FC<Props> = React.memo(({
             : `rgba(${r}, ${g}, ${b}, ${dangerBlend})`;
         return { borderWidth, borderColor };
     });
+
+    // Don't render anything if disabled — placed AFTER all hooks to satisfy React rules.
+    // useAnimatedStyle hooks are cheap (worklet references only); running them when
+    // the overlay is disabled is harmless.
+    if (isDisabled) return null;
 
     return (
         <>

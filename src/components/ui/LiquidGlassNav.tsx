@@ -78,7 +78,7 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
     useEffect(() => {
         const targetX = activeIndex * tabWidth;
         indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
-    }, [activeIndex, tabWidth]);
+    }, [activeIndex, tabWidth, indicatorX]);
 
     /** Indicator padding from edges */
     const INDICATOR_PADDING = 7;

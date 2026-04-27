@@ -41,7 +41,7 @@ const HAPTIC_CRITICAL_THRESHOLD = 0.95;  // Escalating rapid buzz
 /** Track last haptic threshold fired to prevent repeated vibrations */
 type HapticLevel = 'none' | 'caution' | 'warning' | 'urgent' | 'critical';
 
-export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<any>) {
+export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<unknown>) {
     const [sessionTimeSelected, setSessionTimeSelected] = useState<number>(0);
     const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number>(0);
     const textRef = useRef<string>('');
@@ -165,7 +165,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
                 }
             }
         }, CONFIG.TICK_RATE_MS);
-    }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation, idleTimeMsShared]);
+    }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation, idleTimeMsShared, inputRefRef]);
 
     const handleTextChange = useCallback((newText: string) => {
         textRef.current = newText;

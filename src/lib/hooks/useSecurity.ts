@@ -202,7 +202,7 @@ export function useSecurity(timeoutMins: number = 3) {
             sub.remove();
             appStateSub.remove();
         };
-    }, [isNotesUnlocked, resetLockTimeout, lockAll]);
+    }, [isNotesUnlocked, resetLockTimeout, lockAll, timeoutMins]);
 
     return {
         /** Stage 2: full access (read notes, delete) */

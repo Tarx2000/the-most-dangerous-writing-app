@@ -52,12 +52,12 @@ export const CustomSlider = React.memo(function CustomSlider({ value, onValueCha
             if (nextX > maxTranslateX) nextX = maxTranslateX;
             translateX.value = nextX;
 
-            let newValue = Math.round((nextX / maxTranslateX) * 9) + 1;
+            const newValue = Math.round((nextX / maxTranslateX) * 9) + 1;
             runOnJS(handleValueChange)(newValue);
         })
         .onEnd(() => {
-            let newValue = Math.round((translateX.value / maxTranslateX) * 9) + 1;
-            let snapX = ((newValue - 1) / 9) * maxTranslateX;
+            const newValue = Math.round((translateX.value / maxTranslateX) * 9) + 1;
+            const snapX = ((newValue - 1) / 9) * maxTranslateX;
             translateX.value = withSpring(snapX, { damping: 20, stiffness: 200, mass: 0.5 });
             runOnJS(handleValueChange)(newValue);
         }), [maxTranslateX, translateX, context, handleValueChange]);
@@ -75,7 +75,7 @@ export const CustomSlider = React.memo(function CustomSlider({ value, onValueCha
     useEffect(() => {
         translateX.value = withSpring(((value - 1) / 9) * maxTranslateX, { damping: 20, stiffness: 200 });
         lastVibratedValue.current = value;
-    }, [value]);
+    }, [value, maxTranslateX, translateX]);
 
     return (
         <View style={sliderStyles.container}>

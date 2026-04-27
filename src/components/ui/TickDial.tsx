@@ -74,7 +74,7 @@ export const TickDial = React.memo(function TickDial({
             hasMounted.current = true;
         }, 60);
         return () => clearTimeout(t);
-    }, []);
+    }, [selectedIndex]);
 
     /**
      * Vibrate exactly once per number change, completely decoupled

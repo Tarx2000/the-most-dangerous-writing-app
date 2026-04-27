@@ -6,7 +6,6 @@ import {
     TextInput,
     StyleSheet,
     Platform,
-    Dimensions,
     KeyboardAvoidingView
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';

@@ -165,6 +165,14 @@ When mentioning technical terms that a non-expert might not know, provide a **sh
 
 *Example:* `XHR (XMLHttpRequest): A browser API for fetching data from servers. Unlike the modern fetch() API, it allows reading a response piece-by-piece as it arrives.`
 
+### 6. Parallelize Work with Sub-Agents
+If a task can be broken into multiple independent pieces (e.g., researching different topics, editing several files, or running multiple commands), **launch parallel task agents** rather than doing everything sequentially. Do not avoid delegating because it feels like more work — parallel agents finish faster and produce better results.
+
+*Guidelines:*
+- Use the `task` tool for focused subtasks.
+- Split by domain or file when there's no cross-dependency.
+- Always give sub-agents complete context (they don't see your conversation history by default).
+
 ## Project Documentation Maintenance (Critical)
 
 **AGENTS.md is the single source of truth.** Whenever you make architectural or logic changes that affect rules, patterns, or conventions described here, update AGENTS.md and related instruction files immediately as part of the same task cycle. Do not defer.

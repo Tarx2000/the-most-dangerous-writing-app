@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useMemo, useTransition } from 'react';
 import { View, useWindowDimensions, StyleSheet, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { ScrollView, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { type SharedValue } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Route } from '@react-navigation/native';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -10,15 +10,14 @@ import { LibraryScreen } from './LibraryScreen';
 import { FeedScreen } from './FeedScreen';
 import { LiquidGlassNav } from '@/components/ui/LiquidGlassNav';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
-import { VlogViewerModal, LayoutRect } from '@/components/features/library/VlogViewerModal';
+import { VlogViewerModal } from '@/components/features/library/VlogViewerModal';
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { useHomeModals } from '@/lib/hooks/useHomeModals';
 import { useHomeGestures } from '@/lib/hooks/useHomeGestures';
 import { theme } from '@/styles/theme';
-import type { SavedNote, SavedVlog, AiJobCategory } from '@/types';
-import type { VideoPlayer } from 'expo-video';
+import type { SavedNote, AiJobCategory } from '@/types';
 import { CONFIG } from '@/config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -74,7 +73,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const {
         viewNoteModal,
-        noteToDelete,
         viewVlogModal,
         vlogSourceRect,
         vlogPlayerInst,
@@ -129,10 +127,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         setCurrentPage(page);
     }, [screenWidth]);
 
-    /** Check-in urgency: show dot when overdue (>7 days) AND only on homescreen */
+    /** Check-in urgency: show dot when overdue (>CONFIG.CHECKIN_URGENT_DAYS days) AND only on homescreen */
     const isCheckinUrgent = currentPage === 0 && (
         !lastReflectionDate ||
-        (Date.now() - lastReflectionDate > 7 * 24 * 60 * 60 * 1000)
+        (Date.now() - lastReflectionDate > CONFIG.CHECKIN_URGENT_MS)
     );
 
     /**
@@ -157,13 +155,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         mainContentAnimStyle,
         feedAnimStyle,
         navAnimStyle,
-        handleCloseFeed,
         openFeed,
+
         closeFeed,
         scrollEnabled,
         setScrollEnabled,
         screenHeight,
-        screenHeightSV,
         listScrollY,
     } = useHomeGestures(currentPage);
 
@@ -228,10 +225,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                             <StartScreen
                                 navigation={navigation}
                                 route={route as Route<string, RootStackParamList['Home']>}
-                                onGoToLibrary={goToLibrary}
+                                _onGoToLibrary={goToLibrary}
                                 setHomeScrollEnabled={setScrollEnabled}
                                 sessionMode={sessionMode}
-                                setSessionMode={setSessionMode}
+                                _setSessionMode={setSessionMode}
                             />
                         </View>
 

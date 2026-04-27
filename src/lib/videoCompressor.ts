@@ -32,12 +32,13 @@ import type { SavedVlog } from '@/types';
  * time and gracefully fall back to "no compression" mode.
  * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-let VideoCompressor: any = null;
+let VideoCompressor: unknown = null;
 let isNativeModuleAvailable = false;
 
 try {
-    // Dynamic require â€” if the native module isn't linked (Expo Go),
+    // Dynamic import — if the native module isn't linked (Expo Go),
     // this throws and we catch it, leaving VideoCompressor as null.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('react-native-compressor');
     VideoCompressor = mod.Video;
     isNativeModuleAvailable = true;

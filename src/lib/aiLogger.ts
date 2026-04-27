@@ -45,6 +45,8 @@ export async function logAi(
         // Also log to console for real-time debugging (dev-only)
         if (__DEV__) {
             const emoji = LOG_EMOJIS[entry.action] || '📝';
+            // Intentional dev-only console logger for real-time AI debugging
+            // eslint-disable-next-line no-console
             console.log(
                 `[AI ${emoji}] ${entry.action.toUpperCase()} | note=${entry.noteId} | model=${entry.model} | phase=${entry.phase}${entry.durationMs ? ` | ${entry.durationMs}ms` : ''}${entry.error ? ` | ERROR: ${entry.error}` : ''}`
             );

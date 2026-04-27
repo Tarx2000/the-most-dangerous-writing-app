@@ -39,15 +39,15 @@ type StartScreenParams = undefined | { streakIncreased?: boolean; newStreak?: nu
 type Props = {
     navigation: NativeStackNavigationProp<RootStackParamList>;
     route: Route<string, StartScreenParams>;
-    onGoToLibrary: () => void;
+    _onGoToLibrary: () => void;
     setHomeScrollEnabled?: (enabled: boolean) => void;
     /** Shared session mode from HomeScreen (drives LiquidGlassNav) */
     sessionMode: 'journal' | 'circles' | 'checkin' | 'vlog';
     /** Update shared session mode */
-    setSessionMode: (mode: 'journal' | 'circles' | 'checkin' | 'vlog') => void;
+    _setSessionMode: (mode: 'journal' | 'circles' | 'checkin' | 'vlog') => void;
 };
 
-const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, setHomeScrollEnabled, sessionMode, setSessionMode }) => {
+const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEnabled, sessionMode }) => {
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
@@ -103,7 +103,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
             setShowStreakPopup(true);
             navigation.setParams({ streakIncreased: undefined, newStreak: undefined });
         }
-    }, [route.params?.streakIncreased]);
+    }, [route.params?.streakIncreased, route.params?.newStreak, streak.currentStreak, navigation]);
 
     const handleStart = () => {
         if (sessionMode === 'vlog') {
@@ -211,8 +211,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, onGoToLibrary, s
                                         vibrate([0, 150, 100, 150]);
                                     }
                                     setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
-                                    setTimeout(() => setDevToast(null), 2000);
-                                }, 5000);
+                                    setTimeout(() => setDevToast(null), CONFIG.DEV_MODE_TOAST_DURATION_MS);
+                                }, CONFIG.DEV_MODE_LONG_PRESS_MS);
                             }}
                             onPressOut={() => {
                                 if (settingsLongPressTimer.current) {

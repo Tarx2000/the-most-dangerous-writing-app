@@ -1,6 +1,5 @@
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { storage } from '@/lib/storage';
-import { logger } from '@/lib/logger';
 
 const DB_NAME = 'mda_v2.db';
 let dbInstance: SQLiteDatabase | null = null;
@@ -17,10 +16,6 @@ export async function closeDb(): Promise<void> {
         await dbInstance.closeAsync();
         dbInstance = null;
     }
-}
-
-function resetDbInstance(): void {
-    dbInstance = null;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -170,6 +165,8 @@ function sanitizeBindParams(params: BindValue[] | undefined): (string | number |
         if (out[i] === null) {
             // `delete` on a TypedArray index creates a sparse hole.
             // `reduce()` skips holes, so normalizeParams never emits this key.
+            // This is an intentional workaround for the expo-sqlite v15 null/undefined bridge bug.
+            // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
             delete (out as unknown as Record<number, unknown>)[i];
         }
     }

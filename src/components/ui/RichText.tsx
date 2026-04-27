@@ -17,13 +17,13 @@ interface RichTextProps {
  * especially important inside NoteCard within FlashList.
  */
 export const RichText: React.FC<RichTextProps> = React.memo(({ text, style, numberOfLines }) => {
-    if (!text) return null;
-
     /** Memoize the regex split so it only recalculates when text changes */
     const parts = useMemo(
-        () => text.split(/(\*\*.*?\*\*|__.*?__|\*.*?\*|_[^_]+?_)/g),
+        () => text ? text.split(/(\*\*.*?\*\*|__.*?__|\*.*?\*|_[^_]+?_)/g) : [],
         [text]
     );
+
+    if (!text) return null;
 
     return (
         <Text style={style} numberOfLines={numberOfLines}>

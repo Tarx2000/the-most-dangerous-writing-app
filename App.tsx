@@ -52,7 +52,10 @@ if (typeof globalThis !== 'undefined') {
   try {
     // Hermes fires unhandled promise events through the global error handler
     // above — this is a safety net for any that slip through
-    const rejectionTracking = (globalThis as any).__rejectionTracking;
+    const _global = globalThis as unknown as Record<string, unknown>;
+    const rejectionTracking = _global.__rejectionTracking as {
+      setUnhandledRejectionHandler?: (handler: (id: string, error: Error) => void) => void;
+    } | undefined;
     if (rejectionTracking?.setUnhandledRejectionHandler) {
       rejectionTracking.setUnhandledRejectionHandler((id: string, error: Error) => {
         console.error('[UnhandledPromise]', id, error);

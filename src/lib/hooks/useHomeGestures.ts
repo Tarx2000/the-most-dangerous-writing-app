@@ -1,7 +1,7 @@
 ﻿import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
-import Animated, {
+import {
     useSharedValue,
     useAnimatedStyle,
     useAnimatedReaction,
@@ -101,7 +101,7 @@ export function useHomeGestures(currentPage: number) {
         })
         .onFinalize(() => {
             isFeedGestureActive.value = false;
-        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed]);
+        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed, gestureStartProgress, isFeedGestureActive, startTranslationOffset]);
 
     /** Main content animates UP (to -screenHeight) when feed opens */
     const mainContentAnimStyle = useAnimatedStyle(() => ({

@@ -26,15 +26,6 @@ import {
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
-/** Ollama chat request options */
-interface OllamaChatOptions {
-    num_ctx?: number;
-    temperature?: number;
-    top_p?: number;
-    seed?: number;
-    [key: string]: unknown;
-}
-
 export interface GrammarSuggestion {
     original: string;
     suggestion: string;
@@ -229,13 +220,13 @@ async function ollamaChatSingle(
                                 wordBuffer += chunkStr;
 
                                 // Flush wordBuffer when a boundary is found (space, tab, newline, common or Chinese punctuation, or CJK characters)
-                                if (/[ \t\n\.,\!\?\-:;，。！？、"”'\"\u4e00-\u9fa5]/.test(chunkStr.slice(-1)) || wordBuffer.length > 12) {
+                                if (/[ \t\n.,!?\-:;，。！？、"”'"\u4e00-\u9fa5]/.test(chunkStr.slice(-1)) || wordBuffer.length > 12) {
                                     streamedResponse += wordBuffer;
                                     wordBuffer = '';
                                     onChunk(streamedResponse);
                                 }
                             }
-                        } catch (e) {
+                        } catch {
                             console.warn('[AI] Failed to parse stream line:', line);
                         }
                     }
@@ -270,7 +261,7 @@ async function ollamaChatSingle(
                 return Promise.reject(new Error('AI request cancelled'));
             }
             cancelCheckInterval = setInterval(() => {
-                if (cancelToken!.aborted) {
+                if (cancelToken && cancelToken.aborted) {
                     if (cancelCheckInterval) clearInterval(cancelCheckInterval);
                     xhr.abort();
                     settle('reject', new Error('AI request cancelled'));
@@ -346,7 +337,7 @@ async function ollamaChat(
                 );
                 // If cancelled, don't retry
                 if (cancelToken && cancelToken.aborted) {
-                    throw new Error('AI request cancelled');
+                    throw new Error('AI request cancelled', { cause: error });
                 }
                 await sleep(delayMs);
             }
@@ -453,7 +444,7 @@ export async function checkGrammar(
 
         // Validate each item has required fields
         return parsed.filter(
-            (item: any) =>
+            (item: unknown) =>
                 typeof item.original === 'string' &&
                 typeof item.suggestion === 'string' &&
                 typeof item.explanation === 'string'
@@ -536,7 +527,7 @@ export async function processNote(
         const title = await generateTitle(text, config, undefined, relationship, cancelToken);
         const summary = await generateSummary(text, config, undefined, relationship, cancelToken);
         return { title, summary, failed: false };
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.warn('[AI] processNote failed — returning empty result:', error.message);
         return { title: '', summary: [], failed: true };
     }

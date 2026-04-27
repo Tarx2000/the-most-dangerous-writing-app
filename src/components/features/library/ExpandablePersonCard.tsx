@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import {
     View,
     Text,
@@ -6,7 +6,6 @@ import {
     StyleSheet,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SavedNote } from '@/types';
 import { NoteCard } from '@/components/features/library/NoteCard';
@@ -37,10 +36,8 @@ interface Props {
     isLocked: boolean;
     onToggle: () => void;
     onNotePress: (note: SavedNote) => void;
-    onDelete: () => void;
     /** Open person profile modal */
     onProfilePress: () => void;
-    canDelete: boolean;
     isNoteActive?: (id: string) => boolean;
     isNoteQueued?: (id: string) => boolean;
 }
@@ -52,9 +49,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
     isLocked,
     onToggle,
     onNotePress,
-    onDelete,
     onProfilePress,
-    canDelete,
     isNoteActive,
     isNoteQueued,
 }) => {

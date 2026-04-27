@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, TextInput, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -30,7 +30,6 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
     const DIFF_INDEX = 0; // Force Easy rank for Reflections
 
     const {
-        sessionTimeSelected,
         sessionTimeRemaining,
         idleTimeMsShared,
         hasLost,
@@ -111,10 +110,6 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
 
     const animatedShakeStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: shakeAnimation.value }]
-    }));
-
-    const animatedOpacityStyle = useAnimatedStyle(() => ({
-        opacity: lossOverlayOpacity.value
     }));
 
     const currentFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');

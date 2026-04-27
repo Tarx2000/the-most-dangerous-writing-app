@@ -103,15 +103,22 @@ export const CalendarView = React.memo(function CalendarView({
         [streakHistory],
     );
 
-    const now = useMemo(() => new Date(), [monthOffset]);
+    const now = useMemo(() => new Date(), []);
 
     const prevDate = new Date(now.getFullYear(), now.getMonth() - monthOffset - 1, 1);
     const currDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
     const nextDate = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
 
-    const prevCells = useMemo(() => buildMonthCells(prevDate.getFullYear(), prevDate.getMonth(), recordDays, now, daySize), [prevDate.getFullYear(), prevDate.getMonth(), recordDays, now, daySize]);
-    const currCells = useMemo(() => buildMonthCells(currDate.getFullYear(), currDate.getMonth(), recordDays, now, daySize), [currDate.getFullYear(), currDate.getMonth(), recordDays, now, daySize]);
-    const nextCells = useMemo(() => buildMonthCells(nextDate.getFullYear(), nextDate.getMonth(), recordDays, now, daySize), [nextDate.getFullYear(), nextDate.getMonth(), recordDays, now, daySize]);
+    const prevYear = prevDate.getFullYear();
+    const prevMonth = prevDate.getMonth();
+    const currYear = currDate.getFullYear();
+    const currMonth = currDate.getMonth();
+    const nextYear = nextDate.getFullYear();
+    const nextMonth = nextDate.getMonth();
+
+    const prevCells = useMemo(() => buildMonthCells(prevYear, prevMonth, recordDays, now, daySize), [prevYear, prevMonth, recordDays, now, daySize]);
+    const currCells = useMemo(() => buildMonthCells(currYear, currMonth, recordDays, now, daySize), [currYear, currMonth, recordDays, now, daySize]);
+    const nextCells = useMemo(() => buildMonthCells(nextYear, nextMonth, recordDays, now, daySize), [nextYear, nextMonth, recordDays, now, daySize]);
 
     const monthLabel = currDate.toLocaleString('default', { month: 'long' });
     const yearLabel = currDate.getFullYear().toString();

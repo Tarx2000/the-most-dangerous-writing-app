@@ -1,12 +1,11 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Alert, Share } from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import { SettingsCard } from '@/components/ui/SettingsCard';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
@@ -229,8 +228,19 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                     >
                         <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>📤 Export All AsyncStorage Data</Text>
                     </AnimatedScaleButton>
+                    <AnimatedScaleButton
+                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 0 }]}
+                        onPress={async () => {
+                            vibrate(50);
+                            try {
+                                await storageActions.safeReMigrateAsyncStorage();
+                                Alert.alert('Restore', 'Restored from AsyncStorage (if present).');
+                            } catch (err) {
+                                Alert.alert('Restore Error', String(err));
+                            }
+                        }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>ðŸ› Restore from AsyncStorage (Destructive)</Text>
+                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>🛠 Restore from AsyncStorage (Destructive)</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton

@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
 import { commonStyles } from '@/styles/commonStyles';
@@ -7,10 +7,10 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 
 interface Props {
     label: string;
-    data: any[];
+    data: unknown[];
     selectedIndex: number;
     onSelect: (index: number) => void;
-    renderItemText: (item: any) => React.ReactNode;
+    renderItemText: (item: unknown) => React.ReactNode;
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
 }
@@ -22,7 +22,7 @@ interface Props {
 export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, selectedIndex, onSelect, renderItemText, onInteractionStart, onInteractionEnd }) => {
     const { width: SCREEN_WIDTH } = useWindowDimensions();
     const CAROUSEL_WIDTH = Math.min(SCREEN_WIDTH * 0.5, 200);
-    const carouselRef = useRef<any>(null);
+    const carouselRef = useRef<{ scrollTo: (opts: { count?: number; index?: number; animated?: boolean }) => void } | null>(null);
 
     const prev = () => {
         const newIdx = Math.max(0, selectedIndex - 1);

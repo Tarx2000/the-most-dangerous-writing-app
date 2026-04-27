@@ -1,5 +1,5 @@
-import { useMemo, useCallback } from 'react';
-import type { SavedNote, SortOption, AiJobCategory } from '@/types';
+import { useMemo } from 'react';
+import type { SavedNote, SortOption } from '@/types';
 import { isAlignmentReflection } from '@/types';
 
 export interface NoteGroupItem {
@@ -48,7 +48,7 @@ export function useLibraryNotes(
         const flat: NoteGroupItem[] = [];
         let currentGroup = '';
         for (const note of sortedNotes) {
-            let groupTitle = '';
+            let groupTitle: string;
             if (sortBy === 'newest' || sortBy === 'oldest') {
                 groupTitle = new Date(note.timestamp).toLocaleString('default', { month: 'long', year: 'numeric' });
             } else if (sortBy === 'longest-text') {

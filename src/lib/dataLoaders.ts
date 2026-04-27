@@ -1,27 +1,17 @@
-﻿import { Alert, Share } from 'react-native';
+﻿import { Share } from 'react-native';
 import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
-import { getDb, getAll, run } from '@/lib/db';
+import { run } from '@/lib/db';
 import * as FileSystem from 'expo-file-system/legacy';
-import {
-    getAllNotes, insertNote, deleteAllNotes,
-} from '@/lib/repositories/notesRepository';
-import {
-    getAllPersons, insertPerson, deleteAllPersons,
-} from '@/lib/repositories/personsRepository';
-import {
-    getAllVlogs, insertVlog, deleteAllVlogs,
-} from '@/lib/repositories/vlogsRepository';
-import {
-    getAllSettings, setSetting,
-} from '@/lib/repositories/settingsRepository';
+import { getAllNotes } from '@/lib/repositories/notesRepository';
+import { getAllPersons } from '@/lib/repositories/personsRepository';
+import { getAllVlogs } from '@/lib/repositories/vlogsRepository';
+import { getAllSettings, setSetting } from '@/lib/repositories/settingsRepository';
 import type { SavedNote, Person, SavedVlog, VisionBoard, AlignmentReflection } from '@/types';
-import { isAlignmentReflection } from '@/types';
-import { generateId, toLocalDateString } from '@/lib/utils';
+import { toLocalDateString } from '@/lib/utils';
 import { DEFAULT_AI_PROMPTS, AI_STORAGE_KEYS } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
-import { mark as perfMark, log as perfLog, setPerfEnabled } from '@/lib/perf';
-import { processPendingCompressions } from '@/lib/videoCompressor';
+import { mark as perfMark, log as perfLog } from '@/lib/perf';
 
 export type Ref<T> = { current: T };
 export type Setter<T> = React.Dispatch<React.SetStateAction<T>>;

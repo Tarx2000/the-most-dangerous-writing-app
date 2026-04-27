@@ -22,7 +22,7 @@ describe('useSecurity source code contracts', () => {
         it('should be 30000 (30 seconds)', () => {
             const match = SOURCE.match(/BACKGROUND_LOCK_GRACE_MS\s*=\s*(\d+)/);
             expect(match).not.toBeNull();
-            expect(parseInt(match![1], 10)).toBe(30000);
+            expect(parseInt(match[1] ?? '0', 10)).toBe(30000);
         });
 
         it('should be documented as allowing brief interruptions', () => {
@@ -40,30 +40,30 @@ describe('useSecurity source code contracts', () => {
             const lockAllFn = SOURCE.match(/const lockAll[\s\S]*?\}/)?.[0];
             expect(lockAllFn).toBeDefined();
 
-            expect(lockAllFn!).toContain('setIsNotesUnlocked(false)');
-            expect(lockAllFn!).toContain('setIsProfileUnlocked(false)');
-            expect(lockAllFn!).toContain('setIsCirclesUnlocked(false)');
-            expect(lockAllFn!).toContain('setIsFeedUnlocked(false)');
+            expect(lockAllFn as string).toContain('setIsNotesUnlocked(false)');
+            expect(lockAllFn as string).toContain('setIsProfileUnlocked(false)');
+            expect(lockAllFn as string).toContain('setIsCirclesUnlocked(false)');
+            expect(lockAllFn as string).toContain('setIsFeedUnlocked(false)');
         });
 
         it('lockAll should clear both timer refs', () => {
             const lockAllFn = SOURCE.match(/const lockAll[\s\S]*?\}[\s]*\}/)?.[0];
             expect(lockAllFn).toBeDefined();
 
-            expect(lockAllFn!).toContain('clearTimeout(lockTimeoutRef.current)');
-            expect(lockAllFn!).toContain('clearTimeout(backgroundGraceRef.current)');
+            expect(lockAllFn as string).toContain('clearTimeout(lockTimeoutRef.current)');
+            expect(lockAllFn as string).toContain('clearTimeout(backgroundGraceRef.current)');
         });
 
         it('resetLockTimeout should use timeoutMins * 60000', () => {
             const resetFn = SOURCE.match(/const resetLockTimeout[\s\S]*?\},\s*\[timeoutMins\]\)/)?.[0];
             expect(resetFn).toBeDefined();
-            expect(resetFn!).toContain('timeoutMins * 60000');
+            expect(resetFn as string).toContain('timeoutMins * 60000');
         });
 
         it('resetLockTimeout should short-circuit when timeoutMins is 0', () => {
             const resetFn = SOURCE.match(/const resetLockTimeout[\s\S]*?\},\s*\[timeoutMins\]\)/)?.[0];
             expect(resetFn).toBeDefined();
-            expect(resetFn!).toContain('timeoutMins === 0');
+            expect(resetFn as string).toContain('timeoutMins === 0');
         });
     });
 

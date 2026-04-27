@@ -1,22 +1,13 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View,
+import {
+    View,
     Text,
     Image,
     StyleSheet,
-    Modal,
     ScrollView,
-    Platform,
-useWindowDimensions
+    useWindowDimensions,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
@@ -26,7 +17,6 @@ import { useVlogs } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 
 /** Static fallback for StyleSheet — dimensions may change at runtime via useWindowDimensions */
-const FALLBACK_WIDTH = 400;
 const FALLBACK_HEIGHT = 800;
 
 /** Mini component to asynchronously fetch missing thumbnails without causing entire calendar re-renders */
@@ -248,8 +238,8 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                                 isToday(cell.day) && styles.vlogThumbToday,
                                             ]}>
                                                 {/* Image Thumbnail or Gradient background as placeholder */}
-                                                {dayVlogs![0].thumbnailPath ? (
-                                                    <Image source={{ uri: dayVlogs![0].thumbnailPath }} style={styles.vlogThumbGradient} />
+                                                {dayVlogs?.[0].thumbnailPath ? (
+                                                    <Image source={{ uri: dayVlogs[0].thumbnailPath }} style={styles.vlogThumbGradient} />
                                                 ) : (
                                                     <View style={styles.vlogThumbGradient}>
                                                         <MaterialCommunityIcons name="play-circle-outline" size={20} color={theme.colors.textBodyDim} />
@@ -257,8 +247,8 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                                 )}
 
                                                 {/* Overlay trigger for missing thumbnail */}
-                                                {!dayVlogs![0].thumbnailPath && (
-                                                    <ThumbnailFetcher vlog={dayVlogs![0]} />
+                                                {!dayVlogs?.[0].thumbnailPath && (
+                                                    <ThumbnailFetcher vlog={dayVlogs[0]} />
                                                 )}
 
                                                 {/* Day number */}
@@ -266,13 +256,13 @@ export const VlogCalendarGallery: React.FC<Props> = ({
 
                                                 {/* Duration badge */}
                                                 <Text style={styles.vlogThumbDuration}>
-                                                    {formatDuration(dayVlogs![0].durationSec)}
+                                                    {formatDuration(dayVlogs?.[0].durationSec ?? 0)}
                                                 </Text>
 
                                                 {/* Stacked indicator for multiple vlogs */}
                                                 {multiVlogs && (
                                                     <View style={styles.stackIndicator}>
-                                                        <Text style={styles.stackText}>{dayVlogs!.length}</Text>
+                                                        <Text style={styles.stackText}>{dayVlogs?.length ?? 0}</Text>
                                                     </View>
                                                 )}
                                             </View>
@@ -322,27 +312,6 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                 onDelete={onDeleteVlog}
             />
         </View>
-    );
-};
-
-/**
- * VlogPlayer — Inline video player using expo-video.
- *
- * Separated as its own component because `useVideoPlayer` must be called
- * at the top level and the source URI changes when swiping between vlogs.
- */
-const VlogPlayer: React.FC<{ uri: string }> = ({ uri }) => {
-    const player = useVideoPlayer(uri, p => {
-        p.loop = false;
-        p.play();
-    });
-
-    return (
-        <VideoView
-            style={styles.videoPlayer}
-            player={player}
-            nativeControls
-        />
     );
 };
 

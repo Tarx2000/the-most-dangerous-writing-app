@@ -4,8 +4,8 @@ import { View,
     StyleSheet,
     useWindowDimensions,
     Modal,
-Platform
 } from 'react-native';
+
 import { vibrate } from '@/lib/haptics';
 import Animated, {
     useSharedValue,
@@ -112,7 +112,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                 if (finished) runOnJS(setIsRendered)(false);
             });
         }
-    }, [visible, initialIndex]);
+    }, [visible, initialIndex, panX, panY, progress]);
 
     const handleCloseInternal = useCallback(() => {
         // Animate out natively, then tell parent to close
@@ -126,7 +126,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         // Reset pan translation to origin smoothly
         panX.value = withTiming(0, { duration: 250 });
         panY.value = withTiming(0, { duration: 250 });
-    }, [onClose]);
+    }, [onClose, panX, panY, progress]);
 
     // Handle swipe to dismiss
     const panGesture = useMemo(() => Gesture.Pan()

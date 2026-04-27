@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View,
+import {
+    View,
     Text,
     Image,
     StyleSheet,
-Pressable
+    Pressable,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -21,26 +22,8 @@ import type { LayoutRect } from '../library/VlogViewerModal';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
-/** Default behavior: auto-play videos muted as user scrolls to them */
-const DEFAULT_AUTO_PLAY = true;
+/* ── TYPES ────────────────────────────────────────────────────────────────── */
 
-/* ── COMPONENT ────────────────────────────────────────────────────────────── */
-
-/**
- * FeedVideoCard — Renders a video clip entry in the feed.
- *
- * Design:
- * - Orange gradient accent border (matches "clip" feed type)
- * - Auto-plays muted when visible (configurable via settings)
- * - Tap anywhere on video to toggle mute/unmute
- * - Shows thumbnail still when paused
- * - Duration badge overlay on bottom-right
- *
- * The auto-play behavior can be toggled in Settings via the
- * autoPlayFeedVideos storage field.
- *
- * Uses expo-video's useVideoPlayer for native performance.
- */
 interface FeedVideoCardProps {
     item: FeedItem;
     /** Whether this entry is bookmarked */
@@ -57,6 +40,8 @@ interface FeedVideoCardProps {
     onOpenVlog: (vlog: SavedVlog, rect?: LayoutRect, player?: VideoPlayer) => void;
 }
 
+/* ── HELPER ───────────────────────────────────────────────────────────────── */
+
 /**
  * Format seconds into human-readable duration string.
  * e.g., 65 → "1:05", 3661 → "1:01:01"
@@ -67,19 +52,19 @@ const formatDuration = (seconds: number): string => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
+/* ── INNER COMPONENT ──────────────────────────────────────────────────────── */
 
-export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
+/**
+ * FeedVideoCardInner — Contains all hooks. Never conditionally short-circuits.
+ */
+const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = React.memo(({
     item,
+    vlog,
     isBookmarked,
-    comment,
     autoPlay,
     onToggleBookmark,
-    onSaveComment,
     onOpenVlog,
 }) => {
-    const vlog = item.vlog;
-    if (!vlog) return null;
-
     const [isPlaying, setIsPlaying] = useState(autoPlay);
     const [isMuted, setIsMuted] = useState(true);
     const accentColor = theme.colors.orange; // Orange for video clips
@@ -251,7 +236,7 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
                         <View style={styles.devWatermark} pointerEvents="none">
                             <Text style={styles.devWatermarkText}>
                                 DEV: {vlog.compressionPreset || 'Uncompressed'}{' '}
-                                {vlog.originalFileSizeBytes ? 
+                                {vlog.originalFileSizeBytes ?
                                     `(${Math.round(100 - (vlog.fileSizeBytes / vlog.originalFileSizeBytes) * 100)}% saved)`
                                     : ''
                                 }
@@ -290,6 +275,20 @@ export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo(({
             </View>
         </View>
     );
+});
+
+/* ── WRAPPER COMPONENT ────────────────────────────────────────────────────── */
+
+/**
+ * FeedVideoCard — Renders a video clip entry in the feed.
+ *
+ * Wrapper that guards against missing vlog data before entering the
+ * hook-bearing inner component. This prevents React conditional hook errors.
+ */
+export const FeedVideoCard: React.FC<FeedVideoCardProps> = React.memo((props) => {
+    const vlog = props.item.vlog;
+    if (!vlog) return null;
+    return <FeedVideoCardInner {...props} vlog={vlog} />;
 });
 
 /* ── STYLES ───────────────────────────────────────────────────────────────── */

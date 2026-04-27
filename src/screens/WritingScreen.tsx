@@ -114,10 +114,6 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         transform: [{ translateX: shakeAnimation.value }]
     }));
 
-    const animatedOpacityStyle = useAnimatedStyle(() => ({
-        opacity: lossOverlayOpacity.value
-    }));
-
     const currentFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const currentSize = CONFIG.SIZES[sizeIndex]?.value || 18;
     const currentLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;

@@ -32,7 +32,7 @@ import {
     type ReactNode,
 } from 'react';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
-import { DEFAULT_AI_PROMPTS, AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
+import { DEFAULT_AI_PROMPTS, type AiPrompts } from '@/config/ai';
 import {
     createNotesOps,
     createPersonsOps,
@@ -44,6 +44,7 @@ import {
 } from '@/lib/storageOps';
 import { loadAllData as loadAllDataFromDataLoaders, inspectAsyncStorage, safeReMigrateAsyncStorage, exportAsyncStorageToFile } from '@/lib/dataLoaders';
 import { logger } from '@/lib/logger';
+import { CONFIG } from '@/config';
 import { processPendingCompressions } from '@/lib/videoCompressor';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -327,6 +328,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /* ── Pending compressions on startup ---------------------------- */
     useEffect(() => {
+        const isMountedRef = { current: true };
         const timer = setTimeout(async () => {
             try {
                 const processed = await processPendingCompressions(vlogOps.updateVlog);
@@ -334,14 +336,19 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                     logger("info", "Startup", `Processed ${processed} pending compression(s)`);
                     const freshVlogs = savedVlogsRef.current;
                     const newTotal = freshVlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
-                    setTotalVlogStorageBytes(newTotal);
-                    totalVlogStorageBytesRef.current = newTotal;
+                    if (isMountedRef.current) {
+                        setTotalVlogStorageBytes(newTotal);
+                        totalVlogStorageBytesRef.current = newTotal;
+                    }
                 }
             } catch (error) {
                 console.error('[Startup] Failed to process pending compressions:', error);
             }
-        }, 2000);
-        return () => clearTimeout(timer);
+        }, CONFIG.PENDING_COMPRESSION_DELAY_MS);
+        return () => {
+            isMountedRef.current = false;
+            clearTimeout(timer);
+        };
     }, [vlogOps.updateVlog]);
 
     /* ── Vlog storage summary (cross-domain) ------------------------ */

@@ -16,7 +16,6 @@
  * Adding new tokens: append to the appropriate section with the naming pattern above.
  * This is an AMOLED-only theme — no light mode variant exists yet.
  */
-import { CONFIG } from '@/config';
 
 export const theme = {
     colors: {
@@ -86,8 +85,10 @@ export const theme = {
         // Overlay
         overlayDark: 'rgba(0, 0, 0, 0.4)',
         overlayMedium: 'rgba(0, 0, 0, 0.85)',
+        overlayStrong: 'rgba(0, 0, 0, 0.9)',
         overlayVideoMuted: 'rgba(0, 0, 0, 0.6)',   // Video mute button background
         overlayVideoStrong: 'rgba(0, 0, 0, 0.7)',   // Video duration badge background
+        overlaySubtle: 'rgba(0, 0, 0, 0.1)',         // Very subtle dark overlay (gradient stops)
         deathOverlay: 'rgba(40, 35, 32, 0.95)',
         overlayPopup: 'rgba(0, 0, 0, 0.92)',         // Full-screen popup overlays (streak, etc.)
 

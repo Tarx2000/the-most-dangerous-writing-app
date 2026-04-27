@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useCallback } from 'react';
+import React, { useRef } from 'react';
 import { View, Text, TextInput, ActivityIndicator, Platform, StyleSheet
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
@@ -7,7 +7,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { pingServer } from '@/lib/aiService';
-import { SettingsCard } from '@/components/ui/SettingsCard';
 import type { SavedNote, AiQueueState } from '@/types';
 
 type AiSettingsPanelProps = {
@@ -53,14 +52,6 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
 }: AiSettingsPanelProps) {
     const apiKeyRef = useRef(aiConfig.aiApiKey);
     const baseUrlRef = useRef(aiConfig.aiBaseUrl);
-
-    const aiCoverageCount = useMemo(
-        () => notes.savedNotes.filter((n: SavedNote) => n.aiTitle).length,
-        [notes.savedNotes]
-    );
-
-    const handleChooseSummaryModel = useCallback(() => setChoosingModelFor('summary'), [setChoosingModelFor]);
-    const handleChooseGrammarModel = useCallback(() => setChoosingModelFor('grammar'), [setChoosingModelFor]);
 
     return (
         <View style={styles.container}>

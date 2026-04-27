@@ -46,7 +46,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
             runOnJS(onClose)();
             if (setHomeScrollEnabled) runOnJS(setHomeScrollEnabled)(true);
         });
-    }, [onClose, setHomeScrollEnabled, translateY, overlayOpacity]);
+    }, [onClose, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
     useEffect(() => {
         if (visible) {
@@ -61,7 +61,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
             });
             overlayOpacity.value = withTiming(1, { duration: 300 });
         }
-    }, [visible, setHomeScrollEnabled, translateY, overlayOpacity]);
+    }, [visible, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
     /** Memoize gesture to avoid recreating on every render */
     const panGesture = useMemo(() => Gesture.Pan()

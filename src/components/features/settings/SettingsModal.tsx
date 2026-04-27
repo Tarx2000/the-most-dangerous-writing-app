@@ -106,7 +106,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
     personsHook,
     streak,
     storageActions,
-    security,
     queueState,
     startBatch,
     cancelBatch,

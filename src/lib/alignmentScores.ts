@@ -6,9 +6,6 @@
  * should call the function and spread the result.
  */
 
-import { theme } from '@/styles/theme';
-
-// Alignment score colors as theme tokens for easy reference
 export const ALIGNMENT_COLORS = {
     struggling: '#ff4d4d',
     drifting: '#ff9933',

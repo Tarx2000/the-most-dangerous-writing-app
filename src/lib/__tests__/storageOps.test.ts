@@ -65,7 +65,6 @@ import {
     deletePerson as repoDeletePerson,
     updatePerson as repoUpdatePerson,
 } from '@/lib/repositories/personsRepository';
-import { storage } from '../storage';
 
 // Mock storage
 jest.mock('../storage', () => ({
@@ -137,7 +136,7 @@ describe('createNotesOps', () => {
         });
     }
 
-    let notesRef: { current: any[] };
+    let notesRef: Ref<SavedNote[]>;
     let setNotes: jest.Mock;
     let streakRef: { current: number };
     let setCurrentStreak: jest.Mock;
@@ -159,10 +158,10 @@ describe('createNotesOps', () => {
         setStreakHistory = mockSetter(historyRef);
 
         ops = createNotesOps(
-            notesRef, setNotes as any,
-            streakRef, setCurrentStreak as any,
-            lastWinDateRef, setLastWinDate as any,
-            historyRef, setStreakHistory as any,
+            notesRef, setNotes as unknown as Setter<SavedNote[]>,
+            streakRef, setCurrentStreak as unknown as Setter<number>,
+            lastWinDateRef, setLastWinDate as unknown as Setter<string>,
+            historyRef, setStreakHistory as unknown as Setter<string[]>,
         );
     });
 
@@ -183,7 +182,7 @@ describe('createNotesOps', () => {
 
         it('should increment streak for won sessions >= 3 minutes', async () => {
             const note = { id: 'n1', text: 'Good session', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true };
-            const result = await ops.saveNote(note);
+            await ops.saveNote(note);
             expect(streakRef.current).toBeGreaterThanOrEqual(1);
         });
 
@@ -231,20 +230,20 @@ describe('createNotesOps', () => {
 });
 
 describe('createPersonsOps', () => {
-    let personsRef: { current: any[] };
+    let personsRef: Ref<Person[]>;
     let setPersons: jest.Mock;
-    let notesRef: { current: any[] };
+    let notesRef: Ref<SavedNote[]>;
     let setNotes: jest.Mock;
     let ops: ReturnType<typeof createPersonsOps>;
 
     beforeEach(() => {
         jest.clearAllMocks();
         personsRef = { current: [] };
-        setPersons = jest.fn((val: any) => { personsRef.current = typeof val === 'function' ? val(personsRef.current) : val; });
+        setPersons = jest.fn((val: Person[] | ((prev: Person[]) => Person[])) => { personsRef.current = typeof val === 'function' ? val(personsRef.current) : val; });
         notesRef = { current: [] };
-        setNotes = jest.fn((val: any) => { notesRef.current = typeof val === 'function' ? val(notesRef.current) : val; });
+        setNotes = jest.fn((val: SavedNote[] | ((prev: SavedNote[]) => SavedNote[])) => { notesRef.current = typeof val === 'function' ? val(notesRef.current) : val; });
 
-        ops = createPersonsOps(personsRef, setPersons as any, notesRef, setNotes as any);
+        ops = createPersonsOps(personsRef, setPersons as unknown as Setter<Person[]>, notesRef, setNotes as unknown as Setter<SavedNote[]>);
     });
 
     describe('addPerson', () => {
@@ -291,8 +290,7 @@ describe('createPersonsOps', () => {
             const personId = (await ops.addPerson('Carol')) as string;
             notesRef.current = [{ id: 'n1', personId, text: 'Test', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true }];
 
-            const { deletePerson } = require('@/lib/repositories/personsRepository');
-            (deletePerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            (repoDeletePerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
 
             await ops.deletePerson(personId);
             // Both persons and notes should be rolled back
@@ -312,8 +310,7 @@ describe('createPersonsOps', () => {
 
         it('should rollback on storage failure', async () => {
             const personId = (await ops.addPerson('Carol')) as string;
-            const { updatePerson } = require('@/lib/repositories/personsRepository');
-            (updatePerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+            (repoUpdatePerson as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
             await ops.updatePerson(personId, { relationship: 'Friend' });
             expect(personsRef.current[0].relationship).toBeUndefined();
             expect(personsRef.current[0].name).toBe('Carol');
@@ -340,9 +337,9 @@ describe('createFeedOps', () => {
         setAutoPlay = jest.fn();
 
         ops = createFeedOps(
-            bookmarksRef, setBookmarks as any,
-            commentsRef, setComments as any,
-            autoPlayRef, setAutoPlay as any,
+            bookmarksRef, setBookmarks as unknown as Setter<string[]>,
+            commentsRef, setComments as unknown as Setter<Record<string, string>>,
+            autoPlayRef, setAutoPlay as unknown as Setter<boolean>,
         );
     });
 
