@@ -119,6 +119,29 @@ const FeedScreenInner: React.FC<Props> = ({
     const localListScrollY = useSharedValue(0);
     const listScrollY = listScrollYProp || localListScrollY;
 
+    /* ── CONFIGURABLE CLOSE GESTURE PARAMETERS ────────────────────────────────── */
+
+    /**
+     * Commit threshold for closing: once feedProgress drops below this value,
+     * releasing auto-completes the close animation.
+     *
+     * IMPORTANT: progress starts at 1.0 (fully open) and goes toward 0.0 (closed).
+     * A threshold of 0.70 means dragging 30% of screen height (~240px) commits.
+     */
+    const CLOSE_COMMIT_THRESHOLD = 0.70;
+    /**
+     * Velocity threshold: a downward flick faster than this (positive = down, px/s)
+     * commits to close. At 3000, ONLY a very fast flick commits.
+     * A gentle swipe (~500-1000 px/s) will NOT trigger this.
+     */
+    const CLOSE_VELOCITY_THRESHOLD = 3000;
+    /**
+     * Velocity projection factor: simulates native ScrollView paging physics.
+     * On release, we calculate where the gesture would land if it decelerated
+     * naturally. If the projected position drops below 50%, we commit to close.
+     */
+    const CLOSE_VELOCITY_PROJECTION_FACTOR = 0.12;
+
     /** Gesture coordination SharedValues */
     const gestureStartProgress = useSharedValue(0);
     const startTranslationOffset = useSharedValue(0);
@@ -219,29 +242,8 @@ const FeedScreenInner: React.FC<Props> = ({
         }
     );
 
-    /**
-     * Safety net: if feedProgress is stranded at a mid-value with no gesture
-     * active and no animation running, snap to the nearest end.
-     * This catches edge cases from rapid gesture switching.
-     */
-    useAnimatedReaction(
-        () => {
-            if (!feedProgress) return 0;
-            const p = feedProgress.value;
-            if (isFeedGestureActive.value) return 0; // gesture is handling it
-            if (p < 0.01 || p > 0.99) return 0;       // already at an end
-            return p;                                  // stranded mid-value
-        },
-        (current, prev) => {
-            if (current === prev || current === 0) return;
-            if (!feedProgress) return;
-            // Stranded — snap to nearest end
-            const target = current > 0.5 ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
-            if (target === 0) runOnJS(onClose)();
-            else runOnJS(onOpen)();
-        }
-    );
+    // Safety net REMOVED — it fights onEnd with asymmetric thresholds.
+    // onEnd already handles commit decisions correctly.
 
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e) => {
@@ -249,18 +251,21 @@ const FeedScreenInner: React.FC<Props> = ({
         }
     });
 
-    /** Follow-finger drag-down to close — coexists with FlashList scroll.
-     *  DOWNWARD-only activation (activeOffsetY) ensures the list scrolls
-     *  normally when swiping up. Only starts driving feedProgress when
-     *  the list is at the top AND the user pulls down past the content
-     *  boundary. Normal scrolling is never intercepted.
-     *  Activates from any feedProgress position (including mid-rescue). */
+    /**
+     * Follow-finger drag-down to close — coexists with FlashList scroll.
+     *
+     * simultaneousWithExternalGesture allows the Pan and FlashList scroll to
+     * process the same touch. The onUpdate gate (listScrollY <= 0 + swipingDown)
+     * ensures the Pan only drives feedProgress when the list is at the top.
+     * When in the middle of the feed, the scroll moves normally and feedProgress
+     * stays untouched.
+     *
+     * 1:1 finger tracking with snappier commit threshold and velocity.
+     */
     const feedPanGesture = useMemo(() => Gesture.Pan()
-        // FlashListRef doesn't extend ComponentType, but RNGH needs a component ref
-        // for gesture coordination. The runtime interop works correctly.
         .simultaneousWithExternalGesture(listRef as unknown as React.RefObject<React.ComponentType>)
-        .activeOffsetY([-10000, 15])    // Only activate on DOWNWARD movement
-        .failOffsetX([-12, 12])          // Fail on any horizontal movement
+        .activeOffsetY([-10000, 8])    // Only activate on DOWNWARD movement (8px = very responsive)
+        .failOffsetX([-20, 20])          // Allow some horizontal jitter
         .onStart(() => {
             if (!feedProgress) return;
             cancelAnimation(feedProgress);
@@ -271,10 +276,12 @@ const FeedScreenInner: React.FC<Props> = ({
         .onUpdate((e) => {
             if (!feedProgress) return;
 
-            // Activate when at top of list + swiping down (from any feedProgress)
+            // Only start driving feedProgress when at top of list + swiping down.
+            // Use a 2px tolerance for scrollY because some devices report small
+            // positive values at the top due to pixel rounding.
             if (!isFeedGestureActive.value) {
-                const atTopOfList = listScrollY.value <= 0;
-                const swipingDown = e.translationY > 8;
+                const atTopOfList = listScrollY.value <= 2;
+                const swipingDown = e.translationY > 5;
 
                 if (atTopOfList && swipingDown) {
                     isFeedGestureActive.value = true;
@@ -286,7 +293,7 @@ const FeedScreenInner: React.FC<Props> = ({
 
             // Follow finger in both directions from activation point
             const delta = e.translationY - startTranslationOffset.value;
-            const progressDelta = delta / screenHeightSV.value; // positive = down = closing
+            const progressDelta = delta / screenHeightSV.value;
             const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
             feedProgress.value = newProgress;
         })
@@ -295,9 +302,17 @@ const FeedScreenInner: React.FC<Props> = ({
             if (!isFeedGestureActive.value) return;
             isFeedGestureActive.value = false;
 
-            const shouldClose = feedProgress.value < 0.5 || e.velocityY > 500;
+            // Velocity projection: where would we land if velocity carried us?
+            // This mimics native ScrollView paging — a flick "throws" the content.
+            const projectedProgress = feedProgress.value - (e.velocityY * CLOSE_VELOCITY_PROJECTION_FACTOR / screenHeightSV.value);
+
+            const shouldClose = feedProgress.value < CLOSE_COMMIT_THRESHOLD
+                || e.velocityY > CLOSE_VELOCITY_THRESHOLD
+                || projectedProgress < 0.5;
+
+            // Gesture decision made — spring to target
             const target = shouldClose ? 0 : 1;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            feedProgress.value = withSpring(target, theme.animation.springSnappy);
             if (shouldClose) runOnJS(onClose)();
             else runOnJS(onOpen)();
         })
@@ -309,7 +324,7 @@ const FeedScreenInner: React.FC<Props> = ({
     const handleCloseButton = useCallback(() => {
         if (!feedProgress) return;
         cancelAnimation(feedProgress);
-        feedProgress.value = withSpring(0, theme.animation.springFeed);
+        feedProgress.value = withSpring(0, theme.animation.springSnappy);
         onClose();
     }, [onClose, feedProgress]);
 
@@ -349,9 +364,12 @@ const FeedScreenInner: React.FC<Props> = ({
     }, [bookmarkSet, feedComments, autoPlayFeedVideos, visibleItemIds, isFeedVisible, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
-    /** Lock screen pan gesture: follow-finger drag down to dismiss. */
+    /**
+     * Lock screen pan gesture: follow-finger drag down to dismiss.
+     * Uses the same distance-scaled mechanics as the main close gesture.
+     */
     const lockPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 15])   // Only activate on DOWNWARD movement
+        .activeOffsetY([-10000, 8])   // Only activate on DOWNWARD movement (8px = very responsive)
         .onStart(() => {
             if (!feedProgress) return;
             cancelAnimation(feedProgress);
@@ -362,7 +380,7 @@ const FeedScreenInner: React.FC<Props> = ({
         .onUpdate((e) => {
             if (!feedProgress) return;
             if (!isFeedGestureActive.value) {
-                if (e.translationY > 8) {
+                if (e.translationY > 5) {
                     isFeedGestureActive.value = true;
                     gestureStartProgress.value = feedProgress.value;
                     startTranslationOffset.value = e.translationY;
@@ -377,9 +395,16 @@ const FeedScreenInner: React.FC<Props> = ({
         .onEnd((e) => {
             if (!feedProgress || !isFeedGestureActive.value) return;
             isFeedGestureActive.value = false;
-            const shouldClose = feedProgress.value < 0.5 || e.velocityY > 500;
+
+            // Velocity projection: where would we land if velocity carried us?
+            const projectedProgress = feedProgress.value - (e.velocityY * CLOSE_VELOCITY_PROJECTION_FACTOR / screenHeightSV.value);
+
+            const shouldClose = feedProgress.value < CLOSE_COMMIT_THRESHOLD
+                || e.velocityY > CLOSE_VELOCITY_THRESHOLD
+                || projectedProgress < 0.5;
+
             const target = shouldClose ? 0 : 1;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            feedProgress.value = withSpring(target, theme.animation.springSnappy);
             if (shouldClose) runOnJS(onClose)();
             else runOnJS(onOpen)();
         })

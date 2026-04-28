@@ -4,7 +4,6 @@ import { Gesture } from 'react-native-gesture-handler';
 import {
     useSharedValue,
     useAnimatedStyle,
-    useAnimatedReaction,
     withSpring,
     cancelAnimation,
     runOnJS,
@@ -36,8 +35,24 @@ export function useHomeGestures(currentPage: number) {
         screenHeightSV.value = screenHeight;
     }, [screenHeight, screenHeightSV]);
 
+    /* ── CONFIGURABLE OPEN GESTURE PARAMETERS ─────────────────────────────────── */
+
+    /**
+     * Commit threshold: once feedProgress exceeds this value, releasing the
+     * finger auto-completes the open animation.
+     * At 0.40, a ~320px upward drag on an 800px screen commits to open.
+     */
+    const OPEN_COMMIT_THRESHOLD = 0.40;
+    /**
+     * Velocity threshold: a flick faster than this (negative = upward, px/s)
+     * commits to open. At -3000, ONLY a very fast flick commits.
+     * A gentle swipe (~500-1000 px/s) will NOT trigger this.
+     */
+    const OPEN_VELOCITY_THRESHOLD = -3000;
+
     /** Animated progress for the feed reveal (0 to 1) */
     const feedProgress = useSharedValue(0);
+
 
     /** Gesture coordination SharedValues */
     const gestureStartProgress = useSharedValue(0);
@@ -64,10 +79,14 @@ export function useHomeGestures(currentPage: number) {
      * Pan gesture: follow-finger feed reveal on the Start page.
      * UPWARD-only activation (activeOffsetY) + fail on horizontal (failOffsetX)
      * ensures strictly vertical swipes only — no diagonal.
+     *
+     * 1:1 finger tracking: the feed follows the finger exactly (like the
+     * horizontal library swipe). A quick flick above the velocity threshold
+     * commits to open even on a shorter drag.
      */
     const feedPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-15, 10000])   // Only activate on UPWARD movement
-        .failOffsetX([-12, 12])         // Fail on any horizontal movement
+        .activeOffsetY([-8, 10000])    // Only activate on UPWARD movement (8px = very responsive)
+        .failOffsetX([-20, 20])         // Allow some horizontal jitter
         .enabled(currentPage === 0)
         .onStart(() => {
             cancelAnimation(feedProgress);
@@ -78,7 +97,7 @@ export function useHomeGestures(currentPage: number) {
         .onUpdate((e) => {
             if (!isFeedGestureActive.value) {
                 // Activate on upward swipe from any position (including mid-rescue)
-                if (e.translationY < -8) {
+                if (e.translationY < -5) {
                     isFeedGestureActive.value = true;
                     gestureStartProgress.value = feedProgress.value;
                     startTranslationOffset.value = e.translationY;
@@ -93,15 +112,20 @@ export function useHomeGestures(currentPage: number) {
         .onEnd((e) => {
             if (!isFeedGestureActive.value) return;
             isFeedGestureActive.value = false;
-            const shouldOpen = feedProgress.value > 0.5 || e.velocityY < -500;
+
+            const shouldOpen = feedProgress.value > OPEN_COMMIT_THRESHOLD
+                || e.velocityY < OPEN_VELOCITY_THRESHOLD;
+
+            // Gesture decision made — spring to target
+
             const target = shouldOpen ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
+            feedProgress.value = withSpring(target, theme.animation.springSnappy);
             if (shouldOpen) runOnJS(openFeed)();
             else runOnJS(closeFeed)();
         })
         .onFinalize(() => {
             isFeedGestureActive.value = false;
-        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed, gestureStartProgress, isFeedGestureActive, startTranslationOffset]);
+        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed, gestureStartProgress, isFeedGestureActive, startTranslationOffset, OPEN_VELOCITY_THRESHOLD]);
 
     /** Main content animates UP (to -screenHeight) when feed opens */
     const mainContentAnimStyle = useAnimatedStyle(() => ({
@@ -122,30 +146,13 @@ export function useHomeGestures(currentPage: number) {
         pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
-    /**
-     * Safety net: if feedProgress is stranded at a mid-value with no gesture
-     * active and no animation running, snap to the nearest end.
-     */
-    useAnimatedReaction(
-        () => {
-            const p = feedProgress.value;
-            if (isFeedGestureActive.value) return 0;
-            if (p < 0.01 || p > 0.99) return 0;
-            return p;
-        },
-        (current, prev) => {
-            if (current === prev || current === 0) return;
-            const target = current > 0.5 ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springFeed);
-            if (target === 0) runOnJS(closeFeed)();
-            else runOnJS(openFeed)();
-        }
-    );
+    // Safety net REMOVED — it fights onEnd with asymmetric thresholds.
+    // onEnd already handles commit decisions correctly.
 
     /** Close the feed — cancel in-flight animation, spring closed, set state immediately */
     const handleCloseFeed = useCallback(() => {
         cancelAnimation(feedProgress);
-        feedProgress.value = withSpring(0, theme.animation.springFeed);
+        feedProgress.value = withSpring(0, theme.animation.springSnappy);
         closeFeed();
     }, [closeFeed, feedProgress]);
 

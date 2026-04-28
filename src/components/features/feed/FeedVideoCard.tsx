@@ -108,12 +108,12 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
     }, [autoPlay, player]);
 
     /** Pause the player on unmount to prevent background decoding.
-     *  Guard against "shared object already released" errors that occur
-     *  when the native VideoPlayer has been deallocated before this cleanup runs. */
+     *  Silently catches "shared object already released" — this is expected
+     *  when expo-video deallocates the native player before our cleanup runs. */
     useEffect(() => {
         return () => {
-            try { player.pause(); } catch (err) {
-                console.error('[FeedVideoCard] Failed to pause player on unmount:', err instanceof Error ? err.message : String(err));
+            try { player.pause(); } catch {
+                // Native player already released — no-op, expected during unmount
             }
         };
     }, [player]);
