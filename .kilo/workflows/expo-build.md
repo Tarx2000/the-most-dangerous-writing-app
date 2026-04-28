@@ -56,9 +56,18 @@ npm test
 
 Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction):
 
+**Unix/macOS:**
 ```bash
 cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
+
+**Windows (must use `cmd /c` for `.bat` scripts):**
+```cmd
+cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a"
+```
+
+> [!NOTE]
+> `gradlew.bat` is a batch file and requires the `cmd /c` wrapper to execute correctly in non-CMD shells. Direct execution via `cd android && gradlew.bat ...` fails with "'gradlew.bat' is not recognized" because the shell spawns a new process that cannot resolve `.bat` files directly.
 
 ---
 
@@ -89,3 +98,4 @@ org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
 - **"Metro bundler error after installing native modules"**: Run `npx expo start -c` to clear cache.
 - **"Build fails with missing babel-preset-expo"**: Run `npm install --save-dev babel-preset-expo`.
 - **"App crashes on startup after adding reanimated"**: Ensure `babel.config.js` includes `'react-native-reanimated/plugin'` as the LAST plugin.
+- **`gradlew.bat` not recognized on Windows**: Batch files (`.bat`) cannot be executed directly from non-CMD shells. Always use `cmd /c "cd /d android && gradlew.bat ..."` instead of `cd android && gradlew.bat ...`.
