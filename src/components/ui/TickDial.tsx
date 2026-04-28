@@ -35,14 +35,14 @@ interface TickDialProps {
  * All scroll handlers use useCallback to stabilize references for native.
  *
  * Behaviour:
- * 1. No native `snapToInterval` — snapping is handled manually via
- *    `scrollTo({ animated: true })` after the user releases, so the
- *    dial glides smoothly into place instead of jumping.
- * 2. `onScroll` only tracks the current offset in a ref. `onSelect` is
- *    deferred until the snap animation is initiated, preventing the
- *    number from changing while the user is still dragging.
- * 3. Vibration fires exactly once per settled number change via a
- *    `useEffect` watching `selectedIndex`.
+ * 1. No native `snapToInterval` — the bar glides smoothly into place on
+ *    release via `scrollTo({ animated: true })`.
+ * 2. `onScroll` reports the live index from the scroll offset. The
+ *    parent updates `selectedIndex`, so the number changes live as the
+ *    user crosses thresholds. Haptics fire live via the same effect.
+ * 3. The `useEffect` that syncs `scrollRef` to `selectedIndex` is
+ *    suppressed during drag/momentum so the bar never jumps while the
+ *    user is still interacting.
  */
 export const TickDial = React.memo(function TickDial({
     data,
@@ -54,7 +54,7 @@ export const TickDial = React.memo(function TickDial({
     const { width: SCREEN_W } = useWindowDimensions();
     const scrollRef = useRef<ScrollView>(null);
     const [ready, setReady] = useState(false);
-    /** Prevents vibration on initial mount */
+    /** Prevents vibration / scroll-sync on initial mount */
     const hasMounted = useRef(false);
     /** Tracks current scroll offset without causing re-renders */
     const currentOffsetRef = useRef(0);
@@ -62,6 +62,8 @@ export const TickDial = React.memo(function TickDial({
     const hasSnappedRef = useRef(false);
     /** Prevents the selectedIndex effect from cancelling our own snap animation */
     const justSnappedRef = useRef(false);
+    /** Suppresses scroll-sync effect while the user is dragging or momentum is rolling */
+    const isDraggingRef = useRef(false);
 
     // Padding so the first major tick's centre lands at screen centre
     const pad = SCREEN_W / 2 - GAP / 2;
@@ -76,9 +78,10 @@ export const TickDial = React.memo(function TickDial({
         return a;
     }, [data]);
 
-    /* ── Initial scroll (no animation, hidden until done) ─────────────── */
+    /* ── Sync scroll position to selectedIndex (suppressed during drag) ─ */
     useEffect(() => {
-        if (justSnappedRef.current) {
+        if (isDraggingRef.current) return;              // bar follows finger during drag
+        if (justSnappedRef.current) {                   // our own snap animation is in flight
             justSnappedRef.current = false;
             return;
         }
@@ -91,9 +94,8 @@ export const TickDial = React.memo(function TickDial({
     }, [selectedIndex]);
 
     /**
-     * Vibrate exactly once per number change, completely decoupled
-     * from scroll mechanics. Skips the initial mount to avoid
-     * vibrating when the component first renders.
+     * Vibrate exactly once per number change. With live `onSelect` from
+     * `onScroll`, this fires as the user crosses each tick threshold.
      */
     useEffect(() => {
         if (hasMounted.current) {
@@ -127,12 +129,17 @@ export const TickDial = React.memo(function TickDial({
     /* ── Scroll event handlers ─────────────────────────────────────────── */
     const onScroll = useCallback(
         (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-            currentOffsetRef.current = e.nativeEvent.contentOffset.x;
+            const x = e.nativeEvent.contentOffset.x;
+            currentOffsetRef.current = x;
+            if (!hasSnappedRef.current) {
+                onSelect(indexFromOffset(x));
+            }
         },
-        [],
+        [indexFromOffset, onSelect],
     );
 
     const handleScrollBeginDrag = useCallback(() => {
+        isDraggingRef.current = true;
         hasSnappedRef.current = false;
         setHomeScrollEnabled?.(false);
     }, [setHomeScrollEnabled]);
@@ -141,12 +148,15 @@ export const TickDial = React.memo(function TickDial({
         const v = e.nativeEvent.velocity;
         if (!v || Math.abs(v.x) < 0.2) {
             // Low velocity — no momentum scroll will follow, snap now
+            isDraggingRef.current = false;
             snapToNearest();
         }
+        // If high velocity, keep isDraggingRef true until momentum ends
         setHomeScrollEnabled?.(true);
     }, [setHomeScrollEnabled, snapToNearest]);
 
     const handleMomentumScrollEnd = useCallback(() => {
+        isDraggingRef.current = false;
         snapToNearest();
         setHomeScrollEnabled?.(true);
     }, [setHomeScrollEnabled, snapToNearest]);
