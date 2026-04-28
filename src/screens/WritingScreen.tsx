@@ -105,9 +105,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         DeviceEventEmitter.emit('RESET_LOCK_TIMER');
         handleTextChange(newText);
         const newWordCount = newText.trim().split(/\s+/).filter(w => w.length > 0).length;
-        if (newWordCount !== wordCount) {
-            setWordCount(newWordCount);
-        }
+        // Always update state — React no-ops identical values, so the stale-closure
+        // guard `newWordCount !== wordCount` is unnecessary and can skip updates
+        // when the closure-captured `wordCount` is out of date.
+        setWordCount(newWordCount);
     };
 
     const animatedShakeStyle = useAnimatedStyle(() => ({
