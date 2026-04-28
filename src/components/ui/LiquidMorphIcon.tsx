@@ -156,10 +156,10 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
     const pathStringRef = useRef<string>(PATHS[mode]);
 
     /** Direct ref to the native <Path> element for setNativeProps */
-    const pathRef = useRef<any>(null);
+    const pathRef = useRef<Path>(null);
 
     /** Direct ref to the wrapper <View> element for scale bouncing */
-    const viewRef = useRef<any>(null);
+    const viewRef = useRef<View>(null);
 
     /** Active animation frame ID for shape morphs */
     const rafIdRef = useRef<number | null>(null);

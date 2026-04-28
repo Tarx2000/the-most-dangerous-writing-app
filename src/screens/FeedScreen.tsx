@@ -9,7 +9,7 @@ import {
     DeviceEventEmitter,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import { FlashList, type ViewToken } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
@@ -104,9 +104,9 @@ const FeedScreenInner: React.FC<Props> = ({
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
     /** Track which feed items are currently visible in the viewport for video auto-play */
     const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(new Set());
-    // FlashList ref for gesture interop — typed as any because FlashList's generic ref
-    // doesn't satisfy GestureType directly, but the runtime interop works fine.
-    const listRef = useRef<any>(null);
+    // FlashList ref for gesture interop — FlashListRef is the proper ref type
+    // for FlashList imperatives (scrollToOffset, etc).
+    const listRef = useRef<FlashListRef<FeedItem>>(null);
 
     /** When feed is hidden (user navigated to home/library), clear all visible items
      *  so videos stop playing immediately. */
@@ -256,7 +256,9 @@ const FeedScreenInner: React.FC<Props> = ({
      *  boundary. Normal scrolling is never intercepted.
      *  Activates from any feedProgress position (including mid-rescue). */
     const feedPanGesture = useMemo(() => Gesture.Pan()
-        .simultaneousWithExternalGesture(listRef)
+        // FlashListRef doesn't extend ComponentType, but RNGH needs a component ref
+        // for gesture coordination. The runtime interop works correctly.
+        .simultaneousWithExternalGesture(listRef as unknown as React.RefObject<React.ComponentType>)
         .activeOffsetY([-10000, 15])    // Only activate on DOWNWARD movement
         .failOffsetX([-12, 12])          // Fail on any horizontal movement
         .onStart(() => {

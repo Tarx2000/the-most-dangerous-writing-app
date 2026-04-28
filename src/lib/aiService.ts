@@ -158,7 +158,7 @@ async function ollamaChatSingle(
     const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
     const model = config.model || DEFAULT_OLLAMA_MODEL;
 
-    const url = `${baseUrl}/api/chat`;
+    const url = `${baseUrl}/chat/completions`;
     const mergedOptions = {
         num_ctx: 16384,
         ...optionsOverwrite,
@@ -207,12 +207,25 @@ async function ollamaChatSingle(
                     rawBuffer = rawBuffer.slice(newlineIndex + 1);
                     if (line) {
                         try {
-                            const parsed = JSON.parse(line);
+                            // Handle OpenAI-style SSE prefix "data: "
+                            let contentToParse = line;
+                            if (line.startsWith('data: ')) {
+                                contentToParse = line.slice(6).trim();
+                            }
+
+                            // OpenAI "Done" signal
+                            if (contentToParse === '[DONE]') return;
+
+                            const parsed = JSON.parse(contentToParse);
                             if (parsed.error) {
                                 settle('reject', new Error(`Ollama Error: ${parsed.error}`));
                                 return;
                             }
-                            const chunkStr = parsed.message?.content || '';
+                            
+                            // Support both OpenAI (choices[0].delta.content) and Ollama native (message.content)
+                            const chunkStr = parsed.choices?.[0]?.delta?.content || 
+                                           parsed.choices?.[0]?.message?.content || 
+                                           parsed.message?.content || '';
 
                             fullResponse += chunkStr;
 
@@ -476,7 +489,11 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        const response = await fetch(`${baseUrl}/api/version`, {
+        // If baseUrl ends in /v1, we hit /models as a health check. 
+        // Otherwise we hit the native /api/version.
+        const pingUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
+
+        const response = await fetch(pingUrl, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,

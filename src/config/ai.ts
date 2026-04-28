@@ -18,7 +18,7 @@
 export const DEFAULT_OLLAMA_API_KEY = '0256ae2a4fa64e95980bc0c6d6177e3d.5l7X5me0ClCd9Nnx3pUKJIKS';
 
 /** Ollama Cloud base URL (NOT localhost — this is the cloud-hosted endpoint) */
-export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com';
+export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com/v1';
 
 /** Model identifier for KimiK2.5 on Ollama Cloud */
 export const DEFAULT_OLLAMA_MODEL = 'kimi-k2.5:cloud';
