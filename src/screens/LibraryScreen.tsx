@@ -41,30 +41,30 @@ type Props = {
 };
 
 /** Sort options data — feeds into ActionSheet */
-const SORT_OPTIONS_DATA: { id: SortOption, label: string, icon: string }[] = [
-    { id: 'newest', label: 'Newest First', icon: 'sort-clock-descending-outline' },
-    { id: 'oldest', label: 'Oldest First', icon: 'sort-clock-ascending-outline' },
-    { id: 'longest', label: 'Longest Session', icon: 'timer-sand' },
-    { id: 'shortest', label: 'Shortest Session', icon: 'timer-sand-empty' },
-    { id: 'longest-text', label: 'Most Words', icon: 'text-long' },
-];
+const SORT_OPTIONS_DATA = [
+    { id: 'newest' as SortOption, label: 'Newest First', icon: 'sort-clock-descending-outline' as const },
+    { id: 'oldest' as SortOption, label: 'Oldest First', icon: 'sort-clock-ascending-outline' as const },
+    { id: 'longest' as SortOption, label: 'Longest Session', icon: 'timer-sand' as const },
+    { id: 'shortest' as SortOption, label: 'Shortest Session', icon: 'timer-sand-empty' as const },
+    { id: 'longest-text' as SortOption, label: 'Most Words', icon: 'text-long' as const },
+] as const;
 
 const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     /**
      * Map shared sessionMode to library tab.
      * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins', 'vlog' -> 'vlogs'
      */
-    const libraryTab = sessionMode === 'journal' ? 'notes' 
-                     : sessionMode === 'circles' ? 'circles' 
-                     : sessionMode === 'vlog' ? 'vlogs'
-                     : 'checkins';
+    const libraryTab = sessionMode === 'journal' ? 'notes'
+        : sessionMode === 'circles' ? 'circles'
+            : sessionMode === 'vlog' ? 'vlogs'
+                : 'checkins';
 
     const [sortBy, setSortBy] = useState<SortOption>('newest');
     const [showSortModal, setShowSortModal] = useState(false);
-    
+
     const { fontIndex, lockTimeoutMins } = usePreferences();
     const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
-    
+
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [personToDelete, setPersonToDelete] = useState<string | null>(null);
@@ -115,9 +115,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                 isLocked={!security.isNotesUnlocked}
                 onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
                 onNotePress={setViewNoteModal}
-                onDelete={() => setPersonToDelete(p.id)}
                 onProfilePress={() => setProfilePerson(p)}
-                canDelete={security.isNotesUnlocked}
                 isNoteActive={isNoteActive}
                 isNoteQueued={isNoteQueued}
             />
@@ -274,7 +272,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                 {(libraryTab === 'notes' || libraryTab === 'checkins') && (
                     <>
                         {groupedNotes.length === 0 ? (
-                            <EmptyLibraryState 
+                            <EmptyLibraryState
                                 icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
                                 title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
                                 description={libraryTab === 'checkins' ? "Start your weekly alignment check-in to track your progress over time." : "Start writing to build your library of dangerous sessions."}
@@ -304,8 +302,8 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                                     return (
                                         <View>
                                             {_isAlignment ? (
-                                                <AnimatedScaleButton 
-                                                    style={styles.reflectionCard} 
+                                                <AnimatedScaleButton
+                                                    style={styles.reflectionCard}
                                                     onPress={() => setViewNoteModal(note)}
                                                     disabled={!security.isNotesUnlocked}
                                                 >
@@ -362,31 +360,31 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                             </View>
                         ) : (
                             <>
-                        {persons.length === 0 ? (
-                            <EmptyLibraryState
-                                icon="account-group-outline"
-                                title="No circles yet"
-                                description="Create circles to organize your writing sessions by the people who matter most."
-                                actionLabel="Start Writing"
-                                onAction={onGoToStart}
-                            />
-                        ) : (
-                            <View style={styles.fullFlexWidth}>
-                                <FlashList
-                                    style={{ marginHorizontal: -20 }}
-                                    data={sortedPersons}
-                                    keyExtractor={(p) => p.id}
-                                    extraData={{ 
-                                        selectedCircleId, 
-                                        notesLength: savedNotes.length,
-                                        isUnlocked: security.isNotesUnlocked 
-                                    }}
-                                    renderItem={renderPersonItem}
-                                    showsVerticalScrollIndicator={false}
-                                    contentContainerStyle={{ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }}
-                                />
-                            </View>
-                        )}
+                                {persons.length === 0 ? (
+                                    <EmptyLibraryState
+                                        icon="account-group-outline"
+                                        title="No circles yet"
+                                        description="Create circles to organize your writing sessions by the people who matter most."
+                                        actionLabel="Start Writing"
+                                        onAction={onGoToStart}
+                                    />
+                                ) : (
+                                    <View style={styles.fullFlexWidth}>
+                                        <FlashList
+                                            style={{ marginHorizontal: -20 }}
+                                            data={sortedPersons}
+                                            keyExtractor={(p) => p.id}
+                                            extraData={{
+                                                selectedCircleId,
+                                                notesLength: savedNotes.length,
+                                                isUnlocked: security.isNotesUnlocked
+                                            }}
+                                            renderItem={renderPersonItem}
+                                            showsVerticalScrollIndicator={false}
+                                            contentContainerStyle={{ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }}
+                                        />
+                                    </View>
+                                )}
                             </>
                         )}
                     </>
@@ -407,7 +405,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
             <ActionSheet
                 visible={showSortModal}
                 title="Sort Library By"
-                options={SORT_OPTIONS_DATA}
+                options={[...SORT_OPTIONS_DATA]}
                 activeId={sortBy}
                 onSelect={(id) => { setSortBy(id as SortOption); setShowSortModal(false); }}
                 onClose={() => setShowSortModal(false)}

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Video Compressor â€” Post-recording video optimization service.
  *
  * Uses `react-native-compressor` to transcode recorded vlogs into smaller
@@ -32,14 +32,23 @@ import type { SavedVlog } from '@/types';
  * time and gracefully fall back to "no compression" mode.
  * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-let VideoCompressor: unknown = null;
+/** Type for the react-native-compressor Video module */
+interface VideoCompressorModule {
+    compress: (
+        uri: string,
+        options: Record<string, unknown>,
+        onProgress: (progress: number) => void
+    ) => Promise<string>;
+}
+
+let VideoCompressor: VideoCompressorModule | null = null;
 let isNativeModuleAvailable = false;
 
 try {
     // Dynamic import — if the native module isn't linked (Expo Go),
     // this throws and we catch it, leaving VideoCompressor as null.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require('react-native-compressor');
+    const mod = require('react-native-compressor') as { Video: VideoCompressorModule };
     VideoCompressor = mod.Video;
     isNativeModuleAvailable = true;
     logger("info", "Compressor", "Native module loaded successfully");
@@ -156,7 +165,9 @@ export async function compressVideo(
     try {
         logger("info", "Compressor", `Starting compression: preset=${preset.id}, maxSize=${preset.maxSize}, bitrate=${preset.bitrate}`);
 
-        const compressedUri = await VideoCompressor.compress(
+        // isNativeModuleAvailable being true guarantees VideoCompressor is set
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const compressedUri = await VideoCompressor!.compress(
             inputUri,
             {
                 compressionMethod: 'manual',

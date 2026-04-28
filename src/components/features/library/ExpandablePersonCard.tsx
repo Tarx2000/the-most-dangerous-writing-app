@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -142,7 +142,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(({
                         nestedScrollEnabled
                         showsVerticalScrollIndicator={false}
                     >
-                        {sortedNotes.map(note => (
+                        {sortedNotes.map((note: SavedNote) => (
                             <NoteCard
                                 key={note.id}
                                 note={note}

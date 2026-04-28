@@ -1,5 +1,5 @@
 /**
- * useSecurity hook tests — Regression guards for security behavior.
+ * useSecurity hook tests â€” Regression guards for security behavior.
  *
  * Since @testing-library/react-native has a react-test-renderer version conflict,
  * these tests verify the source code constants and patterns directly by reading
@@ -22,7 +22,7 @@ describe('useSecurity source code contracts', () => {
         it('should be 30000 (30 seconds)', () => {
             const match = SOURCE.match(/BACKGROUND_LOCK_GRACE_MS\s*=\s*(\d+)/);
             expect(match).not.toBeNull();
-            expect(parseInt(match[1] ?? '0', 10)).toBe(30000);
+            expect(parseInt(match![1] ?? '0', 10)).toBe(30000);
         });
 
         it('should be documented as allowing brief interruptions', () => {
@@ -97,3 +97,4 @@ describe('useSecurity source code contracts', () => {
         });
     });
 });
+

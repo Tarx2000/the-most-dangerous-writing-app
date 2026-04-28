@@ -226,8 +226,8 @@ async function ollamaChatSingle(
                                     onChunk(streamedResponse);
                                 }
                             }
-                        } catch {
-                            console.warn('[AI] Failed to parse stream line:', line);
+                        } catch (err) {
+                            console.warn('[AI] Failed to parse stream line:', line, err);
                         }
                     }
                 }
@@ -444,11 +444,11 @@ export async function checkGrammar(
 
         // Validate each item has required fields
         return parsed.filter(
-            (item: unknown) =>
-                typeof item.original === 'string' &&
-                typeof item.suggestion === 'string' &&
-                typeof item.explanation === 'string'
-        ) as GrammarSuggestion[];
+            (item: unknown): item is GrammarSuggestion =>
+                typeof (item as Record<string, unknown>).original === 'string' &&
+                typeof (item as Record<string, unknown>).suggestion === 'string' &&
+                typeof (item as Record<string, unknown>).explanation === 'string'
+        );
     } catch (err: unknown) {
         console.warn('[AI] Failed to parse grammar response as JSON:', raw, err);
         return [];
@@ -528,7 +528,8 @@ export async function processNote(
         const summary = await generateSummary(text, config, undefined, relationship, cancelToken);
         return { title, summary, failed: false };
     } catch (error: unknown) {
-        console.warn('[AI] processNote failed — returning empty result:', error.message);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        console.warn('[AI] processNote failed — returning empty result:', errMsg);
         return { title: '', summary: [], failed: true };
     }
 }

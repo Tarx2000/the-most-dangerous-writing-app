@@ -15,17 +15,15 @@ import { Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { logger } from '@/lib/logger';
 import * as FileSystem from 'expo-file-system/legacy';
-import { storage } from '@/lib/storage';
 import { CONFIG } from '@/config';
 import { generateId, toLocalDateString } from '@/lib/utils';
 import { cleanupOrphanedVlogs as cleanupOrphanFiles } from '@/lib/storageManager';
-import { DEFAULT_AI_PROMPTS, AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
+import { AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
-import { processPendingCompressions } from '@/lib/videoCompressor';
 import { setPerfEnabled } from '@/lib/perf';
 import {
     insertNote, deleteNote as repoDeleteNote, updateNote as repoUpdateNote,
-    clearAllAiMetadata as repoClearAllAiMetadata, getAllNotes, deleteAllNotes,
+    clearAllAiMetadata as repoClearAllAiMetadata, deleteAllNotes,
 } from '@/lib/repositories/notesRepository';
 import {
     insertPerson, deletePerson as repoDeletePerson, updatePerson as repoUpdatePerson,
@@ -35,7 +33,7 @@ import {
     insertVlog, deleteVlog as repoDeleteVlog, updateVlog as repoUpdateVlog,
     deleteAllVlogs,
 } from '@/lib/repositories/vlogsRepository';
-import { setSetting, getSetting } from '@/lib/repositories/settingsRepository';
+import { setSetting } from '@/lib/repositories/settingsRepository';
 import type { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
 
 export type Ref<T> = { current: T };
@@ -64,7 +62,7 @@ export function createNotesOps(
         let updatedStreak = prevStreak;
         let streakIncreased = false;
         let newLastWinDate = prevLastWinDate;
-        let newHistory = [...prevHistory];
+        const newHistory = [...prevHistory];
 
         if (note.won && note.durationMin >= 3 && !note.isQuickNote) {
             const todayStr = toLocalDateString(new Date());
@@ -371,8 +369,14 @@ export function createFeedOps(
 
     const saveFeedComment = async (noteId: string, comment: string) => {
         const prev = commentsRef.current;
-        const updated = { ...prev, [noteId]: comment };
-        if (!comment.trim()) delete updated[noteId];
+        let updated: Record<string, string>;
+        if (!comment.trim()) {
+            updated = Object.fromEntries(
+                Object.entries(prev).filter(([key]) => key !== noteId)
+            );
+        } else {
+            updated = { ...prev, [noteId]: comment };
+        }
         commentsRef.current = updated;
         setComments(updated);
 
@@ -472,7 +476,7 @@ export function createPreferencesOps(
         setGlobalHapticsEnabled(val);
         try {
             await setSetting('ENABLE_HAPTICS', JSON.stringify(val));
-        } catch (error) {
+        } catch {
             setters.setEnableHaptics(prev);
             refs.enableHaptics.current = prev;
             setGlobalHapticsEnabled(prev);
@@ -485,7 +489,7 @@ export function createPreferencesOps(
         refs.lockTimeoutMins.current = mins;
         try {
             await setSetting('LOCK_TIMEOUT_MINS', String(mins));
-        } catch (error) {
+        } catch {
             setters.setLockTimeoutMins(prev);
             refs.lockTimeoutMins.current = prev;
         }
@@ -497,7 +501,8 @@ export function createPreferencesOps(
         refs.vlogQuality.current = q;
         try {
             await setSetting('VLOG_QUALITY', q);
-        } catch (error) {
+        } catch (err) {
+            logger('error', 'Storage', 'Failed to save vlog quality:', err);
             setters.setVlogQuality(prev);
             refs.vlogQuality.current = prev;
         }
@@ -509,7 +514,8 @@ export function createPreferencesOps(
         refs.compressionPreset.current = preset;
         try {
             await setSetting('COMPRESSION_PRESET', preset);
-        } catch (error) {
+        } catch (err) {
+            logger('error', 'Storage', 'Failed to save compression preset:', err);
             setters.setCompressionPreset(prev);
             refs.compressionPreset.current = prev;
         }
@@ -670,7 +676,7 @@ export function createAiConfigOps(
         refs.autoGenerateSummaries.current = val;
         try {
             await setSetting('AUTO_GENERATE_SUMMARIES', JSON.stringify(val));
-        } catch (error) {
+        } catch {
             setters.setAutoGenerateSummaries(prev);
             refs.autoGenerateSummaries.current = prev;
         }
@@ -784,6 +790,4 @@ export function createCrossCuttingOps(
     return { clearAllData, saveAlignmentReflection };
 }
 
-// Re-export safeParse for backwards compat with existing tests
-export { safeParse } from '@/lib/dataLoaders';
-
+// Re-export safeParse for backwards compat with existing 

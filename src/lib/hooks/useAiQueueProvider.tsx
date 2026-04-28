@@ -85,6 +85,22 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         };
     }, []);
 
+    /** Initialize the queue manager with current dependencies */
+    const initializeQueue = useCallback(async () => {
+        await aiQueue.initialize(
+            () => ({
+                apiKey: depsRef.current.aiApiKey,
+                baseUrl: depsRef.current.aiBaseUrl,
+                model: depsRef.current.aiModel,
+                prompts: depsRef.current.aiPrompts,
+            }),
+            (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
+            depsRef.current.updateNote,
+            () => depsRef.current.savedNotes,
+            (personId) => depsRef.current.persons.find(p => p.id === personId)
+        );
+    }, []);
+
     // Auto-initialize queue when notes are available
     const queueInitedRef = useRef(false);
     useEffect(() => {
@@ -121,21 +137,6 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         await aiQueue.cancelBatch();
     }, []);
 
-    /** Initialize the queue manager with current dependencies */
-    const initializeQueue = useCallback(async () => {
-        await aiQueue.initialize(
-            () => ({
-                apiKey: depsRef.current.aiApiKey,
-                baseUrl: depsRef.current.aiBaseUrl,
-                model: depsRef.current.aiModel,
-                prompts: depsRef.current.aiPrompts,
-            }),
-            (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
-            depsRef.current.updateNote,
-            () => depsRef.current.savedNotes,
-            (personId) => depsRef.current.persons.find(p => p.id === personId)
-        );
-    }, []);
 
     const value = React.useMemo<AiQueueContextType>(() => ({
         queueState,

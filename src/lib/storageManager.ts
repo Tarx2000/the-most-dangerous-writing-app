@@ -20,9 +20,6 @@ import { insertVlog } from '@/lib/repositories/vlogsRepository';
 /** Default storage warning threshold in bytes (2 GB) */
 const DEFAULT_VLOG_STORAGE_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
-/** Minimum free space required before a new recording (500 MB) */
-const MIN_FREE_SPACE_BYTES = 500 * 1024 * 1024;
-
 /**
  * Get the total size of all vlog files.
  * Uses metadata sum — faster than reading the filesystem.
@@ -93,12 +90,12 @@ export async function cleanupOrphanedVlogs(
                 try {
                     await FileSystem.deleteAsync(fullPath, { idempotent: true });
                     cleaned++;
-                } catch (err: unknown) {
+                } catch {
                     // File may be locked — skip
                 }
             }
         }
-    } catch (err: unknown) {
+    } catch {
         // Directory read failed — nothing to clean
     }
 
@@ -157,7 +154,7 @@ export async function scanOrphanVlogFiles(
                 modificationTime: modTime,
             });
         }
-    } catch (err: unknown) {
+    } catch {
         // Directory read failed — return empty list
     }
 
@@ -199,10 +196,11 @@ export async function reattachOrphanVlogFiles(
         try {
             await insertVlog(savedVlog);
             reattached++;
-        } catch (err: unknown) {
+        } catch {
             failed++;
         }
     }
 
     return { reattached, failed };
+
 }

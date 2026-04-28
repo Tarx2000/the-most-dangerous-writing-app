@@ -89,7 +89,7 @@ class AiQueueManager {
     /** Injected dependencies */
     private getAiConfig: GetAiConfigFn = () => ({});
     private getNoteById: GetNoteByIdFn = () => undefined;
-    private updateNote: UpdateNoteFn = async () => {};
+    private updateNote: UpdateNoteFn = async () => { };
     private getAllNotes: GetAllNotesFn = () => [];
     private getPersonById: GetPersonByIdFn = () => undefined;
 
@@ -161,7 +161,7 @@ class AiQueueManager {
     private async checkHealth(): Promise<void> {
         const wasOffline = this.serverOnline === false;
         const result = await pingServer(this.getAiConfig());
-        
+
         this.serverOnline = result.online;
         this.lastError = result.error;
         this.emitState();
@@ -501,10 +501,10 @@ class AiQueueManager {
                 };
             }
 
-                    // Create a cancel token for this job's AI request
-        this.currentCancelToken = new AiCancelToken();
-        const result = await processNote(note.text, config, relationship, this.currentCancelToken);
-        this.currentCancelToken = null;
+            // Create a cancel token for this job's AI request
+            this.currentCancelToken = new AiCancelToken();
+            const result = await processNote(note.text, config, relationship, this.currentCancelToken);
+            this.currentCancelToken = null;
 
             if (result.failed) {
                 throw new Error('AI processing returned empty results');
@@ -534,6 +534,7 @@ class AiQueueManager {
                 this.batchCompleted++;
             }
         } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : 'Unknown error';
             const duration = Date.now() - (nextJob.startedAt || Date.now());
 
             await logAi({
@@ -542,13 +543,13 @@ class AiQueueManager {
                 model: config.model || 'default',
                 phase: 'both',
                 durationMs: duration,
-                error: error.message || 'Unknown error',
+                error: errMsg,
             });
 
             // If it's a network/timeout error, mark server as offline
-            if (error.message.includes('timeout') || error.message.includes('Network') || error.message.includes('fetch')) {
+            if (errMsg.includes('timeout') || errMsg.includes('Network') || errMsg.includes('fetch')) {
                 this.serverOnline = false;
-                this.lastError = error.message;
+                this.lastError = errMsg;
             }
 
             if (nextJob.retryCount < AI_MAX_RETRIES) {
@@ -571,7 +572,7 @@ class AiQueueManager {
                 // Max retries exceeded — mark as failed and move on
                 nextJob.status = 'failed';
                 nextJob.completedAt = Date.now();
-                nextJob.error = error.message || 'Max retries exceeded';
+                nextJob.error = errMsg;
             }
         }
 
@@ -629,7 +630,8 @@ class AiQueueManager {
             if (raw) {
                 this.jobs = JSON.parse(raw) as AiJob[];
             }
-        } catch (err) { logger("warn", "AI Queue", "Failed to parse persisted queue, resetting:", err);
+        } catch (err) {
+            logger("warn", "AI Queue", "Failed to parse persisted queue, resetting:", err);
             this.jobs = [];
         }
     }

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { View,
+import {
+    View,
     Text,
     StyleSheet,
     Platform,
@@ -71,7 +72,7 @@ interface Props {
     /** Callback to commit feed open state (lightweight, no animation) */
     onOpen: () => void;
     /** Shared value from HomeScreen driving feed translation */
-    feedProgress?: SharedValue<number>;
+    feedProgress: SharedValue<number>;
     /** Whether the feed layer is currently visible (from HomeScreen state) */
     isFeedVisible?: boolean;
     /** Shared scroll position from HomeScreen for gesture coordination */
@@ -103,8 +104,9 @@ const FeedScreenInner: React.FC<Props> = ({
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
     /** Track which feed items are currently visible in the viewport for video auto-play */
     const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(new Set());
-    // FlashListRef and GestureType are incompatible — use unknown for gesture interop
-    const listRef = useRef<unknown>(null);
+    // FlashList ref for gesture interop — typed as any because FlashList's generic ref
+    // doesn't satisfy GestureType directly, but the runtime interop works fine.
+    const listRef = useRef<any>(null);
 
     /** When feed is hidden (user navigated to home/library), clear all visible items
      *  so videos stop playing immediately. */
@@ -232,6 +234,7 @@ const FeedScreenInner: React.FC<Props> = ({
         },
         (current, prev) => {
             if (current === prev || current === 0) return;
+            if (!feedProgress) return;
             // Stranded — snap to nearest end
             const target = current > 0.5 ? 1 : 0;
             feedProgress.value = withSpring(target, theme.animation.springFeed);
@@ -314,33 +317,33 @@ const FeedScreenInner: React.FC<Props> = ({
         // (2) the item is visible in the viewport, AND (3) the feed is fully revealed
         const isVisible = visibleItemIds.has(itemId) && isFeedVisible;
         return (
-        <View style={styles.cardWrapper}>
-            {/* Use FeedVideoCard for clips, FeedCard for everything else */}
-            {item.type === 'clip' && item.vlog && onOpenVlog ? (
-                <FeedVideoCard
-                    item={item}
-                    isBookmarked={bookmarkSet.has(item.vlog.id)}
-                    comment={feedComments[item.vlog.id]}
-                    autoPlay={autoPlayFeedVideos && isVisible}
-                    onToggleBookmark={toggleBookmark}
-                    onSaveComment={saveFeedComment}
-                    onOpenVlog={onOpenVlog}
-                />
-            ) : (
-                <FeedCard
-                    item={item}
-                    isBookmarked={bookmarkSet.has(
-                        item.note?.id || item.vlog?.id || ''
-                    )}
-                    comment={feedComments[item.note?.id || item.vlog?.id || '']}
-                    onToggleBookmark={toggleBookmark}
-                    onSaveComment={saveFeedComment}
-                    onOpenEntry={onOpenNote}
-                    onOpenVlog={onOpenVlog}
-                />
-            )}
-        </View>
-    );
+            <View style={styles.cardWrapper}>
+                {/* Use FeedVideoCard for clips, FeedCard for everything else */}
+                {item.type === 'clip' && item.vlog && onOpenVlog ? (
+                    <FeedVideoCard
+                        item={item}
+                        isBookmarked={bookmarkSet.has(item.vlog.id)}
+                        comment={feedComments[item.vlog.id]}
+                        autoPlay={autoPlayFeedVideos && isVisible}
+                        onToggleBookmark={toggleBookmark}
+                        onSaveComment={saveFeedComment}
+                        onOpenVlog={onOpenVlog}
+                    />
+                ) : (
+                    <FeedCard
+                        item={item}
+                        isBookmarked={bookmarkSet.has(
+                            item.note?.id || item.vlog?.id || ''
+                        )}
+                        comment={feedComments[item.note?.id || item.vlog?.id || '']}
+                        onToggleBookmark={toggleBookmark}
+                        onSaveComment={saveFeedComment}
+                        onOpenEntry={onOpenNote}
+                        onOpenVlog={onOpenVlog}
+                    />
+                )}
+            </View>
+        );
     }, [bookmarkSet, feedComments, autoPlayFeedVideos, visibleItemIds, isFeedVisible, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
@@ -410,49 +413,49 @@ const FeedScreenInner: React.FC<Props> = ({
     /* ── Render: Feed header ────────────────────────────────────────── */
     const renderHeader = () => (
         <Animated.View style={styles.headerContainer}>
-                {/* Title row */}
-                <View style={styles.titleRow}>
-                    <View>
-                        <Text style={styles.feedTitle}>Feed</Text>
-                        <Text style={styles.feedSubtitle}>
-                            {feedItems.length} {feedItems.length === 1 ? 'entry' : 'entries'}
-                        </Text>
-                    </View>
-                    <AnimatedScaleButton style={styles.closeBtn} onPress={handleCloseButton}>
-                        <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
-                    </AnimatedScaleButton>
+            {/* Title row */}
+            <View style={styles.titleRow}>
+                <View>
+                    <Text style={styles.feedTitle}>Feed</Text>
+                    <Text style={styles.feedSubtitle}>
+                        {feedItems.length} {feedItems.length === 1 ? 'entry' : 'entries'}
+                    </Text>
                 </View>
+                <AnimatedScaleButton style={styles.closeBtn} onPress={handleCloseButton}>
+                    <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
+                </AnimatedScaleButton>
+            </View>
 
-                {/* Filter toggle: All / Bookmarked */}
-                <View style={styles.filterRow}>
-                    <AnimatedScaleButton
-                        style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
-                        onPress={() => setFilterBookmarked(false)}
-                    >
-                        <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
-                    </AnimatedScaleButton>
-                    <AnimatedScaleButton
-                        style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
-                        onPress={() => setFilterBookmarked(true)}
-                    >
-                        <MaterialCommunityIcons
-                            name="bookmark"
-                            size={14}
-                            color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
-                            style={{ marginRight: 4 }}
-                        />
-                        <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
-                            Bookmarked
-                        </Text>
-                    </AnimatedScaleButton>
-                </View>
+            {/* Filter toggle: All / Bookmarked */}
+            <View style={styles.filterRow}>
+                <AnimatedScaleButton
+                    style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
+                    onPress={() => setFilterBookmarked(false)}
+                >
+                    <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
+                </AnimatedScaleButton>
+                <AnimatedScaleButton
+                    style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
+                    onPress={() => setFilterBookmarked(true)}
+                >
+                    <MaterialCommunityIcons
+                        name="bookmark"
+                        size={14}
+                        color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
+                        style={{ marginRight: 4 }}
+                    />
+                    <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
+                        Bookmarked
+                    </Text>
+                </AnimatedScaleButton>
+            </View>
 
-                {/* Newest first notice */}
-                <View style={styles.chronoNotice}>
-                    <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
-                    <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
-                </View>
-            </Animated.View>
+            {/* Newest first notice */}
+            <View style={styles.chronoNotice}>
+                <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
+                <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
+            </View>
+        </Animated.View>
     );
 
     /* ── Render: Empty state ────────────────────────────────────────── */
@@ -481,30 +484,30 @@ const FeedScreenInner: React.FC<Props> = ({
     return (
         <GestureDetector gesture={feedPanGesture}>
             <View style={styles.container}>
-            <Animated.View style={[styles.feedContentWrapper, feedContentOpacity]}>
-                <AnimatedFlashList
-                ref={listRef}
-                renderScrollComponent={RNGHScrollView}
-                data={displayItems}
-                ListHeaderComponent={renderHeader}
-                ListFooterComponent={renderFooter}
-                ListEmptyComponent={renderEmpty}
-                estimatedItemSize={250}
-                keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
-                bounces={false}
-                overScrollMode="never"
-                scrollEnabled={feedScrollEnabled}
-                onScroll={handleScroll}
-                onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
-                scrollEventThrottle={16}
-                renderItem={renderFeedItem}
-                onViewableItemsChanged={onViewableItemsChanged}
-                viewabilityConfig={viewabilityConfig}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-            />
-            </Animated.View>
-        </View>
+                <Animated.View style={[styles.feedContentWrapper, feedContentOpacity]}>
+                    <AnimatedFlashList
+                        ref={listRef}
+                        renderScrollComponent={RNGHScrollView}
+                        data={displayItems}
+                        ListHeaderComponent={renderHeader}
+                        ListFooterComponent={renderFooter}
+                        ListEmptyComponent={renderEmpty}
+                        estimatedItemSize={250}
+                        keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
+                        bounces={false}
+                        overScrollMode="never"
+                        scrollEnabled={feedScrollEnabled}
+                        onScroll={handleScroll}
+                        onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
+                        scrollEventThrottle={16}
+                        renderItem={renderFeedItem}
+                        onViewableItemsChanged={onViewableItemsChanged}
+                        viewabilityConfig={viewabilityConfig}
+                        contentContainerStyle={styles.listContent}
+                        showsVerticalScrollIndicator={false}
+                    />
+                </Animated.View>
+            </View>
         </GestureDetector>
     );
 };

@@ -41,7 +41,7 @@ const HAPTIC_CRITICAL_THRESHOLD = 0.95;  // Escalating rapid buzz
 /** Track last haptic threshold fired to prevent repeated vibrations */
 type HapticLevel = 'none' | 'caution' | 'warning' | 'urgent' | 'critical';
 
-export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<unknown>) {
+export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<{ clear: () => void } | null>) {
     const [sessionTimeSelected, setSessionTimeSelected] = useState<number>(0);
     const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number>(0);
     const textRef = useRef<string>('');

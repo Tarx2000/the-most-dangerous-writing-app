@@ -245,9 +245,15 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
     let legacyPersons: Person[] = [];
     let legacyVlogs: SavedVlog[] = [];
 
-    try { if (rawNotes) legacyNotes = JSON.parse(rawNotes); } catch { /**/ }
-    try { if (rawPersons) legacyPersons = JSON.parse(rawPersons); } catch { /**/ }
-    try { if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs); } catch { /**/ }
+    try { if (rawNotes) legacyNotes = JSON.parse(rawNotes); } catch (err) {
+        logger('warn', 'Migration', 'Failed to parse legacy notes JSON:', err);
+    }
+    try { if (rawPersons) legacyPersons = JSON.parse(rawPersons); } catch (err) {
+        logger('warn', 'Migration', 'Failed to parse legacy persons JSON:', err);
+    }
+    try { if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs); } catch (err) {
+        logger('warn', 'Migration', 'Failed to parse legacy vlogs JSON:', err);
+    }
 
     if (legacyNotes.length === 0 && legacyPersons.length === 0 && legacyVlogs.length === 0) {
         return { notesRecovered: 0, personsRecovered: 0, vlogsRecovered: 0, skipped: true, errors: [] };

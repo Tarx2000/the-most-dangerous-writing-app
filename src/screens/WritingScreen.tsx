@@ -41,6 +41,8 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const inputRef = useRef<TextInput>(null);
     const [wordCount, setWordCount] = useState(0);
+    const wordCountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTimerResetRef = useRef(0);
 
     const {
         textRef,
@@ -65,7 +67,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     useEffect(() => {
         startSession(isQuickNote);
         vibrate(50);
-        return () => clearTimers();
+        return () => {
+            clearTimers();
+            if (wordCountTimeoutRef.current) clearTimeout(wordCountTimeoutRef.current);
+        };
     }, [startSession, clearTimers, isQuickNote]);
 
     const handleSave = async () => {
@@ -100,15 +105,24 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     };
 
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
-    
+
     const handleTextChangeLocal = (newText: string) => {
-        DeviceEventEmitter.emit('RESET_LOCK_TIMER');
+        // Throttle security timer reset to once per second to avoid O(n) event overhead per keystroke
+        const now = Date.now();
+        if (now - lastTimerResetRef.current > 1000) {
+            DeviceEventEmitter.emit('RESET_LOCK_TIMER');
+            lastTimerResetRef.current = now;
+        }
         handleTextChange(newText);
-        const newWordCount = newText.trim().split(/\s+/).filter(w => w.length > 0).length;
-        // Always update state — React no-ops identical values, so the stale-closure
-        // guard `newWordCount !== wordCount` is unnecessary and can skip updates
-        // when the closure-captured `wordCount` is out of date.
-        setWordCount(newWordCount);
+
+        // Debounce word count to avoid O(n) array allocation on every keystroke
+        if (wordCountTimeoutRef.current) clearTimeout(wordCountTimeoutRef.current);
+        wordCountTimeoutRef.current = setTimeout(() => {
+            const newWordCount = newText.trim().split(/\s+/).filter(w => w.length > 0).length;
+            if (newWordCount !== wordCount) {
+                setWordCount(newWordCount);
+            }
+        }, 300);
     };
 
     const animatedShakeStyle = useAnimatedStyle(() => ({

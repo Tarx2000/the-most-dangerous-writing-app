@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
-import Carousel from 'react-native-reanimated-carousel';
+import Carousel, { ICarouselInstance } from 'react-native-reanimated-carousel';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -22,7 +22,7 @@ interface Props {
 export const CarouselSelector: React.FC<Props> = React.memo(({ label, data, selectedIndex, onSelect, renderItemText, onInteractionStart, onInteractionEnd }) => {
     const { width: SCREEN_WIDTH } = useWindowDimensions();
     const CAROUSEL_WIDTH = Math.min(SCREEN_WIDTH * 0.5, 200);
-    const carouselRef = useRef<{ scrollTo: (opts: { count?: number; index?: number; animated?: boolean }) => void } | null>(null);
+    const carouselRef = useRef<ICarouselInstance | null>(null);
 
     const prev = () => {
         const newIdx = Math.max(0, selectedIndex - 1);

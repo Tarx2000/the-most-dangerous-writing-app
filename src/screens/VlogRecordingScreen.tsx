@@ -83,7 +83,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseAnim.value }));
     const stopBtnStyle = useAnimatedStyle(() => ({ transform: [{ translateY: stopBtnSlide.value }] }));
 
-    const { saveVlog, updateVlog } = useVlogs();
+    const { saveVlog } = useVlogs();
     const { vlogQuality, compressionPreset } = usePreferences();
 
     /* ── Compression progress (0.0 → 1.0) ─────────────────────────────── */
@@ -115,135 +115,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         if (phase === 'permissions') {
             checkPermissions();
         }
-    }, [phase, cameraPermission, micPermission]);
-
-    /* ── 3-2-1 Countdown Animation ─────────────────────────────────────── */
-    useEffect(() => {
-        if (phase !== 'countdown') return;
-
-        let count = COUNTDOWN_SECONDS;
-        setCountdownNum(count);
-
-        /** Animate a single countdown number: scale up + fade in, then fade out */
-        const animateNumber = () => {
-            countdownScale.value = 0.3;
-            countdownOpacity.value = 0;
-
-            countdownScale.value = withSpring(1, { damping: 12, stiffness: 180 });
-            countdownOpacity.value = withTiming(1, { duration: 200 });
-
-            vibrate(50);
-        };
-
-        animateNumber();
-
-        countdownRef.current = setInterval(() => {
-            count--;
-            if (count > 0) {
-                setCountdownNum(count);
-                animateNumber();
-            } else {
-                // Countdown complete — start recording
-                clearInterval(countdownRef.current!);
-                countdownRef.current = null;
-                startRecording();
-            }
-        }, 1000);
-
-        return () => {
-            if (countdownRef.current) clearInterval(countdownRef.current);
-        };
-    }, [phase]);
-
-    /* ── Pulsing recording dot ─────────────────────────────────────────── */
-    useEffect(() => {
-        if (phase !== 'recording' && phase !== 'canStop') return;
-
-        pulseAnim.value = withRepeat(
-            withSequence(
-                withTiming(0.4, { duration: PULSE_DURATION_MS / 2 }),
-                withTiming(1, { duration: PULSE_DURATION_MS / 2 })
-            ),
-            -1,
-            false
-        );
-
-        return () => {
-            cancelAnimation(pulseAnim);
-            pulseAnim.value = 1;
-        };
-    }, [phase, pulseAnim]);
-
-    /* ── Start recording ───────────────────────────────────────────────── */
-    const startRecording = useCallback(async () => {
-        if (!cameraRef.current || isRecordingRef.current) return;
-
-        setPhase('recording');
-        setTimeRemaining(totalDurationSec);
-        isRecordingRef.current = true;
-        isCancelledRef.current = false;
-        elapsedRef.current = 0;
-
-        // Start the countdown timer
-        let remaining = totalDurationSec;
-        timerRef.current = setInterval(() => {
-            remaining--;
-            elapsedRef.current++;
-            setTimeRemaining(remaining);
-
-            if (remaining <= 0) {
-                // Timer complete — show stop button, but DON'T stop recording
-                clearInterval(timerRef.current!);
-                timerRef.current = null;
-                setPhase('canStop');
-                vibrate([0, 100, 50, 100]); // Double vibrate to signal timer done
-
-                // Slide in the stop button
-                stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
-            }
-        }, TIMER_TICK_MS);
-
-        // Actually start the camera recording (no maxDuration — we control stopping)
-        try {
-            const video = await cameraRef.current.recordAsync({});
-
-            // This promise resolves when stopRecording() is called
-            if (video?.uri) {
-                await handleRecordingComplete(video.uri);
-            }
-        } catch (err) { console.error('Recording error:', err); isRecordingRef.current = false; Alert.alert('Recording Failed', 'Unable to record video. Please try again.', [{ text: 'OK' }]); navigation.goBack(); }
-    }, [totalDurationSec]);
-
-    /* ── Stop recording (user taps stop button after timer completes) ─── */
-    const stopRecording = useCallback(() => {
-        if (!isRecordingRef.current) return;
-        setPhase('saving');
-        cameraRef.current?.stopRecording();
-    }, []);
-
-    /**
-     * Cancel recording — stops camera, discards the video file, and navigates back.
-     * Called when user taps the X button before the timer completes.
-     */
-    const cancelRecording = useCallback(() => {
-        isCancelledRef.current = true;
-        if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-        }
-        if (countdownRef.current) {
-            clearInterval(countdownRef.current);
-            countdownRef.current = null;
-        }
-        if (isRecordingRef.current) {
-            // Stop the camera — recordAsync promise will resolve, but handleRecordingComplete
-            // will check isCancelledRef and skip saving
-            cameraRef.current?.stopRecording();
-        } else {
-            // Not recording yet (still in countdown) — just navigate back
-            navigation.goBack();
-        }
-    }, [navigation]);
+    }, [phase, cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
 
     /* ── Handle completed recording — save to private storage ──────────── */
     const compressionPresetRef = useRef(compressionPreset);
@@ -348,6 +220,139 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             });
         } catch (err) { console.error('Failed to save vlog:', err); setPhase('idle'); Alert.alert('Save Failed', 'Unable to save your recording. Please try again.', [{ text: 'OK' }]); }
     }, [saveVlog, navigation]);
+
+    /* ── Start recording ───────────────────────────────────────────────── */
+    const startRecording = useCallback(async () => {
+        if (!cameraRef.current || isRecordingRef.current) return;
+
+        setPhase('recording');
+        setTimeRemaining(totalDurationSec);
+        isRecordingRef.current = true;
+        isCancelledRef.current = false;
+        elapsedRef.current = 0;
+
+        // Start the countdown timer
+        let remaining = totalDurationSec;
+        timerRef.current = setInterval(() => {
+            remaining--;
+            elapsedRef.current++;
+            setTimeRemaining(remaining);
+
+            if (remaining <= 0) {
+                // Timer complete — show stop button, but DON'T stop recording
+                if (timerRef.current) {
+                    clearInterval(timerRef.current);
+                }
+                timerRef.current = null;
+                setPhase('canStop');
+                vibrate([0, 100, 50, 100]); // Double vibrate to signal timer done
+
+                // Slide in the stop button
+                stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
+            }
+        }, TIMER_TICK_MS);
+
+        // Actually start the camera recording (no maxDuration — we control stopping)
+        try {
+            const video = await cameraRef.current.recordAsync({});
+
+            // This promise resolves when stopRecording() is called
+            if (video?.uri) {
+                await handleRecordingComplete(video.uri);
+            }
+        } catch (err) { console.error('Recording error:', err); isRecordingRef.current = false; Alert.alert('Recording Failed', 'Unable to record video. Please try again.', [{ text: 'OK' }]); navigation.goBack(); }
+    }, [totalDurationSec, handleRecordingComplete, navigation, stopBtnSlide]);
+
+    /* ── Stop recording (user taps stop button after timer completes) ─── */
+    const stopRecording = useCallback(() => {
+        if (!isRecordingRef.current) return;
+        setPhase('saving');
+        cameraRef.current?.stopRecording();
+    }, []);
+
+    /**
+     * Cancel recording — stops camera, discards the video file, and navigates back.
+     * Called when user taps the X button before the timer completes.
+     */
+    const cancelRecording = useCallback(() => {
+        isCancelledRef.current = true;
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+        if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+        }
+        if (isRecordingRef.current) {
+            // Stop the camera — recordAsync promise will resolve, but handleRecordingComplete
+            // will check isCancelledRef and skip saving
+            cameraRef.current?.stopRecording();
+        } else {
+            // Not recording yet (still in countdown) — just navigate back
+            navigation.goBack();
+        }
+    }, [navigation]);
+
+    /* ── 3-2-1 Countdown Animation ─────────────────────────────────────── */
+    useEffect(() => {
+        if (phase !== 'countdown') return;
+
+        let count = COUNTDOWN_SECONDS;
+        setCountdownNum(count);
+
+        /** Animate a single countdown number: scale up + fade in, then fade out */
+        const animateNumber = () => {
+            countdownScale.value = 0.3;
+            countdownOpacity.value = 0;
+
+            countdownScale.value = withSpring(1, { damping: 12, stiffness: 180 });
+            countdownOpacity.value = withTiming(1, { duration: 200 });
+
+            vibrate(50);
+        };
+
+        animateNumber();
+
+        countdownRef.current = setInterval(() => {
+            count--;
+            if (count > 0) {
+                setCountdownNum(count);
+                animateNumber();
+            } else {
+                // Countdown complete — start recording
+                if (countdownRef.current) {
+                    clearInterval(countdownRef.current);
+                }
+                countdownRef.current = null;
+                startRecording();
+            }
+        }, 1000);
+
+        return () => {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, startRecording]);
+
+    /* ── Pulsing recording dot ─────────────────────────────────────────── */
+    useEffect(() => {
+        if (phase !== 'recording' && phase !== 'canStop') return;
+
+        pulseAnim.value = withRepeat(
+            withSequence(
+                withTiming(0.4, { duration: PULSE_DURATION_MS / 2 }),
+                withTiming(1, { duration: PULSE_DURATION_MS / 2 })
+            ),
+            -1,
+            false
+        );
+
+        return () => {
+            cancelAnimation(pulseAnim);
+            pulseAnim.value = 1;
+        };
+    }, [phase, pulseAnim]);
 
     /* ── Cleanup timers on unmount ──────────────────────────────────────── */
     useEffect(() => {
@@ -494,7 +499,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
                                 <View style={styles.topBarTint} />
                                 <View style={styles.compressionRing}>
-                                    <View style={[styles.compressionRingFill, { 
+                                    <View style={[styles.compressionRingFill, {
                                         transform: [{ rotate: `${compressionProgress * 360}deg` }],
                                     }]} />
                                     <Text style={styles.compressionPercent}>

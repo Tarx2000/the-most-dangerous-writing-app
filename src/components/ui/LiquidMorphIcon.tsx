@@ -89,7 +89,7 @@ function parseColorStr(c: string): [number, number, number, number] {
     if (c.startsWith('#')) {
         let hex = c.replace('#', '');
         if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
-        return [parseInt(hex.slice(0,2), 16), parseInt(hex.slice(2,4), 16), parseInt(hex.slice(4,6), 16), 1];
+        return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16), 1];
     }
     if (c.startsWith('rgba') || c.startsWith('rgb')) {
         const parts = c.replace(/rgba?\(|\)/g, '').split(',').map(x => parseFloat(x));
@@ -156,13 +156,10 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
     const pathStringRef = useRef<string>(PATHS[mode]);
 
     /** Direct ref to the native <Path> element for setNativeProps */
-    interface NativeRef {
-        setNativeProps: (props: Record<string, unknown>) => void;
-    }
-    const pathRef = useRef<NativeRef | null>(null);
+    const pathRef = useRef<any>(null);
 
     /** Direct ref to the wrapper <View> element for scale bouncing */
-    const viewRef = useRef<NativeRef | null>(null);
+    const viewRef = useRef<any>(null);
 
     /** Active animation frame ID for shape morphs */
     const rafIdRef = useRef<number | null>(null);
@@ -178,7 +175,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
     useEffect(() => {
         if (color !== targetColorStr.current) {
             if (colorRafIdRef.current) cancelAnimationFrame(colorRafIdRef.current);
-            
+
             const startColor = currentColorStr.current;
             const endColor = color;
             targetColorStr.current = color;
@@ -187,10 +184,10 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
             const animateColor = () => {
                 const elapsed = performance.now() - startTime;
                 const progress = Math.min(elapsed / 150, 1);
-                
+
                 // cubic-out
-                const easedT = progress < 0.5 
-                    ? 4 * progress * progress * progress 
+                const easedT = progress < 0.5
+                    ? 4 * progress * progress * progress
                     : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
                 const interpolated = lerpColor(startColor, endColor, easedT);
@@ -206,7 +203,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
                     colorRafIdRef.current = null;
                 }
             };
-            
+
             colorRafIdRef.current = requestAnimationFrame(animateColor);
         }
 
@@ -285,7 +282,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
             const startTime = performance.now();
             const animate = () => {
                 const elapsed = performance.now() - startTime;
-                
+
                 // Morph Progress runs 0-1
                 const progress = Math.min(elapsed / MORPH_DURATION_MS, 1);
                 const frameIndex = Math.round(progress * FRAME_COUNT);

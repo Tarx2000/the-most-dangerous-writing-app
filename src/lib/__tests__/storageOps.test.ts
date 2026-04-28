@@ -53,10 +53,12 @@ jest.mock('@/lib/repositories/settingsRepository', () => ({
     deleteAllSettings: jest.fn(() => Promise.resolve()),
 }));
 
-import {
-    createNotesOps, createPersonsOps, createFeedOps,
-} from '../storageOps';
+import { createNotesOps, createPersonsOps, createFeedOps } from '../storageOps';
 import { safeParse } from '../dataLoaders';
+import { Person, SavedNote } from '@/types';
+
+type Ref<T> = { current: T };
+type Setter<T> = (val: T | ((prev: T) => T)) => void;
 import {
     insertNote as repoInsertNote,
 } from '@/lib/repositories/notesRepository';

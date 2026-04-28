@@ -3,12 +3,19 @@ import { storage } from '@/lib/storage';
 
 const DB_NAME = 'mda_v2.db';
 let dbInstance: SQLiteDatabase | null = null;
+let dbOpeningPromise: Promise<SQLiteDatabase> | null = null;
 
 export async function getDb(): Promise<SQLiteDatabase> {
     if (dbInstance) return dbInstance;
-    dbInstance = await openDatabaseAsync(DB_NAME);
-    await migrate(dbInstance);
-    return dbInstance;
+    if (dbOpeningPromise) return dbOpeningPromise;
+
+    dbOpeningPromise = openDatabaseAsync(DB_NAME).then(async (db) => {
+        await migrate(db);
+        dbInstance = db;
+        return db;
+    });
+
+    return dbOpeningPromise;
 }
 
 export async function closeDb(): Promise<void> {
@@ -16,6 +23,7 @@ export async function closeDb(): Promise<void> {
         await dbInstance.closeAsync();
         dbInstance = null;
     }
+    dbOpeningPromise = null;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
