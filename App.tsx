@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,10 +11,11 @@ import { VlogRecordingScreen } from './src/screens/VlogRecordingScreen';
 import { SandboxScreen } from './src/screens/SandboxScreen';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
-import { StorageProvider } from '@/lib/hooks/useStorage';
+import { StorageProvider, useAiConfig } from '@/lib/hooks/useStorage';
 import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
 import { PinProvider } from '@/lib/hooks/usePinProvider';
 import { PinPadModal } from '@/components/ui/PinPadModal';
+import { ApiKeySetupModal } from '@/components/features/settings/ApiKeySetupModal';
 import { ErrorBoundary, withErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useFonts } from 'expo-font';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
@@ -28,6 +29,7 @@ import { DMSans_400Regular } from '@expo-google-fonts/dm-sans';
 import { EagleLake_400Regular } from '@expo-google-fonts/eagle-lake';
 import { mark as perfMark } from '@/lib/perf';
 import { theme } from '@/styles/theme';
+import { isApiKeyConfigured } from '@/config/ai';
 
 // Initialize global haptics middleware
 
@@ -66,6 +68,47 @@ if (typeof globalThis !== 'undefined') {
   }
 }
 
+/**
+ * Inner gate that shows the API key setup modal on first launch.
+ * Lives inside StorageProvider so it can read/write aiConfig.
+ */
+function AiConfigGate() {
+  const { aiApiKey, aiBaseUrl, aiModel, saveAiApiKey, saveAiBaseUrl, saveAiModel } = useAiConfig();
+  const [hasSkipped, setHasSkipped] = useState(false);
+
+  const showSetup = !hasSkipped && !isApiKeyConfigured({ apiKey: aiApiKey });
+
+  return (
+    <>
+      <NavigationContainer theme={DarkTheme}>
+        <StatusBar hidden={true} translucent={true} />
+        <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: theme.colors.background } }}>
+          <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
+          <Stack.Screen name="Writing" component={withErrorBoundary(WritingScreen)} />
+          <Stack.Screen name="PostWriting" component={withErrorBoundary(PostWritingScreen)} />
+          <Stack.Screen name="VisionBoard" component={withErrorBoundary(VisionBoardScreen)} />
+          <Stack.Screen name="AlignmentWriting" component={withErrorBoundary(AlignmentWritingScreen)} />
+          <Stack.Screen name="VlogRecording" component={withErrorBoundary(VlogRecordingScreen)} />
+          <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
+        </Stack.Navigator>
+      </NavigationContainer>
+      <PinPadModal />
+      <ApiKeySetupModal
+        visible={showSetup}
+        initialKey={aiApiKey}
+        initialBaseUrl={aiBaseUrl}
+        initialModel={aiModel}
+        onSave={(key, url, m) => {
+          saveAiApiKey(key);
+          saveAiBaseUrl(url);
+          saveAiModel(m);
+        }}
+        onSkip={() => setHasSkipped(true)}
+      />
+    </>
+  );
+}
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function AppContent() {
@@ -97,19 +140,7 @@ function AppContent() {
       <StorageProvider>
         <PinProvider>
           <AiQueueProvider>
-            <NavigationContainer theme={DarkTheme}>
-            <StatusBar hidden={true} translucent={true} />
-            <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: theme.colors.background } }}>
-              <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
-              <Stack.Screen name="Writing" component={withErrorBoundary(WritingScreen)} />
-              <Stack.Screen name="PostWriting" component={withErrorBoundary(PostWritingScreen)} />
-              <Stack.Screen name="VisionBoard" component={withErrorBoundary(VisionBoardScreen)} />
-              <Stack.Screen name="AlignmentWriting" component={withErrorBoundary(AlignmentWritingScreen)} />
-              <Stack.Screen name="VlogRecording" component={withErrorBoundary(VlogRecordingScreen)} />
-              <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
-            </Stack.Navigator>
-          </NavigationContainer>
-          <PinPadModal />
+            <AiConfigGate />
           </AiQueueProvider>
         </PinProvider>
       </StorageProvider>

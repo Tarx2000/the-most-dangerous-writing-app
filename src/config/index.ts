@@ -65,10 +65,10 @@ export const CONFIG = {
      * 'balanced' is the default — ~60% file size reduction with great quality.
      */
     VLOG_COMPRESSION_PRESETS: [
-        { id: 'off',      label: 'Off (Raw)',       desc: 'No compression — largest files, original quality',  maxSize: 0,    bitrate: 0 },
-        { id: 'light',    label: 'Light',           desc: '~40% smaller, virtually identical quality',         maxSize: 1920, bitrate: 4_000_000 },
-        { id: 'balanced', label: 'Balanced',         desc: '~60% smaller, great quality (recommended)',        maxSize: 1080, bitrate: 2_500_000 },
-        { id: 'max',      label: 'Maximum Savings',  desc: '~80% smaller, good quality, smaller resolution',   maxSize: 720,  bitrate: 1_200_000 },
+        { id: 'off', label: 'Off (Raw)', desc: 'No compression — largest files, original quality', maxSize: 0, bitrate: 0 },
+        { id: 'light', label: 'Light', desc: '~40% smaller, virtually identical quality', maxSize: 1920, bitrate: 4_000_000 },
+        { id: 'balanced', label: 'Balanced', desc: '~60% smaller, great quality (recommended)', maxSize: 1080, bitrate: 2_500_000 },
+        { id: 'max', label: 'Maximum Savings', desc: '~80% smaller, good quality, smaller resolution', maxSize: 720, bitrate: 1_200_000 },
     ] as const,
 
     /**
@@ -77,7 +77,7 @@ export const CONFIG = {
      * appropriate capture bitrate that balances quality and raw file size.
      */
     VLOG_BITRATE_MAP: {
-        '720p':  2_500_000,
+        '720p': 2_500_000,
         '1080p': 4_500_000,
         '2160p': 12_000_000,
     } as Record<string, number>,
@@ -87,6 +87,16 @@ export const CONFIG = {
 
     /** AsyncStorage key for storing the fallback 4-digit security PIN */
     SECURITY_PIN_KEY: '@mda_security_pin',
+
+    /* ── PIN Rate Limiting ─────────────────────────────────────────────── */
+    /** AsyncStorage key for tracking consecutive failed PIN attempts */
+    PIN_ATTEMPT_COUNT_KEY: '@mda_pin_attempt_count',
+    /** AsyncStorage key for storing the timestamp when PIN lockout expires */
+    PIN_LOCKOUT_UNTIL_KEY: '@mda_pin_lockout_until',
+    /** Number of failed PIN attempts before triggering a lockout */
+    PIN_MAX_ATTEMPTS: 3,
+    /** Lockout duration in milliseconds after max failed attempts */
+    PIN_LOCKOUT_DURATION_MS: 30_000,
 
     /* ── Check-in urgency ────────────────────────────────────────────── */
     /** Days before a check-in is flagged as urgent in the UI */

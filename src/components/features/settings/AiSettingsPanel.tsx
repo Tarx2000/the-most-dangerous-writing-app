@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
-import { View, Text, TextInput, ActivityIndicator, Platform, StyleSheet
+import React, { useRef, useState } from 'react';
+import {
+    View, Text, TextInput, ActivityIndicator, Platform, StyleSheet
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -7,6 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { pingServer } from '@/lib/aiService';
+import { ApiKeySetupModal } from './ApiKeySetupModal';
 import type { SavedNote, AiQueueState } from '@/types';
 
 type AiSettingsPanelProps = {
@@ -19,6 +21,7 @@ type AiSettingsPanelProps = {
         autoGenerateSummaries: boolean;
         saveAiApiKey: (key: string) => Promise<void>;
         saveAiBaseUrl: (url: string) => Promise<void>;
+        saveAiModel: (model: string) => Promise<void>;
         updateAutoGenerateSummaries: (val: boolean) => Promise<void>;
     };
     queueState: AiQueueState;
@@ -50,29 +53,46 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     handleBatchProcess,
     setChoosingModelFor
 }: AiSettingsPanelProps) {
-    const apiKeyRef = useRef(aiConfig.aiApiKey);
     const baseUrlRef = useRef(aiConfig.aiBaseUrl);
+    const [showKeyModal, setShowKeyModal] = useState(false);
 
     return (
         <View style={styles.container}>
+            <ApiKeySetupModal
+                visible={showKeyModal}
+                initialKey={aiConfig.aiApiKey}
+                initialBaseUrl={aiConfig.aiBaseUrl}
+                initialModel={aiConfig.aiModel}
+                onSave={async (key, url, m) => {
+                    await aiConfig.saveAiApiKey(key);
+                    await aiConfig.saveAiBaseUrl(url);
+                    await aiConfig.saveAiModel(m);
+                    setShowKeyModal(false);
+                }}
+                onSkip={() => setShowKeyModal(false)}
+            />
+
             <View style={styles.headerRow}>
                 <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
                 <Text style={[commonStyles.settingsLabel, styles.headerTitle]}>AI Settings</Text>
             </View>
             <Text style={styles.subheading}>Ollama Cloud API</Text>
 
-            {/* API Key */}
-            <Text style={styles.fieldLabel}>API Key</Text>
-            <TextInput
-                style={styles.apiKeyInput}
-                defaultValue={aiConfig.aiApiKey}
-                onChangeText={(text) => apiKeyRef.current = text}
-                onEndEditing={() => aiConfig.saveAiApiKey(apiKeyRef.current)}
-                secureTextEntry
-                placeholder="Enter API key"
-                placeholderTextColor={theme.colors.textMuted}
-                autoCapitalize="none"
-            />
+            {/* API Key — now read-only with a Change button */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Text style={styles.fieldLabel}>API Key</Text>
+                <AnimatedScaleButton
+                    style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: theme.colors.glassSurface }}
+                    onPress={() => setShowKeyModal(true)}
+                >
+                    <Text style={{ color: theme.colors.primaryAction, fontSize: 11, fontWeight: '600' }}>Change</Text>
+                </AnimatedScaleButton>
+            </View>
+            <View style={[styles.apiKeyInput, { justifyContent: 'center' }]}>
+                <Text style={{ color: aiConfig.aiApiKey ? theme.colors.textPrimary : theme.colors.textMuted, fontSize: 13, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>
+                    {aiConfig.aiApiKey ? `${aiConfig.aiApiKey.slice(0, 8)}••••••••••••` : 'Not configured — tap Change to set up'}
+                </Text>
+            </View>
 
             {/* Model Selection (Summary/Title) */}
             <Text style={styles.modelFieldLabel}>Summary & Title Model</Text>
