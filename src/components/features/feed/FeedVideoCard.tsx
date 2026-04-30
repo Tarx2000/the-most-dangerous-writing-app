@@ -5,6 +5,7 @@ import {
     Image,
     StyleSheet,
     Pressable,
+    DeviceEventEmitter,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -72,6 +73,7 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
 
     const flashOpacity = useSharedValue(0);
     const [flashIcon, setFlashIcon] = useState<'volume-off' | 'volume-high'>('volume-off');
+    const [videoViewKey, setVideoViewKey] = useState(0);
     const videoRef = React.useRef<View>(null);
 
     /**
@@ -172,6 +174,27 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
         }
     }, [vlog.thumbnailPath, isPlaying, getThumbnail, vlog]);
 
+    /** Force-remount VideoView when the shared player returns from the modal.
+     *  expo-video can only attach a player to one VideoView at a time.
+     *  When the modal steals it, the feed's VideoView becomes a zombie.
+     *  Changing the key creates a fresh native view that re-attaches. */
+    useEffect(() => {
+        let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+        const subscription = DeviceEventEmitter.addListener('VLOG_MODAL_CLOSED', (event: { vlogId: string }) => {
+            if (event.vlogId === vlog.id && autoPlay) {
+                setIsPlaying(true);
+                setVideoViewKey(k => k + 1);
+                resumeTimer = setTimeout(() => {
+                    try { player.play(); } catch { /* ignore */ }
+                }, 250);
+            }
+        });
+        return () => {
+            subscription.remove();
+            if (resumeTimer) clearTimeout(resumeTimer);
+        };
+    }, [autoPlay, vlog.id, player]);
+
     return (
         <View style={styles.card}>
             <View style={styles.leftColumn}>
@@ -196,6 +219,7 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
                         </View>
                     ) : (
                         <VideoView
+                            key={videoViewKey}
                             style={[styles.videoPlayer, { position: 'absolute' as const, pointerEvents: 'none' as const }]}
                             player={player}
                             nativeControls={false}

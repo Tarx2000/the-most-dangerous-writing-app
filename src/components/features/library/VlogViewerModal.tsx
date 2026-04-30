@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View,
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import {
+    View,
     Text,
     StyleSheet,
     useWindowDimensions,
     Modal,
+    Pressable,
 } from 'react-native';
 
 import { vibrate } from '@/lib/haptics';
@@ -45,28 +47,45 @@ export interface VlogViewerModalProps {
     onDelete?: (id: string) => void;
 }
 
+interface InternalVlogPlayerProps {
+    uri: string;
+}
+
+const InternalVlogPlayer = React.memo(({ uri }: InternalVlogPlayerProps) => {
+    const player = useVideoPlayer(uri, p => {
+        p.loop = true;
+        p.play();
+    });
+
+    return (
+        <VideoView
+            style={styles.videoPlayer}
+            player={player}
+            nativeControls={false}
+            contentFit="contain"
+        />
+    );
+});
+
 interface VlogPlayerProps {
     uri: string;
     sharedPlayer?: VideoPlayer;
 }
 
+/** Only creates an internal player when no shared player is provided.
+ *  Prevents allocating an orphaned native player instance. */
 const VlogPlayer = React.memo(({ uri, sharedPlayer }: VlogPlayerProps) => {
-    const internalPlayer = useVideoPlayer(uri, p => {
-        if (!sharedPlayer) {
-            p.loop = true;
-            p.play();
-        }
-    });
-
-    const activePlayer = sharedPlayer || internalPlayer;
-
-    return (
-        <VideoView
-            style={styles.videoPlayer}
-            player={activePlayer}
-            nativeControls
-        />
-    );
+    if (sharedPlayer) {
+        return (
+            <VideoView
+                style={styles.videoPlayer}
+                player={sharedPlayer}
+                nativeControls={false}
+                contentFit="contain"
+            />
+        );
+    }
+    return <InternalVlogPlayer uri={uri} />;
 });
 
 const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
@@ -74,7 +93,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     vlogs,
     initialIndex = 0,
     sourceRect,
-    player,
+    player: sharedPlayer,
     onClose,
     onDelete,
 }) => {
@@ -97,10 +116,21 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const panX = useSharedValue(0);
     const panY = useSharedValue(0);
 
+    // Player state for custom controls
+    const [isPlaying, setIsPlaying] = useState(true);
+    const [isMuted, setIsMuted] = useState(false);
+    const [showControls, setShowControls] = useState(true);
+    const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const activePlayer = sharedPlayer || null;
+
     useEffect(() => {
         if (visible) {
             setIsRendered(true);
             setExpandedIndex(initialIndex);
+            setIsPlaying(true);
+            setIsMuted(false);
+            setShowControls(true);
             progress.value = 0;
             panX.value = 0;
             panY.value = 0;
@@ -114,21 +144,33 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         }
     }, [visible, initialIndex, panX, panY, progress]);
 
+    /** Auto-hide controls after 3s of inactivity */
+    const scheduleControlsHide = useCallback(() => {
+        if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+        controlsTimerRef.current = setTimeout(() => {
+            setShowControls(false);
+        }, 3000);
+    }, []);
+
+    useEffect(() => {
+        if (showControls) scheduleControlsHide();
+        return () => {
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+        };
+    }, [showControls, scheduleControlsHide]);
+
     const handleCloseInternal = useCallback(() => {
-        // Animate out natively, then tell parent to close
-        // We only animate the scale/progress back to 0
         progress.value = withTiming(0, { duration: 250 }, (finished) => {
             if (finished) {
                 runOnJS(setIsRendered)(false);
                 runOnJS(onClose)();
             }
         });
-        // Reset pan translation to origin smoothly
         panX.value = withTiming(0, { duration: 250 });
         panY.value = withTiming(0, { duration: 250 });
     }, [onClose, panX, panY, progress]);
 
-    // Handle swipe to dismiss
+    // Handle swipe to dismiss (only on the card, not the backdrop)
     const panGesture = useMemo(() => Gesture.Pan()
         .onUpdate((e) => {
             panX.value = e.translationX;
@@ -144,12 +186,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             }
         }), [handleCloseInternal, panX, panY]);
 
+    // Backdrop tap — only closes when tapping outside the card
     const backdropTapGesture = useMemo(() => Gesture.Tap()
         .onEnd(() => {
             runOnJS(handleCloseInternal)();
         }), [handleCloseInternal]);
-
-    const combinedGesture = Gesture.Simultaneous(panGesture, backdropTapGesture);
 
     const swipeVlog = useCallback((direction: number) => {
         const newIdx = expandedIndex + direction;
@@ -186,9 +227,47 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         }
     };
 
+    /** Toggle play/pause on the active player */
+    const togglePlayPause = useCallback(() => {
+        if (!activePlayer) return;
+        if (isPlaying) {
+            try { activePlayer.pause(); } catch { /* ignore */ }
+            setIsPlaying(false);
+        } else {
+            try { activePlayer.play(); } catch { /* ignore */ }
+            setIsPlaying(true);
+        }
+        vibrate(10);
+        setShowControls(true);
+        scheduleControlsHide();
+    }, [activePlayer, isPlaying, scheduleControlsHide]);
+
+    /** Toggle mute on the active player */
+    const toggleMute = useCallback(() => {
+        if (!activePlayer) return;
+        const nextMuted = !isMuted;
+        try { activePlayer.volume = nextMuted ? 0 : 1; } catch { /* ignore */ }
+        setIsMuted(nextMuted);
+        vibrate(10);
+        setShowControls(true);
+        scheduleControlsHide();
+    }, [activePlayer, isMuted, scheduleControlsHide]);
+
+    /** Skip forward/backward 10 seconds */
+    const skip = useCallback((seconds: number) => {
+        if (!activePlayer) return;
+        try {
+            const current = activePlayer.currentTime;
+            const target = Math.max(0, Math.min(activePlayer.duration, current + seconds));
+            activePlayer.currentTime = target;
+        } catch { /* ignore */ }
+        vibrate(10);
+        setShowControls(true);
+        scheduleControlsHide();
+    }, [activePlayer, scheduleControlsHide]);
+
     // Card Animated Style (morphing width, height, top, left + pan dragging)
     const cardAnimatedStyle = useAnimatedStyle(() => {
-        // Fallback rect if none provided (e.g., center screen scale effect)
         const sr = sourceRect || {
             x: SCREEN_WIDTH / 2 - 10,
             y: SCREEN_HEIGHT / 2 - 10,
@@ -202,7 +281,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         const currentHeight = interpolate(progress.value, [0, 1], [sr.height, CARD_HEIGHT]);
         const currentBorderRadius = interpolate(progress.value, [0, 1], [12, 28]);
 
-        // Drag effect: scale down slightly based on pan drag distance
         const dragDist = Math.sqrt(panX.value ** 2 + panY.value ** 2);
         const dragScale = interpolate(dragDist, [0, 300], [1, 0.85], Extrapolation.CLAMP);
 
@@ -233,37 +311,112 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
     if (!isRendered || !vlogs[expandedIndex]) return null;
 
+    const currentVlog = vlogs[expandedIndex];
+
     return (
         <Modal visible transparent animationType="none" onRequestClose={handleCloseInternal}>
-            <Animated.View style={[styles.expandedBackdrop, backdropAnimatedStyle]} />
+            {/* Backdrop — tap to close, separate from card gestures */}
+            <GestureDetector gesture={backdropTapGesture}>
+                <Animated.View style={[styles.expandedBackdrop, backdropAnimatedStyle]} />
+            </GestureDetector>
 
-            <GestureDetector gesture={combinedGesture}>
-                <Animated.View style={StyleSheet.absoluteFillObject}>
-                    <Animated.View 
+            {/* Card — contains video, custom controls, info bar, swipe nav */}
+            <GestureDetector gesture={panGesture}>
+                <Animated.View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+                    <Animated.View
                         style={[styles.expandedCard, cardAnimatedStyle]}
-                        onStartShouldSetResponder={() => true}
-                        onResponderTerminationRequest={() => false}
+                        pointerEvents="auto"
                     >
                         <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
                         <View style={styles.expandedTint} />
 
-                        {/* Video Player Area */}
-                        <View style={styles.expandedVideoContainer} pointerEvents="auto">
-                            <VlogPlayer uri={vlogs[expandedIndex].filePath} sharedPlayer={player} />
-                            
+                        {/* Video Player Area with Custom Controls */}
+                        <View style={styles.expandedVideoContainer}>
+                            <VlogPlayer uri={currentVlog.filePath} sharedPlayer={sharedPlayer} />
+
+                            {/* Tap overlay to toggle controls visibility */}
+                            <Pressable
+                                style={StyleSheet.absoluteFillObject}
+                                onPress={() => {
+                                    setShowControls(prev => !prev);
+                                    if (!showControls) scheduleControlsHide();
+                                }}
+                            />
+
+                            {/* Top-right mute button */}
+                            {showControls && (
+                                <View style={styles.muteBtnContainer} pointerEvents="box-none">
+                                    <AnimatedScaleButton
+                                        style={styles.controlIconBtn}
+                                        onPress={toggleMute}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={isMuted ? 'volume-off' : 'volume-high'}
+                                            size={20}
+                                            color={theme.colors.textPrimary}
+                                        />
+                                    </AnimatedScaleButton>
+                                </View>
+                            )}
+
+                            {/* Center play/pause + skip controls */}
+                            {showControls && (
+                                <View style={styles.centerControls} pointerEvents="box-none">
+                                    <AnimatedScaleButton
+                                        style={[styles.controlIconBtn, styles.skipBtn]}
+                                        onPress={() => skip(-10)}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name="rewind-10"
+                                            size={28}
+                                            color={theme.colors.textPrimary}
+                                        />
+                                    </AnimatedScaleButton>
+
+                                    <AnimatedScaleButton
+                                        style={[styles.controlIconBtn, styles.playPauseBtn]}
+                                        onPress={togglePlayPause}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={isPlaying ? 'pause' : 'play'}
+                                            size={36}
+                                            color={theme.colors.textPrimary}
+                                        />
+                                    </AnimatedScaleButton>
+
+                                    <AnimatedScaleButton
+                                        style={[styles.controlIconBtn, styles.skipBtn]}
+                                        onPress={() => skip(10)}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name="fast-forward-10"
+                                            size={28}
+                                            color={theme.colors.textPrimary}
+                                        />
+                                    </AnimatedScaleButton>
+                                </View>
+                            )}
+
+                            {/* Duration badge */}
+                            <View style={styles.durationBadge} pointerEvents="none">
+                                <Text style={styles.durationText}>
+                                    {formatDuration(currentVlog.durationSec)}
+                                </Text>
+                            </View>
+
                             {/* Dev watermark overlay */}
                             {devMode && (
                                 <View style={styles.devWatermark} pointerEvents="box-none">
                                     <Text style={styles.devWatermarkText}>
-                                        DEV: {vlogs[expandedIndex].compressionPreset || 'Uncompressed'}{' '}
-                                        {vlogs[expandedIndex].originalFileSizeBytes ? 
-                                            `(${Math.round(100 - (vlogs[expandedIndex].fileSizeBytes / vlogs[expandedIndex].originalFileSizeBytes) * 100)}% saved)`
+                                        DEV: {currentVlog.compressionPreset || 'Uncompressed'}{' '}
+                                        {currentVlog.originalFileSizeBytes ?
+                                            `(${Math.round(100 - (currentVlog.fileSizeBytes / currentVlog.originalFileSizeBytes) * 100)}% saved)`
                                             : ''
                                         }
                                     </Text>
-                                    {(vlogs[expandedIndex].compressionPreset === 'off' || !vlogs[expandedIndex].compressionPreset) && (
-                                        <AnimatedScaleButton 
-                                            style={styles.devCompressBtn} 
+                                    {(currentVlog.compressionPreset === 'off' || !currentVlog.compressionPreset) && (
+                                        <AnimatedScaleButton
+                                            style={styles.devCompressBtn}
                                             onPress={handleManualCompress}
                                         >
                                             <Text style={styles.devCompressBtnText}>
@@ -278,9 +431,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                         {/* Info bar */}
                         <View style={styles.expandedInfo}>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.expandedDate}>{vlogs[expandedIndex].dateStr}</Text>
+                                <Text style={styles.expandedDate}>{currentVlog.dateStr}</Text>
                                 <Text style={styles.expandedMeta}>
-                                    {formatDuration(vlogs[expandedIndex].durationSec)} • {(vlogs[expandedIndex].fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
+                                    {formatDuration(currentVlog.durationSec)} • {(currentVlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
                                 </Text>
                             </View>
 
@@ -314,7 +467,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                 <View style={{ flex: 1 }} />
                                 <AnimatedScaleButton
                                     style={styles.deleteBtn}
-                                    onPress={() => setShowDeleteConfirm(vlogs[expandedIndex].id)}
+                                    onPress={() => setShowDeleteConfirm(currentVlog.id)}
                                 >
                                     <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
                                     <Text style={styles.deleteBtnText}>Delete</Text>
@@ -398,6 +551,58 @@ const styles = StyleSheet.create({
         zIndex: 2,
         position: 'relative',
     },
+    videoPlayer: {
+        flex: 1,
+        width: '100%',
+    },
+
+    /* ── Custom Controls ─────────────────────────────────────────────── */
+    muteBtnContainer: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 10,
+    },
+    centerControls: {
+        ...StyleSheet.absoluteFillObject,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 24,
+        zIndex: 10,
+    },
+    controlIconBtn: {
+        backgroundColor: theme.colors.overlayVideoStrong,
+        padding: 10,
+        borderRadius: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    playPauseBtn: {
+        padding: 16,
+        borderRadius: 50,
+    },
+    skipBtn: {
+        padding: 12,
+        borderRadius: 40,
+    },
+    durationBadge: {
+        position: 'absolute',
+        bottom: 12,
+        left: 12,
+        backgroundColor: theme.colors.overlayVideoStrong,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+        zIndex: 5,
+    },
+    durationText: {
+        color: theme.colors.textPrimary,
+        fontSize: 12,
+        fontWeight: '700',
+    },
+
+    /* ── Dev Watermark ──────────────────────────────────────────────── */
     devWatermark: {
         position: 'absolute',
         top: 10,
@@ -427,10 +632,8 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: 'bold',
     },
-    videoPlayer: {
-        flex: 1,
-        width: '100%',
-    },
+
+    /* ── Info & Navigation ────────────────────────────────────────────── */
     expandedInfo: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -470,6 +673,8 @@ const styles = StyleSheet.create({
         minWidth: 30,
         textAlign: 'center',
     },
+
+    /* ── Actions ──────────────────────────────────────────────────────── */
     expandedActions: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -494,6 +699,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
 
+    /* ── Delete Modal ─────────────────────────────────────────────────── */
     deleteModalOverlay: {
         flex: 1,
         backgroundColor: theme.colors.overlayMedium,
@@ -537,5 +743,3 @@ const styles = StyleSheet.create({
         fontWeight: 'bold'
     }
 });
-
-

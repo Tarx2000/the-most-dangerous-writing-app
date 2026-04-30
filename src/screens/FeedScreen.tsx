@@ -12,6 +12,7 @@ import { vibrate } from '@/lib/haptics';
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
+import { BlurView } from 'expo-blur';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
@@ -570,9 +571,11 @@ const FeedScreenInner: React.FC<Props> = ({
             </GestureDetector>
             {isUnlocked && displayItems.length > 0 && (
                 <Animated.View style={[styles.scrollToTopBtn, scrollToTopButtonStyle]}>
-                    <AnimatedScaleButton style={styles.scrollToTopBtnInner} onPress={handleScrollToTop}>
-                        <MaterialCommunityIcons name="arrow-up" size={24} color={theme.colors.textPrimary} />
-                    </AnimatedScaleButton>
+                    <BlurView intensity={60} tint="dark" style={styles.scrollToTopBlur}>
+                        <AnimatedScaleButton style={styles.scrollToTopBtnInner} onPress={handleScrollToTop}>
+                            <MaterialCommunityIcons name="arrow-up" size={24} color={theme.colors.textPrimary} />
+                        </AnimatedScaleButton>
+                    </BlurView>
                 </Animated.View>
             )}
         </View>
@@ -767,13 +770,17 @@ const styles = StyleSheet.create({
         zIndex: 9999,
         pointerEvents: 'auto',
     },
+    scrollToTopBlur: {
+        borderRadius: 100,
+        overflow: 'hidden',
+        backgroundColor: theme.colors.glassSurfaceMedium,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
     scrollToTopBtnInner: {
         width: 48,
         height: 48,
         borderRadius: 100,
-        backgroundColor: theme.colors.glassBackground,
-        borderWidth: 1,
-        borderColor: theme.colors.glassBorder,
         justifyContent: 'center',
         alignItems: 'center',
     },

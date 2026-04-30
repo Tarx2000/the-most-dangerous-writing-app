@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import type { SavedNote, SavedVlog } from '@/types';
 import type { LayoutRect } from '@/components/features/library/VlogViewerModal';
 import type { VideoPlayer } from 'expo-video';
@@ -36,8 +37,13 @@ export function useHomeModals() {
     }, []);
 
     const handleCloseVlogModal = useCallback(() => {
+        // Emit event so the originating FeedVideoCard knows the shared player
+        // is being returned and must force-remount its VideoView.
+        if (viewVlogModal) {
+            DeviceEventEmitter.emit('VLOG_MODAL_CLOSED', { vlogId: viewVlogModal.id });
+        }
         setViewVlogModal(null);
-    }, []);
+    }, [viewVlogModal]);
 
     return {
         viewNoteModal,
