@@ -13,7 +13,7 @@ import { RichText } from '@/components/ui/RichText';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
 import { usePreferences } from '@/lib/hooks/useStorage';
-import type { SavedNote, SavedVlog, Person, AlignmentReflection } from '@/types';
+import type { SavedNote, SavedVlog, Person, AlignmentReflection, FeedItem, FeedItemType } from '@/types';
 import { isAlignmentReflection } from '@/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { getAlignmentScoreFeed } from '@/lib/alignmentScores';
@@ -25,34 +25,6 @@ const TWEET_THRESHOLD = 100;
 
 /** Max preview words shown for a story before "Read more" */
 const STORY_PREVIEW_WORDS = 50;
-
-/* ── TYPES ────────────────────────────────────────────────────────────────── */
-
-/**
- * FeedItemType — Visual classification of feed entries.
- * - tweet: short text entry (<100 words), shown in full
- * - story: long text entry (≥100 words), shown with preview + "Read more"
- * - clip: video journal entry
- * - checkin: alignment check-in with score
- */
-export type FeedItemType = 'tweet' | 'story' | 'clip' | 'checkin';
-
-/**
- * FeedItem — Unified feed entry wrapping all content types.
- * Sorted by timestamp for chronological display.
- */
-export interface FeedItem {
-    type: FeedItemType;
-    timestamp: number;
-    /** Text entry (journal, circle, or check-in) */
-    note?: SavedNote;
-    /** Video journal entry */
-    vlog?: SavedVlog;
-    /** Person name if this is a circle entry */
-    personName?: string;
-    /** Person object reference for avatar */
-    person?: Person;
-}
 
 /* ── COLOR ACCENTS — strong visual distinction per type ───────────────────── */
 

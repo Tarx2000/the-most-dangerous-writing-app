@@ -18,7 +18,7 @@ import { formatRelativeTime } from '@/lib/utils';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import type { SavedVlog } from '@/types';
-import type { FeedItem } from './FeedCard';
+import type { FeedItem } from '@/types';
 import type { LayoutRect } from '../library/VlogViewerModal';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */

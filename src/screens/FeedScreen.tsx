@@ -15,11 +15,11 @@ import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-na
 import { BlurView } from 'expo-blur';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import { FeedCard, FeedItem, FeedItemType } from '@/components/features/feed/FeedCard';
+import { FeedCard } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
 import { useNotes, useVlogs, usePersons, useFeedData } from '@/lib/hooks/useStorage';
 import { theme } from '@/styles/theme';
-import type { SavedNote, SavedVlog, Person } from '@/types';
+import type { SavedNote, SavedVlog, Person, FeedItem, FeedItemType } from '@/types';
 import { isAlignmentReflection } from '@/types';
 import type { LayoutRect } from '../components/features/library/VlogViewerModal';
 
