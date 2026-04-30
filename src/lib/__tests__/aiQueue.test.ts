@@ -64,6 +64,20 @@ describe('AiQueueManager', () => {
 
   const initQueue = () => aiQueue.initialize(mockGetAiConfig, mockGetNoteById, mockUpdateNote, mockGetAllNotes);
 
+  describe('pre-flight validation', () => {
+    it('should fail fast (not retry) when API key is missing', async () => {
+      const badConfig = () => ({ model: 'test', apiKey: '', baseUrl: 'http://test', prompts: { title: 't', summary: 's', grammar: 'g' } });
+      await aiQueue.initialize(badConfig, mockGetNoteById, mockUpdateNote, mockGetAllNotes);
+      await aiQueue.enqueueNote('n1', 'journal');
+      // Allow scheduled next tick to run
+      await new Promise(r => setTimeout(r, 200));
+      const allJobs = (aiQueue as any).jobs;
+      const job = allJobs.find((j: any) => j.noteId === 'n1');
+      expect(job?.status).toBe('failed');
+      expect(job?.error).toContain('API key');
+    });
+  });
+
   describe('isInitialized', () => {
     it('should be false before initialization', () => {
       expect(aiQueue.isInitialized).toBe(false);

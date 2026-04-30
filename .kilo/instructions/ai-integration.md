@@ -24,12 +24,15 @@ Ollama Cloud API uses `XMLHttpRequest` (not fetch) for progressive response read
 - `DEFAULT_AI_PROMPTS` is overridable at runtime via Dev Settings
 - `AI_AVAILABLE_MODELS` lists supported models
 - Base URL and model are user-configurable in settings
+- Queue validates `apiKey` and `baseUrl` are non-empty before starting any job; missing credentials fail fast without retries
 
 ## Retry & Error Handling
 - Failed jobs retry up to `AI_MAX_RETRIES` times, then move to end of queue
-- Network/timeout errors mark server as offline (`serverOnline = false`)
+- Missing API key or base URL fails immediately (no retries)
+- Network/timeout/auth errors mark server as offline (`serverOnline = false`)
 - Health checks resume automatically when server comes back online
 - Jobs in 'processing' status during app crash are recovered on next startup (`recoverOrphans()`)
+- Orphan recovery resets `retryCount` and `error` to ensure clean restart
 
 ## Cancellation
 - Individual job cancellation: `aiQueue.cancelJob(jobId)` — aborts in-flight XHR

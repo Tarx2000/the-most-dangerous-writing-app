@@ -26,6 +26,7 @@ import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
 import { logAi } from '@/lib/aiLogger';
+import { generateId } from '@/lib/utils';
 import {
     AI_STORAGE_KEYS,
     RATE_LIMIT_DELAY_MS,
@@ -270,7 +271,7 @@ class AiQueueManager {
         }
 
         const job: AiJob = {
-            id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: generateId(),
             noteId,
             category,
             status: 'queued',
@@ -335,7 +336,7 @@ class AiQueueManager {
         for (const { note, category } of categorized) {
             if (!this.jobs.some(j => j.noteId === note.id && j.status !== 'done' && j.status !== 'failed')) {
                 this.jobs.push({
-                    id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    id: generateId(),
                     noteId: note.id,
                     category,
                     status: 'queued',
@@ -476,10 +477,29 @@ class AiQueueManager {
         const note = this.getNoteById(nextJob.noteId);
 
         if (!note) {
-            // Note was deleted while in queue — skip it
-            nextJob.status = 'done';
+            // Note was deleted while in queue — mark as failed
+            nextJob.status = 'failed';
             nextJob.completedAt = Date.now();
+            nextJob.error = 'Note deleted';
             await this.persistQueue();
+            this.emitState();
+            this.scheduleNext();
+            return;
+        }
+
+        // Pre-flight config validation: fail fast if no API key or base URL
+        const missingApiKey = !config.apiKey || config.apiKey.trim().length === 0;
+        const missingBaseUrl = !config.baseUrl || config.baseUrl.trim().length === 0;
+        if (missingApiKey || missingBaseUrl) {
+            const missing = [];
+            if (missingApiKey) missing.push('API key');
+            if (missingBaseUrl) missing.push('Base URL');
+            const errMsg = `Cannot process: ${missing.join(' and ')} missing or invalid`;
+            nextJob.status = 'failed';
+            nextJob.completedAt = Date.now();
+            nextJob.error = errMsg;
+            await this.persistQueue();
+            this.emitState();
             this.scheduleNext();
             return;
         }
@@ -505,6 +525,16 @@ class AiQueueManager {
             this.currentCancelToken = new AiCancelToken();
             const result = await processNote(note.text, config, relationship, this.currentCancelToken);
             this.currentCancelToken = null;
+
+            // Guard against race condition: if cancelJob() was called after processNote resolved
+            // but before we saved results, discard them.
+            if (nextJob.status !== 'processing') {
+                // Cancelled in-flight — results are stale
+                await this.persistQueue();
+                this.emitState();
+                this.scheduleNext();
+                return;
+            }
 
             if (result.failed) {
                 throw new Error('AI processing returned empty results');
@@ -546,8 +576,8 @@ class AiQueueManager {
                 error: errMsg,
             });
 
-            // If it's a network/timeout error, mark server as offline
-            if (errMsg.includes('timeout') || errMsg.includes('Network') || errMsg.includes('fetch')) {
+            // If it's a network/timeout or auth error, mark server as offline
+            if (errMsg.includes('timeout') || errMsg.includes('Network') || errMsg.includes('fetch') || errMsg.includes('401') || errMsg.includes('403')) {
                 this.serverOnline = false;
                 this.lastError = errMsg;
             }
@@ -647,6 +677,8 @@ class AiQueueManager {
         for (const job of orphans) {
             job.status = 'queued';
             job.startedAt = undefined;
+            job.error = undefined;          // clear stale error
+            job.retryCount = 0;               // reset retry counter on fresh restart
 
             await logAi({
                 action: 'orphan_recovery',

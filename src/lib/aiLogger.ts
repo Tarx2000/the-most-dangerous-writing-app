@@ -17,43 +17,65 @@ import { logger } from '@/lib/logger';
 import { AI_STORAGE_KEYS, AI_LOG_MAX_ENTRIES } from '@/config/ai';
 import type { AiLogEntry } from '@/types';
 
+/* ── Internal ─────────────────────────────────────────────────────────── */
+
+/** In-memory promise chain prevents concurrent storage corruption. */
+let writeChain: Promise<void> = Promise.resolve();
+
+/** Emoji map for console output readability */
+const LOG_EMOJIS: Record<string, string> = {
+    enqueue: '📥',
+    start: '▶️',
+    success: '✅',
+    fail: '❌',
+    cancel: '🛑',
+    orphan_recovery: '🔄',
+    retry: '🔁',
+};
+
 /* ── Public API ───────────────────────────────────────────────────────── */
 
 /**
  * Log an AI operation. Automatically adds a timestamp.
  * Appends to the persisted log and trims to max size.
+ * Writes are serialized to avoid race conditions where concurrent calls
+ * read stale data and overwrite each other's entries.
  */
 export async function logAi(
     entry: Omit<AiLogEntry, 'timestamp'>
 ): Promise<void> {
-    try {
-        const fullEntry: AiLogEntry = {
-            ...entry,
-            timestamp: Date.now(),
-        };
+    // Chain each write so reads happen after previous writes complete
+    writeChain = writeChain.then(async () => {
+        try {
+            const fullEntry: AiLogEntry = {
+                ...entry,
+                timestamp: Date.now(),
+            };
 
-        const existing = await getAiLog();
-        const updated = [...existing, fullEntry];
+            const existing = await getAiLog();
+            const updated = [...existing, fullEntry];
 
-        // FIFO trim: keep only the most recent entries
-        const trimmed = updated.length > AI_LOG_MAX_ENTRIES
-            ? updated.slice(updated.length - AI_LOG_MAX_ENTRIES)
-            : updated;
+            // FIFO trim: keep only the most recent entries
+            const trimmed = updated.length > AI_LOG_MAX_ENTRIES
+                ? updated.slice(updated.length - AI_LOG_MAX_ENTRIES)
+                : updated;
 
-        await storage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
+            await storage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
 
-        // Also log to console for real-time debugging (dev-only)
-        if (__DEV__) {
-            const emoji = LOG_EMOJIS[entry.action] || '📝';
-            // Intentional dev-only console logger for real-time AI debugging
-            // eslint-disable-next-line no-console
-            console.log(
-                `[AI ${emoji}] ${entry.action.toUpperCase()} | note=${entry.noteId} | model=${entry.model} | phase=${entry.phase}${entry.durationMs ? ` | ${entry.durationMs}ms` : ''}${entry.error ? ` | ERROR: ${entry.error}` : ''}`
-            );
+            // Also log to console for real-time debugging (dev-only)
+            if (__DEV__) {
+                const emoji = LOG_EMOJIS[entry.action] || '📝';
+                // Intentional dev-only console logger for real-time AI debugging
+                // eslint-disable-next-line no-console
+                console.log(
+                    `[AI ${emoji}] ${entry.action.toUpperCase()} | note=${entry.noteId} | model=${entry.model} | phase=${entry.phase}${entry.durationMs ? ` | ${entry.durationMs}ms` : ''}${entry.error ? ` | ERROR: ${entry.error}` : ''}`
+                );
+            }
+        } catch (err) {
+            logger("warn", "AI Logger", "Failed to persist log entry:", err);
         }
-    } catch (err) {
-        logger("warn", "AI Logger", "Failed to persist log entry:", err);
-    }
+    });
+    return writeChain;
 }
 
 /**
@@ -78,16 +100,3 @@ export async function getAiLog(): Promise<AiLogEntry[]> {
 export async function clearAiLog(): Promise<void> {
     await storage.removeItem(AI_STORAGE_KEYS.LOG);
 }
-
-/* ── Internal ─────────────────────────────────────────────────────────── */
-
-/** Emoji map for console output readability */
-const LOG_EMOJIS: Record<string, string> = {
-    enqueue: '📥',
-    start: '▶️',
-    success: '✅',
-    fail: '❌',
-    cancel: '🛑',
-    orphan_recovery: '🔄',
-    retry: '🔁',
-};

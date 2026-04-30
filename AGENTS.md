@@ -28,11 +28,11 @@ src/
     aiLogger.ts            — Structured AI operation logging (FIFO 200 entries)
     utils.ts               — generateId() utility
     hooks/
-      useStorage.tsx       — 8 domain contexts + providers (NOTES, PERSONS, STREAK, PREFERENCES, AI_CONFIG, FEED, VLOGS, STORAGE_ACTIONS)
-      useSession.ts        — Writing session idle timer + death logic (SharedValue-based, no re-renders on tick)
-      useSecurity.ts       — 3-tier biometric security (locked → circles → profile → full)
+      useStorage.tsx       — 8 domain contexts + providers
+      useSession.ts        — Writing session idle timer + death logic
+      useSecurity.ts       — 3-tier biometric security
       useAiQueueProvider.tsx — Single-instance AI queue context provider
-      useThumbnails.ts     — Lazy video thumbnail extraction with in-flight dedup
+      useThumbnails.ts     — Lazy video thumbnail extraction
   screens/
     HomeScreen.tsx         — Root container (horizontal swipe: Start/Library, vertical: Feed)
     StartScreen.tsx        — Mode selection + settings + AI config
@@ -48,7 +48,7 @@ src/
     features/writing/      — DangerOverlay, StreakPopup
     features/library/      — CalendarView, NoteCard, NoteViewerModal, ExpandablePersonCard, PersonProfileModal, VlogCalendarGallery, VlogViewerModal
     features/feed/         — FeedCard, FeedVideoCard
-    features/circles/      — CirclePickerSheet (extracted from StartScreen)
+    features/circles/      — CirclePickerSheet
     features/settings/     — AiSettingsPanel, DeveloperToolsPanel
     features/alignment/    — CustomSlider
   styles/
@@ -56,24 +56,19 @@ src/
     commonStyles.ts        — Shared StyleSheet
 ```
 
-## KiloCode Capabilities
+## Key Constraints
+- **Path alias**: `@/` maps to `src/` (tsconfig + babel)
+- **React Compiler**: Enabled via `babel-plugin-react-compiler` (target 19). Don't add `useMemo`/`useCallback` where compiler handles it.
+- **Expo managed workflow**: **Expo Go only** — packages requiring custom native builds (MMKV, Nitro Modules) will crash.
+- **Ollama Cloud API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
+- **Storage adapter**: `src/lib/storage.ts` wraps AsyncStorage. Swappable to MMKV in dev builds.
+- **expo-sqlite null/undefined bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly.
 
-### Skills (from `.agents/skills/`)
-- `vercel-react-best-practices` — React/Next.js performance optimization (69 rules across 8 categories)
-- `expo-liquid-glass` — Liquid Glass UI design and implementation for Expo
-- `copywriting` — Conversion copywriting for marketing pages
-- `git-commit` — Conventional commit workflow with diff analysis
-- `find-skills` — Discover and install skills from the open ecosystem
+## Video Auto-Play (Viewport-Driven)
+`FeedVideoCard`: `autoPlay` prop (viewport-driven) → `userPausedRef` (manual override) → `playingChange` listener (force-resume). **CRITICAL: `VideoView` has `pointerEvents: 'none'`**, use `Pressable` overlay with `zIndex` for taps.
 
-### Slash Commands (from `.kilo/workflows/`)
-- `/expo-build` — Local Android release build
-- `/react-native-performance` — Performance checklist for React Native
-- `/ux-polish` — UX/micro-interactions best practices
-- `/react-native-design` — Design system for React Native
-- `/create-component` — Standardized component creation workflow
-- `/app-audit` — Full mobile app audit checklist
-
-### Domain Instructions (from `.kilo/instructions/`)
+## Domain Instructions
+Critical per-domain rules live in `.kilo/instructions/*.md`. Read the relevant file before editing that area.
 - `state-management.md` — Split-context pattern, fresh-read, optimistic updates
 - `animations.md` — SharedValue rules, feed transitions, haptics
 - `ai-integration.md` — Singleton queue, streaming, retry logic
@@ -81,109 +76,5 @@ src/
 - `security.md` — 3-tier biometric, auto-lock rules
 - `typescript-rules.md` — Strict mode, version pinning, code quality
 
-## Architecture Quick Reference
-
-Each domain has a dedicated instruction file with full detail. Below are the critical rules you must know without looking them up.
-
-### State Management → `.kilo/instructions/state-management.md`
-8 domain-specific React Contexts in `useStorage.tsx`. **Always use domain-specific hooks** (`useNotes`, `usePersons`, etc.) — the legacy `useStorage()` hook is **deprecated**. Optimistic updates with rollback. `safeParse<T>()` for runtime validation.
-
-### Animation → `.kilo/instructions/animations.md`
-**Never write `.value` during render.** Always update SharedValues inside `useEffect`, `useCallback`, or gesture handlers. `LiquidGlassNav` must be **OUTSIDE** the `mainContent` Animated.View.
-
-### AI Queue → `.kilo/instructions/ai-integration.md`
-`aiQueue.ts` is a singleton. Access via `useAiQueueContext()`. Do NOT use old `useAiQueue` hook. Streaming uses `XMLHttpRequest` (not fetch).
-
-### Security → `.kilo/instructions/security.md`
-3-tier biometric: Locked → Circles → Profile → Full. Auto-lock after 3 min. 30s background grace period. Immediate lock on `inactive` state.
-
-### Theme System → `.kilo/instructions/theme-system.md`
-**CRITICAL: No hardcoded hex/rgba values anywhere.** Every color from `theme.colors`. See instruction file for full mapping table (19 entries) + naming conventions.
-
-### TypeScript → `.kilo/instructions/typescript-rules.md`
-No `any` types. Use type guards. Fresh-read pattern: update BOTH setter AND ref. React.memo for expensive components.
-
-## Video Auto-Play (Viewport-Driven)
-`FeedVideoCard`: `autoPlay` prop (viewport-driven) → `userPausedRef` (manual override) → `playingChange` listener (force-resume). **CRITICAL: `VideoView` has `pointerEvents: 'none'`**, use `Pressable` overlay with `zIndex` for taps.
-
-## Code Rules
-- **No `any` types** — use proper interfaces. Complex prop types: `ReturnType<typeof useHook>`
-- **Type guards**: `isAlignmentReflection(note)` not `(note as any).isAlignmentReflection`
-- **Fresh-read pattern**: Update BOTH setter AND ref: `setter(newVal); ref.current = newVal;`
-- **React.memo** for expensive components (SVG, animations, video) and `React.FC` exports with gesture handlers
-- **StyleSheet.create()** over inline styles. Only dynamic values inline
-- **useWindowDimensions()** hook, never module-level `Dimensions.get('window')` (freezes at module load)
-- **Error handling**: Never bare `catch (_) {}` — always log with context
-- **Alignment scores**: Always use `getAlignmentScoreDetails()` / `getAlignmentScoreColor()` / `getAlignmentScoreFeed()` from `@/lib/alignmentScores`. Never duplicate inline.
-- **Shared components**: `DeathOverlay`, `SettingsCard`, `DangerOverlay`, `SwipeableModal`, `ErrorBoundary`
-
-## Key Constraints
-- **Path alias**: `@/` maps to `src/` (tsconfig + babel)
-- **React Compiler**: Enabled via `babel-plugin-react-compiler` (target 19). Don't add `useMemo`/`useCallback` where compiler handles it — existing explicit memoization kept for ref pattern clarity.
-- **Expo managed workflow**: **Expo Go only** — packages requiring custom native builds (MMKV, Nitro Modules) will crash.
-- **Ollama Cloud API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
-- **Storage adapter**: `src/lib/storage.ts` wraps AsyncStorage. Swappable to MMKV in dev builds.
-- **expo-sqlite null/undefined bridge bug**: expo-sqlite v15 on Android receives bind params as `Map<String, Any>` via `AnyTypeConverter` — a non-nullable Kotlin map. The converter maps **both** JS `null` AND JS `undefined` to `ReadableType.Null` and throws `NullArgumentException`. The `run()`/`getAll()`/`getFirst()` wrappers in `src/lib/db.ts` automatically convert `null` → **array holes** (via `delete out[i]`) in a sparse array. `normalizeParams().reduce()` skips holes entirely, so the key is never emitted to the native bridge. `sqlite3_clear_bindings()` (called before every `run()`) defaults all unbound positions to SQL NULL. **Never bypass `run()` by calling `db.runAsync()` directly** — always use the `db.ts` wrappers.
-
-## Version Pinning (Do NOT Upgrade)
-| Package | Version | Why |
-|---------|---------|-----|
-| react-native-reanimated | **4.2.1** | v4.3.0+ TurboModule mismatch with Expo Go |
-| react-native-worklets | **0.7.2** | v0.8.1+ incompatible with Reanimated 4.2.1 |
-| jest | **~29.7.0** | Expo SDK 55 expects Jest 29; Jest 30 has peer dep conflicts |
-| @types/jest | **29.5.14** | Must match Jest 29 |
-| react-native-mmkv | **NOT COMPATIBLE** | Requires dev build; crashes in Expo Go |
-| react-native-nitro-modules | **NOT COMPATIBLE** | Required by MMKV v4; not in Expo Go |
-
-**Before upgrading any dependency**, run `npx expo-doctor` and ensure all 17 checks pass.
-
-## Common Tasks
-- **Add screen**: Component in `src/screens/` → type in `src/types/navigation.types.ts` → register in `App.tsx`
-- **Add context domain**: Define type in `useStorage.tsx` → state, refs, operations in `StorageProvider` → add provider to tree → export domain-specific hook
-- **Modify AI**: Prompts in `src/config/ai.ts` (`DEFAULT_AI_PROMPTS`), models in `AI_AVAILABLE_MODELS`, queue logic in `src/lib/aiQueue.ts`
-- **Run the app**: `npx expo start` | `npx expo run:android` | `npx expo run:ios`
-- **Local AI dev proxy**: `proxy-ollama.js` spoofs model availability
-
-## Agent Operating Rules (Mandatory — Remember Forever)
-
-### 1. Code Must Be Well-Documented
-Every chunk of code must have good, simple-to-understand documentation. Comments explain the **"why"**, not just the **"what"**.
-
-### 2. Documentation Must Stay Up to Date
-Whenever documentation or comments no longer fit the code, **update or remove them immediately**. Do not defer. Outdated documentation is worse than no documentation.
-
-### 3. Config Variables for Customization
-Define important customizable values as **config variables at the top of the file** or in a dedicated config file (e.g., `src/config/`). Makes the most important parts easy to tweak without hunting through logic.
-
-### 4. List Used Skills in Every Response
-At the top of every answer, list which skills or instructions contributed to the response.
-
-*Example:* `**Used skills:** \`vercel-react-best-practices\`, \`.kilo/instructions/animations.md\``
-
-### 5. Explain Difficult Tech Terms
-When mentioning technical terms that a non-expert might not know, provide a **short, plain-English explanation** right there in the answer.
-
-*Example:* `XHR (XMLHttpRequest): A browser API for fetching data from servers. Unlike the modern fetch() API, it allows reading a response piece-by-piece as it arrives.`
-
-### 6. Parallelize Work with Sub-Agents
-If a task can be broken into multiple independent pieces (e.g., researching different topics, editing several files, or running multiple commands), **launch parallel task agents** rather than doing everything sequentially. Do not avoid delegating because it feels like more work — parallel agents finish faster and produce better results.
-
-*Guidelines:*
-- Use the `task` tool for focused subtasks.
-- Split by domain or file when there's no cross-dependency.
-- Always give sub-agents complete context (they don't see your conversation history by default).
-
-## Project Documentation Maintenance (Critical)
-
-**AGENTS.md is the single source of truth.** Whenever you make architectural or logic changes that affect rules, patterns, or conventions described here, update AGENTS.md and related instruction files immediately as part of the same task cycle. Do not defer.
-
-- **Deprecate a pattern** → remove or mark **DEPRECATED** in AGENTS.md + `.kilo/instructions/*.md`
-- **Introduce a pattern** → add to AGENTS.md or the correct domain instruction file
-- **Change a package version** → update the Version Pinning table
-- **Change AI integration** → update AGENTS.md + `.kilo/instructions/ai-integration.md`
-- **Change state management** → update AGENTS.md + `.kilo/instructions/state-management.md`
-
-**Verification before finishing any task:**
-- Scan AGENTS.md for any mention of the area you just changed
-- Check `.kilo/instructions/*.md` for related rules
-- Fix stale, misleading, or contradictory instructions before declaring the task complete
+## Agent Operating Rules
+See `.kilo/agent/global.md` for mandatory behavioral rules (documentation standards, sub-agent usage, etc.).

@@ -76,14 +76,9 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         return () => subscription.remove();
     }, []);
 
-    // Shutdown queue on unmount (cleans up AppState listener + health checks)
-    // Also reset init flag so remount re-initializes (React Strict Mode double-mount)
-    useEffect(() => {
-        return () => {
-            aiQueue.shutdown();
-            queueInitedRef.current = false;
-        };
-    }, []);
+    // Remove shutdown on unmount — singleton queue must survive component lifecycles.
+    // Strict Mode double-mount would otherwise wipe all jobs.
+    // Cleanup happens only on explicit app termination (not implemented).
 
     /** Initialize the queue manager with current dependencies */
     const initializeQueue = useCallback(async () => {
@@ -101,14 +96,13 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         );
     }, []);
 
-    // Auto-initialize queue when notes are available
-    const queueInitedRef = useRef(false);
+    // Auto-initialize queue once on first mount (independent of note count)
     useEffect(() => {
-        if (savedNotes.length > 0 && !queueInitedRef.current && !aiQueue.isInitialized) {
+        if (!queueInitedRef.current && !aiQueue.isInitialized) {
             queueInitedRef.current = true;
             initializeQueue();
         }
-    }, [savedNotes.length, initializeQueue]);
+    }, [initializeQueue]);
 
     /** Check if a specific note is actively processing */
     const isNoteActive = useCallback(

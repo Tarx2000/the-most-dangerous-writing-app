@@ -486,38 +486,39 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
     const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
 
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        return new Promise((resolve) => {
+            const xhr = new XMLHttpRequest();
+            const pingUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
 
-        // If baseUrl ends in /v1, we hit /models as a health check. 
-        // Otherwise we hit the native /api/version.
-        const pingUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
+            xhr.open('GET', pingUrl);
+            xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+            xhr.send();
 
-        const response = await fetch(pingUrl, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            signal: controller.signal,
+            const timeoutId = setTimeout(() => {
+                xhr.abort();
+                _consecutivePingFailures++;
+                resolve({ online: false, error: 'Ping timed out after 5s' });
+            }, 5000);
+
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState !== XMLHttpRequest.DONE) return;
+                clearTimeout(timeoutId);
+                if (xhr.status === 200) {
+                    _consecutivePingFailures = 0;
+                    resolve({ online: true });
+                } else {
+                    _consecutivePingFailures++;
+                    resolve({ online: false, error: `Server reachable but returned HTTP ${xhr.status}` });
+                }
+            };
+
+            xhr.onerror = () => {
+                clearTimeout(timeoutId);
+                _consecutivePingFailures++;
+                resolve({ online: false, error: 'Network request failed' });
+            };
         });
-
-        clearTimeout(timeoutId);
-
-        // If we get a response (even 401/404), the server is reachable at this URL
-        const isOk = response.ok || response.status === 401 || response.status === 404;
-        if (!isOk) {
-            _consecutivePingFailures++;
-            return { online: false, error: `Server connected but returned HTTP ${response.status}` };
-        }
-
-        // Success — reset consecutive failure counter
-        _consecutivePingFailures = 0;
-        return { online: true };
-    } catch (err: unknown) {
-        _consecutivePingFailures++;
-        console.warn(`[AI] Ping failed (${_consecutivePingFailures} consecutive):`, err);
-        return { online: false, error: (err as Error | undefined)?.message || 'Network request failed' };
-    }
+}
 }
 
 /**
