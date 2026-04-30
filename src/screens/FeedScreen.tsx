@@ -27,6 +27,9 @@ import type { LayoutRect } from '../components/features/library/VlogViewerModal'
 /** Word count threshold for tweet vs story classification */
 const TWEET_THRESHOLD = 50;
 
+/** Scroll distance before showing the scroll-to-top button */
+const SCROLL_TOP_SHOW_THRESHOLD = 300;
+
 /**
  * Hoisted outside component to prevent React from unmounting/remounting
  * the list on every parent re-render. Creating animated components inside
@@ -158,6 +161,34 @@ const FeedScreenInner: React.FC<Props> = ({
     const feedContentOpacity = useAnimatedStyle(() => ({
         opacity: fadeAnim.value,
     }));
+
+    /** Scroll-to-top button visibility (UI-thread only) */
+    const showScrollTopButton = useSharedValue(0);
+
+    useAnimatedReaction(
+        () => listScrollY.value,
+        (currentY) => {
+            const shouldShow = currentY > SCROLL_TOP_SHOW_THRESHOLD;
+            showScrollTopButton.value = shouldShow ? 1 : 0;
+        },
+        []
+    );
+
+    const scrollToTopButtonStyle = useAnimatedStyle(() => ({
+        opacity: withTiming(showScrollTopButton.value, { duration: 250 }),
+        transform: [
+            {
+                translateY: withTiming(
+                    showScrollTopButton.value === 1 ? 0 : 10,
+                    { duration: 250 }
+                ),
+            },
+        ],
+    }));
+
+    const handleScrollToTop = useCallback(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    }, []);
 
     /**
      * Merge all content types into a single chronological feed.
@@ -509,33 +540,42 @@ const FeedScreenInner: React.FC<Props> = ({
     );
 
     return (
-        <GestureDetector gesture={feedPanGesture}>
-            <View style={styles.container}>
-                <Animated.View style={[styles.feedContentWrapper, feedContentOpacity]}>
-                    <AnimatedFlashList
-                        ref={listRef}
-                        renderScrollComponent={RNGHScrollView}
-                        data={displayItems}
-                        ListHeaderComponent={renderHeader}
-                        ListFooterComponent={renderFooter}
-                        ListEmptyComponent={renderEmpty}
-                        estimatedItemSize={250}
-                        keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
-                        bounces={false}
-                        overScrollMode="never"
-                        scrollEnabled={feedScrollEnabled}
-                        onScroll={handleScroll}
-                        onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
-                        scrollEventThrottle={16}
-                        renderItem={renderFeedItem}
-                        onViewableItemsChanged={onViewableItemsChanged}
-                        viewabilityConfig={viewabilityConfig}
-                        contentContainerStyle={styles.listContent}
-                        showsVerticalScrollIndicator={false}
-                    />
+        <View style={styles.container}>
+            <GestureDetector gesture={feedPanGesture}>
+                <View style={styles.gestureArea}>
+                    <Animated.View style={[styles.feedContentWrapper, feedContentOpacity]}>
+                        <AnimatedFlashList
+                            ref={listRef}
+                            renderScrollComponent={RNGHScrollView}
+                            data={displayItems}
+                            ListHeaderComponent={renderHeader}
+                            ListFooterComponent={renderFooter}
+                            ListEmptyComponent={renderEmpty}
+                            estimatedItemSize={250}
+                            keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
+                            bounces={false}
+                            overScrollMode="never"
+                            scrollEnabled={feedScrollEnabled}
+                            onScroll={handleScroll}
+                            onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
+                            scrollEventThrottle={16}
+                            renderItem={renderFeedItem}
+                            onViewableItemsChanged={onViewableItemsChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            contentContainerStyle={styles.listContent}
+                            showsVerticalScrollIndicator={false}
+                        />
+                    </Animated.View>
+                </View>
+            </GestureDetector>
+            {isUnlocked && displayItems.length > 0 && (
+                <Animated.View style={[styles.scrollToTopBtn, scrollToTopButtonStyle]}>
+                    <AnimatedScaleButton style={styles.scrollToTopBtnInner} onPress={handleScrollToTop}>
+                        <MaterialCommunityIcons name="arrow-up" size={24} color={theme.colors.textPrimary} />
+                    </AnimatedScaleButton>
                 </Animated.View>
-            </View>
-        </GestureDetector>
+            )}
+        </View>
     );
 };
 
@@ -717,20 +757,24 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '500',
     },
-    jumpBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingVertical: 8,
-        paddingHorizontal: 16,
+    gestureArea: {
+        flex: 1,
+    },
+    scrollToTopBtn: {
+        position: 'absolute',
+        bottom: 24,
+        right: 20,
+        zIndex: 9999,
+        pointerEvents: 'auto',
+    },
+    scrollToTopBtnInner: {
+        width: 48,
+        height: 48,
         borderRadius: 100,
         backgroundColor: theme.colors.glassBackground,
         borderWidth: 1,
         borderColor: theme.colors.glassBorder,
-    },
-    jumpBtnText: {
-        color: theme.colors.textSecondary,
-        fontSize: 12,
-        fontWeight: '600',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
