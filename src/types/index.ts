@@ -176,7 +176,7 @@ export interface AiLogEntry {
     /** Which AI model was used */
     model: string;
     /** Which phase of AI processing */
-    phase: 'title' | 'summary' | 'both' | 'batch';
+    phase: 'title' | 'summary' | 'both';
     /** How long the operation took (ms) */
     durationMs?: number;
     /** Error message if applicable */

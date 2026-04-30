@@ -42,6 +42,7 @@ jest.mock('@/lib/aiLogger', () => ({
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue } from '@/lib/aiQueue';
 import { processNote, resetAiServiceState } from '@/lib/aiService';
+import type { AiJob } from '@/types';
 
 describe('AiQueueManager', () => {
   const mockGetAiConfig = () => ({ model: 'test-model', apiKey: 'key', baseUrl: 'http://test', prompts: { title: 't', summary: 's', grammar: 'g' } });
@@ -71,8 +72,8 @@ describe('AiQueueManager', () => {
       await aiQueue.enqueueNote('n1', 'journal');
       // Allow scheduled next tick to run
       await new Promise(r => setTimeout(r, 200));
-      const allJobs = (aiQueue as any).jobs;
-      const job = allJobs.find((j: any) => j.noteId === 'n1');
+      const allJobs = (aiQueue as unknown as { jobs: AiJob[] }).jobs;
+      const job = allJobs.find((j) => j.noteId === 'n1');
       expect(job?.status).toBe('failed');
       expect(job?.error).toContain('API key');
     });

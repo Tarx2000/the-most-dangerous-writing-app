@@ -14,6 +14,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
+import { resetConnectionState } from '@/lib/aiService';
 import { useNotes, useAiConfig, usePersons } from '@/lib/hooks/useStorage';
 import type { AiQueueState, AiJobCategory } from '@/types';
 
@@ -42,13 +43,15 @@ const AiQueueContext = createContext<AiQueueContextType | null>(null);
 
 export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     const { savedNotes, updateNote } = useNotes();
-    const { aiApiKey, aiBaseUrl, aiModel, aiPrompts } = useAiConfig();
+    const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts } = useAiConfig();
     const { persons } = usePersons();
     const [queueState, setQueueState] = useState<AiQueueState>(aiQueue.getState());
 
+    const queueInitedRef = useRef(false);
+
     // Keep a ref so callbacks always see the latest deps without re-creating
-    const depsRef = useRef({ aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes, updateNote, persons });
-    depsRef.current = { aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes, updateNote, persons };
+    const depsRef = useRef({ aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes, updateNote, persons });
+    depsRef.current = { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes, updateNote, persons };
 
     // Update queue dependencies when AI config or notes change
     useEffect(() => {
@@ -57,6 +60,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                 apiKey: depsRef.current.aiApiKey,
                 baseUrl: depsRef.current.aiBaseUrl,
                 model: depsRef.current.aiModel,
+                grammarModel: depsRef.current.aiGrammarModel,
                 prompts: depsRef.current.aiPrompts,
             }),
             (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
@@ -64,7 +68,13 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             () => depsRef.current.savedNotes,
             (personId) => depsRef.current.persons.find(p => p.id === personId)
         );
-    }, [aiApiKey, aiBaseUrl, aiModel, aiPrompts, savedNotes.length, persons.length]);
+    }, [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes.length, persons.length]);
+
+    // Reset connection health when AI config changes so stale offline state
+    // doesn't carry over to a new key / endpoint.
+    useEffect(() => {
+        resetConnectionState();
+    }, [aiApiKey, aiBaseUrl, aiModel]);
 
     // Single event subscription for the entire app
     useEffect(() => {
@@ -87,6 +97,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                 apiKey: depsRef.current.aiApiKey,
                 baseUrl: depsRef.current.aiBaseUrl,
                 model: depsRef.current.aiModel,
+                grammarModel: depsRef.current.aiGrammarModel,
                 prompts: depsRef.current.aiPrompts,
             }),
             (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
@@ -96,13 +107,14 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         );
     }, []);
 
-    // Auto-initialize queue once on first mount (independent of note count)
+    // Auto-initialize once storage has hydrated (indicated by non-empty config or notes)
+    const configReady = aiApiKey !== '' || aiBaseUrl !== '' || savedNotes.length > 0;
     useEffect(() => {
-        if (!queueInitedRef.current && !aiQueue.isInitialized) {
+        if (!queueInitedRef.current && !aiQueue.isInitialized && configReady) {
             queueInitedRef.current = true;
             initializeQueue();
         }
-    }, [initializeQueue]);
+    }, [initializeQueue, configReady]);
 
     /** Check if a specific note is actively processing */
     const isNoteActive = useCallback(

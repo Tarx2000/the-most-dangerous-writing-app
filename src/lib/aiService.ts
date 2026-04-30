@@ -36,11 +36,18 @@ export interface AiConfig {
     apiKey?: string;
     baseUrl?: string;
     model?: string;
+    grammarModel?: string;
     prompts?: Partial<AiPrompts>;
 }
 
+/**
+ * Context for relationship journal entries.
+ * Passed when processing Circle (person) entries to inject person-specific data into prompts.
+ */
 export interface RelationshipContext {
+    /** The person's name (e.g. "Sarah") */
     personName: string;
+    /** The relationship label (e.g. "Friend", "Family") */
     relationshipStatus: string;
 }
 
@@ -191,6 +198,10 @@ async function ollamaChatSingle(
 
         xhr.onreadystatechange = () => {
             if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+                if (xhr.status === 0 || xhr.status === 200) {
+                    // 100 Continue / 200 OK headers are fine — keep reading stream
+                    return;
+                }
                 if (xhr.status !== 200) {
                     xhr.abort();
                     settle('reject', new Error(`Ollama API error ${xhr.status}`));
@@ -370,17 +381,6 @@ async function ollamaChat(
  * @param config - Optional config overrides (apiKey, model, prompts)
  * @returns A headline string (max 8 words)
  */
-/**
- * Context for relationship journal entries.
- * Passed when processing Circle (person) entries to inject person-specific data into prompts.
- */
-export interface RelationshipContext {
-    /** The person's name (e.g. "Sarah") */
-    personName: string;
-    /** The relationship label (e.g. "Friend", "Family") */
-    relationshipStatus: string;
-}
-
 export async function generateTitle(
     text: string,
     config: AiConfig = {},
@@ -388,6 +388,10 @@ export async function generateTitle(
     relationship?: RelationshipContext,
     cancelToken?: AiCancelToken
 ): Promise<string> {
+    if (!text || text.trim().length === 0) {
+        console.warn('[AI] generateTitle called with empty text');
+        return '';
+    }
     let prompt = config.prompts?.title || DEFAULT_AI_PROMPTS.title;
     if (relationship) {
         prompt = (config.prompts?.relationshipTitle || DEFAULT_AI_PROMPTS.relationshipTitle)
@@ -414,6 +418,10 @@ export async function generateSummary(
     relationship?: RelationshipContext,
     cancelToken?: AiCancelToken
 ): Promise<string[]> {
+    if (!text || text.trim().length === 0) {
+        console.warn('[AI] generateSummary called with empty text');
+        return [];
+    }
     let prompt = config.prompts?.summary || DEFAULT_AI_PROMPTS.summary;
     if (relationship) {
         prompt = (config.prompts?.relationshipSummary || DEFAULT_AI_PROMPTS.relationshipSummary)
@@ -485,40 +493,38 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
     const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
     const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
 
-    try {
-        return new Promise((resolve) => {
-            const xhr = new XMLHttpRequest();
-            const pingUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
+    return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        const pingUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
 
-            xhr.open('GET', pingUrl);
-            xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
-            xhr.send();
+        xhr.open('GET', pingUrl);
+        xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+        xhr.send();
 
-            const timeoutId = setTimeout(() => {
-                xhr.abort();
+        const timeoutId = setTimeout(() => {
+            xhr.abort();
+            _consecutivePingFailures++;
+            resolve({ online: false, error: 'Ping timed out after 5s' });
+        }, 5000);
+
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState !== XMLHttpRequest.DONE) return;
+            clearTimeout(timeoutId);
+            if (xhr.status === 200) {
+                _consecutivePingFailures = 0;
+                resolve({ online: true });
+            } else {
                 _consecutivePingFailures++;
-                resolve({ online: false, error: 'Ping timed out after 5s' });
-            }, 5000);
+                resolve({ online: false, error: `Server reachable but returned HTTP ${xhr.status}` });
+            }
+        };
 
-            xhr.onreadystatechange = () => {
-                if (xhr.readyState !== XMLHttpRequest.DONE) return;
-                clearTimeout(timeoutId);
-                if (xhr.status === 200) {
-                    _consecutivePingFailures = 0;
-                    resolve({ online: true });
-                } else {
-                    _consecutivePingFailures++;
-                    resolve({ online: false, error: `Server reachable but returned HTTP ${xhr.status}` });
-                }
-            };
-
-            xhr.onerror = () => {
-                clearTimeout(timeoutId);
-                _consecutivePingFailures++;
-                resolve({ online: false, error: 'Network request failed' });
-            };
-        });
-}
+        xhr.onerror = () => {
+            clearTimeout(timeoutId);
+            _consecutivePingFailures++;
+            resolve({ online: false, error: 'Network request failed' });
+        };
+    });
 }
 
 /**

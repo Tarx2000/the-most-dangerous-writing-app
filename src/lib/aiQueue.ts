@@ -74,6 +74,10 @@ class AiQueueManager {
     /** Whether the queue has been initialized */
     private initialized = false;
 
+    /** Index Sets for O(1) queue/active lookups */
+    private activeNoteIds = new Set<string>();
+    private queuedNoteIds = new Set<string>();
+
     /** Batch metadata (null if processing single jobs) */
     private batchTotal: number | null = null;
     private batchCompleted = 0;
@@ -199,8 +203,10 @@ class AiQueueManager {
      * Background processing is intentional — this is for user-initiated cancellation.
      */
     cancelJob(jobId: string): void {
+        this.cancelRequested = true;
         const job = this.jobs.find(j => j.id === jobId && j.status === 'processing');
         if (!job) {
+            this.cancelRequested = false;
             logger("warn", "AI Queue", "Cannot cancel job " + jobId + ": not currently processing");
             return;
         }
@@ -270,6 +276,13 @@ class AiQueueManager {
             return;
         }
 
+        // Enforce queue size limit
+        const activeJobs = this.jobs.filter(j => j.status === 'queued' || j.status === 'processing');
+        if (activeJobs.length >= this.MAX_QUEUE_SIZE) {
+            logger("warn", "AI Queue", `Queue at capacity (${this.MAX_QUEUE_SIZE}), dropping note ${noteId}`);
+            return;
+        }
+
         const job: AiJob = {
             id: generateId(),
             noteId,
@@ -315,6 +328,14 @@ class AiQueueManager {
 
         if (notesToProcess.length === 0) return 0;
 
+        // Respect queue size limit
+        const activeJobs = this.jobs.filter(j => j.status === 'queued' || j.status === 'processing');
+        const slotsAvailable = Math.max(0, this.MAX_QUEUE_SIZE - activeJobs.length);
+        if (slotsAvailable === 0) {
+            logger("warn", "AI Queue", `Queue at capacity (${this.MAX_QUEUE_SIZE}), skipping batch enqueue`);
+            return 0;
+        }
+
         // Categorize notes and apply optional category filter
         const categorized = notesToProcess
             .map(note => ({
@@ -331,9 +352,10 @@ class AiQueueManager {
             return b.note.timestamp - a.note.timestamp; // newest first
         });
 
-        // Enqueue all (skip duplicates)
+        // Enqueue all (skip duplicates, respect queue capacity)
         let enqueued = 0;
         for (const { note, category } of categorized) {
+            if (enqueued >= slotsAvailable) break;
             if (!this.jobs.some(j => j.noteId === note.id && j.status !== 'done' && j.status !== 'failed')) {
                 this.jobs.push({
                     id: generateId(),
@@ -380,6 +402,7 @@ class AiQueueManager {
             this.currentCancelToken.abort();
             this.currentCancelToken = null;
         }
+        this.batchTotal = null;
         this.batchCompleted = 0;
 
         await this.persistQueue();
@@ -388,16 +411,22 @@ class AiQueueManager {
 
     /** Check if a specific note is actively processing (for pulse animation) */
     isNoteActive(noteId: string): boolean {
-        return this.jobs.some(
-            j => j.noteId === noteId && j.status === 'processing'
-        );
+        return this.activeNoteIds.has(noteId);
     }
 
     /** Check if a note is stuck waiting in the queue (for subtle indicator) */
     isNoteQueued(noteId: string): boolean {
-        return this.jobs.some(
-            j => j.noteId === noteId && j.status === 'queued'
-        );
+        return this.queuedNoteIds.has(noteId);
+    }
+
+    /** Rebuild O(1) index sets whenever jobs mutate */
+    private rebuildIndex(): void {
+        this.activeNoteIds.clear();
+        this.queuedNoteIds.clear();
+        for (const j of this.jobs) {
+            if (j.status === 'processing') this.activeNoteIds.add(j.noteId);
+            else if (j.status === 'queued') this.queuedNoteIds.add(j.noteId);
+        }
     }
 
     /** Get the current queue state for UI display */
@@ -424,14 +453,14 @@ class AiQueueManager {
     /** Start the processing loop if not already running */
     private startProcessing(): void {
         if (this.processing || !this.initialized) return;
-        // Set processing flag synchronously BEFORE calling async processNext
-        // to prevent overlapping loops from rapid enqueue + health-check calls.
-        this.processing = true;
         this.processNext();
     }
 
     /** Process the next job in the queue */
     private async processNext(): Promise<void> {
+        if (this.processing) return;
+        this.processing = true;
+
         // Check for cancel
         if (this.cancelRequested) {
             this.processing = false;
@@ -450,8 +479,6 @@ class AiQueueManager {
             this.emitState();
             return;
         }
-
-        this.processing = true;
 
         // Check server health before processing
         if (this.serverOnline === false) {
@@ -540,12 +567,23 @@ class AiQueueManager {
                 throw new Error('AI processing returned empty results');
             }
 
-            // Save results to the note
-            await this.updateNote(nextJob.noteId, {
-                aiTitle: result.title,
-                aiSummary: result.summary,
-                aiModelUsed: config.model || 'default',
-            });
+            try {
+                // Save results to the note
+                await this.updateNote(nextJob.noteId, {
+                    aiTitle: result.title,
+                    aiSummary: result.summary,
+                    aiModelUsed: config.model || 'default',
+                });
+            } catch (storageErr: unknown) {
+                const storageMsg = storageErr instanceof Error ? storageErr.message : String(storageErr);
+                nextJob.status = 'failed';
+                nextJob.completedAt = Date.now();
+                nextJob.error = `Storage update failed: ${storageMsg}`;
+                await this.persistQueue();
+                this.emitState();
+                this.scheduleNext();
+                return;
+            }
 
             // Mark job as done
             nextJob.status = 'done';
@@ -583,21 +621,27 @@ class AiQueueManager {
             }
 
             if (nextJob.retryCount < AI_MAX_RETRIES) {
-                // Retry: move to end of queue
-                nextJob.retryCount++;
-                nextJob.status = 'queued';
-                nextJob.startedAt = undefined;
+                // Don't retry a job that was explicitly marked failed (e.g. by cancelJob)
+                // Race: cancelJob mutates shared state between try and catch
+                if ((nextJob.status as string) === 'failed') {
+                    // Already handled; just persist
+                } else {
+                    // Retry: move to end of queue
+                    nextJob.retryCount++;
+                    nextJob.status = 'queued';
+                    nextJob.startedAt = undefined;
 
-                await logAi({
-                    action: 'retry',
-                    noteId: nextJob.noteId,
-                    model: config.model || 'default',
-                    phase: 'both',
-                });
+                    await logAi({
+                        action: 'retry',
+                        noteId: nextJob.noteId,
+                        model: config.model || 'default',
+                        phase: 'both',
+                    });
 
-                // Move to end of queue
-                this.jobs = this.jobs.filter(j => j.id !== nextJob.id);
-                this.jobs.push(nextJob);
+                    // Move to end of queue
+                    this.jobs = this.jobs.filter(j => j.id !== nextJob.id);
+                    this.jobs.push(nextJob);
+                }
             } else {
                 // Max retries exceeded — mark as failed and move on
                 nextJob.status = 'failed';
@@ -658,7 +702,29 @@ class AiQueueManager {
         try {
             const raw = await storage.getItem(AI_STORAGE_KEYS.QUEUE);
             if (raw) {
-                this.jobs = JSON.parse(raw) as AiJob[];
+                const parsed = JSON.parse(raw) as unknown;
+                if (!Array.isArray(parsed)) {
+                    logger("warn", "AI Queue", "Persisted queue is not an array, resetting");
+                    this.jobs = [];
+                    return;
+                }
+                const validJobs: AiJob[] = [];
+                for (const item of parsed) {
+                    if (
+                        typeof item === 'object' &&
+                        item !== null &&
+                        typeof item.id === 'string' &&
+                        typeof item.noteId === 'string' &&
+                        typeof item.status === 'string' &&
+                        ['queued', 'processing', 'done', 'failed'].includes(item.status) &&
+                        typeof item.retryCount === 'number'
+                    ) {
+                        validJobs.push(item as AiJob);
+                    } else {
+                        logger("warn", "AI Queue", "Skipping malformed queue item:", item);
+                    }
+                }
+                this.jobs = validJobs;
             }
         } catch (err) {
             logger("warn", "AI Queue", "Failed to parse persisted queue, resetting:", err);
@@ -698,6 +764,7 @@ class AiQueueManager {
 
     /** Emit the current queue state to all listeners */
     private emitState(): void {
+        this.rebuildIndex();
         DeviceEventEmitter.emit(AI_QUEUE_EVENT, this.getState());
     }
 }
