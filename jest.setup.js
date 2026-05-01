@@ -6,6 +6,14 @@ global.Platform = {
     select: (objs) => objs.ios || objs.default,
 };
 
+if (typeof global.__DEV__ === 'undefined') {
+    global.__DEV__ = true;
+}
+
+// Polyfill XMLHttpRequest for live API tests in Node
+const XMLHttpRequest = require('xhr2');
+global.XMLHttpRequest = XMLHttpRequest;
+
 // Mock react-native
 jest.mock('react-native', () => {
     const RN = jest.requireActual('react-native');

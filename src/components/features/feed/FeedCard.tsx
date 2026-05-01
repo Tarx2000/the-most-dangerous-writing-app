@@ -13,7 +13,7 @@ import { RichText } from '@/components/ui/RichText';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
 import { usePreferences } from '@/lib/hooks/useStorage';
-import type { SavedNote, SavedVlog, Person, AlignmentReflection, FeedItem, FeedItemType } from '@/types';
+import type { SavedNote, SavedVlog, AlignmentReflection, FeedItem } from '@/types';
 import { isAlignmentReflection } from '@/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { getAlignmentScoreFeed } from '@/lib/alignmentScores';

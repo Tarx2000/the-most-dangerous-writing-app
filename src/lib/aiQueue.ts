@@ -490,6 +490,7 @@ class AiQueueManager {
                 // Server offline — pause processing, will resume when server comes back
                 this.processing = false;
                 this.emitState();
+                this.scheduleNext();
                 return;
             }
         }
@@ -510,6 +511,7 @@ class AiQueueManager {
             nextJob.error = 'Note deleted';
             await this.persistQueue();
             this.emitState();
+            this.processing = false;
             this.scheduleNext();
             return;
         }
@@ -527,6 +529,7 @@ class AiQueueManager {
             nextJob.error = errMsg;
             await this.persistQueue();
             this.emitState();
+            this.processing = false;
             this.scheduleNext();
             return;
         }
@@ -559,6 +562,7 @@ class AiQueueManager {
                 // Cancelled in-flight — results are stale
                 await this.persistQueue();
                 this.emitState();
+                this.processing = false;
                 this.scheduleNext();
                 return;
             }
@@ -581,6 +585,7 @@ class AiQueueManager {
                 nextJob.error = `Storage update failed: ${storageMsg}`;
                 await this.persistQueue();
                 this.emitState();
+                this.processing = false;
                 this.scheduleNext();
                 return;
             }
@@ -652,6 +657,7 @@ class AiQueueManager {
 
         await this.persistQueue();
         this.emitState();
+        this.processing = false;
         this.scheduleNext();
     }
 
