@@ -76,14 +76,6 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
     const [videoViewKey, setVideoViewKey] = useState(0);
     const videoRef = React.useRef<View>(null);
 
-    /**
-     * Tracks whether the user manually paused (vs viewport-driven pause).
-     * - When the user taps pause: userPaused = true → prevents force-resume
-     * - When autoPlay changes (viewport change): userPaused resets → auto-play resumes
-     * - When the user taps play: userPaused = false → allows force-resume again
-     */
-    const userPausedRef = useRef(false);
-
     /** Create video player (muted by default) */
     const player = useVideoPlayer(vlog.filePath, (p) => {
         p.loop = true;
@@ -93,10 +85,8 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
 
     /** Viewport-driven playback control.
      *  When autoPlay changes (feed hidden/shown or video scrolled in/out),
-     *  reset any manual pause override and directly control the player.
-     *  This is the source of truth — autoPlay always wins over manual state. */
+     *  directly control the player. This is the source of truth. */
     useEffect(() => {
-        userPausedRef.current = false;
         try {
             if (autoPlay) {
                 player.play();
@@ -147,21 +137,6 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
 
     const { updateVlog } = useVlogs();
     const { getThumbnail } = useThumbnails(updateVlog);
-
-    /** Robust resume: prevent freezes after modal close.
-     *  Only force-resumes when: auto-play is active (in viewport + feed visible),
-     *  the user hasn't manually paused, and the player stopped unexpectedly.
-     *  This handles cases like the vlog modal closing or system pauses. */
-    useEffect(() => {
-        const subscription = player.addListener('playingChange', (event) => {
-            if (autoPlay && !userPausedRef.current && !event.isPlaying) {
-                try { player.play(); } catch (err) {
-                    console.error('[FeedVideoCard] Failed to force-resume player:', err instanceof Error ? err.message : String(err));
-                }
-            }
-        });
-        return () => subscription.remove();
-    }, [autoPlay, player]);
 
     useEffect(() => {
         player.volume = isMuted ? 0 : 1;

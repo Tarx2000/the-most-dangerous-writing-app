@@ -69,8 +69,7 @@ jest.mock('@/lib/aiService', () => ({
 
 /* ── Imports ───────────────────────────────────────────────────────────── */
 
-import { DeviceEventEmitter } from 'react-native';
-import { aiQueue, AI_QUEUE_EVENT } from '@/lib/aiQueue';
+import { aiQueue } from '@/lib/aiQueue';
 import { processNote, pingServer, resetAiServiceState } from '@/lib/aiService';
 import { logAi, clearAiLog } from '@/lib/aiLogger';
 import type { SavedNote, AiJob } from '@/types';
@@ -274,11 +273,13 @@ describe('AI End-to-End (Mocked)', () => {
       tracer.step('job_status:que → processing');
       tracer.step('ai_request_start');
 
-      processNoteResolve!({
-        title: 'Mocked Title',
-        summary: ['Point 1', 'Point 2'],
-        failed: false,
-      });
+      if (processNoteResolve) {
+        processNoteResolve({
+          title: 'Mocked Title',
+          summary: ['Point 1', 'Point 2'],
+          failed: false,
+        });
+      }
       tracer.step('ai_request_end');
 
       await waitForQueueEmpty();
@@ -300,8 +301,10 @@ describe('AI End-to-End (Mocked)', () => {
       const jobs = (aiQueue as unknown as { jobs: AiJob[] }).jobs;
       const job = jobs.find((j) => j.noteId === dummyNote.id);
       expect(job).toBeDefined();
-      expect(job!.status).toBe('done');
-      expect(job!.retryCount).toBe(0);
+      if (job) {
+        expect(job.status).toBe('done');
+        expect(job.retryCount).toBe(0);
+      }
 
       // Tracer assertions
       tracer.step('test_complete');
@@ -375,8 +378,10 @@ describe('AI End-to-End (Mocked)', () => {
       const jobs = (aiQueue as unknown as { jobs: AiJob[] }).jobs;
       const job = jobs.find((j) => j.noteId === dummyNote.id);
       expect(job).toBeDefined();
-      expect(job!.status).toBe('done');
-      expect(job!.retryCount).toBe(2);
+      if (job) {
+        expect(job.status).toBe('done');
+        expect(job.retryCount).toBe(2);
+      }
 
       expect(tracer.countStep('ai_request_start')).toBe(3);
       expect(tracer.countStep('ai_request_end')).toBe(3);
@@ -421,15 +426,22 @@ describe('AI End-to-End (Mocked)', () => {
         (state) => state.currentJob?.status === 'processing',
         2000,
       );
-      const startedJobId = aiQueue.getState().currentJob!.id;
+      const currentJob = aiQueue.getState().currentJob;
+      expect(currentJob).not.toBeNull();
+      const startedJobId = currentJob?.id;
+      expect(startedJobId).toBeDefined();
       tracer.step('job_status:que → processing');
 
       // Cancel immediately
-      aiQueue.cancelJob(startedJobId);
+      if (startedJobId) {
+        aiQueue.cancelJob(startedJobId);
+      }
       tracer.step('cancel_called');
 
       // Let the in-flight promise settle so processNext can finish
-      processNoteReject!(new Error('AI request cancelled'));
+      if (processNoteReject) {
+        processNoteReject(new Error('AI request cancelled'));
+      }
 
       await flushPromises();
       await new Promise<void>((r) => setTimeout(r, 150));
@@ -437,8 +449,10 @@ describe('AI End-to-End (Mocked)', () => {
       const jobs = (aiQueue as unknown as { jobs: AiJob[] }).jobs;
       const job = jobs.find((j) => j.id === startedJobId);
       expect(job).toBeDefined();
-      expect(job!.status).toBe('failed');
-      expect(job!.error).toBe('Cancelled by user');
+      if (job) {
+        expect(job.status).toBe('failed');
+        expect(job.error).toBe('Cancelled by user');
+      }
 
       // updateNote should NOT have been called with AI results
       const aiUpdateCalls = (mockUpdateNote as jest.Mock).mock.calls.filter(
@@ -533,7 +547,9 @@ describe('AI End-to-End (Mocked)', () => {
       // Batch progress should be present in state
       const batchProgress = aiQueue.getState().batchProgress;
       expect(batchProgress).not.toBeNull();
-      expect(batchProgress!.total).toBe(4);
+      if (batchProgress) {
+        expect(batchProgress.total).toBe(4);
+      }
     });
   });
 
@@ -562,8 +578,10 @@ describe('AI End-to-End (Mocked)', () => {
       const jobs = (aiQueue as unknown as { jobs: AiJob[] }).jobs;
       const job = jobs.find((j) => j.noteId === dummyNote.id);
       expect(job).toBeDefined();
-      expect(job!.status).toBe('failed');
-      expect(job!.error).toContain('API key');
+      if (job) {
+        expect(job.status).toBe('failed');
+        expect(job.error).toContain('API key');
+      }
 
       expect(processNote).not.toHaveBeenCalled();
 
@@ -610,9 +628,11 @@ describe('AI End-to-End (Mocked)', () => {
       // (if auto-start hasn't picked it up yet) or 'processing' (if auto-start
       // picked it up immediately). Both are acceptable because the reset happened
       // before the queue resumed.
-      expect(recovered!.retryCount).toBe(0);
-      expect(recovered!.error).toBeUndefined();
-      expect(['queued', 'processing']).toContain(recovered!.status);
+      if (recovered) {
+        expect(recovered.retryCount).toBe(0);
+        expect(recovered.error).toBeUndefined();
+        expect(['queued', 'processing']).toContain(recovered.status);
+      }
 
       expect(logAi).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'orphan_recovery' } as Record<string, unknown>),

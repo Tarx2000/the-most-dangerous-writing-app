@@ -100,7 +100,7 @@ describe('AI End-to-End (Live API)', () => {
     const pingResult = await pingServer();
     if (!pingResult.online) {
       serverOnline = false;
-      // eslint-disable-next-line no-console
+
       console.warn(
         '[LIVE TEST] Ollama Cloud unreachable — skipping live suite',
       );
@@ -120,7 +120,7 @@ describe('AI End-to-End (Live API)', () => {
       serverOnline = true;
     } catch {
       serverOnline = false;
-      // eslint-disable-next-line no-console
+
       console.warn(
         '[LIVE TEST] Ollama Cloud model unresponsive — skipping live suite',
       );
@@ -140,7 +140,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 1: Ping Server ─────────────────────────────────────────────── */
   it('should ping the server and report online', async () => {
     if (!serverOnline) {
-      // eslint-disable-next-line no-console
+
       console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
       return;
     }
@@ -164,7 +164,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 2: Generate Title Live ─────────────────────────────────────── */
   it('should generate a title from the dummy entry', async () => {
     if (!serverOnline) {
-      // eslint-disable-next-line no-console
+
       console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
       return;
     }
@@ -192,7 +192,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 3: Generate Summary Live ─────────────────────────────────────── */
   it('should generate a summary from the dummy entry', async () => {
     if (!serverOnline) {
-      // eslint-disable-next-line no-console
+
       console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
       return;
     }
@@ -223,7 +223,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 4: Check Grammar Live ────────────────────────────────────────── */
   it('should find grammar issues in the dummy entry with typos', async () => {
     if (!serverOnline) {
-      // eslint-disable-next-line no-console
+
       console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
       return;
     }
@@ -253,7 +253,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 5: Process Note Live ─────────────────────────────────────────── */
   it('should process a note end-to-end with title and summary', async () => {
     if (!serverOnline) {
-      // eslint-disable-next-line no-console
+
       console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
       return;
     }
@@ -268,7 +268,9 @@ describe('AI End-to-End (Live API)', () => {
     expect(result.failed).toBe(false);
     expect(result.title).toBeDefined();
     expect(typeof result.title).toBe('string');
-    expect(result.title!.length).toBeGreaterThan(0);
+    if (result.title) {
+      expect(result.title.length).toBeGreaterThan(0);
+    }
     expect(Array.isArray(result.summary)).toBe(true);
     expect(result.summary.length).toBeGreaterThan(0);
 
@@ -283,7 +285,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 6: Full Queue Lifecycle Live ───────────────────────────────── */
   it('should process a note through the full queue lifecycle', async () => {
     if (!serverOnline) {
-      // eslint-disable-next-line no-console
+
       console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
       return;
     }
@@ -335,21 +337,27 @@ describe('AI End-to-End (Live API)', () => {
 
     const finalNote = notesMap.get(dummyNote.id);
     expect(finalNote).toBeDefined();
-    expect(finalNote!.aiTitle).toBeDefined();
-    expect(typeof finalNote!.aiTitle).toBe('string');
-    expect(finalNote!.aiTitle!.length).toBeGreaterThan(0);
+    if (finalNote) {
+      expect(finalNote.aiTitle).toBeDefined();
+      expect(typeof finalNote.aiTitle).toBe('string');
+      if (finalNote.aiTitle) {
+        expect(finalNote.aiTitle.length).toBeGreaterThan(0);
+      }
 
-    expect(finalNote!.aiSummary).toBeDefined();
-    expect(Array.isArray(finalNote!.aiSummary)).toBe(true);
-    expect(finalNote!.aiSummary!.length).toBeGreaterThan(0);
+      expect(finalNote.aiSummary).toBeDefined();
+      expect(Array.isArray(finalNote.aiSummary)).toBe(true);
+      if (finalNote.aiSummary) {
+        expect(finalNote.aiSummary.length).toBeGreaterThan(0);
+      }
 
-    const totalLatency = Date.now() - startWait;
-    // eslint-disable-next-line no-console
-    console.log(`[LIVE TEST] Full queue lifecycle latency: ${totalLatency}ms`);
-    // eslint-disable-next-line no-console
-    console.log(`[LIVE TEST] aiTitle: "${finalNote!.aiTitle}"`);
-    // eslint-disable-next-line no-console
-    console.log(`[LIVE TEST] aiSummary:`, finalNote!.aiSummary);
+      const totalLatency = Date.now() - startWait;
+      // eslint-disable-next-line no-console
+      console.log(`[LIVE TEST] Full queue lifecycle latency: ${totalLatency}ms`);
+      // eslint-disable-next-line no-console
+      console.log(`[LIVE TEST] aiTitle: "${finalNote.aiTitle}"`);
+      // eslint-disable-next-line no-console
+      console.log(`[LIVE TEST] aiSummary:`, finalNote.aiSummary);
+    }
     // eslint-disable-next-line no-console
     console.log(tracer.printTimeline());
   });

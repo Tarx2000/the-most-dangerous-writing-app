@@ -146,13 +146,16 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         }
     }, [visible, initialIndex, panX, panY, progress]);
 
-    /** Sync UI with native player: timeUpdate drives the countdown,
-     *  playingChange keeps play/pause icon accurate. */
+    /** Sync UI with native player.
+     *  We use BOTH timeUpdate events AND a polling fallback because
+     *  expo-video's timeUpdate event frequency varies by platform
+     *  and can be sparse or missing entirely on some devices. */
     useEffect(() => {
         if (!activePlayer || !visible) return;
         setCurrentTime(0);
         setIsPlaying(true);
 
+        // Native event listener (primary)
         const timeSub = activePlayer.addListener('timeUpdate', (event) => {
             setCurrentTime(event.currentTime);
         });
@@ -160,9 +163,17 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             setIsPlaying(event.isPlaying);
         });
 
+        // Polling fallback (500ms) — catches timeUpdate gaps
+        const pollTimer = setInterval(() => {
+            try {
+                setCurrentTime(activePlayer.currentTime);
+            } catch { /* ignore */ }
+        }, 500);
+
         return () => {
             timeSub.remove();
             playSub.remove();
+            clearInterval(pollTimer);
         };
     }, [activePlayer, visible, expandedIndex]);
 
@@ -250,19 +261,19 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     };
 
     /** Toggle play/pause on the active player.
-     *  Uses the `paused` property (settable) instead of method calls,
-     *  which is more reliable across the expo-video shared-object proxy.
-     *  NOTE: `paused` is a C++ proxy property not declared in TS types. */
+     *  Uses pause() / play() — the correct methods on expo-video.
+     *  The playingChange listener keeps the icon synced. */
     const togglePlayPause = useCallback(() => {
         if (!activePlayer) return;
-        try {
-            const p = activePlayer as unknown as { paused: boolean };
-            p.paused = !p.paused;
-        } catch { /* ignore */ }
+        if (isPlaying) {
+            try { activePlayer.pause(); } catch { /* ignore */ }
+        } else {
+            try { activePlayer.play(); } catch { /* ignore */ }
+        }
         vibrate(10);
         setShowControls(true);
         scheduleControlsHide();
-    }, [activePlayer, scheduleControlsHide]);
+    }, [activePlayer, isPlaying, scheduleControlsHide]);
 
     /** Toggle mute on the active player */
     const toggleMute = useCallback(() => {
