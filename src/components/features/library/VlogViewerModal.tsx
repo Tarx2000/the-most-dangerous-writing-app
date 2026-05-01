@@ -120,6 +120,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const [isPlaying, setIsPlaying] = useState(true);
     const [isMuted, setIsMuted] = useState(false);
     const [showControls, setShowControls] = useState(true);
+    const [currentTime, setCurrentTime] = useState(0);
     const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const activePlayer = sharedPlayer || null;
@@ -131,6 +132,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             setIsPlaying(true);
             setIsMuted(false);
             setShowControls(true);
+            setCurrentTime(0);
             progress.value = 0;
             panX.value = 0;
             panY.value = 0;
@@ -143,6 +145,26 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             });
         }
     }, [visible, initialIndex, panX, panY, progress]);
+
+    /** Sync UI with native player: timeUpdate drives the countdown,
+     *  playingChange keeps play/pause icon accurate. */
+    useEffect(() => {
+        if (!activePlayer || !visible) return;
+        setCurrentTime(0);
+        setIsPlaying(true);
+
+        const timeSub = activePlayer.addListener('timeUpdate', (event) => {
+            setCurrentTime(event.currentTime);
+        });
+        const playSub = activePlayer.addListener('playingChange', (event) => {
+            setIsPlaying(event.isPlaying);
+        });
+
+        return () => {
+            timeSub.remove();
+            playSub.remove();
+        };
+    }, [activePlayer, visible, expandedIndex]);
 
     /** Auto-hide controls after 3s of inactivity */
     const scheduleControlsHide = useCallback(() => {
@@ -227,20 +249,20 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         }
     };
 
-    /** Toggle play/pause on the active player */
+    /** Toggle play/pause on the active player.
+     *  Uses the `paused` property (settable) instead of method calls,
+     *  which is more reliable across the expo-video shared-object proxy.
+     *  NOTE: `paused` is a C++ proxy property not declared in TS types. */
     const togglePlayPause = useCallback(() => {
         if (!activePlayer) return;
-        if (isPlaying) {
-            try { activePlayer.pause(); } catch { /* ignore */ }
-            setIsPlaying(false);
-        } else {
-            try { activePlayer.play(); } catch { /* ignore */ }
-            setIsPlaying(true);
-        }
+        try {
+            const p = activePlayer as unknown as { paused: boolean };
+            p.paused = !p.paused;
+        } catch { /* ignore */ }
         vibrate(10);
         setShowControls(true);
         scheduleControlsHide();
-    }, [activePlayer, isPlaying, scheduleControlsHide]);
+    }, [activePlayer, scheduleControlsHide]);
 
     /** Toggle mute on the active player */
     const toggleMute = useCallback(() => {
@@ -257,9 +279,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const skip = useCallback((seconds: number) => {
         if (!activePlayer) return;
         try {
-            const current = activePlayer.currentTime;
-            const target = Math.max(0, Math.min(activePlayer.duration, current + seconds));
+            const target = Math.max(0, Math.min(activePlayer.duration, activePlayer.currentTime + seconds));
             activePlayer.currentTime = target;
+            setCurrentTime(target);
         } catch { /* ignore */ }
         vibrate(10);
         setShowControls(true);
@@ -397,10 +419,10 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                 </View>
                             )}
 
-                            {/* Duration badge */}
+                            {/* Live countdown badge — remaining time */}
                             <View style={styles.durationBadge} pointerEvents="none">
                                 <Text style={styles.durationText}>
-                                    {formatDuration(currentVlog.durationSec)}
+                                    {formatDuration(Math.max(0, currentVlog.durationSec - currentTime))}
                                 </Text>
                             </View>
 
