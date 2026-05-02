@@ -129,10 +129,10 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         if (visible) {
             setIsRendered(true);
             setExpandedIndex(initialIndex);
-            setIsPlaying(true);
-            setIsMuted(false);
+            setIsPlaying(activePlayer?.playing ?? true);
+            setIsMuted((activePlayer?.volume ?? 1) === 0);
             setShowControls(true);
-            setCurrentTime(0);
+            setCurrentTime(activePlayer?.currentTime ?? 0);
             progress.value = 0;
             panX.value = 0;
             panY.value = 0;
@@ -144,7 +144,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                 if (finished) runOnJS(setIsRendered)(false);
             });
         }
-    }, [visible, initialIndex, panX, panY, progress]);
+    }, [visible, initialIndex, panX, panY, progress, activePlayer]);
 
     /** Sync UI with native player.
      *  We use BOTH timeUpdate events AND a polling fallback because
@@ -152,12 +152,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
      *  and can be sparse or missing entirely on some devices. */
     useEffect(() => {
         if (!activePlayer || !visible) return;
-        setCurrentTime(0);
-        setIsPlaying(true);
 
         // Native event listener (primary)
         const timeSub = activePlayer.addListener('timeUpdate', (event) => {
-            setCurrentTime(event.currentTime);
+            const t = typeof event === 'number' ? event : event?.currentTime ?? 0;
+            setCurrentTime(t);
         });
         const playSub = activePlayer.addListener('playingChange', (event) => {
             setIsPlaying(event.isPlaying);
@@ -234,8 +233,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     }, [vlogs.length, expandedIndex]);
 
     const formatDuration = (sec: number) => {
-        const m = Math.floor(sec / 60);
-        const s = sec % 60;
+        const totalSeconds = Math.floor(sec);
+        const m = Math.floor(totalSeconds / 60);
+        const s = totalSeconds % 60;
         return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
@@ -265,7 +265,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
      *  The playingChange listener keeps the icon synced. */
     const togglePlayPause = useCallback(() => {
         if (!activePlayer) return;
-        if (isPlaying) {
+        if (activePlayer.playing) {
             try { activePlayer.pause(); } catch { /* ignore */ }
         } else {
             try { activePlayer.play(); } catch { /* ignore */ }
@@ -273,18 +273,18 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         vibrate(10);
         setShowControls(true);
         scheduleControlsHide();
-    }, [activePlayer, isPlaying, scheduleControlsHide]);
+    }, [activePlayer, scheduleControlsHide]);
 
     /** Toggle mute on the active player */
     const toggleMute = useCallback(() => {
         if (!activePlayer) return;
-        const nextMuted = !isMuted;
-        try { activePlayer.volume = nextMuted ? 0 : 1; } catch { /* ignore */ }
-        setIsMuted(nextMuted);
+        const nextMuted = activePlayer.volume === 0;
+        try { activePlayer.volume = nextMuted ? 1 : 0; } catch { /* ignore */ }
+        setIsMuted(!nextMuted);
         vibrate(10);
         setShowControls(true);
         scheduleControlsHide();
-    }, [activePlayer, isMuted, scheduleControlsHide]);
+    }, [activePlayer, scheduleControlsHide]);
 
     /** Skip forward/backward 10 seconds */
     const skip = useCallback((seconds: number) => {

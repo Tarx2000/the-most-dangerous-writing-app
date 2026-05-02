@@ -42,6 +42,8 @@ const createPlayer = (uri, setupFn) => {
         set loop(v) { loop = v; },
         get volume() { return volume; },
         set volume(v) { volume = v; },
+        get playing() { return isPlaying; },
+        set playing(v) { isPlaying = v; emit('playingChange', { isPlaying: v }); },
         addListener: jest.fn((event, callback) => {
             if (!listeners.has(event)) listeners.set(event, []);
             listeners.get(event).push(callback);
