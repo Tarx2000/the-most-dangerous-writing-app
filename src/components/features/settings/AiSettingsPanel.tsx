@@ -56,17 +56,8 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     handleBatchProcess,
     setChoosingModelFor
 }: AiSettingsPanelProps) {
-    const [apiKeyInput, setApiKeyInput] = React.useState(aiConfig.aiApiKey);
-    const [baseUrlInput, setBaseUrlInput] = React.useState(aiConfig.aiBaseUrl);
-
-    // Sync local input state when props change (e.g. after loadAllData)
-    React.useEffect(() => {
-        setApiKeyInput(aiConfig.aiApiKey);
-    }, [aiConfig.aiApiKey]);
-
-    React.useEffect(() => {
-        setBaseUrlInput(aiConfig.aiBaseUrl);
-    }, [aiConfig.aiBaseUrl]);
+    const apiKeyRef = React.useRef(aiConfig.aiApiKey);
+    const baseUrlRef = React.useRef(aiConfig.aiBaseUrl);
 
     const isDefaultKey = aiConfig.aiApiKey === DEFAULT_OLLAMA_API_KEY;
     const isDefaultUrl = aiConfig.aiBaseUrl === DEFAULT_OLLAMA_BASE_URL;
@@ -91,7 +82,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         style={styles.resetBtn}
                         onPress={() => {
                             aiConfig.saveAiApiKey(DEFAULT_OLLAMA_API_KEY);
-                            setApiKeyInput(DEFAULT_OLLAMA_API_KEY);
+                            apiKeyRef.current = DEFAULT_OLLAMA_API_KEY;
                             vibrate(10);
                         }}
                     >
@@ -102,9 +93,9 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
             </View>
             <TextInput
                 style={styles.apiKeyInput}
-                value={apiKeyInput}
-                onChangeText={setApiKeyInput}
-                onEndEditing={() => aiConfig.saveAiApiKey(apiKeyInput)}
+                defaultValue={aiConfig.aiApiKey}
+                onChangeText={(text) => { apiKeyRef.current = text; }}
+                onEndEditing={() => aiConfig.saveAiApiKey(apiKeyRef.current)}
                 secureTextEntry
                 placeholder="Enter your own API key"
                 placeholderTextColor={theme.colors.textMuted}
@@ -300,7 +291,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         style={styles.resetBtn}
                         onPress={() => {
                             aiConfig.saveAiBaseUrl(DEFAULT_OLLAMA_BASE_URL);
-                            setBaseUrlInput(DEFAULT_OLLAMA_BASE_URL);
+                            baseUrlRef.current = DEFAULT_OLLAMA_BASE_URL;
                             vibrate(10);
                         }}
                     >
@@ -311,9 +302,9 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
             </View>
             <TextInput
                 style={styles.baseUrlInput}
-                value={baseUrlInput}
-                onChangeText={setBaseUrlInput}
-                onEndEditing={() => aiConfig.saveAiBaseUrl(baseUrlInput)}
+                defaultValue={aiConfig.aiBaseUrl}
+                onChangeText={(text) => { baseUrlRef.current = text; }}
+                onEndEditing={() => aiConfig.saveAiBaseUrl(baseUrlRef.current)}
                 placeholder="https://ollama.com"
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"

@@ -14,17 +14,8 @@
 
 /* ── Customizable Config Variables ───────────────────────────────────── */
 
-/** Default Ollama Cloud API key — empty; user must configure on first launch */
-export const DEFAULT_OLLAMA_API_KEY = '';
-
-/**
- * Returns true when the AI API key is non-empty and appears configured.
- * Use this to gate AI features and decide whether to show the setup modal.
- */
-export function isApiKeyConfigured(config?: { apiKey?: string }): boolean {
-    const key = config?.apiKey ?? DEFAULT_OLLAMA_API_KEY;
-    return typeof key === 'string' && key.trim().length > 0;
-}
+/** Default Ollama Cloud API key — override in Settings without rebuilding */
+export const DEFAULT_OLLAMA_API_KEY = '0256ae2a4fa64e95980bc0c6d6177e3d.5l7X5me0ClCd9Nnx3pUKJIKS';
 
 /** Ollama Cloud base URL (NOT localhost — this is the cloud-hosted endpoint) */
 export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com/v1';
