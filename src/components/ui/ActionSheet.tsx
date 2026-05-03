@@ -7,7 +7,7 @@
  * - Spring-animated entrance from bottom
  * - Glass-morphic dark card styling
  * - Selectable options with icons, labels, and active checkmarks
- * - Consistent with SwipeableModal design language
+ * - Consistent with BaseModal design language
  *
  * Usage:
  *   <ActionSheet

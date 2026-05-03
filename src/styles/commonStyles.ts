@@ -79,8 +79,13 @@ export const commonStyles = StyleSheet.create({
     versionHistoryBlock: { marginBottom: 20 },
     versionHistoryHeader: { color: theme.colors.danger, fontSize: 16, fontWeight: theme.typography.weightBold, marginBottom: 5 },
     versionHistoryItem: { color: theme.colors.textSecondary, fontSize: 15, lineHeight: 22, marginLeft: 10, marginBottom: 3 },
-    closeVersionBtn: { backgroundColor: theme.colors.glassHighlight, paddingVertical: 16, paddingHorizontal: 20, borderRadius: 100, alignItems: 'center' as const, justifyContent: 'center' as const, marginTop: 15, flexDirection: 'row' as const, gap: 8 },
+    closeVersionBtn: { backgroundColor: theme.colors.glassHighlight, paddingVertical: 16, paddingHorizontal: 20, borderRadius: theme.borderRadius.md, alignItems: 'center' as const, justifyContent: 'center' as const, marginTop: 15, flexDirection: 'row' as const, gap: 8 },
     closeVersionBtnText: { color: theme.colors.textPrimary, fontWeight: theme.typography.weightBold, fontSize: 15 },
+
+    /** Developer tools row button — left-aligned icon + text */
+    devToolBtn: { backgroundColor: theme.colors.glassHighlight, paddingVertical: 14, paddingHorizontal: 16, borderRadius: theme.borderRadius.sm, alignItems: 'center' as const, justifyContent: 'flex-start' as const, marginTop: 0, flexDirection: 'row' as const, gap: 0 },
+    devToolBtnText: { color: theme.colors.textPrimary, fontWeight: theme.typography.weightBold, fontSize: 15 },
+    devToolIconBox: { width: 28, alignItems: 'center' as const, justifyContent: 'center' as const, marginRight: 10 },
 
     settingsLabel: { color: theme.colors.textSecondary, fontSize: 13, fontWeight: theme.typography.weightMedium, marginTop: 10, marginBottom: 8 },
     settingsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

@@ -1,7 +1,7 @@
 /**
  * CirclePickerSheet — Extracted from StartScreen.
  *
- * Manages the circle/person selection SwipeableModal including:
+ * Manages the circle/person selection BaseModal including:
  * - Biometric lock screen when circles are protected
  * - Search and filter existing circles
  * - Inline creation form for new circles
@@ -23,7 +23,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { BaseModal } from '@/components/ui/BaseModal';
 import { theme } from '@/styles/theme';
 import { commonStyles } from '@/styles/commonStyles';
 import type { Person } from '@/types';
@@ -97,7 +97,7 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
     };
 
     return (
-        <SwipeableModal
+        <BaseModal
             visible={visible}
             onClose={handleClose}
             title={creatingNewCircle ? 'New Circle' : 'Select Circle'}
@@ -216,7 +216,7 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
                     )}
                 </>
             )}
-        </SwipeableModal>
+        </BaseModal>
     );
 });
 

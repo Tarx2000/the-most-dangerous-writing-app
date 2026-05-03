@@ -12,7 +12,7 @@ import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { BaseModal } from '@/components/ui/BaseModal';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { Person, SavedNote, RELATIONSHIP_OPTIONS } from '@/types';
 import { theme } from '@/styles/theme';
@@ -40,7 +40,7 @@ const AVATAR_GRADIENT = [theme.colors.primaryAction, theme.colors.orange, theme.
  *
  * Security: Full profile content requires biometric auth.
  * Empty fields are hidden in view mode — only shown when editing.
- * Closable by swiping down (uses SwipeableModal wrapper).
+ * Closable by swiping down (uses BaseModal wrapper).
  */
 interface Props {
     visible: boolean;
@@ -59,7 +59,7 @@ interface Props {
     onNotePress: (note: SavedNote) => void;
     /** Whether notes content is unlocked (Stage 2) */
     isNotesUnlocked: boolean;
-    /** Pass to SwipeableModal for scroll control */
+    /** Pass to BaseModal for scroll control */
     setHomeScrollEnabled?: (enabled: boolean) => void;
     isNoteActive?: (id: string) => boolean;
     isNoteQueued?: (id: string) => boolean;
@@ -465,14 +465,14 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
     );
 
     return (
-        <SwipeableModal
+        <BaseModal
             visible={visible}
             onClose={onClose}
             title={isEditing ? 'Edit Profile' : person.name}
             setHomeScrollEnabled={setHomeScrollEnabled}
         >
             {!isUnlocked ? renderLockedView() : (isEditing ? renderEditMode() : renderProfileView())}
-        </SwipeableModal>
+        </BaseModal>
     );
 });
 

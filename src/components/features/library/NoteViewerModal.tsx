@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { View,
+import {
+    View,
     Text,
     StyleSheet,
     Modal,
@@ -7,13 +8,14 @@ import { View,
     Pressable,
     ActivityIndicator,
     useWindowDimensions,
-Platform
+    Platform
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withSpring,
+    withTiming,
     runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -53,20 +55,37 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
     /* ── Local confirmation state ── */
     const [confirmDelete, setConfirmDelete] = useState(false);
 
+    /* ── Backdrop opacity ── */
+    const overlayOpacity = useSharedValue(0);
+
     /* ── Swipe-to-dismiss gesture ── */
     const panY = useSharedValue(0);
+    const isClosingRef = React.useRef(false);
+
+    /* ── Unified exit: animate out, then notify parent ── */
+    const handleClose = useCallback(() => {
+        if (isClosingRef.current) return;
+        isClosingRef.current = true;
+        panY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+        overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
+            runOnJS(onClose)();
+        });
+    }, [onClose, panY, overlayOpacity, SCREEN_HEIGHT]);
     const notePanGesture = Gesture.Pan()
         .activeOffsetY([-20, 20])
         .onUpdate((e) => {
             if (e.translationY > 0) {
                 panY.value = e.translationY;
+                const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
+                overlayOpacity.value = 1 - progress;
             }
         })
         .onEnd((e) => {
             if (e.translationY > 150 || e.velocityY > 1000) {
-                runOnJS(onClose)();
+                runOnJS(handleClose)();
             } else {
                 panY.value = withSpring(0, { damping: 20, stiffness: 200 });
+                overlayOpacity.value = withTiming(1, { duration: 150 });
             }
         });
 
@@ -74,13 +93,25 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
         transform: [{ translateY: panY.value }],
     }));
 
-    /* ── Reset animation when note changes ── */
+    const backdropAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: overlayOpacity.value,
+    }));
+
+    /* ── Entry / exit animation ── */
     React.useEffect(() => {
         if (visible) {
+            isClosingRef.current = false;
+            overlayOpacity.value = 0;
             panY.value = SCREEN_HEIGHT;
+            overlayOpacity.value = withTiming(1, { duration: 250 });
             panY.value = withSpring(0, { damping: 30, stiffness: 220, mass: 0.8 });
+        } else {
+            // Animate out smoothly when parent sets visible=false
+            if (!isClosingRef.current) {
+                handleClose();
+            }
         }
-    }, [visible, note, panY, SCREEN_HEIGHT]);
+    }, [visible, note, handleClose, panY, overlayOpacity, SCREEN_HEIGHT]);
 
     const handleRegenerateAi = useCallback(() => {
         if (!note) return;
@@ -88,8 +119,8 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
         const category: AiJobCategory = isAlignmentReflection(note)
             ? 'checkin'
             : note.personId
-            ? 'circle'
-            : 'journal';
+                ? 'circle'
+                : 'journal';
         onRegenerateAi(note, category);
     }, [note, onRegenerateAi]);
 
@@ -98,10 +129,10 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
 
     return (
         <>
-            <Modal visible={visible} animationType="fade" transparent={true} onRequestClose={onClose}>
+            <Modal visible={visible} animationType="none" transparent={true} onRequestClose={handleClose}>
                 <GestureHandlerRootView style={{ flex: 1 }}>
-                    <View style={styles.cardPopupBackdrop}>
-                        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+                    <Animated.View style={[styles.cardPopupBackdrop, backdropAnimatedStyle]}>
+                        <Pressable style={StyleSheet.absoluteFillObject} onPress={handleClose} />
                         <Animated.View style={[styles.cardPopupContainer, { height: SCREEN_HEIGHT * 0.88 }, animatedCardStyle]}>
                             <View style={styles.cardPopupTint} />
 
@@ -119,85 +150,85 @@ export const NoteViewerModal: React.FC<Props> = React.memo(({
                                                 {note.text.split(/\s+/).filter(Boolean).length} words • {note.durationMin > 0 ? `${note.durationMin} min` : 'Quick Note'}
                                             </Text>
                                         </View>
-                                        <AnimatedScaleButton style={styles.premiumNoteCloseBtn} onPress={onClose}>
+                                        <AnimatedScaleButton style={styles.premiumNoteCloseBtn} onPress={handleClose}>
                                             <MaterialCommunityIcons name="close" size={22} color={theme.colors.textPrimary} />
                                         </AnimatedScaleButton>
                                     </View>
                                 </Animated.View>
                             </GestureDetector>
 
-                        {/* Body */}
-                        <ScrollView 
-                            style={styles.cardPopupScroll} 
-                            showsVerticalScrollIndicator={false}
-                            bounces={true}
-                            overScrollMode="always"
-                            scrollEventThrottle={16}
-                        >
-                            {note.aiSummary && note.aiSummary.length > 0 && (
-                                <View style={styles.aiSummaryCard}>
-                                    <View style={styles.aiSummaryHeader}>
-                                        <MaterialCommunityIcons name="brain" size={16} color={theme.colors.primaryAction} />
-                                        <Text style={styles.aiSummaryHeaderText}>AI Summary</Text>
-                                    </View>
-                                    {note.aiSummary.map((bullet, idx) => (
-                                        <View key={idx} style={styles.aiSummaryBulletRow}>
-                                            <Text style={styles.aiSummaryBulletDot}>•</Text>
-                                            <RichText style={styles.aiSummaryBulletText} text={bullet} />
+                            {/* Body */}
+                            <ScrollView
+                                style={styles.cardPopupScroll}
+                                showsVerticalScrollIndicator={false}
+                                bounces={true}
+                                overScrollMode="always"
+                                scrollEventThrottle={16}
+                            >
+                                {note.aiSummary && note.aiSummary.length > 0 && (
+                                    <View style={styles.aiSummaryCard}>
+                                        <View style={styles.aiSummaryHeader}>
+                                            <MaterialCommunityIcons name="brain" size={16} color={theme.colors.primaryAction} />
+                                            <Text style={styles.aiSummaryHeaderText}>AI Summary</Text>
                                         </View>
-                                    ))}
-                                    {note.aiModelUsed && (
-                                        <Text style={{ textAlign: 'right', fontSize: 10, color: theme.colors.lightGrey, marginTop: 8 }}>
-                                            {note.aiModelUsed}
-                                        </Text>
-                                    )}
-                                </View>
-                            )}
-
-                            {!note.aiTitle && (!note.aiSummary || note.aiSummary.length === 0) && !isNoteActive(note.id) && (
-                                <AnimatedScaleButton style={styles.regenerateBtn} onPress={handleRegenerateAi}>
-                                    <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
-                                    <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
-                                </AnimatedScaleButton>
-                            )}
-
-                            {isNoteActive(note.id) && (
-                                <View style={[styles.regenerateBtn, { borderColor: theme.colors.dangerBorder }]}>
-                                    <ActivityIndicator size="small" color={theme.colors.primaryAction} />
-                                    <Text style={styles.regenerateBtnText}>Processing...</Text>
-                                </View>
-                            )}
-
-                            <Text style={[styles.premiumNoteBody, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]} selectable={true}>{note.text}</Text>
-                            <View style={{ height: 100 }} />
-                        </ScrollView>
-
-                        {/* Footer */}
-                        <View style={styles.premiumNoteFooter}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                <AnimatedScaleButton style={styles.premiumNoteDeleteBtn} onPress={() => setConfirmDelete(true)}>
-                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
-                                    <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
-                                </AnimatedScaleButton>
-                                {(note.aiTitle || (note.aiSummary && note.aiSummary.length > 0)) && (
-                                    <AnimatedScaleButton
-                                        style={styles.regenerateSmallBtn}
-                                        onPress={handleRegenerateAi}
-                                        disabled={isNoteActive(note.id)}
-                                    >
-                                        {isNoteActive(note.id) ? (
-                                            <ActivityIndicator size="small" color={theme.colors.textMuted} />
-                                        ) : (
-                                            <MaterialCommunityIcons name="refresh" size={16} color={theme.colors.textMuted} />
+                                        {note.aiSummary.map((bullet, idx) => (
+                                            <View key={idx} style={styles.aiSummaryBulletRow}>
+                                                <Text style={styles.aiSummaryBulletDot}>•</Text>
+                                                <RichText style={styles.aiSummaryBulletText} text={bullet} />
+                                            </View>
+                                        ))}
+                                        {note.aiModelUsed && (
+                                            <Text style={{ textAlign: 'right', fontSize: 10, color: theme.colors.lightGrey, marginTop: 8 }}>
+                                                {note.aiModelUsed}
+                                            </Text>
                                         )}
+                                    </View>
+                                )}
+
+                                {!note.aiTitle && (!note.aiSummary || note.aiSummary.length === 0) && !isNoteActive(note.id) && (
+                                    <AnimatedScaleButton style={styles.regenerateBtn} onPress={handleRegenerateAi}>
+                                        <MaterialCommunityIcons name="creation" size={14} color={theme.colors.primaryAction} />
+                                        <Text style={styles.regenerateBtnText}>Generate AI Summary</Text>
                                     </AnimatedScaleButton>
                                 )}
+
+                                {isNoteActive(note.id) && (
+                                    <View style={[styles.regenerateBtn, { borderColor: theme.colors.dangerBorder }]}>
+                                        <ActivityIndicator size="small" color={theme.colors.primaryAction} />
+                                        <Text style={styles.regenerateBtnText}>Processing...</Text>
+                                    </View>
+                                )}
+
+                                <Text style={[styles.premiumNoteBody, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]} selectable={true}>{note.text}</Text>
+                                <View style={{ height: 100 }} />
+                            </ScrollView>
+
+                            {/* Footer */}
+                            <View style={styles.premiumNoteFooter}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <AnimatedScaleButton style={styles.premiumNoteDeleteBtn} onPress={() => setConfirmDelete(true)}>
+                                        <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
+                                        <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
+                                    </AnimatedScaleButton>
+                                    {(note.aiTitle || (note.aiSummary && note.aiSummary.length > 0)) && (
+                                        <AnimatedScaleButton
+                                            style={styles.regenerateSmallBtn}
+                                            onPress={handleRegenerateAi}
+                                            disabled={isNoteActive(note.id)}
+                                        >
+                                            {isNoteActive(note.id) ? (
+                                                <ActivityIndicator size="small" color={theme.colors.textMuted} />
+                                            ) : (
+                                                <MaterialCommunityIcons name="refresh" size={16} color={theme.colors.textMuted} />
+                                            )}
+                                        </AnimatedScaleButton>
+                                    )}
+                                </View>
                             </View>
-                        </View>
+                        </Animated.View>
                     </Animated.View>
-                </View>
-            </GestureHandlerRootView>
-        </Modal>
+                </GestureHandlerRootView>
+            </Modal>
 
             {/* Delete Confirmation — unified ConfirmDialog */}
             <ConfirmDialog

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View,
+import {
+    View,
     Text,
     StatusBar,
     ScrollView,
     Platform,
-StyleSheet
+    StyleSheet
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -19,7 +20,7 @@ import { useNotes, usePersons, useStreak, usePreferences, useAiConfig, useFeedDa
 import { TickDial } from '@/components/ui/TickDial';
 import { StreakPopup } from '@/components/features/writing/StreakPopup';
 import { CalendarView } from '@/components/features/library/CalendarView';
-import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { BaseModal } from '@/components/ui/BaseModal';
 import { CustomSlider } from '@/components/features/alignment/CustomSlider';
 import { APP_VERSION, CONFIG } from '@/config';
 import { VERSION_HISTORY } from '@/config/changelog';
@@ -131,7 +132,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
     };
 
     const getScoreDetails = getAlignmentScoreDetails;
-    
+
     const details = getScoreDetails(score);
 
     const animatedGlowStyle = useAnimatedStyle(() => ({
@@ -176,7 +177,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                 </AnimatedScaleButton>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                     {/* Vision Board button — moved here from footer */}
-                    <AnimatedScaleButton 
+                    <AnimatedScaleButton
                         style={commonStyles.iconButton}
                         onPress={() => {
                             if (security.isNotesUnlocked) {
@@ -225,7 +226,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                         >
                             <Text style={commonStyles.iconButtonText}>⚙️</Text>
                         </AnimatedScaleButton>
-                        
+
                         <View style={{
                             position: 'absolute',
                             top: 0,
@@ -253,20 +254,20 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
 
                         {/* Inner Circle - behind the icon. IsActive prop handles stable retracting draws. */}
                         <View style={[styles.iconCircle, { position: 'absolute', width: 68, height: 68, justifyContent: 'center', alignItems: 'center', borderWidth: 0 }]}>
-                            <AnimatedSymmetricalRing 
-                                size={68} 
-                                strokeWidth={4} 
-                                color={details.color} 
+                            <AnimatedSymmetricalRing
+                                size={68}
+                                strokeWidth={4}
+                                color={details.color}
                                 backgroundColor={sessionMode === 'checkin' ? theme.colors.background : 'transparent'}
                                 isActive={sessionMode === 'checkin'}
                             />
                         </View>
-                        
-                    {/* The Icon itself - permanently mounted so it can morph */}
-                        <LiquidMorphIcon 
-                            mode={sessionMode} 
-                            size={sessionMode === 'checkin' ? 40 : 42} 
-                            color={sessionMode === 'checkin' ? details.color : theme.colors.primaryAction} 
+
+                        {/* The Icon itself - permanently mounted so it can morph */}
+                        <LiquidMorphIcon
+                            mode={sessionMode}
+                            size={sessionMode === 'checkin' ? 40 : 42}
+                            color={sessionMode === 'checkin' ? details.color : theme.colors.primaryAction}
                         />
                     </View>
 
@@ -352,11 +353,11 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
             <View style={{ height: 90 }} />
 
             {/* Modals */}
-            <SwipeableModal visible={showCalendar} onClose={() => setShowCalendar(false)} setHomeScrollEnabled={setHomeScrollEnabled}>
+            <BaseModal visible={showCalendar} onClose={() => setShowCalendar(false)} setHomeScrollEnabled={setHomeScrollEnabled}>
                 <CalendarView currentStreak={streak.currentStreak} streakHistory={streak.streakHistory} />
-            </SwipeableModal>
+            </BaseModal>
 
-            <SwipeableModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History" setHomeScrollEnabled={setHomeScrollEnabled}>
+            <BaseModal visible={showVersionHistory} onClose={() => setShowVersionHistory(false)} title="Version History" setHomeScrollEnabled={setHomeScrollEnabled}>
                 <View style={{ height: 400, width: '100%' }}>
                     <FlashList
                         data={VERSION_HISTORY}
@@ -369,7 +370,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                         )}
                     />
                 </View>
-            </SwipeableModal>
+            </BaseModal>
 
             <SettingsModal
                 visible={showSettings}
@@ -383,7 +384,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                 personsHook={personsHook}
                 streak={streak}
                 storageActions={storageActions}
-                security={security}
                 queueState={queueState}
                 startBatch={startBatch}
                 cancelBatch={cancelBatch}
@@ -439,7 +439,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                 streakHistory={streak.streakHistory}
                 onClose={() => setShowStreakPopup(false)}
             />
-            
+
             <BenchmarkModal
                 visible={showBenchmarkModal}
                 onClose={() => setShowBenchmarkModal(false)}

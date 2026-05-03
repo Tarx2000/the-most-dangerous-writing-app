@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
     Modal,
     StyleSheet,
@@ -7,7 +7,7 @@ import {
     useWindowDimensions,
     KeyboardAvoidingView,
     Platform,
-    TouchableWithoutFeedback
+    TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -16,30 +16,64 @@ import Animated, {
     useAnimatedStyle,
     withSpring,
     withTiming,
-    runOnJS
+    runOnJS,
 } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
 
 const DISMISS_THRESHOLD = 80;
 const DISMISS_VELOCITY = 600;
 
-interface Props {
+export interface BaseModalProps {
+    /** Controls modal visibility */
     visible: boolean;
+    /** Called after exit animation completes */
     onClose: () => void;
+    /** Content rendered inside the sheet */
     children: React.ReactNode;
+    /** Optional title shown in the drag zone */
     title?: string;
+    /** Explicit sheet height, or defaults to 88% of screen */
     height?: number;
+    /** Whether to show the drag handle pill (default: true) */
+    showHandle?: boolean;
+    /** Whether to show the dark backdrop scrim (default: true) */
+    showScrim?: boolean;
+    /** Optional callback to disable/enable parent scroll (e.g. HomeScreen pager) */
     setHomeScrollEnabled?: (enabled: boolean) => void;
 }
 
-export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, children, title, height, setHomeScrollEnabled }) => {
+/**
+ * BaseModal — Unified bottom-sheet modal shell for the entire app.
+ *
+ * All bottom-sheet modals MUST use this component. It handles:
+ * - RN Modal with proper onRequestClose (back gesture = dismiss, not exit app)
+ * - Dark backdrop scrim with tap-to-dismiss
+ * - Spring-animated entry from bottom
+ * - Spring-animated exit to bottom BEFORE calling onClose
+ * - Swipe-down-to-dismiss from the drag handle zone
+ * - Pan gesture activeOffsetY gating (won't interfere with button taps/scroll)
+ *
+ * Content (children) is rendered below the drag handle. Each feature modal
+ * only provides its own content — never re-implements the shell.
+ */
+export const BaseModal: React.FC<BaseModalProps> = React.memo(({
+    visible,
+    onClose,
+    children,
+    title,
+    height,
+    showHandle = true,
+    showScrim = true,
+    setHomeScrollEnabled,
+}) => {
     const { height: SCREEN_HEIGHT } = useWindowDimensions();
     const insets = useSafeAreaInsets();
-    /** Resolved modal height — uses explicit prop or defaults to 88% of screen */
     const resolvedHeight = height ?? SCREEN_HEIGHT * 0.88;
+
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const overlayOpacity = useSharedValue(0);
 
+    /* ── Exit animation: slide down, then notify parent ── */
     const handleClose = useCallback(() => {
         translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
         overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
@@ -48,6 +82,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
         });
     }, [onClose, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
+    /* ── Entry animation ── */
     useEffect(() => {
         if (visible) {
             setHomeScrollEnabled?.(false);
@@ -63,9 +98,8 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
         }
     }, [visible, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
-    /** Memoize gesture to avoid recreating on every render */
+    /* ── Pan gesture: only activates on downward pull > 20px ── */
     const panGesture = useMemo(() => Gesture.Pan()
-        // Only activate if pulled DOWN > 20px (prevents swallowing button taps)
         .activeOffsetY([-10000, 20])
         .onUpdate((e) => {
             if (e.translationY > 0) {
@@ -78,23 +112,18 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
             if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
                 runOnJS(handleClose)();
             } else {
-                translateY.value = withSpring(0, {
-                    damping: 22,
-                    stiffness: 220,
-                });
+                translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
                 overlayOpacity.value = withTiming(1, { duration: 150 });
             }
         }), [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
-    /** BUG FIX: Use resolvedHeight (computed default) instead of raw height prop
-     * which is undefined when no explicit height is passed, collapsing the sheet. */
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: translateY.value }],
-        height: resolvedHeight
+        height: resolvedHeight,
     }));
 
     const overlayStyle = useAnimatedStyle(() => ({
-        opacity: overlayOpacity.value
+        opacity: overlayOpacity.value,
     }));
 
     if (!visible) return null;
@@ -102,9 +131,11 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
             <GestureHandlerRootView style={{ flex: 1 }}>
-                <TouchableWithoutFeedback onPress={handleClose}>
-                    <Animated.View style={[styles.scrim, overlayStyle]} />
-                </TouchableWithoutFeedback>
+                {showScrim && (
+                    <TouchableWithoutFeedback onPress={handleClose}>
+                        <Animated.View style={[styles.scrim, overlayStyle]} />
+                    </TouchableWithoutFeedback>
+                )}
 
                 <KeyboardAvoidingView
                     style={StyleSheet.absoluteFill}
@@ -113,12 +144,14 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
                 >
                     <View style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]} pointerEvents="box-none">
                         <Animated.View style={[styles.sheet, animatedStyle]}>
-                            <GestureDetector gesture={panGesture}>
-                                <View style={styles.dragZone}>
-                                    <View style={styles.handlePill} />
-                                    {title && <Text style={styles.sheetTitle}>{title}</Text>}
-                                </View>
-                            </GestureDetector>
+                            {showHandle && (
+                                <GestureDetector gesture={panGesture}>
+                                    <View style={styles.dragZone}>
+                                        <View style={styles.handlePill} />
+                                        {title && <Text style={styles.sheetTitle}>{title}</Text>}
+                                    </View>
+                                </GestureDetector>
+                            )}
 
                             <View style={[styles.contentArea, { paddingBottom: insets.bottom + 10 }]}>
                                 {children}
@@ -131,6 +164,7 @@ export const SwipeableModal: React.FC<Props> = React.memo(({ visible, onClose, c
     );
 });
 
+/* ── Styles ──────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({
     scrim: {
         ...StyleSheet.absoluteFillObject,
@@ -142,9 +176,6 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopColor: theme.colors.glassBorderMedium,
-        borderLeftWidth: 0,
-        borderRightWidth: 0,
-        borderBottomWidth: 0,
         overflow: 'hidden',
     },
     dragZone: {
@@ -160,16 +191,16 @@ const styles = StyleSheet.create({
         borderRadius: 3,
         marginBottom: 12,
     },
-    contentArea: {
-        flex: 1,
-        paddingHorizontal: 20,
-        paddingTop: 8,
-    },
     sheetTitle: {
         color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: '600',
         textAlign: 'center',
         letterSpacing: 0.3,
+    },
+    contentArea: {
+        flex: 1,
+        paddingHorizontal: 20,
+        paddingTop: 8,
     },
 });

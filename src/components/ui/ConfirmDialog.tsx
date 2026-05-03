@@ -1,13 +1,11 @@
 /**
  * ConfirmDialog — Reusable animated confirmation dialog.
  *
- * Replaces the multiple inline delete/confirm modals scattered across the app
- * with a single, unified component featuring:
- * - Spring-animated entrance (scale + fade)
- * - Animated scrim backdrop
- * - Configurable title, message, icon, confirm/cancel labels
- * - Destructive variant (red confirm) vs neutral (glass confirm)
- * - Consistent dark glassmorphic card design from theme tokens
+ * A clean, robust implementation using:
+ * - RN Modal with Reanimated card entrance
+ * - Direct Pressable buttons (no AnimatedScaleButton wrapping inside modal)
+ * - Guaranteed-visible text with explicit white color and no-shrink rules
+ * - Spring-animated scale + fade on the card only
  *
  * Usage:
  *   <ConfirmDialog
@@ -17,13 +15,19 @@
  *     confirmLabel="Delete"
  *     cancelLabel="Cancel"
  *     destructive
- *     icon="delete-outline"
  *     onConfirm={() => deleteItem(itemToDelete)}
  *     onCancel={() => setItemToDelete(null)}
  *   />
  */
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Modal } from 'react-native';
+import React, { useEffect, useCallback } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    Modal,
+    Pressable,
+    useWindowDimensions,
+} from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -31,41 +35,34 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { theme } from '@/styles/theme';
 
-/* ── CONFIGURABLE: Animation physics ──────────────────────────────────── */
+/* ── Animation constants ──────────────────────────────────────────────── */
 
-/** Spring config for the dialog card entrance */
-const DIALOG_SPRING = { damping: 18, stiffness: 200, mass: 0.8 };
-
-/** Duration (ms) for scrim fade-in */
-const SCRIM_FADE_DURATION = 250;
+const SPRING = { damping: 18, stiffness: 220, mass: 0.8 };
+const SCRIM_DURATION = 250;
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
 interface ConfirmDialogProps {
-    /** Controls visibility of the dialog */
     visible: boolean;
-    /** Dialog title (e.g. "Delete Entry?") */
     title: string;
-    /** Descriptive message shown below the title */
     message: string;
-    /** Label for the confirm action button */
     confirmLabel?: string;
-    /** Label for the cancel button */
     cancelLabel?: string;
-    /** Icon name (MaterialCommunityIcons) shown on the confirm button */
+    /** @deprecated No longer used — icons are now fixed per button type */
     icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-    /** Icon for cancel button */
+    /** @deprecated No longer used — cancel icon is always 'close' */
     cancelIcon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-    /** If true, confirm button uses danger red styling */
+    /** If true, confirm uses danger red */
     destructive?: boolean;
-    /** Called when the user presses confirm */
+    /** Called when confirm is pressed */
     onConfirm: () => void;
-    /** Called when the user presses cancel or the backdrop */
+    /** Called when cancel or backdrop is pressed */
     onCancel: () => void;
 }
+
+/* ── Component ────────────────────────────────────────────────────────── */
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
     visible,
@@ -73,33 +70,31 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
     message,
     confirmLabel = 'Confirm',
     cancelLabel = 'Cancel',
-    icon = 'check',
-    cancelIcon = 'close',
     destructive = false,
     onConfirm,
     onCancel,
 }) => {
-    /* ── Animation shared values ── */
+    const { width: screenWidth } = useWindowDimensions();
+
+    /* ── Shared values ── */
     const scrimOpacity = useSharedValue(0);
-    const cardScale = useSharedValue(0.85);
+    const cardScale = useSharedValue(0.9);
     const cardOpacity = useSharedValue(0);
 
-    /**
-     * Animate entrance when visible changes.
-     * Scrim fades in with timing, card springs in with scale.
-     */
+    /* ── Animate in / out ── */
     useEffect(() => {
         if (visible) {
-            scrimOpacity.value = withTiming(1, { duration: SCRIM_FADE_DURATION });
-            cardScale.value = withSpring(1, DIALOG_SPRING);
+            scrimOpacity.value = withTiming(1, { duration: SCRIM_DURATION });
+            cardScale.value = withSpring(1, SPRING);
             cardOpacity.value = withTiming(1, { duration: 200 });
         } else {
-            scrimOpacity.value = 0;
-            cardScale.value = 0.85;
-            cardOpacity.value = 0;
+            scrimOpacity.value = withTiming(0, { duration: 180 });
+            cardScale.value = withTiming(0.9, { duration: 180 });
+            cardOpacity.value = withTiming(0, { duration: 180 });
         }
     }, [visible, scrimOpacity, cardScale, cardOpacity]);
 
+    /* ── Animated styles ── */
     const scrimStyle = useAnimatedStyle(() => ({
         opacity: scrimOpacity.value,
     }));
@@ -109,54 +104,68 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
         opacity: cardOpacity.value,
     }));
 
+    /* ── Handlers ── */
+    const handleConfirm = useCallback(() => onConfirm(), [onConfirm]);
+    const handleCancel = useCallback(() => onCancel(), [onCancel]);
+
     if (!visible) return null;
 
     return (
         <Modal visible transparent animationType="none" statusBarTranslucent>
-            {/* Animated backdrop scrim */}
-            <Animated.View style={[styles.backdrop, scrimStyle]}>
-                {/* Tap backdrop to cancel */}
-                <AnimatedScaleButton
-                    style={StyleSheet.absoluteFillObject}
-                    onPress={onCancel}
-                >
-                    <View style={StyleSheet.absoluteFillObject} />
-                </AnimatedScaleButton>
+            {/* Scrim backdrop */}
+            <Animated.View style={[styles.scrim, scrimStyle]}>
+                {/* Backdrop tap to dismiss */}
+                <Pressable style={styles.scrimHitArea} onPress={handleCancel} />
 
                 {/* Dialog card */}
-                <Animated.View style={[styles.card, cardStyle]}>
+                <Animated.View
+                    style={[
+                        styles.card,
+                        cardStyle,
+                        { maxWidth: Math.min(380, screenWidth - 48) },
+                    ]}
+                >
+                    {/* Title */}
                     <Text style={styles.title}>{title}</Text>
+
+                    {/* Message */}
                     <Text style={styles.message}>{message}</Text>
 
+                    {/* Button row */}
                     <View style={styles.buttonRow}>
-                        {/* Cancel button — always glass style */}
-                        <AnimatedScaleButton
-                            style={[styles.button, styles.cancelButton]}
-                            onPress={onCancel}
-                        >
-                            <MaterialCommunityIcons
-                                name={cancelIcon}
-                                size={18}
-                                color={theme.colors.textPrimary}
-                            />
-                            <Text style={styles.cancelText}>{cancelLabel}</Text>
-                        </AnimatedScaleButton>
-
-                        {/* Confirm button — destructive (red) or neutral (primary) */}
-                        <AnimatedScaleButton
-                            style={[
-                                styles.button,
-                                destructive ? styles.destructiveButton : styles.confirmButton,
+                        {/* Cancel */}
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.buttonBase,
+                                styles.cancelBtn,
+                                pressed && styles.cancelBtnPressed,
                             ]}
-                            onPress={onConfirm}
+                            onPress={handleCancel}
                         >
                             <MaterialCommunityIcons
-                                name={icon}
+                                name="close"
                                 size={18}
-                                color={theme.colors.textPrimary}
+                                color="#FFFFFF"
                             />
-                            <Text style={styles.confirmText}>{confirmLabel}</Text>
-                        </AnimatedScaleButton>
+                            <Text style={styles.btnText}>{cancelLabel}</Text>
+                        </Pressable>
+
+                        {/* Confirm */}
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.buttonBase,
+                                destructive ? styles.destructiveBtn : styles.confirmBtn,
+                                pressed && (destructive ? styles.destructiveBtnPressed : styles.confirmBtnPressed),
+                            ]}
+                            onPress={handleConfirm}
+                        >
+                            <MaterialCommunityIcons
+                                name={destructive ? 'trash-can-outline' : 'check'}
+                                size={18}
+                                color="#FFFFFF"
+                            />
+                            <Text style={styles.btnText}>{confirmLabel}</Text>
+                        </Pressable>
                     </View>
                 </Animated.View>
             </Animated.View>
@@ -164,35 +173,35 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
     );
 });
 
-/* ── Styles ────────────────────────────────────────────────────────────── */
+/* ── Styles ───────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
-    /** Full-screen semi-transparent backdrop */
-    backdrop: {
+    scrim: {
         flex: 1,
         backgroundColor: theme.colors.modalBackground,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 24,
     },
-    /** Glass-morphic dialog card */
+    scrimHitArea: {
+        ...StyleSheet.absoluteFillObject,
+    },
     card: {
         backgroundColor: theme.colors.surfaceRaised,
         borderRadius: 20,
         padding: 28,
         width: '100%',
-        maxWidth: 380,
         borderWidth: 1,
         borderColor: theme.colors.glassBorderMedium,
-        /** Subtle shadow for depth */
-        shadowColor: theme.colors.background,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.4,
-        shadowRadius: 24,
-        elevation: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.5,
+        shadowRadius: 30,
+        elevation: 24,
+        zIndex: 1,
     },
     title: {
-        color: theme.colors.textPrimary,
+        color: '#FFFFFF',
         fontSize: 22,
         fontWeight: '800',
         textAlign: 'center',
@@ -208,38 +217,46 @@ const styles = StyleSheet.create({
     },
     buttonRow: {
         flexDirection: 'row',
-        gap: 10,
+        gap: 12,
     },
-    /** Shared button base styles */
-    button: {
+    /** Shared button shell */
+    buttonBase: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 15,
-        borderRadius: 100,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 14,
         gap: 8,
     },
-    /** Cancel: glass background */
-    cancelButton: {
+    /** Cancel — glass */
+    cancelBtn: {
         backgroundColor: theme.colors.glassHighlight,
     },
-    /** Destructive confirm: danger red */
-    destructiveButton: {
-        backgroundColor: theme.colors.danger,
+    cancelBtnPressed: {
+        backgroundColor: theme.colors.glassBorderMedium,
     },
-    /** Neutral confirm: primary action */
-    confirmButton: {
+    /** Confirm — primary */
+    confirmBtn: {
         backgroundColor: theme.colors.primaryAction,
     },
-    cancelText: {
-        color: theme.colors.textPrimary,
-        fontWeight: '700',
-        fontSize: 15,
+    confirmBtnPressed: {
+        backgroundColor: 'rgba(255,42,42,0.7)',
     },
-    confirmText: {
-        color: theme.colors.textPrimary,
+    /** Confirm — destructive */
+    destructiveBtn: {
+        backgroundColor: theme.colors.danger,
+    },
+    destructiveBtnPressed: {
+        backgroundColor: 'rgba(255,42,42,0.7)',
+    },
+    /** Button text — explicit white, no-shrink */
+    btnText: {
+        color: '#FFFFFF',
         fontWeight: '700',
         fontSize: 15,
+        letterSpacing: 0.2,
+        flexShrink: 0,
     },
 });

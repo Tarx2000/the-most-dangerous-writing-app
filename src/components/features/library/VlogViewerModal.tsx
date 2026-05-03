@@ -110,6 +110,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
     // Keep visible state synced locally for enter/exit animations
     const [isRendered, setIsRendered] = useState(visible);
+    const isClosingRef = useRef(false);
 
     // Reanimated Shared Values
     const progress = useSharedValue(0); // 0 = shrinked to sourceRect, 1 = expanded
@@ -127,6 +128,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
     useEffect(() => {
         if (visible) {
+            isClosingRef.current = false;
             setIsRendered(true);
             setExpandedIndex(initialIndex);
             setIsPlaying(activePlayer?.playing ?? true);
@@ -139,10 +141,10 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             // Animate in
             progress.value = withSpring(1, { damping: 18, stiffness: 180 });
         } else {
-            // Animate out, then unmount (if called externally)
-            progress.value = withTiming(0, { duration: 250 }, (finished) => {
-                if (finished) runOnJS(setIsRendered)(false);
-            });
+            // Parent set visible=false — delegate to handleCloseInternal for consistent exit
+            if (!isClosingRef.current) {
+                runOnJS(handleCloseInternal)();
+            }
         }
     }, [visible, initialIndex, panX, panY, progress, activePlayer]);
 
@@ -191,16 +193,28 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         };
     }, [showControls, scheduleControlsHide]);
 
+    /** Shared-element close: morph back to thumbnail (backdrop tap, back button). */
     const handleCloseInternal = useCallback(() => {
+        if (isClosingRef.current) return;
+        isClosingRef.current = true;
         progress.value = withTiming(0, { duration: 250 }, (finished) => {
-            if (finished) {
-                runOnJS(setIsRendered)(false);
-                runOnJS(onClose)();
-            }
+            runOnJS(setIsRendered)(false);
+            runOnJS(onClose)();
         });
         panX.value = withTiming(0, { duration: 250 });
         panY.value = withTiming(0, { duration: 250 });
     }, [onClose, panX, panY, progress]);
+
+    /** Swipe-down close: slide card down while fading backdrop via dragOpacity. */
+    const handleSwipeDismiss = useCallback(() => {
+        if (isClosingRef.current) return;
+        isClosingRef.current = true;
+        panX.value = withTiming(0, { duration: 300 });
+        panY.value = withTiming(SCREEN_HEIGHT, { duration: 300 }, () => {
+            runOnJS(setIsRendered)(false);
+            runOnJS(onClose)();
+        });
+    }, [onClose, panX, panY, SCREEN_HEIGHT]);
 
     // Handle swipe to dismiss (only on the card, not the backdrop)
     const panGesture = useMemo(() => Gesture.Pan()
@@ -211,12 +225,12 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         .onEnd((e) => {
             const distance = Math.sqrt(e.translationX ** 2 + e.translationY ** 2);
             if (distance > 80 || Math.abs(e.velocityY) > 800) {
-                runOnJS(handleCloseInternal)();
+                runOnJS(handleSwipeDismiss)();
             } else {
                 panX.value = withSpring(0, { damping: 20, stiffness: 200 });
                 panY.value = withSpring(0, { damping: 20, stiffness: 200 });
             }
-        }), [handleCloseInternal, panX, panY]);
+        }), [handleSwipeDismiss, panX, panY]);
 
     // Backdrop tap — only closes when tapping outside the card
     const backdropTapGesture = useMemo(() => Gesture.Tap()

@@ -6,7 +6,7 @@ import {
     Pressable,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import { SwipeableModal } from '@/components/ui/SwipeableModal';
+import { BaseModal } from '@/components/ui/BaseModal';
 import { ActionSheet } from '@/components/ui/ActionSheet';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel';
@@ -79,7 +79,6 @@ interface SettingsModalProps {
     personsHook: PersonsHook;
     streak: Streak;
     storageActions: StorageActions;
-    security: Security;
 
     /** AI queue */
     queueState: AiQueueState;
@@ -199,7 +198,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
 
     return (
         <>
-            <SwipeableModal visible={visible} onClose={onClose} title="Settings" setHomeScrollEnabled={setHomeScrollEnabled}>
+            <BaseModal visible={visible} onClose={onClose} title="Settings" setHomeScrollEnabled={setHomeScrollEnabled}>
                 <ScrollView
                     contentContainerStyle={{ paddingBottom: 150 }}
                     showsVerticalScrollIndicator={false}
@@ -453,7 +452,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                         clearAiLog={devTools.clearAiLog}
                     />
                 </ScrollView>
-            </SwipeableModal>
+            </BaseModal>
 
             {/* Select AI Model — unified ActionSheet with live fetching + favorites */}
             <ActionSheet

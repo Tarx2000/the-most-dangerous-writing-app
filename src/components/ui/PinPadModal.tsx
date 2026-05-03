@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    Pressable,
+    Modal,
+    TouchableWithoutFeedback,
+    useWindowDimensions,
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import Animated, {
     useSharedValue,
@@ -7,13 +15,17 @@ import Animated, {
     withSpring,
     withTiming,
     withSequence,
+    runOnJS,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { usePinContext, type PinMode } from '@/lib/hooks/usePinProvider';
 import { theme } from '@/styles/theme';
 import { storage } from '@/lib/storage';
 import { CONFIG } from '@/config';
+
+const DISMISS_THRESHOLD = 80;
+const DISMISS_VELOCITY = 600;
 
 /* ── PIN Rate Limiting Constants ─────────────────────────────────────── */
 const {
@@ -59,9 +71,17 @@ export const PinPadModal: React.FC = () => {
     const [isLockedOut, setIsLockedOut] = useState(false);
     const [lockoutSeconds, setLockoutSeconds] = useState(0);
 
-    const opacitySV = useSharedValue(0);
-    const translateYSV = useSharedValue(50);
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
+    const translateY = useSharedValue(SCREEN_HEIGHT);
+    const overlayOpacity = useSharedValue(0);
     const shakeSV = useSharedValue(0);
+
+    const handleDismiss = useCallback(() => {
+        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+        overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
+            runOnJS(onCancel)();
+        });
+    }, [onCancel, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
     /**
      * Check lockout status from storage on every open or interaction.
@@ -99,13 +119,39 @@ export const PinPadModal: React.FC = () => {
             setLocalMode(mode);
             setLocalPrompt(promptText);
             checkLockout(); // Check lockout every time modal opens
-            opacitySV.value = withTiming(1, { duration: 300 });
-            translateYSV.value = withSpring(0, theme.animation.springDefault);
-        } else {
-            opacitySV.value = withTiming(0, { duration: 200 });
-            translateYSV.value = withSpring(50);
+            translateY.value = SCREEN_HEIGHT;
+            overlayOpacity.value = 0;
+            translateY.value = withSpring(0, {
+                damping: 22,
+                stiffness: 220,
+                mass: 0.8,
+            });
+            overlayOpacity.value = withTiming(1, { duration: 300 });
         }
-    }, [isVisible, mode, promptText, opacitySV, translateYSV, checkLockout]);
+    }, [isVisible, mode, promptText, translateY, overlayOpacity, SCREEN_HEIGHT, checkLockout]);
+
+    /** Memoize gesture to avoid recreating on every render */
+    const panGesture = useMemo(() => Gesture.Pan()
+        // Only activate if pulled DOWN > 20px (prevents swallowing button taps)
+        .activeOffsetY([-10000, 20])
+        .onUpdate((e) => {
+            if (e.translationY > 0) {
+                translateY.value = e.translationY;
+                const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
+                overlayOpacity.value = 1 - progress;
+            }
+        })
+        .onEnd((e) => {
+            if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
+                runOnJS(handleDismiss)();
+            } else {
+                translateY.value = withSpring(0, {
+                    damping: 22,
+                    stiffness: 220,
+                });
+                overlayOpacity.value = withTiming(1, { duration: 150 });
+            }
+        }), [handleDismiss, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
     const triggerShake = useCallback(() => {
         vibrate([0, 50, 50, 50]); // Error vibration pattern
@@ -213,91 +259,125 @@ export const PinPadModal: React.FC = () => {
         }
     }, [enteredPin, isLockedOut, checkLockout]);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        opacity: opacitySV.value,
-        transform: [{ translateY: translateYSV.value }],
-        pointerEvents: isVisible ? 'auto' : 'none'
+    const overlayStyle = useAnimatedStyle(() => ({
+        opacity: overlayOpacity.value
+    }));
+
+    const sheetStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: translateY.value }]
     }));
 
     const shakeStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: shakeSV.value }]
     }));
 
+    if (!isVisible) return null;
+
     return (
-        <Animated.View style={[StyleSheet.absoluteFill, styles.container, animatedStyle, { pointerEvents: isVisible ? 'auto' : 'none' }]}>
-            <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+        <Modal visible={isVisible} transparent animationType="none" onRequestClose={handleDismiss}>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+                <TouchableWithoutFeedback onPress={handleDismiss}>
+                    <Animated.View style={[styles.scrim, overlayStyle]} />
+                </TouchableWithoutFeedback>
 
-            <View style={styles.content}>
-                <Text style={styles.prompt}>{localPrompt}</Text>
+                <Animated.View style={[styles.sheet, sheetStyle]}>
+                    <GestureDetector gesture={panGesture}>
+                        <View style={styles.dragZone}>
+                            <View style={styles.handlePill} />
+                        </View>
+                    </GestureDetector>
 
-                {/* Lockout Banner */}
-                {isLockedOut && (
-                    <View style={styles.lockoutBanner}>
-                        <MaterialCommunityIcons name="lock-clock" size={20} color={theme.colors.danger} />
-                        <Text style={styles.lockoutText}>
-                            Too many attempts. Try again in {lockoutSeconds}s.
-                        </Text>
+                    <View style={styles.content}>
+                        <Text style={styles.prompt}>{localPrompt}</Text>
+
+                        {/* Lockout Banner */}
+                        {isLockedOut && (
+                            <View style={styles.lockoutBanner}>
+                                <MaterialCommunityIcons name="lock-clock" size={20} color={theme.colors.danger} />
+                                <Text style={styles.lockoutText}>
+                                    Too many attempts. Try again in {lockoutSeconds}s.
+                                </Text>
+                            </View>
+                        )}
+
+                        <Animated.View style={[styles.dotsContainer, shakeStyle]}>
+                            {[0, 1, 2, 3].map(i => (
+                                <View
+                                    key={i}
+                                    style={[
+                                        styles.dot,
+                                        enteredPin.length > i && styles.dotFilled
+                                    ]}
+                                />
+                            ))}
+                        </Animated.View>
+
+                        <View style={[styles.padWrapper, isLockedOut && styles.padDisabled]}>
+                            <View style={styles.row}>
+                                <DialButton num={1} onPress={() => handlePress(1)} disabled={isLockedOut} />
+                                <DialButton num={2} onPress={() => handlePress(2)} disabled={isLockedOut} />
+                                <DialButton num={3} onPress={() => handlePress(3)} disabled={isLockedOut} />
+                            </View>
+                            <View style={styles.row}>
+                                <DialButton num={4} onPress={() => handlePress(4)} disabled={isLockedOut} />
+                                <DialButton num={5} onPress={() => handlePress(5)} disabled={isLockedOut} />
+                                <DialButton num={6} onPress={() => handlePress(6)} disabled={isLockedOut} />
+                            </View>
+                            <View style={styles.row}>
+                                <DialButton num={7} onPress={() => handlePress(7)} disabled={isLockedOut} />
+                                <DialButton num={8} onPress={() => handlePress(8)} disabled={isLockedOut} />
+                                <DialButton num={9} onPress={() => handlePress(9)} disabled={isLockedOut} />
+                            </View>
+                            <View style={styles.row}>
+                                <Pressable onPress={handleDismiss} style={styles.dialButton}>
+                                    <Text style={styles.cancelText}>Cancel</Text>
+                                </Pressable>
+                                <DialButton num={0} onPress={() => handlePress(0)} disabled={isLockedOut} />
+                                <DialButton icon="backspace-outline" onPress={handleDelete} disabled={isLockedOut} />
+                            </View>
+                        </View>
                     </View>
-                )}
-
-                <Animated.View style={[styles.dotsContainer, shakeStyle]}>
-                    {[0, 1, 2, 3].map(i => (
-                        <View
-                            key={i}
-                            style={[
-                                styles.dot,
-                                enteredPin.length > i && styles.dotFilled
-                            ]}
-                        />
-                    ))}
                 </Animated.View>
-
-                <View style={[styles.padWrapper, isLockedOut && styles.padDisabled]}>
-                    <View style={styles.row}>
-                        <DialButton num={1} onPress={() => handlePress(1)} disabled={isLockedOut} />
-                        <DialButton num={2} onPress={() => handlePress(2)} disabled={isLockedOut} />
-                        <DialButton num={3} onPress={() => handlePress(3)} disabled={isLockedOut} />
-                    </View>
-                    <View style={styles.row}>
-                        <DialButton num={4} onPress={() => handlePress(4)} disabled={isLockedOut} />
-                        <DialButton num={5} onPress={() => handlePress(5)} disabled={isLockedOut} />
-                        <DialButton num={6} onPress={() => handlePress(6)} disabled={isLockedOut} />
-                    </View>
-                    <View style={styles.row}>
-                        <DialButton num={7} onPress={() => handlePress(7)} disabled={isLockedOut} />
-                        <DialButton num={8} onPress={() => handlePress(8)} disabled={isLockedOut} />
-                        <DialButton num={9} onPress={() => handlePress(9)} disabled={isLockedOut} />
-                    </View>
-                    <View style={styles.row}>
-                        <Pressable onPress={onCancel} style={styles.dialButton}>
-                            <Text style={styles.cancelText}>Cancel</Text>
-                        </Pressable>
-                        <DialButton num={0} onPress={() => handlePress(0)} disabled={isLockedOut} />
-                        <DialButton icon="backspace-outline" onPress={handleDelete} disabled={isLockedOut} />
-                    </View>
-                </View>
-            </View>
-        </Animated.View>
+            </GestureHandlerRootView>
+        </Modal>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        zIndex: 1000,
-        justifyContent: 'flex-end',
+    scrim: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: theme.colors.overlayDark,
+    },
+    sheet: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: theme.colors.surfaceDark,
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        borderTopWidth: 1,
+        borderColor: theme.colors.glassBorder,
         alignItems: 'center',
+    },
+    dragZone: {
+        width: '100%',
+        alignItems: 'center',
+        paddingTop: 16,
+        paddingBottom: 12,
+    },
+    handlePill: {
+        width: 40,
+        height: 5,
+        backgroundColor: theme.colors.grey,
+        borderRadius: 3,
     },
     content: {
         width: '100%',
         maxWidth: 400,
-        backgroundColor: theme.colors.surfaceDark,
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        paddingTop: 32,
+        paddingTop: 16,
         paddingBottom: 48,
         alignItems: 'center',
-        borderTopWidth: 1,
-        borderColor: theme.colors.glassBorder,
     },
     prompt: {
         color: theme.colors.textPrimary,
