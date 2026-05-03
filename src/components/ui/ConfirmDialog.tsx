@@ -145,7 +145,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
                             <MaterialCommunityIcons
                                 name="close"
                                 size={18}
-                                color="#FFFFFF"
+                                color={theme.colors.textPrimary}
                             />
                             <Text style={styles.btnText}>{cancelLabel}</Text>
                         </Pressable>
@@ -162,7 +162,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
                             <MaterialCommunityIcons
                                 name={destructive ? 'trash-can-outline' : 'check'}
                                 size={18}
-                                color="#FFFFFF"
+                                color={theme.colors.textPrimary}
                             />
                             <Text style={styles.btnText}>{confirmLabel}</Text>
                         </Pressable>
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
         width: '100%',
         borderWidth: 1,
         borderColor: theme.colors.glassBorderMedium,
-        shadowColor: '#000',
+        shadowColor: theme.colors.shadowDark,
         shadowOffset: { width: 0, height: 12 },
         shadowOpacity: 0.5,
         shadowRadius: 30,
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
         zIndex: 1,
     },
     title: {
-        color: '#FFFFFF',
+        color: theme.colors.textPrimary,
         fontSize: 22,
         fontWeight: '800',
         textAlign: 'center',
@@ -242,18 +242,18 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.primaryAction,
     },
     confirmBtnPressed: {
-        backgroundColor: 'rgba(255,42,42,0.7)',
+        backgroundColor: theme.colors.dangerPressed,
     },
     /** Confirm — destructive */
     destructiveBtn: {
         backgroundColor: theme.colors.danger,
     },
     destructiveBtnPressed: {
-        backgroundColor: 'rgba(255,42,42,0.7)',
+        backgroundColor: theme.colors.dangerPressed,
     },
     /** Button text — explicit white, no-shrink */
     btnText: {
-        color: '#FFFFFF',
+        color: theme.colors.textPrimary,
         fontWeight: '700',
         fontSize: 15,
         letterSpacing: 0.2,

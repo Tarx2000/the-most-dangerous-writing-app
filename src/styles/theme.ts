@@ -58,6 +58,7 @@ export const theme = {
         dangerFillStrong: 'rgba(255, 42, 42, 0.3)',
         dangerOverlayLight: 'rgba(255, 42, 42, 0.45)',
         dangerGradientEnd: 'rgba(255, 42, 42, 0.45)',
+        dangerPressed: 'rgba(255, 42, 42, 0.7)',
 
         // Deep Glassmorphism Containers
         glassBackground: 'rgba(255, 255, 255, 0.05)',
@@ -96,6 +97,9 @@ export const theme = {
         videoAccentTint: 'rgba(255, 107, 53, 0.1)',   // Video card avatar background tint
         videoAccentBorder: 'rgba(255, 107, 53, 0.15)', // Video card avatar border
         videoFlashBackground: 'rgba(0, 0, 0, 0.4)',   // Play/pause flash icon background
+
+        // Shadows
+        shadowDark: '#000000',
 
         // Navigation bar
         navIconActive: 'rgba(255, 255, 255, 1)',

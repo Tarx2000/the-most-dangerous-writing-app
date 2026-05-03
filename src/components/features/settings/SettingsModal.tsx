@@ -20,7 +20,6 @@ import { theme } from '@/styles/theme';
 import { isCompressionAvailable } from '@/lib/videoCompressor';
 import type { AiLogEntry, AiQueueState } from '@/types';
 import type { usePreferences, useFeedData, useVlogs, useNotes, useAiConfig, usePersons, useStreak, useStorageActions } from '@/lib/hooks/useStorage';
-import type { useSecurity } from '@/lib/hooks/useSecurity';
 
 // ---- Grouped prop types to reduce prop drilling ----
 
@@ -63,7 +62,6 @@ type AiConfig = ReturnType<typeof useAiConfig>;
 type PersonsHook = ReturnType<typeof usePersons>;
 type Streak = ReturnType<typeof useStreak>;
 type StorageActions = ReturnType<typeof useStorageActions>;
-type Security = ReturnType<typeof useSecurity>;
 
 interface SettingsModalProps {
     visible: boolean;

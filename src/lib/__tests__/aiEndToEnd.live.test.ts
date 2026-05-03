@@ -107,14 +107,14 @@ describe('AI End-to-End (Live API)', () => {
       return;
     }
 
-    // Extra guard: the model must answer a trivial prompt within 15s.
-    // If it hangs or times out we treat the API as effectively down so the
-    // suite skips gracefully instead of burning 3+ minutes on retries.
+    // Extra guard: the model must answer a trivial prompt within 120s.
+    // Under concurrent test load the server queues requests behind other
+    // running suites, so we allow a very generous window.
     try {
       await Promise.race([
         generateTitle('hello world'),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Model probe timeout')), 15_000),
+          setTimeout(() => reject(new Error('Model probe timeout')), 120_000),
         ),
       ]);
       serverOnline = true;

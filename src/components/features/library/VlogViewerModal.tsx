@@ -197,7 +197,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const handleCloseInternal = useCallback(() => {
         if (isClosingRef.current) return;
         isClosingRef.current = true;
-        progress.value = withTiming(0, { duration: 250 }, (finished) => {
+        progress.value = withTiming(0, { duration: 250 }, () => {
             runOnJS(setIsRendered)(false);
             runOnJS(onClose)();
         });

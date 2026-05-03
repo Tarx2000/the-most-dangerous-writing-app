@@ -1,16 +1,18 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { View, Text, ScrollView, TextInput, Alert, Platform } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
 import { DEFAULT_AI_PROMPTS, type AiPrompts } from '@/config/ai';
 import type { SavedNote, Person, SavedVlog, AiQueueState, AiLogEntry } from '@/types';
+import { startConsoleCapture, stopConsoleCapture, getCapturedLogs, clearCapturedLogs, type CapturedLog } from '@/lib/consoleCapture';
 
 /** File system entry as displayed in the dev tools explorer */
 interface FileSystemEntry {
@@ -53,7 +55,8 @@ type DeveloperToolsPanelProps = {
 
 /**
  * DeveloperToolsPanel — Debug/dev settings panel.
- * Provides dev mode toggle, storage info, AI log viewer, and editable prompts.
+ * Provides dev mode toggle, storage info, AI log viewer, editable prompts,
+ * app lock controls, and live console capture.
  * All interactive elements use AnimatedScaleButton for consistency.
  */
 export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
@@ -89,7 +92,51 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
     const [currentPath, setCurrentPath] = useState(FileSystem.documentDirectory || '');
     const [fileSystemData, setFileSystemData] = useState<FileSystemEntry[]>([]);
     const [fileSystemLoading, setFileSystemLoading] = useState(false);
-    const [viewingFile, setViewingFile] = useState<{name: string, content: string} | null>(null);
+    const [viewingFile, setViewingFile] = useState<{ name: string, content: string } | null>(null);
+
+    // --- Console log capture state ---
+    const [consoleLogs, setConsoleLogs] = useState<CapturedLog[]>([]);
+    const [showConsoleLogs] = useState(false);
+    const consoleRefreshInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Start/stop console capture when devMode toggles
+    useEffect(() => {
+        if (preferences.devMode) {
+            startConsoleCapture();
+        } else {
+            stopConsoleCapture();
+            clearCapturedLogs();
+            setConsoleLogs([]);
+        }
+        return () => {
+            stopConsoleCapture();
+            if (consoleRefreshInterval.current) clearInterval(consoleRefreshInterval.current);
+        };
+    }, [preferences.devMode]);
+
+    // Auto-refresh console logs when viewer is open
+    useEffect(() => {
+        if (showConsoleLogs && preferences.devMode) {
+            consoleRefreshInterval.current = setInterval(() => {
+                setConsoleLogs(getCapturedLogs());
+            }, 1000);
+        } else if (consoleRefreshInterval.current) {
+            clearInterval(consoleRefreshInterval.current);
+            consoleRefreshInterval.current = null;
+        }
+        return () => {
+            if (consoleRefreshInterval.current) clearInterval(consoleRefreshInterval.current);
+        };
+    }, [showConsoleLogs, preferences.devMode]);
+
+    const refreshConsoleLogs = useCallback(() => {
+        setConsoleLogs(getCapturedLogs());
+    }, []);
+
+    const handleClearConsoleLogs = useCallback(() => {
+        clearCapturedLogs();
+        setConsoleLogs([]);
+    }, []);
 
     const loadFileSystemData = async (path = currentPath) => {
         setFileSystemLoading(true);
@@ -133,35 +180,44 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
             {preferences.devMode && (
                 <View style={{ marginTop: 15, gap: 10 }}>
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.goldTint, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.goldTint }]}
                         onPress={() => {
                             setNewStreakParam(streak.currentStreak || 1);
                             setShowStreakPopup(true);
                             setShowSettings(false);
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.gold }]}>🎯 Simulate Streak Popup</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="trophy-outline" size={16} color={theme.colors.gold} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.gold }]}>Simulate Streak Popup</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.successBorder, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.successBorder }]}
                         onPress={() => setShowBenchmarkModal(true)}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.green }]}>⚡ Run AI Benchmark</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.green} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.green }]}>Run AI Benchmark</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.dangerFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.dangerFill }]}
                         onPress={() => {
                             storageActions.clearAllData();
                             setShowSettings(false);
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>ðŸ—‘ Clear All Data</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.colors.danger} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.danger }]}>Clear All Data</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.infoFill }]}
                         onPress={async () => {
                             vibrate(50);
                             try {
@@ -182,11 +238,14 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>ðŸ” Inspect AsyncStorage (Safe)</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="magnify" size={16} color={theme.colors.devBlue} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.devBlue }]}>Inspect AsyncStorage (Safe)</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.successFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.successFill }]}
                         onPress={async () => {
                             vibrate(50);
                             try {
@@ -208,11 +267,14 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.green }]}>âš¡ Safe Recover from AsyncStorage</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="backup-restore" size={16} color={theme.colors.green} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.green }]}>Safe Recover from AsyncStorage</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.infoFill }]}
                         onPress={async () => {
                             vibrate(50);
                             try {
@@ -226,10 +288,13 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>📤 Export All AsyncStorage Data</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="export" size={16} color={theme.colors.devBlue} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.devBlue }]}>Export All AsyncStorage Data</Text>
                     </AnimatedScaleButton>
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.infoFill }]}
                         onPress={async () => {
                             vibrate(50);
                             try {
@@ -240,11 +305,14 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>🛠 Restore from AsyncStorage (Destructive)</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="restore" size={16} color={theme.colors.devPurple} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.devPurple }]}>Restore from AsyncStorage (Destructive)</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.goldFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.goldFill }]}
                         onPress={async () => {
                             vibrate(50);
                             try {
@@ -264,11 +332,14 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.gold }]}>ðŸŽ¥ Scan Orphan Videos</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="video-off-outline" size={16} color={theme.colors.gold} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.gold }]}>Scan Orphan Videos</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.successFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.successFill }]}
                         onPress={async () => {
                             vibrate(50);
                             try {
@@ -283,17 +354,23 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             }
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.green }]}>ðŸŽ¬ Re-attach Orphan Videos</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="video-check-outline" size={16} color={theme.colors.green} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.green }]}>Re-attach Orphan Videos</Text>
                     </AnimatedScaleButton>
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.orangeFill, marginTop: 0 }]}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.orangeFill }]}
                         onPress={() => {
                             notes.clearAllAiMetadata();
                             vibrate(50);
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devOrange }]}>ðŸ—‘ Reset all AI Entries</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name="robot-off-outline" size={16} color={theme.colors.devOrange} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.devOrange }]}>Reset all AI Entries</Text>
                     </AnimatedScaleButton>
 
                     <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 5 }}>
@@ -309,46 +386,91 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                         <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>AI Queue: {queueState.pendingCount} pending, {queueState.isProcessing ? 'active' : 'idle'}</Text>
                     </View>
 
+                    {/* ── App Log (AI + Console) ───────────────────────────── */}
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.goldFill, marginTop: 10 }]}
-                        onPress={async () => { await loadAiLog(); setShowAiLog(!showAiLog); }}
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.goldFill, marginTop: 10 }]}
+                        onPress={async () => {
+                            await loadAiLog();
+                            refreshConsoleLogs();
+                            setShowAiLog(!showAiLog);
+                        }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.gold }]}>{showAiLog ? '🔽 Hide' : '📋 Show'} AI Processing Log</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name={showAiLog ? 'chevron-down' : 'format-list-bulleted'} size={16} color={theme.colors.gold} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.gold }]}>{showAiLog ? 'Hide' : 'Show'} App Log</Text>
                     </AnimatedScaleButton>
 
                     {showAiLog && (
-                        <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 300 }}>
+                        <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 8, maxHeight: 400 }}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold' }}>📋 AI Log ({aiLogEntries.length} entries)</Text>
-                                <AnimatedScaleButton onPress={async () => { await clearAiLog(); setAiLogEntries([]); }}>
-                                    <Text style={{ color: theme.colors.danger, fontSize: 11, fontWeight: '600' }}>Clear</Text>
-                                </AnimatedScaleButton>
+                                <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold' }}>App Log</Text>
+                                <View style={{ flexDirection: 'row', gap: 8 }}>
+                                    <AnimatedScaleButton onPress={async () => { await clearAiLog(); setAiLogEntries([]); }}>
+                                        <Text style={{ color: theme.colors.danger, fontSize: 11, fontWeight: '600' }}>Clear AI</Text>
+                                    </AnimatedScaleButton>
+                                    <AnimatedScaleButton onPress={handleClearConsoleLogs}>
+                                        <Text style={{ color: theme.colors.danger, fontSize: 11, fontWeight: '600' }}>Clear Console</Text>
+                                    </AnimatedScaleButton>
+                                </View>
                             </View>
-                            <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
-                                {aiLogEntries.length === 0 ? (
-                                    <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>No log entries yet</Text>
-                                ) : (
-                                    aiLogEntries.map((entry, i) => (
-                                        <View key={i} style={{ borderBottomWidth: 1, borderBottomColor: theme.colors.glassSurfaceSubtle, paddingVertical: 4 }}>
-                                            <Text style={{ color: theme.colors.textMuted, fontSize: 10 }}>
-                                                {new Date(entry.timestamp).toLocaleTimeString()} | {entry.action.toUpperCase()} | {entry.phase}{entry.durationMs ? ` | ${entry.durationMs}ms` : ''}
-                                            </Text>
-                                            {entry.error && <Text style={{ color: theme.colors.danger, fontSize: 10 }}>{entry.error}</Text>}
-                                        </View>
-                                    ))
-                                )}
-                            </ScrollView>
+
+                            {/* AI Log Entries */}
+                            {aiLogEntries.length > 0 && (
+                                <>
+                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 10, fontWeight: 'bold', marginBottom: 4 }}>AI Processing</Text>
+                                    <ScrollView style={{ maxHeight: 120 }} nestedScrollEnabled>
+                                        {aiLogEntries.map((entry, i) => (
+                                            <View key={`ai-${i}`} style={{ borderBottomWidth: 1, borderBottomColor: theme.colors.glassSurfaceSubtle, paddingVertical: 3 }}>
+                                                <Text style={{ color: theme.colors.textMuted, fontSize: 10 }}>
+                                                    {new Date(entry.timestamp).toLocaleTimeString()} | {entry.action.toUpperCase()} | {entry.phase}{entry.durationMs ? ` | ${entry.durationMs}ms` : ''}
+                                                </Text>
+                                                {entry.error && <Text style={{ color: theme.colors.danger, fontSize: 10 }}>{entry.error}</Text>}
+                                            </View>
+                                        ))}
+                                    </ScrollView>
+                                </>
+                            )}
+
+                            {/* Console Log Entries */}
+                            {consoleLogs.length > 0 && (
+                                <>
+                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 10, fontWeight: 'bold', marginTop: 8, marginBottom: 4 }}>Console Output</Text>
+                                    <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                                        {consoleLogs.map((entry, i) => {
+                                            const levelColor =
+                                                entry.level === 'error' ? theme.colors.danger :
+                                                    entry.level === 'warn' ? theme.colors.devOrange :
+                                                        theme.colors.textMuted;
+                                            return (
+                                                <View key={`console-${i}`} style={{ borderBottomWidth: 1, borderBottomColor: theme.colors.glassSurfaceSubtle, paddingVertical: 2 }}>
+                                                    <Text style={{ color: levelColor, fontSize: 9, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>
+                                                        {new Date(entry.timestamp).toLocaleTimeString()} [{entry.level.toUpperCase()}] {entry.message}
+                                                    </Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </ScrollView>
+                                </>
+                            )}
+
+                            {aiLogEntries.length === 0 && consoleLogs.length === 0 && (
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>No log entries yet</Text>
+                            )}
                         </View>
                     )}
 
                     <AnimatedScaleButton
-                        style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.infoFill, marginTop: 10 }]}
-                        onPress={async () => { 
+                        style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.infoFill, marginTop: 10 }]}
+                        onPress={async () => {
                             if (!showFileSystem) await loadFileSystemData();
-                            setShowFileSystem(!showFileSystem); 
+                            setShowFileSystem(!showFileSystem);
                         }}
                     >
-                        <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devBlue }]}>{showFileSystem ? '🔽 Hide' : '📁 Show'} File System Explorer</Text>
+                        <View style={commonStyles.devToolIconBox}>
+                            <MaterialCommunityIcons name={showFileSystem ? 'chevron-down' : 'folder-outline'} size={16} color={theme.colors.devBlue} />
+                        </View>
+                        <Text style={[commonStyles.devToolBtnText, { color: theme.colors.devBlue }]}>{showFileSystem ? 'Hide' : 'Show'} File System Explorer</Text>
                     </AnimatedScaleButton>
 
                     {showFileSystem && (
@@ -388,7 +510,7 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                                         </AnimatedScaleButton>
                                     </View>
                                     <Text style={{ color: theme.colors.textMuted, fontSize: 8, marginBottom: 8 }} numberOfLines={1}>{currentPath}</Text>
-                                    
+
                                     <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
                                         {fileSystemLoading ? (
                                             <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>Loading files...</Text>
@@ -396,8 +518,8 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                                             <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>Empty directory</Text>
                                         ) : (
                                             fileSystemData.map((file, i) => (
-                                                <AnimatedScaleButton 
-                                                    key={i} 
+                                                <AnimatedScaleButton
+                                                    key={i}
                                                     style={{ borderBottomWidth: 1, borderBottomColor: theme.colors.glassSurfaceSubtle, paddingVertical: 8 }}
                                                     onPress={async () => {
                                                         if (file.isDirectory) {
@@ -479,34 +601,43 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
 
                     <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
                         <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🔥 Debug Injectors</Text>
-                        
+
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.debugLayout ? theme.colors.successBorder : theme.colors.glassBackground, marginTop: 0, marginBottom: 8 }]}
+                            style={[commonStyles.devToolBtn, { backgroundColor: preferences.debugLayout ? theme.colors.successBorder : theme.colors.glassBackground, marginBottom: 8 }]}
                             onPress={preferences.toggleDebugLayout}
                         >
-                            <Text style={[commonStyles.closeVersionBtnText, { color: preferences.debugLayout ? theme.colors.green : theme.colors.textMuted }]}>
-                                {preferences.debugLayout ? '🟢 Layout Bounds ON' : '⚪ Layout Bounds OFF'}
+                            <View style={commonStyles.devToolIconBox}>
+                                <MaterialCommunityIcons name={preferences.debugLayout ? 'eye' : 'eye-off'} size={16} color={preferences.debugLayout ? theme.colors.green : theme.colors.textMuted} />
+                            </View>
+                            <Text style={[commonStyles.devToolBtnText, { color: preferences.debugLayout ? theme.colors.green : theme.colors.textMuted }]}>
+                                {preferences.debugLayout ? 'Layout Bounds ON' : 'Layout Bounds OFF'}
                             </Text>
                         </AnimatedScaleButton>
 
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.dangerFill, marginTop: 0 }]}
+                            style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.dangerFill }]}
                             onPress={() => {
                                 // Trigger a render cycle bomb
                                 setTimeout(() => { throw new Error("Developer Simulated Native Crash"); }, 100);
                             }}
                         >
-                            <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.danger }]}>🧨 Simulate Native Crash</Text>
+                            <View style={commonStyles.devToolIconBox}>
+                                <MaterialCommunityIcons name="bomb" size={16} color={theme.colors.danger} />
+                            </View>
+                            <Text style={[commonStyles.devToolBtnText, { color: theme.colors.danger }]}>Simulate Native Crash</Text>
                         </AnimatedScaleButton>
 
                         <AnimatedScaleButton
-                            style={[commonStyles.closeVersionBtn, { backgroundColor: theme.colors.purpleFill, marginTop: 10 }]}
+                            style={[commonStyles.devToolBtn, { backgroundColor: theme.colors.purpleFill, marginTop: 10 }]}
                             onPress={() => {
                                 setShowSettings(false);
                                 navigation.navigate('Sandbox');
                             }}
                         >
-                            <Text style={[commonStyles.closeVersionBtnText, { color: theme.colors.devPurple }]}>🧪 Launch Component Sandbox</Text>
+                            <View style={commonStyles.devToolIconBox}>
+                                <MaterialCommunityIcons name="flask-outline" size={16} color={theme.colors.devPurple} />
+                            </View>
+                            <Text style={[commonStyles.devToolBtnText, { color: theme.colors.devPurple }]}>Launch Component Sandbox</Text>
                         </AnimatedScaleButton>
                     </View>
                 </View>
