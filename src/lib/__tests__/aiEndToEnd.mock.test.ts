@@ -40,6 +40,7 @@ jest.mock('@/lib/aiLogger', () => ({
   logAi: jest.fn(() => Promise.resolve()),
   getAiLog: jest.fn(() => Promise.resolve([])),
   clearAiLog: jest.fn(() => Promise.resolve()),
+  logStartupDiagnostics: jest.fn(),
 }));
 
 let processNoteResolve: ((value: unknown) => void) | undefined;

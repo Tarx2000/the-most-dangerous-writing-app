@@ -20,8 +20,8 @@ export const DEFAULT_OLLAMA_API_KEY = '0256ae2a4fa64e95980bc0c6d6177e3d.5l7X5me0
 /** Ollama Cloud base URL (NOT localhost — this is the cloud-hosted endpoint) */
 export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com/v1';
 
-/** Model identifier for KimiK2.5 on Ollama Cloud */
-export const DEFAULT_OLLAMA_MODEL = 'kimi-k2.5:cloud';
+/** Default model identifier for Ollama Cloud */
+export const DEFAULT_OLLAMA_MODEL = 'gemma4:31b-cloud';
 
 /** How often to ping Ollama to check connectivity (milliseconds) */
 export const AI_HEALTH_CHECK_INTERVAL_MS = 10_000;
@@ -35,8 +35,21 @@ export const AI_MAX_RETRIES = 2;
 /** Maximum number of AI log entries to keep in storage (FIFO) */
 export const AI_LOG_MAX_ENTRIES = 200;
 
-/** Timeout for a single AI request in milliseconds */
+/** Timeout for a single AI request in milliseconds (per XHR call) */
 export const AI_REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * Hard timeout for an entire AI job (title + summary + retries).
+ * If a job takes longer than this, it's force-failed and the user is notified.
+ * 3 minutes = 180,000ms
+ */
+export const AI_JOB_TIMEOUT_MS = 180_000;
+
+/**
+ * Stall detection: if the processor loop claims to be "processing" but
+ * no progress has been made for this long, auto-recover and resume.
+ */
+export const AI_STALL_DETECTION_MS = 60_000;
 
 /* ── Available AI Models (shown in Settings picker) ──────────────────── */
 
@@ -63,6 +76,8 @@ export const AI_STORAGE_KEYS = {
     QUEUE: 'AI_JOB_QUEUE',
     /** Structured AI operation log (JSON array of AiLogEntry) */
     LOG: 'AI_PROCESSING_LOG',
+    /** JSON-serialized array of favorited model IDs */
+    FAVORITE_MODELS: 'AI_FAVORITE_MODELS',
 } as const;
 
 /* ── Default AI Prompts ──────────────────────────────────────────────── */
@@ -96,7 +111,7 @@ Format: start each bullet with "• ". Reply with ONLY the bullet points, nothin
      * GRAMMAR — Find grammar and spelling issues and suggest corrections.
      * Response format: JSON array of { original, suggestion, explanation }.
      */
-    grammar: `You are a professional proofreader. Given a journal entry, find all grammar and spelling errors. For each issue, return a JSON array of objects with these fields:
+    grammar: `You are a professional proofreader. Given a journal entry, find all grammar and spelling errors. For each issue, return a JSON array of objects with these field
 - "original": the exact word or phrase with the error (must match the text exactly)
 - "suggestion": the corrected version
 - "explanation": a brief explanation of the fix (10 words max)

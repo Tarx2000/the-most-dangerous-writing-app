@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
-import { View, Text, TextInput, ActivityIndicator, Platform, StyleSheet
+import {
+    View, Text, TextInput, ActivityIndicator, Platform, StyleSheet, Pressable
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -7,6 +8,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { pingServer } from '@/lib/aiService';
+import {
+    DEFAULT_OLLAMA_API_KEY,
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+} from '@/config/ai';
 import type { SavedNote, AiQueueState } from '@/types';
 
 type AiSettingsPanelProps = {
@@ -50,8 +56,21 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     handleBatchProcess,
     setChoosingModelFor
 }: AiSettingsPanelProps) {
-    const apiKeyRef = useRef(aiConfig.aiApiKey);
-    const baseUrlRef = useRef(aiConfig.aiBaseUrl);
+    const [apiKeyInput, setApiKeyInput] = React.useState(aiConfig.aiApiKey);
+    const [baseUrlInput, setBaseUrlInput] = React.useState(aiConfig.aiBaseUrl);
+
+    // Sync local input state when props change (e.g. after loadAllData)
+    React.useEffect(() => {
+        setApiKeyInput(aiConfig.aiApiKey);
+    }, [aiConfig.aiApiKey]);
+
+    React.useEffect(() => {
+        setBaseUrlInput(aiConfig.aiBaseUrl);
+    }, [aiConfig.aiBaseUrl]);
+
+    const isDefaultKey = aiConfig.aiApiKey === DEFAULT_OLLAMA_API_KEY;
+    const isDefaultUrl = aiConfig.aiBaseUrl === DEFAULT_OLLAMA_BASE_URL;
+    const isDefaultModel = aiConfig.aiModel === DEFAULT_OLLAMA_MODEL;
 
     return (
         <View style={styles.container}>
@@ -59,17 +78,36 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
                 <Text style={[commonStyles.settingsLabel, styles.headerTitle]}>AI Settings</Text>
             </View>
-            <Text style={styles.subheading}>Ollama Cloud API</Text>
+
 
             {/* API Key */}
-            <Text style={styles.fieldLabel}>API Key</Text>
+            <View style={styles.fieldLabelRow}>
+                <Text style={styles.fieldLabel}>API Key</Text>
+                {isDefaultKey ? (
+                    <View style={styles.defaultBadge}>
+                        <Text style={styles.defaultBadgeText}>Default</Text>
+                    </View>
+                ) : (
+                    <Pressable
+                        style={styles.resetBtn}
+                        onPress={() => {
+                            aiConfig.saveAiApiKey(DEFAULT_OLLAMA_API_KEY);
+                            setApiKeyInput(DEFAULT_OLLAMA_API_KEY);
+                            vibrate(10);
+                        }}
+                    >
+                        <MaterialCommunityIcons name="refresh" size={14} color={theme.colors.primaryAction} />
+                        <Text style={styles.resetBtnText}>Reset</Text>
+                    </Pressable>
+                )}
+            </View>
             <TextInput
                 style={styles.apiKeyInput}
-                defaultValue={aiConfig.aiApiKey}
-                onChangeText={(text) => apiKeyRef.current = text}
-                onEndEditing={() => aiConfig.saveAiApiKey(apiKeyRef.current)}
+                value={apiKeyInput}
+                onChangeText={setApiKeyInput}
+                onEndEditing={() => aiConfig.saveAiApiKey(apiKeyInput)}
                 secureTextEntry
-                placeholder="Enter API key"
+                placeholder="Enter your own API key"
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"
             />
@@ -252,12 +290,31 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
             </View>
 
             {/* Base URL */}
-            <Text style={styles.fieldLabel}>Base URL</Text>
+            <View style={styles.fieldLabelRow}>
+                <Text style={styles.fieldLabel}>Base URL</Text>
+                {isDefaultUrl ? (
+                    <View style={styles.defaultBadge}>
+                        <Text style={styles.defaultBadgeText}>Default</Text>
+                    </View>
+                ) : (
+                    <Pressable
+                        style={styles.resetBtn}
+                        onPress={() => {
+                            aiConfig.saveAiBaseUrl(DEFAULT_OLLAMA_BASE_URL);
+                            setBaseUrlInput(DEFAULT_OLLAMA_BASE_URL);
+                            vibrate(10);
+                        }}
+                    >
+                        <MaterialCommunityIcons name="refresh" size={14} color={theme.colors.primaryAction} />
+                        <Text style={styles.resetBtnText}>Reset</Text>
+                    </Pressable>
+                )}
+            </View>
             <TextInput
                 style={styles.baseUrlInput}
-                defaultValue={aiConfig.aiBaseUrl}
-                onChangeText={(text) => baseUrlRef.current = text}
-                onEndEditing={() => aiConfig.saveAiBaseUrl(baseUrlRef.current)}
+                value={baseUrlInput}
+                onChangeText={setBaseUrlInput}
+                onEndEditing={() => aiConfig.saveAiBaseUrl(baseUrlInput)}
                 placeholder="https://ollama.com"
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"
@@ -307,11 +364,61 @@ const styles = StyleSheet.create({
         fontSize: 13,
         marginBottom: 12,
     },
+    preconfigBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: theme.colors.successFill || 'rgba(0,255,128,0.08)',
+        padding: 12,
+        borderRadius: 10,
+        marginBottom: 14,
+        borderWidth: 1,
+        borderColor: theme.colors.successBorder || 'rgba(0,255,128,0.2)',
+    },
+    preconfigText: {
+        color: theme.colors.green || '#4ADE80',
+        fontSize: 12,
+        flex: 1,
+        lineHeight: 18,
+    },
+    fieldLabelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+    },
     fieldLabel: {
         color: theme.colors.textSecondary,
         fontSize: 12,
         fontWeight: '600',
         marginBottom: 4,
+    },
+    defaultBadge: {
+        backgroundColor: theme.colors.primaryAction || '#E6B33E',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    defaultBadgeText: {
+        color: theme.colors.background || '#000',
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    resetBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        backgroundColor: theme.colors.glassSurfaceLow,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
+    resetBtnText: {
+        color: theme.colors.primaryAction,
+        fontSize: 10,
+        fontWeight: '700',
     },
     apiKeyInput: {
         backgroundColor: theme.colors.darkGrey,

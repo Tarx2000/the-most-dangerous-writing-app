@@ -287,6 +287,11 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                                 getItemType={(item) => item.type}
                                 contentContainerStyle={{ paddingBottom: 120, paddingTop: 12, paddingHorizontal: 20 }}
                                 showsVerticalScrollIndicator={false}
+                                extraData={{
+                                    activeNoteIds: queueState.jobs.map(j => j.noteId),
+                                    isProcessing: queueState.isProcessing,
+                                    isUnlocked: security.isNotesUnlocked,
+                                }}
                                 renderItem={({ item }) => {
                                     if (item.type === 'header') {
                                         return (

@@ -37,6 +37,7 @@ jest.mock('@/lib/aiService', () => ({
 // Mock aiLogger
 jest.mock('@/lib/aiLogger', () => ({
   logAi: jest.fn(() => Promise.resolve()),
+  logStartupDiagnostics: jest.fn(),
 }));
 
 import { DeviceEventEmitter } from 'react-native';

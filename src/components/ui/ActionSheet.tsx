@@ -23,13 +23,15 @@
  *   />
  */
 import React, { useEffect, useCallback, useMemo } from 'react';
-import {Modal,
+import {
+    Modal,
+    Pressable,
     StyleSheet,
     View,
     Text,
     useWindowDimensions,
     TouchableWithoutFeedback,
-ScrollView
+    ScrollView
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,6 +64,8 @@ export interface ActionSheetOption {
     label: string;
     /** MaterialCommunityIcons icon name */
     icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+    /** Whether this option is favorited (for model picker) */
+    isFavorite?: boolean;
 }
 
 interface ActionSheetProps {
@@ -77,6 +81,8 @@ interface ActionSheetProps {
     onSelect: (id: string) => void;
     /** Called when the sheet is dismissed (swipe, backdrop tap, or cancel) */
     onClose: () => void;
+    /** Optional: called when an option's favorite state is toggled. If provided, star icons appear next to each option. */
+    onToggleFavorite?: (id: string) => void;
 }
 
 export const ActionSheet: React.FC<ActionSheetProps> = React.memo(({
@@ -86,6 +92,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = React.memo(({
     activeId,
     onSelect,
     onClose,
+    onToggleFavorite,
 }) => {
     const { height: SCREEN_HEIGHT } = useWindowDimensions();
     const insets = useSafeAreaInsets();
@@ -178,36 +185,55 @@ export const ActionSheet: React.FC<ActionSheetProps> = React.memo(({
                             {options.map((opt) => {
                                 const isActive = opt.id === activeId;
                                 return (
-                                    <AnimatedScaleButton
-                                        key={opt.id}
-                                        style={[
-                                            styles.optionRow,
-                                            isActive && styles.optionRowActive,
-                                        ]}
-                                        onPress={() => handleOptionPress(opt.id)}
-                                    >
-                                        {opt.icon && (
-                                            <MaterialCommunityIcons
-                                                name={opt.icon}
-                                                size={22}
-                                                color={isActive ? theme.colors.primaryAction : theme.colors.textSecondary}
-                                            />
+                                    <View key={opt.id} style={styles.optionRowWrapper}>
+                                        {onToggleFavorite && (
+                                            <Pressable
+                                                style={styles.starBtn}
+                                                onPress={() => {
+                                                    vibrate(5);
+                                                    onToggleFavorite(opt.id);
+                                                }}
+                                            >
+                                                <MaterialCommunityIcons
+                                                    name={opt.isFavorite ? 'star' : 'star-outline'}
+                                                    size={20}
+                                                    color={opt.isFavorite ? theme.colors.primaryAction : theme.colors.glassHighlight}
+                                                />
+                                            </Pressable>
                                         )}
-                                        <Text style={[
-                                            styles.optionLabel,
-                                            isActive && styles.optionLabelActive,
-                                        ]}>
-                                            {opt.label}
-                                        </Text>
-                                        {isActive && (
-                                            <MaterialCommunityIcons
-                                                name="check"
-                                                size={20}
-                                                color={theme.colors.primaryAction}
-                                                style={styles.checkIcon}
-                                            />
-                                        )}
-                                    </AnimatedScaleButton>
+                                        <View style={styles.optionRowFlex}>
+                                            <AnimatedScaleButton
+                                                style={[
+                                                    styles.optionRow,
+                                                    isActive && styles.optionRowActive,
+                                                    onToggleFavorite && styles.optionRowWithStar,
+                                                ]}
+                                                onPress={() => handleOptionPress(opt.id)}
+                                            >
+                                                {opt.icon && (
+                                                    <MaterialCommunityIcons
+                                                        name={opt.icon}
+                                                        size={22}
+                                                        color={isActive ? theme.colors.primaryAction : theme.colors.textSecondary}
+                                                    />
+                                                )}
+                                                <Text style={[
+                                                    styles.optionLabel,
+                                                    isActive && styles.optionLabelActive,
+                                                ]}>
+                                                    {opt.label}
+                                                </Text>
+                                                {isActive && (
+                                                    <MaterialCommunityIcons
+                                                        name="check"
+                                                        size={20}
+                                                        color={theme.colors.primaryAction}
+                                                        style={styles.checkIcon}
+                                                    />
+                                                )}
+                                            </AnimatedScaleButton>
+                                        </View>
+                                    </View>
                                 );
                             })}
                         </ScrollView>
@@ -264,6 +290,24 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingTop: 8,
     },
+    /** Wrapper for option row + star button */
+    optionRowWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    /** Star button (left of option row) */
+    starBtn: {
+        width: 40,
+        height: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 10,
+    },
+    /** Flex wrapper for option row (needed because AnimatedScaleButton's Pressable doesn't propagate flex) */
+    optionRowFlex: {
+        flex: 1,
+    },
     /** Individual option row */
     optionRow: {
         flexDirection: 'row',
@@ -273,6 +317,9 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginVertical: 2,
         gap: 14,
+    },
+    optionRowWithStar: {
+        marginLeft: 0,
     },
     /** Active option gets subtle highlight */
     optionRowActive: {

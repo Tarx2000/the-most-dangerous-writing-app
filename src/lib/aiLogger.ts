@@ -31,6 +31,25 @@ const LOG_EMOJIS: Record<string, string> = {
     cancel: '🛑',
     orphan_recovery: '🔄',
     retry: '🔁',
+    timeout: '⏱️',
+    stall_recovery: '🚑',
+    init: '🚀',
+    config: '⚙️',
+};
+
+/** Verbose human-readable descriptions for startup logs */
+const ACTION_DESCRIPTIONS: Record<string, string> = {
+    init: 'AI Queue initialized',
+    config: 'AI Configuration loaded',
+    enqueue: 'Job enqueued',
+    start: 'Job started processing',
+    success: 'Job completed successfully',
+    fail: 'Job failed permanently',
+    cancel: 'Job cancelled by user',
+    orphan_recovery: 'Orphaned job recovered after app restart',
+    retry: 'Job retry scheduled',
+    timeout: 'Job timed out (hard limit exceeded)',
+    stall_recovery: 'Stall detected — auto-recovering queue',
 };
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -62,17 +81,29 @@ export async function logAi(
 
             await storage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
 
-            // Also log to console for real-time debugging (dev-only)
-            if (__DEV__) {
-                const emoji = LOG_EMOJIS[entry.action] || '📝';
-                // Intentional dev-only console logger for real-time AI debugging
+            // Enhanced console logging for ALL modes (not just __DEV__)
+            // This is critical for debugging stalled AI processing
+            const emoji = LOG_EMOJIS[entry.action] || '📝';
+            const desc = ACTION_DESCRIPTIONS[entry.action] || entry.action;
+            const durationStr = entry.durationMs ? ` | ${entry.durationMs}ms` : '';
+            const errorStr = entry.error ? ` | ERROR: ${entry.error}` : '';
+            const modelStr = entry.model ? ` | model=${entry.model}` : '';
+            const noteStr = entry.noteId ? ` | note=${entry.noteId}` : '';
+            const phaseStr = entry.phase ? ` | phase=${entry.phase}` : '';
+
+            // Always log to console — these are critical for diagnosing AI issues
+            // eslint-disable-next-line no-console
+            console.log(
+                `[AI ${emoji}] ${desc}${noteStr}${modelStr}${phaseStr}${durationStr}${errorStr}`
+            );
+
+            // If it's an error-level action, also log with console.error for visibility
+            if (entry.action === 'fail' || entry.action === 'timeout' || entry.action === 'stall_recovery') {
                 // eslint-disable-next-line no-console
-                console.log(
-                    `[AI ${emoji}] ${entry.action.toUpperCase()} | note=${entry.noteId} | model=${entry.model} | phase=${entry.phase}${entry.durationMs ? ` | ${entry.durationMs}ms` : ''}${entry.error ? ` | ERROR: ${entry.error}` : ''}`
-                );
+                console.error(`[AI CRITICAL] ${desc}${noteStr}${errorStr}`);
             }
         } catch (err) {
-            logger("warn", "AI Logger", "Failed to persist log entry:", err);
+            logger('warn', 'AI Logger', 'Failed to persist log entry:', err);
         }
     });
     return writeChain;
@@ -88,7 +119,7 @@ export async function getAiLog(): Promise<AiLogEntry[]> {
         if (!raw) return [];
         return JSON.parse(raw) as AiLogEntry[];
     } catch (err: unknown) {
-        logger("warn", "AI Logger", "Failed to read AI log:", err);
+        logger('warn', 'AI Logger', 'Failed to read AI log:', err);
         return [];
     }
 }
@@ -99,4 +130,53 @@ export async function getAiLog(): Promise<AiLogEntry[]> {
  */
 export async function clearAiLog(): Promise<void> {
     await storage.removeItem(AI_STORAGE_KEYS.LOG);
+}
+
+/**
+ * Print a startup diagnostic banner to the console.
+ * This runs once when the AI queue initializes and confirms the exact
+ * configuration that will be used for all AI requests.
+ */
+export function logStartupDiagnostics(config: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    grammarModel?: string;
+    hasCustomPrompts: boolean;
+    pingResult: { online: boolean; error?: string };
+    pendingJobs: number;
+}): void {
+    const keyPresent = config.apiKey && config.apiKey.trim().length > 0;
+    const keyMasked = keyPresent
+        ? `${config.apiKey.slice(0, 8)}...${config.apiKey.slice(-4)}`
+        : 'NOT SET';
+    const urlPresent = config.baseUrl && config.baseUrl.trim().length > 0;
+
+    // eslint-disable-next-line no-console
+    console.log(`
+╔══════════════════════════════════════════════════════════════════════╗
+║                    🤖 AI QUEUE STARTUP DIAGNOSTICS                  ║
+╠══════════════════════════════════════════════════════════════════════╣
+║  API Key present : ${keyPresent ? '✅ YES' : '❌ NO'}  (value: ${keyMasked})
+║  Base URL        : ${urlPresent ? '✅ ' + config.baseUrl : '❌ NOT SET'}
+║  Title/Sum Model : ${config.model || '❌ NOT SET'}
+║  Grammar Model   : ${config.grammarModel || '(same as title/sum)'}
+║  Custom Prompts  : ${config.hasCustomPrompts ? '✅ YES' : '❌ no'}
+║  Server Ping     : ${config.pingResult.online ? '✅ ONLINE' : '❌ OFFLINE'} ${config.pingResult.error ? '(' + config.pingResult.error + ')' : ''}
+║  Pending Jobs    : ${config.pendingJobs}
+╚══════════════════════════════════════════════════════════════════════╝
+    `);
+
+    if (!keyPresent) {
+        // eslint-disable-next-line no-console
+        console.error('❌ CRITICAL: AI_API_KEY is missing. AI processing will FAIL.');
+    }
+    if (!urlPresent) {
+        // eslint-disable-next-line no-console
+        console.error('❌ CRITICAL: AI_BASE_URL is missing. AI processing will FAIL.');
+    }
+    if (!config.pingResult.online) {
+        // eslint-disable-next-line no-console
+        console.error('❌ WARNING: Server ping failed. AI jobs will stall until server responds.');
+    }
 }

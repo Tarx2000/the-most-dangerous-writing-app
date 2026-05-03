@@ -9,7 +9,13 @@ import { getAllVlogs } from '@/lib/repositories/vlogsRepository';
 import { getAllSettings, setSetting } from '@/lib/repositories/settingsRepository';
 import type { SavedNote, Person, SavedVlog, VisionBoard, AlignmentReflection } from '@/types';
 import { toLocalDateString } from '@/lib/utils';
-import { DEFAULT_AI_PROMPTS, AI_STORAGE_KEYS } from '@/config/ai';
+import {
+    DEFAULT_AI_PROMPTS,
+    AI_STORAGE_KEYS,
+    DEFAULT_OLLAMA_API_KEY,
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+} from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
 import { mark as perfMark, log as perfLog } from '@/lib/perf';
 
@@ -63,6 +69,7 @@ export interface LoadContext {
     setAiGrammarModel: Setter<string>;
     setAiPrompts: Setter<import('@/config/ai').AiPrompts>;
     setAutoGenerateSummaries: Setter<boolean>;
+    setAiFavoriteModels: Setter<string[]>;
 }
 
 export async function loadNotes(ctx: LoadContext): Promise<void> {
@@ -128,16 +135,24 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     await loadVlogs(ctx);
 
     /* ── AI Config ──────────────────────────────────────────────────────── */
-    ctx.setAiApiKey(allSettings[AI_STORAGE_KEYS.API_KEY] ?? '');
-    ctx.setAiBaseUrl(allSettings[AI_STORAGE_KEYS.BASE_URL] ?? '');
-    ctx.setAiModel(allSettings[AI_STORAGE_KEYS.MODEL] ?? '');
-    ctx.setAiGrammarModel(allSettings[AI_STORAGE_KEYS.GRAMMAR_MODEL] ?? '');
+    const storedApiKey = allSettings[AI_STORAGE_KEYS.API_KEY];
+    const storedBaseUrl = allSettings[AI_STORAGE_KEYS.BASE_URL];
+    const storedModel = allSettings[AI_STORAGE_KEYS.MODEL];
+    const storedGrammarModel = allSettings[AI_STORAGE_KEYS.GRAMMAR_MODEL];
+
+    ctx.setAiApiKey(storedApiKey && storedApiKey.trim().length > 0 ? storedApiKey : DEFAULT_OLLAMA_API_KEY);
+    ctx.setAiBaseUrl(storedBaseUrl && storedBaseUrl.trim().length > 0 ? storedBaseUrl : DEFAULT_OLLAMA_BASE_URL);
+    ctx.setAiModel(storedModel && storedModel.trim().length > 0 ? storedModel : DEFAULT_OLLAMA_MODEL);
+    ctx.setAiGrammarModel(storedGrammarModel && storedGrammarModel.trim().length > 0 ? storedGrammarModel : '');
 
     const rawPrompts = safeParse<Record<string, string>>(
         'AI_PROMPTS', allSettings[AI_STORAGE_KEYS.PROMPTS], {}
     );
     ctx.setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...rawPrompts });
     ctx.setAutoGenerateSummaries(safeParse('AUTO_GENERATE_SUMMARIES', allSettings['AUTO_GENERATE_SUMMARIES'], true));
+
+    const storedFavorites = safeParse<string[]>('AI_FAVORITE_MODELS', allSettings[AI_STORAGE_KEYS.FAVORITE_MODELS], []);
+    ctx.setAiFavoriteModels(storedFavorites);
 
     /* ── Feed ───────────────────────────────────────────────────────────── */
     ctx.setBookmarkedNoteIds(safeParse<string[]>('BOOKMARKED_NOTE_IDS', allSettings['BOOKMARKED_NOTE_IDS'], []));

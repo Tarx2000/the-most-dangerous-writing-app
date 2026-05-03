@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { View,
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+    View,
     Text,
     ScrollView,
-Pressable
+    Pressable,
+    ActivityIndicator,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
@@ -13,6 +15,7 @@ import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToo
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CONFIG } from '@/config';
 import { AI_AVAILABLE_MODELS } from '@/config/ai';
+import { fetchAvailableModels } from '@/lib/aiService';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { isCompressionAvailable } from '@/lib/videoCompressor';
@@ -83,7 +86,6 @@ interface SettingsModalProps {
     queueState: AiQueueState;
     startBatch: (overwrite: boolean, filter?: Set<'journal' | 'circle' | 'checkin'> | undefined) => Promise<number>;
     cancelBatch: () => Promise<void>;
-
     /** Grouped props */
     batchState: BatchState;
     logState: LogState;
@@ -119,6 +121,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
     const [showLockTimeoutModal, setShowLockTimeoutModal] = useState(false);
     const [showVlogQualityModal, setShowVlogQualityModal] = useState(false);
     const [showCompressionModal, setShowCompressionModal] = useState(false);
+
+    // --- Live model fetching state ---
+    const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+    const [fetchingModels, setFetchingModels] = useState(false);
+
+    // Live fetch models whenever the model picker opens
+    useEffect(() => {
+        if (!batchState.choosingModelFor) return;
+        setFetchingModels(true);
+        fetchAvailableModels({
+            apiKey: aiConfig.aiApiKey,
+            baseUrl: aiConfig.aiBaseUrl,
+        }).then((models) => {
+            setFetchedModels(models.length > 0 ? models : [...AI_AVAILABLE_MODELS]);
+            setFetchingModels(false);
+        });
+    }, [batchState.choosingModelFor, aiConfig.aiApiKey, aiConfig.aiBaseUrl]);
+
+    // Sort models: favorites first, then rest in original order
+    const modelOptions = useMemo(() => {
+        const all = fetchedModels.length > 0 ? [...fetchedModels] : [...AI_AVAILABLE_MODELS];
+        const favs = new Set(aiConfig.aiFavoriteModels);
+        all.sort((a, b) => {
+            const aFav = favs.has(a);
+            const bFav = favs.has(b);
+            if (aFav && !bFav) return -1;
+            if (!aFav && bFav) return 1;
+            return 0;
+        });
+        return all;
+    }, [fetchedModels, aiConfig.aiFavoriteModels]);
 
     // --- AI Batch Processing via AI Queue -------------------------
     const handleBatchProcess = async () => {
@@ -423,18 +456,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                 </ScrollView>
             </SwipeableModal>
 
-            {/* Select AI Model — unified ActionSheet */}
+            {/* Select AI Model — unified ActionSheet with live fetching + favorites */}
             <ActionSheet
                 visible={!!batchState.choosingModelFor}
                 title={`Select ${batchState.choosingModelFor === 'summary' ? 'Summary & Title' : 'Grammar'} Model`}
-                options={AI_AVAILABLE_MODELS.map(m => ({ id: m, label: m }))}
+                options={fetchingModels
+                    ? [{ id: '__loading__', label: 'Loading models from server...' }]
+                    : modelOptions.map((m: string) => ({
+                        id: m,
+                        label: m,
+                        isFavorite: aiConfig.aiFavoriteModels.includes(m),
+                    }))}
                 activeId={batchState.choosingModelFor === 'summary' ? aiConfig.aiModel : aiConfig.aiGrammarModel}
                 onSelect={(id) => {
+                    if (id === '__loading__') return;
                     if (batchState.choosingModelFor === 'summary') aiConfig.saveAiModel(id);
                     else aiConfig.saveAiGrammarModel(id);
                     batchState.setChoosingModelFor(null);
                 }}
                 onClose={() => batchState.setChoosingModelFor(null)}
+                onToggleFavorite={(id) => {
+                    const current = new Set(aiConfig.aiFavoriteModels);
+                    if (current.has(id)) {
+                        current.delete(id);
+                    } else {
+                        current.add(id);
+                    }
+                    aiConfig.saveAiFavoriteModels(Array.from(current));
+                }}
             />
 
             {/* Lock Timeout Options */}
@@ -474,10 +523,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
                 visible={showCompressionModal}
                 title="Compression Preset"
                 options={[
-                    { id: 'off',      label: 'Off (Raw Quality)' },
-                    { id: 'light',    label: 'Light — ~40% smaller' },
+                    { id: 'off', label: 'Off (Raw Quality)' },
+                    { id: 'light', label: 'Light — ~40% smaller' },
                     { id: 'balanced', label: 'Balanced — ~60% smaller ✦' },
-                    { id: 'max',      label: 'Max Savings — ~80% smaller' },
+                    { id: 'max', label: 'Max Savings — ~80% smaller' },
                 ]}
                 activeId={preferences.compressionPreset || 'balanced'}
                 onSelect={(id) => {
@@ -489,4 +538,3 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
         </>
     );
 });
-

@@ -595,6 +595,7 @@ export function createAiConfigOps(
         aiGrammarModel: Ref<string>;
         aiPrompts: Ref<AiPrompts>;
         autoGenerateSummaries: Ref<boolean>;
+        aiFavoriteModels: Ref<string[]>;
     },
     setters: {
         setAiApiKey: Setter<string>;
@@ -603,6 +604,7 @@ export function createAiConfigOps(
         setAiGrammarModel: Setter<string>;
         setAiPrompts: Setter<AiPrompts>;
         setAutoGenerateSummaries: Setter<boolean>;
+        setAiFavoriteModels: Setter<string[]>;
     },
 ) {
     const saveAiApiKey = async (key: string) => {
@@ -682,7 +684,20 @@ export function createAiConfigOps(
         }
     };
 
-    return { saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts, updateAutoGenerateSummaries };
+    const saveAiFavoriteModels = async (models: string[]) => {
+        const prev = refs.aiFavoriteModels.current;
+        setters.setAiFavoriteModels(models);
+        refs.aiFavoriteModels.current = models;
+        try {
+            await setSetting(AI_STORAGE_KEYS.FAVORITE_MODELS, JSON.stringify(models));
+        } catch (error) {
+            logger("error", "Storage", "Failed to save AI favorite models:", error);
+            setters.setAiFavoriteModels(prev);
+            refs.aiFavoriteModels.current = prev;
+        }
+    };
+
+    return { saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts, updateAutoGenerateSummaries, saveAiFavoriteModels };
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

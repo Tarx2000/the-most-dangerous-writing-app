@@ -14,6 +14,8 @@
  *
  * Events emitted via DeviceEventEmitter:
  * - AI_QUEUE_UPDATED: Queue state changed (new job, completion, etc.)
+ * - AI_JOB_FAILED: A job failed permanently (for user notification)
+ * - AI_JOB_TIMEOUT: A job hit the hard timeout (for user notification)
  *
  * Usage:
  *   import { aiQueue } from '@/lib/aiQueue';
@@ -25,13 +27,15 @@ import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'reac
 import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
-import { logAi } from '@/lib/aiLogger';
+import { logAi, logStartupDiagnostics } from '@/lib/aiLogger';
 import { generateId } from '@/lib/utils';
 import {
     AI_STORAGE_KEYS,
     RATE_LIMIT_DELAY_MS,
     AI_MAX_RETRIES,
     AI_HEALTH_CHECK_INTERVAL_MS,
+    AI_JOB_TIMEOUT_MS,
+    AI_STALL_DETECTION_MS,
 } from '@/config/ai';
 import type { AiJob, AiJobCategory, AiQueueState, SavedNote, Person } from '@/types';
 import { isAlignmentReflection } from '@/types';
@@ -40,6 +44,12 @@ import { isAlignmentReflection } from '@/types';
 
 /** Emitted whenever the queue state changes. Listeners get the full AiQueueState. */
 export const AI_QUEUE_EVENT = 'AI_QUEUE_UPDATED';
+
+/** Emitted when a job fails permanently after all retries. Payload: { noteId, error } */
+export const AI_JOB_FAILED_EVENT = 'AI_JOB_FAILED';
+
+/** Emitted when a job hits the hard timeout. Payload: { noteId, durationMs } */
+export const AI_JOB_TIMEOUT_EVENT = 'AI_JOB_TIMEOUT';
 
 /* ── Config Types ─────────────────────────────────────────────────────── */
 
@@ -91,6 +101,15 @@ class AiQueueManager {
     /** AppState listener subscription — pauses health checks when backgrounded */
     private appStateSubscription: NativeEventSubscription | null = null;
 
+    /** Stall detection: timestamp when current job started processing */
+    private currentJobStartTime = 0;
+    /** Stall detection interval */
+    private stallCheckInterval: ReturnType<typeof setInterval> | null = null;
+    /** Job-level timeout timer */
+    private jobTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    /** scheduleNext timeout — tracked so shutdown can clear it */
+    private scheduleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     /** Injected dependencies */
     private getAiConfig: GetAiConfigFn = () => ({});
     private getNoteById: GetNoteByIdFn = () => undefined;
@@ -130,9 +149,30 @@ class AiQueueManager {
         // Recover orphaned jobs (stuck in 'processing' status from a crash)
         await this.recoverOrphans();
 
-
         // Check server status
-        await this.checkHealth();
+        const pingResult = await pingServer(this.getAiConfig());
+        this.serverOnline = pingResult.online;
+        this.lastError = pingResult.error;
+
+        // Log startup diagnostics AFTER the ping with real result (single banner)
+        const config = this.getAiConfig();
+        logStartupDiagnostics({
+            apiKey: config.apiKey || '',
+            baseUrl: config.baseUrl || '',
+            model: config.model || '',
+            grammarModel: config.grammarModel,
+            hasCustomPrompts: !!config.prompts && Object.keys(config.prompts).length > 0,
+            pingResult,
+            pendingJobs: this.getPendingJobs().length,
+        });
+
+        await logAi({
+            action: 'init',
+            noteId: 'system',
+            model: config.model || 'default',
+            phase: 'both',
+            error: pingResult.online ? undefined : pingResult.error,
+        });
 
         // Start background health polling (only if there are pending jobs)
         this.startHealthChecks();
@@ -152,6 +192,9 @@ class AiQueueManager {
                 }
             });
         }
+
+        // Start stall detection
+        this.startStallDetection();
 
         // Auto-start processing if there are queued jobs
         this.emitState();
@@ -198,6 +241,73 @@ class AiQueueManager {
     }
 
     /**
+     * Start stall detection interval.
+     * If a job has been "processing" for too long, force-recover the queue.
+     */
+    private startStallDetection(): void {
+        if (this.stallCheckInterval) return;
+        this.stallCheckInterval = setInterval(() => {
+            if (!this.processing) return;
+            const elapsed = Date.now() - this.currentJobStartTime;
+            if (this.currentJobStartTime > 0 && elapsed > AI_STALL_DETECTION_MS) {
+                logger('error', 'AI Queue', `STALL DETECTED: Job running for ${elapsed}ms without progress. Auto-recovering...`);
+                this.recoverFromStall();
+            }
+        }, 10_000); // Check every 10 seconds
+    }
+
+    /**
+     * Stop stall detection interval.
+     */
+    private stopStallDetection(): void {
+        if (this.stallCheckInterval) {
+            clearInterval(this.stallCheckInterval);
+            this.stallCheckInterval = null;
+        }
+    }
+
+    /**
+     * Force-recover from a stalled processing state.
+     * This resets the current job to 'queued' and resumes processing.
+     */
+    private async recoverFromStall(): Promise<void> {
+        const currentJob = this.jobs.find(j => j.status === 'processing');
+        if (currentJob) {
+            // Cancel any in-flight request
+            if (this.currentCancelToken) {
+                this.currentCancelToken.abort();
+                this.currentCancelToken = null;
+            }
+
+            currentJob.status = 'queued';
+            currentJob.startedAt = undefined;
+            currentJob.error = 'Recovered from stall — queue processor was stuck';
+            currentJob.retryCount = 0;
+
+            await logAi({
+                action: 'stall_recovery',
+                noteId: currentJob.noteId,
+                model: this.getAiConfig().model || 'default',
+                phase: 'both',
+                error: `Stall detected after ${Date.now() - this.currentJobStartTime}ms`,
+            });
+
+            // Emit notification for user
+            DeviceEventEmitter.emit(AI_JOB_TIMEOUT_EVENT, {
+                noteId: currentJob.noteId,
+                durationMs: Date.now() - this.currentJobStartTime,
+                reason: 'Stall detected — AI request did not complete in time',
+            });
+        }
+
+        this.processing = false;
+        this.currentJobStartTime = 0;
+        await this.persistQueue();
+        this.emitState();
+        this.startProcessing();
+    }
+
+    /**
      * Cancel a specific job's in-flight AI request.
      * This aborts the XHR and marks the job as failed.
      * Background processing is intentional — this is for user-initiated cancellation.
@@ -207,7 +317,7 @@ class AiQueueManager {
         const job = this.jobs.find(j => j.id === jobId && j.status === 'processing');
         if (!job) {
             this.cancelRequested = false;
-            logger("warn", "AI Queue", "Cannot cancel job " + jobId + ": not currently processing");
+            logger('warn', 'AI Queue', 'Cannot cancel job ' + jobId + ': not currently processing');
             return;
         }
         // Abort the in-flight XHR request
@@ -220,6 +330,8 @@ class AiQueueManager {
         job.error = 'Cancelled by user';
         job.completedAt = Date.now();
         this.processing = false;
+        this.currentJobStartTime = 0;
+        this.clearJobTimeout();
         this.emitState();
     }
 
@@ -230,9 +342,19 @@ class AiQueueManager {
      */
     shutdown(): void {
         this.stopHealthChecks();
+        this.stopStallDetection();
         if (this.appStateSubscription) {
             this.appStateSubscription.remove();
             this.appStateSubscription = null;
+        }
+        this.clearJobTimeout();
+        if (this.scheduleTimeoutId) {
+            clearTimeout(this.scheduleTimeoutId);
+            this.scheduleTimeoutId = null;
+        }
+        if (this.currentCancelToken) {
+            this.currentCancelToken.abort();
+            this.currentCancelToken = null;
         }
         // Full state reset for clean re-initialization and test isolation
         this.jobs = [];
@@ -243,6 +365,7 @@ class AiQueueManager {
         this.batchTotal = null;
         this.batchCompleted = 0;
         this.initialized = false;
+        this.currentJobStartTime = 0;
     }
 
     /**
@@ -272,14 +395,14 @@ class AiQueueManager {
     async enqueueNote(noteId: string, category: AiJobCategory): Promise<void> {
         // Don't add duplicates
         if (this.jobs.some(j => j.noteId === noteId && j.status !== 'done' && j.status !== 'failed')) {
-            logger("info", "AI Queue", `Note ${noteId} already in queue, skipping`);
+            logger('info', 'AI Queue', `Note ${noteId} already in queue, skipping`);
             return;
         }
 
         // Enforce queue size limit
         const activeJobs = this.jobs.filter(j => j.status === 'queued' || j.status === 'processing');
         if (activeJobs.length >= this.MAX_QUEUE_SIZE) {
-            logger("warn", "AI Queue", `Queue at capacity (${this.MAX_QUEUE_SIZE}), dropping note ${noteId}`);
+            logger('warn', 'AI Queue', `Queue at capacity (${this.MAX_QUEUE_SIZE}), dropping note ${noteId}`);
             return;
         }
 
@@ -332,7 +455,7 @@ class AiQueueManager {
         const activeJobs = this.jobs.filter(j => j.status === 'queued' || j.status === 'processing');
         const slotsAvailable = Math.max(0, this.MAX_QUEUE_SIZE - activeJobs.length);
         if (slotsAvailable === 0) {
-            logger("warn", "AI Queue", `Queue at capacity (${this.MAX_QUEUE_SIZE}), skipping batch enqueue`);
+            logger('warn', 'AI Queue', `Queue at capacity (${this.MAX_QUEUE_SIZE}), skipping batch enqueue`);
             return 0;
         }
 
@@ -456,13 +579,69 @@ class AiQueueManager {
         this.processNext();
     }
 
+    /** Set up a hard timeout for the current job */
+    private setJobTimeout(job: AiJob): void {
+        this.clearJobTimeout();
+        this.jobTimeoutId = setTimeout(() => {
+            logger('error', 'AI Queue', `JOB TIMEOUT: Note ${job.noteId} exceeded ${AI_JOB_TIMEOUT_MS}ms. Force-failing...`);
+
+            // Abort in-flight request
+            if (this.currentCancelToken) {
+                this.currentCancelToken.abort();
+                this.currentCancelToken = null;
+            }
+
+            job.status = 'failed';
+            job.completedAt = Date.now();
+            job.error = `Timed out after ${AI_JOB_TIMEOUT_MS / 1000} minutes — the AI request took too long.`;
+            job.retryCount = AI_MAX_RETRIES; // Don't retry — it already had chances
+
+            logAi({
+                action: 'timeout',
+                noteId: job.noteId,
+                model: this.getAiConfig().model || 'default',
+                phase: 'both',
+                durationMs: AI_JOB_TIMEOUT_MS,
+                error: job.error,
+            });
+
+            // Notify user
+            DeviceEventEmitter.emit(AI_JOB_TIMEOUT_EVENT, {
+                noteId: job.noteId,
+                durationMs: AI_JOB_TIMEOUT_MS,
+                reason: job.error,
+            });
+
+            this.processing = false;
+            this.currentJobStartTime = 0;
+            this.persistQueue().then(() => {
+                this.emitState();
+                this.scheduleNext();
+            });
+        }, AI_JOB_TIMEOUT_MS);
+    }
+
+    /** Clear the job timeout */
+    private clearJobTimeout(): void {
+        if (this.jobTimeoutId) {
+            clearTimeout(this.jobTimeoutId);
+            this.jobTimeoutId = null;
+        }
+    }
+
     /** Process the next job in the queue */
     private async processNext(): Promise<void> {
-        if (this.processing) return;
+        if (this.processing) {
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext SKIP — already processing`);
+            return;
+        }
         this.processing = true;
 
         // Check for cancel
         if (this.cancelRequested) {
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext CANCELLED — batch cancel requested`);
             this.processing = false;
             this.cancelRequested = false;
             this.emitState();
@@ -472,6 +651,8 @@ class AiQueueManager {
         const nextJob = this.getNextJob();
         if (!nextJob) {
             // Queue is empty — stop polling to save battery
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — queue empty, stopping`);
             this.processing = false;
             this.batchTotal = null;
             this.batchCompleted = 0;
@@ -482,12 +663,18 @@ class AiQueueManager {
 
         // Check server health before processing
         if (this.serverOnline === false) {
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — server was offline, re-pinging...`);
             const result = await pingServer(this.getAiConfig());
             this.serverOnline = result.online;
             this.lastError = result.error;
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — re-ping result: ${result.online ? 'ONLINE' : 'OFFLINE'}${result.error ? ' (' + result.error + ')' : ''}`);
 
             if (!result.online) {
                 // Server offline — pause processing, will resume when server comes back
+                // eslint-disable-next-line no-console
+                console.log(`[AI 🔧] processNext — server still offline, pausing`);
                 this.processing = false;
                 this.emitState();
                 this.scheduleNext();
@@ -498,38 +685,70 @@ class AiQueueManager {
         // Mark job as processing
         nextJob.status = 'processing';
         nextJob.startedAt = Date.now();
+        this.currentJobStartTime = Date.now();
         await this.persistQueue();
         this.emitState();
+
+        // Set hard timeout for this job
+        this.setJobTimeout(nextJob);
 
         const config = this.getAiConfig();
         const note = this.getNoteById(nextJob.noteId);
 
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNext — job START | noteId=${nextJob.noteId} | category=${nextJob.category} | model=${config.model || 'default'} | retryCount=${nextJob.retryCount}`);
+
         if (!note) {
             // Note was deleted while in queue — mark as failed
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — note not found, marking failed`);
             nextJob.status = 'failed';
             nextJob.completedAt = Date.now();
             nextJob.error = 'Note deleted';
+            this.clearJobTimeout();
             await this.persistQueue();
             this.emitState();
             this.processing = false;
+            this.currentJobStartTime = 0;
             this.scheduleNext();
             return;
         }
 
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNext — note found | textLength=${note.text.length}`);
+
         // Pre-flight config validation: fail fast if no API key or base URL
-        const missingApiKey = !config.apiKey || config.apiKey.trim().length === 0;
-        const missingBaseUrl = !config.baseUrl || config.baseUrl.trim().length === 0;
+        const apiKeyLen = config.apiKey ? config.apiKey.trim().length : 0;
+        const baseUrlVal = config.baseUrl || '';
+        const missingApiKey = apiKeyLen === 0;
+        const missingBaseUrl = baseUrlVal.trim().length === 0;
+
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNext — pre-flight validation | apiKeyLength=${apiKeyLen} | baseUrl="${baseUrlVal}" | missingApiKey=${missingApiKey} | missingBaseUrl=${missingBaseUrl}`);
+
         if (missingApiKey || missingBaseUrl) {
             const missing = [];
             if (missingApiKey) missing.push('API key');
             if (missingBaseUrl) missing.push('Base URL');
             const errMsg = `Cannot process: ${missing.join(' and ')} missing or invalid`;
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — VALIDATION FAILED | ${errMsg}`);
             nextJob.status = 'failed';
             nextJob.completedAt = Date.now();
             nextJob.error = errMsg;
+            this.clearJobTimeout();
             await this.persistQueue();
             this.emitState();
             this.processing = false;
+            this.currentJobStartTime = 0;
+
+            // Notify user of permanent config failure
+            DeviceEventEmitter.emit(AI_JOB_FAILED_EVENT, {
+                noteId: nextJob.noteId,
+                error: errMsg,
+                permanent: true,
+            });
+
             this.scheduleNext();
             return;
         }
@@ -549,43 +768,59 @@ class AiQueueManager {
                     personName: person?.name || 'this person',
                     relationshipStatus: person?.relationship || 'an unknown person',
                 };
+                // eslint-disable-next-line no-console
+                console.log(`[AI 🔧] processNext — relationship context | person=${relationship.personName} | status=${relationship.relationshipStatus}`);
             }
 
             // Create a cancel token for this job's AI request
             this.currentCancelToken = new AiCancelToken();
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — calling processNote... | model=${config.model || 'default'}`);
             const result = await processNote(note.text, config, relationship, this.currentCancelToken);
             this.currentCancelToken = null;
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — processNote returned | failed=${result.failed} | titleEmpty=${!result.title || result.title.trim().length === 0} | bullets=${result.summary.length}`);
 
             // Guard against race condition: if cancelJob() was called after processNote resolved
             // but before we saved results, discard them.
             if (nextJob.status !== 'processing') {
                 // Cancelled in-flight — results are stale
+                this.clearJobTimeout();
                 await this.persistQueue();
                 this.emitState();
                 this.processing = false;
+                this.currentJobStartTime = 0;
                 this.scheduleNext();
                 return;
             }
 
             if (result.failed) {
+                // eslint-disable-next-line no-console
+                console.log(`[AI 🔧] processNext — result.failed=true, throwing to retry path`);
                 throw new Error('AI processing returned empty results');
             }
 
             try {
                 // Save results to the note
+                // eslint-disable-next-line no-console
+                console.log(`[AI 🔧] processNext — saving AI results to note...`);
                 await this.updateNote(nextJob.noteId, {
                     aiTitle: result.title,
                     aiSummary: result.summary,
                     aiModelUsed: config.model || 'default',
                 });
+                // eslint-disable-next-line no-console
+                console.log(`[AI 🔧] processNext — AI results saved successfully`);
             } catch (storageErr: unknown) {
                 const storageMsg = storageErr instanceof Error ? storageErr.message : String(storageErr);
                 nextJob.status = 'failed';
                 nextJob.completedAt = Date.now();
                 nextJob.error = `Storage update failed: ${storageMsg}`;
+                this.clearJobTimeout();
                 await this.persistQueue();
                 this.emitState();
                 this.processing = false;
+                this.currentJobStartTime = 0;
                 this.scheduleNext();
                 return;
             }
@@ -593,6 +828,9 @@ class AiQueueManager {
             // Mark job as done
             nextJob.status = 'done';
             nextJob.completedAt = Date.now();
+            this.clearJobTimeout();
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — job DONE | noteId=${nextJob.noteId} | model=${config.model || 'default'}`);
 
             const duration = Date.now() - (nextJob.startedAt || Date.now());
             await logAi({
@@ -608,6 +846,8 @@ class AiQueueManager {
             }
         } catch (error: unknown) {
             const errMsg = error instanceof Error ? error.message : 'Unknown error';
+            // eslint-disable-next-line no-console
+            console.error(`[AI 🔧] processNext — CATCH | noteId=${nextJob.noteId} | error=${errMsg}`);
             const duration = Date.now() - (nextJob.startedAt || Date.now());
 
             await logAi({
@@ -635,6 +875,7 @@ class AiQueueManager {
                     nextJob.retryCount++;
                     nextJob.status = 'queued';
                     nextJob.startedAt = undefined;
+                    nextJob.error = undefined;
 
                     await logAi({
                         action: 'retry',
@@ -652,18 +893,33 @@ class AiQueueManager {
                 nextJob.status = 'failed';
                 nextJob.completedAt = Date.now();
                 nextJob.error = errMsg;
+
+                // Notify user of permanent failure
+                DeviceEventEmitter.emit(AI_JOB_FAILED_EVENT, {
+                    noteId: nextJob.noteId,
+                    error: errMsg,
+                    permanent: true,
+                });
             }
         }
 
+        this.clearJobTimeout();
         await this.persistQueue();
         this.emitState();
         this.processing = false;
+        this.currentJobStartTime = 0;
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNext — scheduling next job in ${RATE_LIMIT_DELAY_MS}ms`);
         this.scheduleNext();
     }
 
     /** Schedule the next job with rate limiting delay */
     private scheduleNext(): void {
-        setTimeout(() => this.processNext(), RATE_LIMIT_DELAY_MS);
+        if (this.scheduleTimeoutId) clearTimeout(this.scheduleTimeoutId);
+        this.scheduleTimeoutId = setTimeout(() => {
+            this.scheduleTimeoutId = null;
+            this.processNext();
+        }, RATE_LIMIT_DELAY_MS);
     }
 
     /* ── Queue Helpers ─────────────────────────────────────────────── */
@@ -699,7 +955,7 @@ class AiQueueManager {
                 JSON.stringify(toPersist)
             );
         } catch (err) {
-            logger("warn", "AI Queue", "Failed to persist queue:", err);
+            logger('warn', 'AI Queue', 'Failed to persist queue:', err);
         }
     }
 
@@ -710,7 +966,7 @@ class AiQueueManager {
             if (raw) {
                 const parsed = JSON.parse(raw) as unknown;
                 if (!Array.isArray(parsed)) {
-                    logger("warn", "AI Queue", "Persisted queue is not an array, resetting");
+                    logger('warn', 'AI Queue', 'Persisted queue is not an array, resetting');
                     this.jobs = [];
                     return;
                 }
@@ -727,13 +983,13 @@ class AiQueueManager {
                     ) {
                         validJobs.push(item as AiJob);
                     } else {
-                        logger("warn", "AI Queue", "Skipping malformed queue item:", item);
+                        logger('warn', 'AI Queue', 'Skipping malformed queue item:', item);
                     }
                 }
                 this.jobs = validJobs;
             }
         } catch (err) {
-            logger("warn", "AI Queue", "Failed to parse persisted queue, resetting:", err);
+            logger('warn', 'AI Queue', 'Failed to parse persisted queue, resetting:', err);
             this.jobs = [];
         }
     }
@@ -762,7 +1018,7 @@ class AiQueueManager {
 
         if (orphans.length > 0) {
             await this.persistQueue();
-            logger("info", "AI Queue", `Recovered ${orphans.length} orphaned job(s)`);
+            logger('info', 'AI Queue', `Recovered ${orphans.length} orphaned job(s)`);
         }
     }
 
@@ -782,4 +1038,3 @@ class AiQueueManager {
  * Import this wherever you need to interact with AI processing.
  */
 export const aiQueue = new AiQueueManager();
-

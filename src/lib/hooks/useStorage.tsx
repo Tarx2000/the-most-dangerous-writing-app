@@ -32,7 +32,13 @@ import {
     type ReactNode,
 } from 'react';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
-import { DEFAULT_AI_PROMPTS, type AiPrompts } from '@/config/ai';
+import {
+    DEFAULT_AI_PROMPTS,
+    DEFAULT_OLLAMA_API_KEY,
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+    type AiPrompts,
+} from '@/config/ai';
 import {
     createNotesOps,
     createPersonsOps,
@@ -109,12 +115,14 @@ interface AiConfigContextType {
     aiGrammarModel: string;
     aiPrompts: AiPrompts;
     autoGenerateSummaries: boolean;
+    aiFavoriteModels: string[];
     saveAiApiKey: (key: string) => Promise<void>;
     saveAiBaseUrl: (url: string) => Promise<void>;
     saveAiModel: (model: string) => Promise<void>;
     saveAiGrammarModel: (model: string) => Promise<void>;
     saveAiPrompts: (prompts: AiPrompts) => Promise<void>;
     updateAutoGenerateSummaries: (val: boolean) => Promise<void>;
+    saveAiFavoriteModels: (models: string[]) => Promise<void>;
 }
 
 /** Feed features — medium-frequency (bookmark toggles, comments) */
@@ -191,12 +199,13 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [bookmarkedNoteIds, setBookmarkedNoteIds] = useState<string[]>([]);
     const [feedComments, setFeedComments] = useState<Record<string, string>>({});
     const [autoPlayFeedVideos, setAutoPlayFeedVideos] = useState<boolean>(true);
-    const [aiApiKey, setAiApiKey] = useState<string>('');
-    const [aiBaseUrl, setAiBaseUrl] = useState<string>('');
-    const [aiModel, setAiModel] = useState<string>('');
+    const [aiApiKey, setAiApiKey] = useState<string>(DEFAULT_OLLAMA_API_KEY);
+    const [aiBaseUrl, setAiBaseUrl] = useState<string>(DEFAULT_OLLAMA_BASE_URL);
+    const [aiModel, setAiModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
     const [aiGrammarModel, setAiGrammarModel] = useState<string>('');
     const [aiPrompts, setAiPrompts] = useState<AiPrompts>({ ...DEFAULT_AI_PROMPTS });
     const [autoGenerateSummaries, setAutoGenerateSummaries] = useState<boolean>(true);
+    const [aiFavoriteModels, setAiFavoriteModels] = useState<string[]>([]);
 
     /* ── Refs (fresh-read pattern) --------------------------------─── */
     const savedNotesRef = useRef(savedNotes); savedNotesRef.current = savedNotes;
@@ -224,6 +233,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const aiGrammarModelRef = useRef(aiGrammarModel); aiGrammarModelRef.current = aiGrammarModel;
     const aiPromptsRef = useRef(aiPrompts); aiPromptsRef.current = aiPrompts;
     const autoGenerateSummariesRef = useRef(autoGenerateSummaries); autoGenerateSummariesRef.current = autoGenerateSummaries;
+    const aiFavoriteModelsRef = useRef(aiFavoriteModels); aiFavoriteModelsRef.current = aiFavoriteModels;
     const autoPlayFeedVideosRef = useRef(autoPlayFeedVideos); autoPlayFeedVideosRef.current = autoPlayFeedVideos;
     const totalVlogStorageBytesRef = useRef(totalVlogStorageBytes); totalVlogStorageBytesRef.current = totalVlogStorageBytes;
 
@@ -273,10 +283,11 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             aiApiKey: aiApiKeyRef, aiBaseUrl: aiBaseUrlRef,
             aiModel: aiModelRef, aiGrammarModel: aiGrammarModelRef,
             aiPrompts: aiPromptsRef, autoGenerateSummaries: autoGenerateSummariesRef,
+            aiFavoriteModels: aiFavoriteModelsRef,
         },
         {
             setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
-            setAiPrompts, setAutoGenerateSummaries,
+            setAiPrompts, setAutoGenerateSummaries, setAiFavoriteModels,
         },
     ), []);
 
@@ -290,7 +301,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             setLastReflectionDate, setSavedVlogs, setTotalVlogStorageBytes,
             setBookmarkedNoteIds, setFeedComments, setAutoPlayFeedVideos,
             setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
-            setAiPrompts, setAutoGenerateSummaries,
+            setAiPrompts, setAutoGenerateSummaries, setAiFavoriteModels,
         });
     }, []);
 
@@ -381,9 +392,9 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     }), [fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth, preferencesOps]);
 
     const aiConfigValue = useMemo<AiConfigContextType>(() => ({
-        aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries,
+        aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels,
         ...aiConfigOps,
-    }), [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiConfigOps]);
+    }), [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels, aiConfigOps]);
 
     const feedValue = useMemo<FeedContextType>(() => ({
         bookmarkedNoteIds, feedComments, autoPlayFeedVideos,
@@ -408,11 +419,13 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             const known = new Set(savedVlogsRef.current.map(v => v.filePath));
             const { scanOrphanVlogFiles } = await import('@/lib/storageManager');
             const orphans = await scanOrphanVlogFiles(known);
-            return { orphans: orphans.map(o => ({
-                fileName: o.fileName,
-                fileSizeBytes: o.fileSizeBytes,
-                modDate: new Date(o.modificationTime).toLocaleDateString(),
-            })) };
+            return {
+                orphans: orphans.map(o => ({
+                    fileName: o.fileName,
+                    fileSizeBytes: o.fileSizeBytes,
+                    modDate: new Date(o.modificationTime).toLocaleDateString(),
+                }))
+            };
         },
         reattachOrphanVlogs: async () => {
             const known = new Set(savedVlogsRef.current.map(v => v.filePath));
@@ -437,21 +450,21 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     return (
         <NotesContext.Provider value={notesValue}>
-        <PersonsContext.Provider value={personsValue}>
-        <StreakContext.Provider value={streakValue}>
-        <PreferencesContext.Provider value={preferencesValue}>
-        <AiConfigContext.Provider value={aiConfigValue}>
-        <FeedContext.Provider value={feedValue}>
-        <VlogContext.Provider value={vlogValue}>
-        <StorageActionsContext.Provider value={actionsValue}>
-            {children}
-        </StorageActionsContext.Provider>
-        </VlogContext.Provider>
-        </FeedContext.Provider>
-        </AiConfigContext.Provider>
-        </PreferencesContext.Provider>
-        </StreakContext.Provider>
-        </PersonsContext.Provider>
+            <PersonsContext.Provider value={personsValue}>
+                <StreakContext.Provider value={streakValue}>
+                    <PreferencesContext.Provider value={preferencesValue}>
+                        <AiConfigContext.Provider value={aiConfigValue}>
+                            <FeedContext.Provider value={feedValue}>
+                                <VlogContext.Provider value={vlogValue}>
+                                    <StorageActionsContext.Provider value={actionsValue}>
+                                        {children}
+                                    </StorageActionsContext.Provider>
+                                </VlogContext.Provider>
+                            </FeedContext.Provider>
+                        </AiConfigContext.Provider>
+                    </PreferencesContext.Provider>
+                </StreakContext.Provider>
+            </PersonsContext.Provider>
         </NotesContext.Provider>
     );
 };

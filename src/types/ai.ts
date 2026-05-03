@@ -50,7 +50,7 @@ export interface AiLogEntry {
     /** When the event occurred */
     timestamp: number;
     /** What happened */
-    action: 'enqueue' | 'start' | 'success' | 'fail' | 'cancel' | 'orphan_recovery' | 'retry';
+    action: 'enqueue' | 'start' | 'success' | 'fail' | 'cancel' | 'orphan_recovery' | 'retry' | 'timeout' | 'stall_recovery' | 'init' | 'config';
     /** Which note was involved */
     noteId: string;
     /** Which AI model was used */

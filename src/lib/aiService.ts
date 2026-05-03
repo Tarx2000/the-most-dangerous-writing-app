@@ -232,11 +232,11 @@ async function ollamaChatSingle(
                                 settle('reject', new Error(`Ollama Error: ${parsed.error}`));
                                 return;
                             }
-                            
+
                             // Support both OpenAI (choices[0].delta.content) and Ollama native (message.content)
-                            const chunkStr = parsed.choices?.[0]?.delta?.content || 
-                                           parsed.choices?.[0]?.message?.content || 
-                                           parsed.message?.content || '';
+                            const chunkStr = parsed.choices?.[0]?.delta?.content ||
+                                parsed.choices?.[0]?.message?.content ||
+                                parsed.message?.content || '';
 
                             fullResponse += chunkStr;
 
@@ -477,6 +477,53 @@ export async function checkGrammar(
 }
 
 /**
+ * Fetch available models from the Ollama Cloud API.
+ * Returns an array of model IDs (strings) or an empty array on failure.
+ * Uses the /v1/models endpoint (OpenAI-compatible).
+ */
+export async function fetchAvailableModels(config: AiConfig = {}): Promise<string[]> {
+    const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
+    const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
+
+    return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        const url = `${baseUrl}/models`;
+
+        xhr.open('GET', url);
+        xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+        xhr.send();
+
+        const timeoutId = setTimeout(() => {
+            xhr.abort();
+            resolve([]);
+        }, 10_000);
+
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState !== XMLHttpRequest.DONE) return;
+            clearTimeout(timeoutId);
+            if (xhr.status !== 200) {
+                resolve([]);
+                return;
+            }
+            try {
+                const parsed = JSON.parse(xhr.responseText);
+                const models = (parsed.data || [])
+                    .map((m: Record<string, unknown>) => m.id as string)
+                    .filter((id: string | undefined) => !!id);
+                resolve(models);
+            } catch {
+                resolve([]);
+            }
+        };
+
+        xhr.onerror = () => {
+            clearTimeout(timeoutId);
+            resolve([]);
+        };
+    });
+}
+
+/**
  * Health check — ping the server to verify it's reachable and properly configured.
  * Returns { online: true } if the server responds without throwing a network error.
  *
@@ -547,13 +594,36 @@ export async function processNote(
     relationship?: RelationshipContext,
     cancelToken?: AiCancelToken
 ): Promise<AiProcessResult> {
+    const model = config.model || DEFAULT_OLLAMA_MODEL;
     try {
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNote START | model=${model} | textLength=${text.length} | relationship=${relationship ? 'yes' : 'no'}`);
+
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] Calling generateTitle... | model=${model}`);
         const title = await generateTitle(text, config, undefined, relationship, cancelToken);
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] generateTitle DONE | title="${title.slice(0, 50)}${title.length > 50 ? '...' : ''}"`);
+
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] Calling generateSummary... | model=${model}`);
         const summary = await generateSummary(text, config, undefined, relationship, cancelToken);
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] generateSummary DONE | bullets=${summary.length}`);
+
+        if (!title || title.trim().length === 0 || summary.length === 0) {
+            // eslint-disable-next-line no-console
+            console.warn(`[AI 🔧] processNote FAILED — empty results | titleEmpty=${!title || title.trim().length === 0} | summaryEmpty=${summary.length === 0}`);
+            return { title: title || '', summary, failed: true };
+        }
+
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNote SUCCESS | model=${model}`);
         return { title, summary, failed: false };
     } catch (error: unknown) {
         const errMsg = error instanceof Error ? error.message : String(error);
-        console.warn('[AI] processNote failed — returning empty result:', errMsg);
+        // eslint-disable-next-line no-console
+        console.error(`[AI 🔧] processNote EXCEPTION | model=${model} | error=${errMsg}`);
         return { title: '', summary: [], failed: true };
     }
 }
