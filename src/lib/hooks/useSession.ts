@@ -48,6 +48,12 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
     const [hasLost, setHasLost] = useState<boolean>(false);
     const [isContinuingAfterLoss, setIsContinuingAfterLoss] = useState<boolean>(false);
 
+    /* ── Incremental Word Count ───────────────────────────────────────── */
+    const [wordCount, setWordCount] = useState(0);
+    const wordCountRef = useRef(0);
+    const lastCountedTextRef = useRef('');
+    const wordCountDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const sessionIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const idleIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const deathTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -72,6 +78,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         if (sessionIntervalRef.current) clearInterval(sessionIntervalRef.current);
         if (idleIntervalRef.current) clearInterval(idleIntervalRef.current);
         if (deathTimeoutRef.current) clearTimeout(deathTimeoutRef.current);
+        if (wordCountDebounceRef.current) clearTimeout(wordCountDebounceRef.current);
     }, []);
 
     const triggerDeathState = useCallback(() => {
@@ -99,6 +106,18 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         }, 200);
     }, [clearTimers, shakeAnimation, lossOverlayOpacity, inputRefRef]);
 
+    /**
+     * Full O(n) word count — used as fallback for complex edits and on session start.
+     */
+    const recountWords = useCallback((text: string) => {
+        const newCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        if (newCount !== wordCountRef.current) {
+            wordCountRef.current = newCount;
+            setWordCount(newCount);
+        }
+        lastCountedTextRef.current = text;
+    }, []);
+
     const startSession = useCallback((isQuickNote?: boolean) => {
         const minutes = CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
         const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
@@ -108,6 +127,9 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         setSessionTimeRemaining(isQuickNote ? 0 : seconds);
         idleTimeMsShared.value = 0;
         textRef.current = '';
+        lastCountedTextRef.current = '';
+        wordCountRef.current = 0;
+        setWordCount(0);
         if (inputRefRef && inputRefRef.current) {
             inputRefRef.current.clear();
         }
@@ -167,15 +189,52 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         }, CONFIG.TICK_RATE_MS);
     }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation, idleTimeMsShared, inputRefRef]);
 
+    /**
+     * Incremental word count: tries O(1) append-only path first,
+     * falls back to debounced O(n) full recount for complex edits.
+     */
     const handleTextChange = useCallback((newText: string) => {
         textRef.current = newText;
+
         // Reset idle timer on any typing (works for both timed sessions and quick notes)
         if (!hasLostRef.current && !isContinuingAfterLossRef.current) {
             idleTimeMsShared.value = 0;
             // Reset haptic level so thresholds fire again if user idles again
             lastHapticLevelRef.current = 'none';
         }
-    }, [idleTimeMsShared]);
+
+        const oldText = lastCountedTextRef.current;
+
+        // Fast path: simple append at end (most common during typing)
+        if (newText.startsWith(oldText)) {
+            const added = newText.slice(oldText.length);
+            if (!added.trim()) {
+                // Only whitespace added — word count unchanged
+                lastCountedTextRef.current = newText;
+                return;
+            }
+
+            // Count new words in the appended slice
+            const addedWords = added.trim().split(/\s+/).filter(w => w.length > 0);
+
+            // If the old text didn't end with whitespace, the first "new" word
+            // is actually a continuation of the last old word — don't double-count.
+            const oldEndsWithWord = oldText.length > 0 && /\S/.test(oldText[oldText.length - 1]);
+            const delta = oldEndsWithWord && addedWords.length > 0 ? addedWords.length - 1 : addedWords.length;
+
+            const newCount = wordCountRef.current + delta;
+            wordCountRef.current = newCount;
+            setWordCount(newCount);
+            lastCountedTextRef.current = newText;
+            return;
+        }
+
+        // Slow path: deletion or insertion in the middle — debounce a full recount
+        if (wordCountDebounceRef.current) clearTimeout(wordCountDebounceRef.current);
+        wordCountDebounceRef.current = setTimeout(() => {
+            recountWords(newText);
+        }, 400);
+    }, [idleTimeMsShared, recountWords]);
 
     const resumeWritingFreely = useCallback((onResumed?: () => void) => {
         setIsContinuingAfterLoss(true);
@@ -214,6 +273,7 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         isContinuingAfterLoss,
         shakeAnimation,
         lossOverlayOpacity,
+        wordCount,
         startSession,
         handleTextChange,
         resumeWritingFreely,

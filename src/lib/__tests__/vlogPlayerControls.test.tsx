@@ -102,7 +102,7 @@ describe('FeedVideoCard + VlogViewerModal player interaction', () => {
         const player = jest.requireMock('expo-video').useVideoPlayer('file:///test.mp4');
         player.play();
 
-        const { getByTestId } = render(
+        render(
             <VlogViewerModal
                 visible={true}
                 vlogs={[mockVlog]}

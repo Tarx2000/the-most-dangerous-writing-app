@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import {
     View, Text, TextInput, ActivityIndicator, Platform, StyleSheet, Pressable
 } from 'react-native';
@@ -11,7 +11,6 @@ import { pingServer } from '@/lib/aiService';
 import {
     DEFAULT_OLLAMA_API_KEY,
     DEFAULT_OLLAMA_BASE_URL,
-    DEFAULT_OLLAMA_MODEL,
 } from '@/config/ai';
 import type { SavedNote, AiQueueState } from '@/types';
 
@@ -25,6 +24,7 @@ type AiSettingsPanelProps = {
         autoGenerateSummaries: boolean;
         saveAiApiKey: (key: string) => Promise<void>;
         saveAiBaseUrl: (url: string) => Promise<void>;
+        saveAiModel: (model: string) => Promise<void>;
         updateAutoGenerateSummaries: (val: boolean) => Promise<void>;
     };
     queueState: AiQueueState;
@@ -70,7 +70,6 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
 
     const isDefaultKey = aiConfig.aiApiKey === DEFAULT_OLLAMA_API_KEY;
     const isDefaultUrl = aiConfig.aiBaseUrl === DEFAULT_OLLAMA_BASE_URL;
-    const isDefaultModel = aiConfig.aiModel === DEFAULT_OLLAMA_MODEL;
 
     return (
         <View style={styles.container}>

@@ -9,7 +9,7 @@ export async function getDb(): Promise<SQLiteDatabase> {
     if (dbInstance) return dbInstance;
     if (dbOpeningPromise) return dbOpeningPromise;
 
-    dbOpeningPromise = openDatabaseAsync(DB_NAME).then(async (db) => {
+    dbOpeningPromise = openDatabaseAsync(DB_NAME).then(async (db: SQLiteDatabase) => {
         await migrate(db);
         dbInstance = db;
         return db;

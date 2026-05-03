@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -40,8 +40,6 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { timeIndex, diffIndex, mode, personId, isQuickNote } = route.params;
 
     const inputRef = useRef<TextInput>(null);
-    const [wordCount, setWordCount] = useState(0);
-    const wordCountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastTimerResetRef = useRef(0);
 
     const {
@@ -53,6 +51,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         isContinuingAfterLoss,
         shakeAnimation,
         lossOverlayOpacity,
+        wordCount,
         startSession,
         handleTextChange,
         resumeWritingFreely,
@@ -69,7 +68,6 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         vibrate(50);
         return () => {
             clearTimers();
-            if (wordCountTimeoutRef.current) clearTimeout(wordCountTimeoutRef.current);
         };
     }, [startSession, clearTimers, isQuickNote]);
 
@@ -114,15 +112,6 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             lastTimerResetRef.current = now;
         }
         handleTextChange(newText);
-
-        // Debounce word count to avoid O(n) array allocation on every keystroke
-        if (wordCountTimeoutRef.current) clearTimeout(wordCountTimeoutRef.current);
-        wordCountTimeoutRef.current = setTimeout(() => {
-            const newWordCount = newText.trim().split(/\s+/).filter(w => w.length > 0).length;
-            if (newWordCount !== wordCount) {
-                setWordCount(newWordCount);
-            }
-        }, 300);
     };
 
     const animatedShakeStyle = useAnimatedStyle(() => ({

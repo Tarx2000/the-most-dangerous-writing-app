@@ -4,7 +4,6 @@ import {
     Text,
     ScrollView,
     Pressable,
-    ActivityIndicator,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { SwipeableModal } from '@/components/ui/SwipeableModal';
