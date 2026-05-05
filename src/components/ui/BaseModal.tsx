@@ -40,6 +40,8 @@ export interface BaseModalProps {
     showScrim?: boolean;
     /** Optional callback to disable/enable parent scroll (e.g. HomeScreen pager) */
     setHomeScrollEnabled?: (enabled: boolean) => void;
+    /** Whether to wrap in KeyboardAvoidingView (default: true) */
+    keyboardAvoiding?: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(({
     showHandle = true,
     showScrim = true,
     setHomeScrollEnabled,
+    keyboardAvoiding = true,
 }) => {
     const { height: SCREEN_HEIGHT } = useWindowDimensions();
     const insets = useSafeAreaInsets();
@@ -129,7 +132,7 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(({
     if (!visible) return null;
 
     return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
+        <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
             <GestureHandlerRootView style={{ flex: 1 }}>
                 {showScrim && (
                     <TouchableWithoutFeedback onPress={handleClose}>
@@ -137,13 +140,32 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(({
                     </TouchableWithoutFeedback>
                 )}
 
-                <KeyboardAvoidingView
-                    style={StyleSheet.absoluteFill}
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    pointerEvents="box-none"
-                >
-                    <View style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]} pointerEvents="box-none">
-                        <Animated.View style={[styles.sheet, animatedStyle]}>
+                {keyboardAvoiding ? (
+                    <KeyboardAvoidingView
+                        style={StyleSheet.absoluteFill}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        pointerEvents="box-none"
+                    >
+                        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                            <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
+                                {showHandle && (
+                                    <GestureDetector gesture={panGesture}>
+                                        <View style={styles.dragZone}>
+                                            <View style={styles.handlePill} />
+                                            {title && <Text style={styles.sheetTitle}>{title}</Text>}
+                                        </View>
+                                    </GestureDetector>
+                                )}
+
+                                <View style={[styles.contentArea, { paddingBottom: insets.bottom + 10 }]}>
+                                    {children}
+                                </View>
+                            </Animated.View>
+                        </View>
+                    </KeyboardAvoidingView>
+                ) : (
+                    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                        <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
                             {showHandle && (
                                 <GestureDetector gesture={panGesture}>
                                     <View style={styles.dragZone}>
@@ -158,7 +180,7 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(({
                             </View>
                         </Animated.View>
                     </View>
-                </KeyboardAvoidingView>
+                )}
             </GestureHandlerRootView>
         </Modal>
     );
@@ -197,6 +219,12 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         textAlign: 'center',
         letterSpacing: 0.3,
+    },
+    sheetAbsolute: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
     },
     contentArea: {
         flex: 1,

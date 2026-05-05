@@ -1,53 +1,49 @@
 /**
- * CirclePickerSheet — Extracted from StartScreen.
+ * CirclePickerSheet — Circle/Person selection modal.
  *
- * Manages the circle/person selection BaseModal including:
- * - Biometric lock screen when circles are protected
- * - Search and filter existing circles
- * - Inline creation form for new circles
- * - Person selection callback
- *
- * Extracted to reduce StartScreen's state management burden and
- * improve maintainability of the circle selection flow.
+ * UX Design:
+ * - Android uses `softwareKeyboardLayoutMode: "pan"` so keyboard overlaps
+ *   the screen without moving the modal or shrinking the window
+ * - Modal stays perfectly fixed when keyboard opens
+ * - No autoFocus to prevent initial jump
+ * - Bottom blur gradient hides items under keyboard area
+ * - Footer create-option only when no exact match
+ * - Inline ConfirmDialog before creating
  */
-
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
     TextInput,
-    ScrollView,
     Vibration,
     StyleSheet,
+    ActivityIndicator,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { BaseModal } from '@/components/ui/BaseModal';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { theme } from '@/styles/theme';
-import { commonStyles } from '@/styles/commonStyles';
 import type { Person } from '@/types';
 
 interface CirclePickerSheetProps {
     visible: boolean;
     onClose: () => void;
-    /** Currently selected person ID */
     selectedPersonId: string | null;
-    /** Callback when a person is selected */
     onSelectPerson: (personId: string) => void;
-    /** All persons from storage */
     persons: Person[];
-    /** Add a new person to storage */
     addPerson: (name: string) => Promise<string | null>;
-    /** Whether circles are unlocked via biometric */
     isCirclesUnlocked: boolean;
-    /** Whether full access is unlocked */
     isNotesUnlocked: boolean;
-    /** Unlock circles via biometric */
     unlockCircles: () => Promise<boolean>;
-    /** Callback to enable/disable home screen scroll */
     setHomeScrollEnabled?: (enabled: boolean) => void;
 }
+
+type ListItem =
+    | { type: 'person'; person: Person }
+    | { type: 'create'; searchText: string };
 
 export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
     visible,
@@ -63,45 +59,117 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
     const [searchText, setSearchText] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
-    const [creatingNewCircle, setCreatingNewCircle] = useState(false);
-    const newPersonNameRef = useRef('');
+    const [isCreating, setIsCreating] = useState(false);
+    const [confirmName, setConfirmName] = useState<string | null>(null);
 
     const filteredPersons = useMemo(() => {
+        if (!debouncedSearch.trim()) return persons;
         return persons.filter(p =>
             p.name.toLowerCase().includes(debouncedSearch.toLowerCase())
         );
     }, [persons, debouncedSearch]);
 
-    const handleSearchChange = (text: string) => {
-        setSearchText(text);
-        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-        searchDebounceRef.current = setTimeout(() => setDebouncedSearch(text), 150);
-    };
+    const listData: ListItem[] = useMemo(() => {
+        const items: ListItem[] = filteredPersons.map(p => ({ type: 'person', person: p }));
+        const search = debouncedSearch.trim();
+        if (search) {
+            const exactMatch = persons.some(p =>
+                p.name.toLowerCase() === search.toLowerCase()
+            );
+            if (!exactMatch) {
+                items.push({ type: 'create', searchText: debouncedSearch });
+            }
+        }
+        return items;
+    }, [filteredPersons, debouncedSearch, persons]);
 
-    const handleClose = () => {
-        onClose();
-        searchDebounceRef.current = null;
+    const handleSearchChange = useCallback((text: string) => {
+        setSearchText(text);
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+        }
+        searchDebounceRef.current = setTimeout(() => setDebouncedSearch(text), 150);
+    }, []);
+
+    const handleClose = useCallback(() => {
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+            searchDebounceRef.current = null;
+        }
         setSearchText('');
         setDebouncedSearch('');
-        setCreatingNewCircle(false);
-    };
+        setIsCreating(false);
+        setConfirmName(null);
+        onClose();
+    }, [onClose]);
 
-    const handleCreatePerson = async () => {
-        if (newPersonNameRef.current.trim()) {
-            const newId = await addPerson(newPersonNameRef.current);
-            newPersonNameRef.current = '';
-            setCreatingNewCircle(false);
-            handleSearchChange('');
-            if (newId) onSelectPerson(newId);
+    const handleCreatePerson = useCallback(async (name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed || isCreating) return;
+        setIsCreating(true);
+        try {
+            const newId = await addPerson(trimmed);
+            if (newId) {
+                onSelectPerson(newId);
+                handleClose();
+            }
+        } finally {
+            setIsCreating(false);
         }
-    };
+    }, [addPerson, onSelectPerson, handleClose, isCreating]);
+
+    const handleSelectPerson = useCallback((personId: string) => {
+        onSelectPerson(personId);
+        handleClose();
+    }, [onSelectPerson, handleClose]);
+
+    const clearSearch = useCallback(() => {
+        setSearchText('');
+        setDebouncedSearch('');
+    }, []);
+
+    const renderItem = useCallback(({ item }: { item: ListItem }) => {
+        if (item.type === 'person') {
+            const p = item.person;
+            return (
+                <AnimatedScaleButton
+                    style={styles.personItem}
+                    onPress={() => handleSelectPerson(p.id)}
+                >
+                    <View style={styles.personAvatar}>
+                        <Text style={styles.personAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <Text style={styles.personName}>{p.name}</Text>
+                </AnimatedScaleButton>
+            );
+        }
+
+        const search = item.searchText.trim();
+        return (
+            <AnimatedScaleButton
+                style={styles.createOption}
+                onPress={() => setConfirmName(search)}
+                disabled={isCreating}
+            >
+                {isCreating ? (
+                    <ActivityIndicator size={18} color={theme.colors.primaryAction} />
+                ) : (
+                    <MaterialCommunityIcons name="account-plus" size={20} color={theme.colors.primaryAction} />
+                )}
+                <Text style={styles.createOptionText}>
+                    {isCreating ? 'Adding...' : `Add "${search}"`}
+                </Text>
+            </AnimatedScaleButton>
+        );
+    }, [handleSelectPerson, isCreating]);
 
     return (
         <BaseModal
             visible={visible}
             onClose={handleClose}
-            title={creatingNewCircle ? 'New Circle' : 'Select Circle'}
+            title="Select Person"
             setHomeScrollEnabled={setHomeScrollEnabled}
+            keyboardAvoiding={false}
         >
             {!isCirclesUnlocked && !isNotesUnlocked ? (
                 <View style={styles.lockContainer}>
@@ -119,108 +187,99 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
                         <Text style={styles.lockBtnText}>Unlock Circles</Text>
                     </AnimatedScaleButton>
                 </View>
-            ) : creatingNewCircle ? (
-                <View style={styles.createForm}>
-                    <TextInput
-                        style={commonStyles.addPersonInput}
-                        placeholder="Person's Name"
-                        placeholderTextColor={theme.colors.textMuted}
-                        defaultValue={newPersonNameRef.current}
-                        onChangeText={(text) => newPersonNameRef.current = text}
-                        autoFocus
-                        keyboardAppearance="dark"
-                    />
-                    <View style={{ gap: 10, marginTop: 20 }}>
-                        <AnimatedScaleButton
-                            style={styles.createBtn}
-                            onPress={handleCreatePerson}
-                        >
-                            <MaterialCommunityIcons name="check" size={20} color={theme.colors.textPrimary} style={{ marginRight: 8 }} />
-                            <Text style={styles.createBtnText}>Create Circle</Text>
-                        </AnimatedScaleButton>
-                        <AnimatedScaleButton
-                            style={styles.backBtn}
-                            onPress={() => setCreatingNewCircle(false)}
-                        >
-                            <Text style={styles.backBtnText}>Back to List</Text>
-                        </AnimatedScaleButton>
-                    </View>
-                </View>
             ) : (
-                <>
-                    {/* Search Input */}
-                    <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
+                <View style={styles.outer}>
+                    {/* Search bar — fixed, never moves */}
+                    <View style={styles.header}>
                         <View style={styles.searchBox}>
                             <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textMuted} style={{ marginRight: 10 }} />
                             <TextInput
                                 style={styles.searchInput}
                                 placeholder="Search your circles..."
                                 placeholderTextColor={theme.colors.textMuted}
-                                defaultValue={searchText}
+                                value={searchText}
                                 onChangeText={handleSearchChange}
                                 keyboardAppearance="dark"
                                 autoCorrect={false}
                             />
                             {searchText.length > 0 && (
-                                <AnimatedScaleButton onPress={() => { setSearchText(''); handleSearchChange(''); }}>
+                                <AnimatedScaleButton onPress={clearSearch}>
                                     <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
                                 </AnimatedScaleButton>
                             )}
                         </View>
                     </View>
 
-                    {/* List */}
-                    <View style={{ flex: 1, width: '100%' }}>
-                        {filteredPersons.length > 0 ? (
-                            <FlashList
-                                data={filteredPersons}
-                                renderItem={({ item: p }: { item: Person }) => (
-                                    <AnimatedScaleButton
-                                        style={styles.personItem}
-                                        onPress={() => { onSelectPerson(p.id); handleClose(); }}
-                                    >
-                                        <View style={styles.personAvatar}>
-                                            <Text style={styles.personAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
-                                        </View>
-                                        <Text style={styles.personName}>{p.name}</Text>
-                                    </AnimatedScaleButton>
-                                )}
-                                keyExtractor={(p) => p.id}
-                                keyboardShouldPersistTaps="handled"
-                                keyboardDismissMode="on-drag"
-                                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-                            />
-                        ) : (
-                            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' }}>
-                                <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textMuted} style={{ marginBottom: 15 }} />
-                                <Text style={{ color: theme.colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
-                                    {debouncedSearch.length > 0 ? 'No circle found with that name.' : 'Start typing to find or create a circle.'}
-                                </Text>
-
-                                {debouncedSearch.length > 0 && (
-                                    <AnimatedScaleButton style={styles.createBtn} onPress={() => { newPersonNameRef.current = debouncedSearch; setCreatingNewCircle(true); }}>
-                                        <MaterialCommunityIcons name="plus" size={20} color={theme.colors.background} />
-                                        <Text style={styles.createBtnText}>Create "{debouncedSearch}"</Text>
-                                    </AnimatedScaleButton>
-                                )}
-                            </ScrollView>
-                        )}
+                    {/* Results list */}
+                    <View style={styles.listFlex}>
+                        <FlashList
+                            data={listData}
+                            renderItem={renderItem}
+                            keyExtractor={(item, index) =>
+                                item.type === 'person' ? item.person.id : `footer-${index}`
+                            }
+                            keyboardShouldPersistTaps="handled"
+                            keyboardDismissMode="on-drag"
+                            contentContainerStyle={{
+                                paddingHorizontal: 20,
+                                paddingBottom: 40,
+                            }}
+                        />
                     </View>
 
-                    {/* Float create button */}
-                    {debouncedSearch.length === 0 && (
-                        <AnimatedScaleButton style={styles.floatCreateBtn} onPress={() => { newPersonNameRef.current = ''; setCreatingNewCircle(true); }}>
-                            <MaterialCommunityIcons name="plus" size={24} color={theme.colors.background} />
-                            <Text style={styles.floatCreateBtnText}>New Circle</Text>
-                        </AnimatedScaleButton>
-                    )}
-                </>
+                    {/* Bottom blur gradient — fades list into keyboard overlap area */}
+                    <LinearGradient
+                        colors={[
+                            'transparent',
+                            'rgba(0,0,0,0.2)',
+                            'rgba(0,0,0,0.5)',
+                            theme.colors.surfaceDark,
+                        ]}
+                        style={styles.bottomFade}
+                        pointerEvents="none"
+                    />
+
+                    {/* Confirmation dialog before creating */}
+                    <ConfirmDialog
+                        visible={!!confirmName}
+                        title="New Person"
+                        message={confirmName ? `Create a new circle for "${confirmName}"?` : ''}
+                        confirmLabel="Create"
+                        cancelLabel="Cancel"
+                        icon="account-plus-outline"
+                        cancelIcon="close"
+                        onConfirm={() => {
+                            if (confirmName) handleCreatePerson(confirmName);
+                            setConfirmName(null);
+                        }}
+                        onCancel={() => setConfirmName(null)}
+                    />
+                </View>
             )}
         </BaseModal>
     );
 });
 
 const styles = StyleSheet.create({
+    outer: {
+        flex: 1,
+    },
+    header: {
+        paddingHorizontal: 20,
+        paddingBottom: 12,
+    },
+    listFlex: {
+        flex: 1,
+        width: '100%',
+    },
+    bottomFade: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 56,
+        zIndex: 10,
+    },
     lockContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -251,43 +310,6 @@ const styles = StyleSheet.create({
     lockBtnText: {
         color: theme.colors.textPrimary,
         fontWeight: 'bold',
-    },
-    createForm: {
-        paddingHorizontal: 20,
-        paddingTop: 20,
-    },
-    createBtn: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.primaryAction,
-        paddingVertical: 16,
-        borderRadius: 100,
-        shadowColor: theme.colors.primaryAction,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 8,
-    },
-    createBtnText: {
-        color: theme.colors.textPrimary,
-        fontWeight: '800',
-        fontSize: 16,
-    },
-    backBtn: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.glassBackground,
-        paddingVertical: 16,
-        borderRadius: 100,
-        borderWidth: 1,
-        borderColor: theme.colors.glassBorder,
-    },
-    backBtnText: {
-        color: theme.colors.textPrimary,
-        fontWeight: '700',
-        fontSize: 15,
     },
     searchBox: {
         flexDirection: 'row',
@@ -332,19 +354,22 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '600',
     },
-    floatCreateBtn: {
-        position: 'absolute',
-        bottom: 40,
-        right: 20,
+    createOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.colors.glassHighlight,
-        padding: 16,
-        borderRadius: 30,
+        paddingVertical: 14,
+        paddingHorizontal: 12,
+        borderRadius: theme.borderRadius.md,
+        marginTop: 8,
+        marginBottom: 4,
+        gap: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+        borderStyle: 'dashed',
     },
-    floatCreateBtnText: {
-        color: theme.colors.textPrimary,
+    createOptionText: {
+        color: theme.colors.primaryAction,
         fontSize: 16,
-        fontWeight: theme.typography.weightBold,
+        fontWeight: '700',
     },
 });

@@ -28,6 +28,7 @@
         "CAMERA",
         "RECORD_AUDIO"
       ],
+      "softwareKeyboardLayoutMode": "pan"
     },
     "plugins": [
       [
