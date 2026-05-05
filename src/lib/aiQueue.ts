@@ -28,6 +28,7 @@ import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
 import { logAi, logStartupDiagnostics } from '@/lib/aiLogger';
+import { MIN_AI_WORDS } from '@/config/ai';
 import { generateId } from '@/lib/utils';
 import {
     AI_STORAGE_KEYS,
@@ -716,6 +717,24 @@ class AiQueueManager {
 
         // eslint-disable-next-line no-console
         console.log(`[AI 🔧] processNext — note found | textLength=${note.text.length}`);
+
+        // Skip AI title/summary for very short notes (too short to meaningfully summarize)
+        const wordCount = note.text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        // eslint-disable-next-line no-console
+        console.log(`[AI 🔧] processNext — wordCount=${wordCount} | minRequired=${MIN_AI_WORDS}`);
+        if (wordCount < MIN_AI_WORDS) {
+            // eslint-disable-next-line no-console
+            console.log(`[AI 🔧] processNext — SKIPPING (too short) | noteId=${nextJob.noteId}`);
+            nextJob.status = 'done';
+            nextJob.completedAt = Date.now();
+            this.clearJobTimeout();
+            await this.persistQueue();
+            this.emitState();
+            this.processing = false;
+            this.currentJobStartTime = 0;
+            this.scheduleNext();
+            return;
+        }
 
         // Pre-flight config validation: fail fast if no API key or base URL
         const apiKeyLen = config.apiKey ? config.apiKey.trim().length : 0;

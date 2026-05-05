@@ -44,6 +44,13 @@ export const AI_MAX_RETRIES = 2;
 /** Maximum number of AI log entries to keep in storage (FIFO) */
 export const AI_LOG_MAX_ENTRIES = 200;
 
+/**
+ * Minimum word count for a note to receive AI title and summary processing.
+ * Notes below this threshold are too short to meaningfully summarize.
+ * Grammar check still runs independently regardless of length.
+ */
+export const MIN_AI_WORDS = 50;
+
 /** Timeout for a single AI request in milliseconds (per XHR call) */
 export const AI_REQUEST_TIMEOUT_MS = 60_000;
 

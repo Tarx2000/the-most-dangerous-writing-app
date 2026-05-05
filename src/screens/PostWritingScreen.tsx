@@ -26,6 +26,7 @@ import { ShimmerLine } from '@/components/ui/ShimmerLine';
 import { theme } from '@/styles/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CONFIG } from '@/config';
+import { MIN_AI_WORDS } from '@/config/ai';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
 import type { AiJobCategory } from '@/types';
@@ -92,6 +93,14 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     useEffect(() => {
         if (!note || aiEnqueuedRef.current || !autoGenerateSummaries) return;
+
+        // Skip AI for very short notes
+        const noteWordCount = note.text.trim().split(/\s+/).filter(Boolean).length;
+        if (noteWordCount < MIN_AI_WORDS) {
+            aiEnqueuedRef.current = true; // Mark as "handled" so we don't re-check
+            return;
+        }
+
         aiEnqueuedRef.current = true;
 
         // Determine category based on note properties
@@ -110,6 +119,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /* ── Manual AI Generate ─────────────────────────────────────────── */
     const handleManualGenerate = useCallback(() => {
         if (!note) return;
+        const noteWordCount = note.text.trim().split(/\s+/).filter(Boolean).length;
+        if (noteWordCount < MIN_AI_WORDS) return;
         aiEnqueuedRef.current = true;
         const category: AiJobCategory = isAlignmentReflection(note) ? 'checkin' : note.personId ? 'circle' : 'journal';
         enqueueNote(noteId, category);
@@ -171,6 +182,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /* ── Render ──────────────────────────────────────────────────────── */
 
     const wordCount = editableTextRef.current.trim().split(/\s+/).filter(Boolean).length;
+    const isTooShortForAi = wordCount < MIN_AI_WORDS;
 
     return (
         <View style={styles.container}>
@@ -202,6 +214,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {!hasAiTitle ? (
                         queueState.serverOnline === false ? (
                             <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>AI Server Unreachable</Text>
+                        ) : isTooShortForAi ? (
+                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
+                                Short entry — AI title not available
+                            </Text>
                         ) : !aiProcessing ? (
                             <AnimatedScaleButton onPress={handleManualGenerate} style={{ paddingVertical: 10 }}>
                                 <Text style={{ color: theme.colors.primaryAction, fontWeight: '700' }}>Enable AI Processing for this entry</Text>
@@ -228,6 +244,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {!hasAiSummary ? (
                         queueState.serverOnline === false ? (
                             <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Summary unavailable.</Text>
+                        ) : isTooShortForAi ? (
+                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
+                                Short entry — AI summary not available
+                            </Text>
                         ) : !aiProcessing ? (
                             <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Tap 'Enable AI Processing' above to generate summary.</Text>
                         ) : (

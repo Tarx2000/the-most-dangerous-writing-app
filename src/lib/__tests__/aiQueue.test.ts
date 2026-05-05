@@ -47,11 +47,12 @@ import type { AiJob } from '@/types';
 
 describe('AiQueueManager', () => {
   const mockGetAiConfig = () => ({ model: 'test-model', apiKey: 'key', baseUrl: 'http://test', prompts: { title: 't', summary: 's', grammar: 'g' } });
-  const mockGetNoteById = (id: string) => ({ id, text: 'Test note content', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true });
+  const LONG_NOTE_TEXT = 'This is a very long journal entry that contains more than fifty words to ensure the AI queue processes it correctly for title and summary generation. I had a wonderful day today where I reflected on my thoughts and feelings about work and relationships and wrote down everything that came to my mind in the moment.';
+  const mockGetNoteById = (id: string) => ({ id, text: LONG_NOTE_TEXT, dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true });
   const mockUpdateNote = jest.fn(() => Promise.resolve());
   const mockGetAllNotes = () => [
-    { id: 'n1', text: 'Note 1', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true },
-    { id: 'n2', text: 'Note 2', dateStr: '2026-01-02', timestamp: Date.now(), durationMin: 10, won: true, aiTitle: 'Existing', aiSummary: ['S'], aiModelUsed: 'model' },
+    { id: 'n1', text: LONG_NOTE_TEXT, dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true },
+    { id: 'n2', text: LONG_NOTE_TEXT, dateStr: '2026-01-02', timestamp: Date.now(), durationMin: 10, won: true, aiTitle: 'Existing', aiSummary: ['S'], aiModelUsed: 'model' },
   ];
 
   beforeEach(() => {
