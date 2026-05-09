@@ -90,6 +90,8 @@ export const theme = {
         overlayVideoMuted: 'rgba(0, 0, 0, 0.6)',   // Video mute button background
         overlayVideoStrong: 'rgba(0, 0, 0, 0.7)',   // Video duration badge background
         overlaySubtle: 'rgba(0, 0, 0, 0.1)',         // Very subtle dark overlay (gradient stops)
+        overlayLight: 'rgba(0, 0, 0, 0.2)',          // Light dark overlay (gradient stops)
+        overlaySoft: 'rgba(0, 0, 0, 0.5)',           // Soft dark overlay (gradient midpoints)
         deathOverlay: 'rgba(40, 35, 32, 0.95)',
         overlayPopup: 'rgba(0, 0, 0, 0.92)',         // Full-screen popup overlays (streak, etc.)
 

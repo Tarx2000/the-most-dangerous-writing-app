@@ -13,7 +13,7 @@
  * If the user leaves before AI finishes, the queue continues processing.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { StyleSheet, Platform, ActivityIndicator, View, Text, ScrollView, TextInput } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,6 +21,7 @@ import { RootStackParamList } from '@/types/navigation.types';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
+import { logger } from '@/lib/logger';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { ShimmerLine } from '@/components/ui/ShimmerLine';
 import { theme } from '@/styles/theme';
@@ -74,7 +75,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     // Data is auto-loaded by StorageProvider
     /** Find the note once data is loaded */
-    const note = savedNotes.find(n => n.id === noteId);
+    const note = savedNotes.find((n) => n.id === noteId);
 
     /** Whether AI is currently processing this note */
     const aiProcessing = isNoteActive(noteId) || isNoteQueued(noteId);
@@ -87,7 +88,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     useEffect(() => {
         if (note && !editableTextRef.current) {
             editableTextRef.current = note.text;
-            setRenderKey(prev => prev + 1);
+            setRenderKey((prev) => prev + 1);
         }
     }, [note]);
 
@@ -104,11 +105,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         aiEnqueuedRef.current = true;
 
         // Determine category based on note properties
-        const category: AiJobCategory = isAlignmentReflection(note)
-            ? 'checkin'
-            : note.personId
-                ? 'circle'
-                : 'journal';
+        const category: AiJobCategory = isAlignmentReflection(note) ? 'checkin' : note.personId ? 'circle' : 'journal';
 
         // Only enqueue if the note doesn't already have AI data
         if (!note.aiTitle || !note.aiSummary || note.aiSummary.length === 0) {
@@ -144,7 +141,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
             setGrammarSuggestions(suggestions);
             setGrammarChecked(true);
         } catch (err) {
-            console.warn('[AI] Grammar check failed:', err);
+            logger('warn', 'AI', 'Grammar check failed:', err);
         } finally {
             if (isMountedRef.current) {
                 setGrammarLoading(false);
@@ -156,8 +153,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const applySuggestion = useCallback((suggestion: GrammarSuggestion) => {
         const newText = editableTextRef.current.replace(suggestion.original, suggestion.suggestion);
         editableTextRef.current = newText;
-        setRenderKey(prev => prev + 1);
-        setGrammarSuggestions(prev => prev.filter(s => s !== suggestion));
+        setRenderKey((prev) => prev + 1);
+        setGrammarSuggestions((prev) => prev.filter((s) => s !== suggestion));
         vibrate(20);
     }, []);
 
@@ -170,23 +167,32 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
         navigation.reset({
             index: 0,
-            routes: [{
-                name: 'Home',
-                params: route.params.streakIncreased
-                    ? { streakIncreased: true, newStreak: route.params.newStreak }
-                    : undefined,
-            }],
+            routes: [
+                {
+                    name: 'Home',
+                    params: route.params.streakIncreased
+                        ? { streakIncreased: true, newStreak: route.params.newStreak }
+                        : undefined,
+                },
+            ],
         });
     }, [noteId, navigation, route.params, updateNote]);
 
     /* ── Render ──────────────────────────────────────────────────────── */
 
-    const wordCount = editableTextRef.current.trim().split(/\s+/).filter(Boolean).length;
+    /** Word count — only recompute when editable text actually changes */
+    const wordCount = useMemo(() => {
+        return editableTextRef.current.trim().split(/\s+/).filter(Boolean).length;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [renderKey]);
     const isTooShortForAi = wordCount < MIN_AI_WORDS;
 
     return (
         <View style={styles.container}>
-            <LinearGradient colors={[theme.colors.surfaceDark, theme.colors.background]} style={StyleSheet.absoluteFillObject} />
+            <LinearGradient
+                colors={[theme.colors.surfaceDark, theme.colors.background]}
+                style={StyleSheet.absoluteFillObject}
+            />
 
             <ScrollView
                 style={styles.scrollView}
@@ -213,14 +219,18 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     </Text>
                     {!hasAiTitle ? (
                         queueState.serverOnline === false ? (
-                            <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>AI Server Unreachable</Text>
+                            <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>
+                                AI Server Unreachable
+                            </Text>
                         ) : isTooShortForAi ? (
                             <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
                                 Short entry — AI title not available
                             </Text>
                         ) : !aiProcessing ? (
                             <AnimatedScaleButton onPress={handleManualGenerate} style={{ paddingVertical: 10 }}>
-                                <Text style={{ color: theme.colors.primaryAction, fontWeight: '700' }}>Enable AI Processing for this entry</Text>
+                                <Text style={{ color: theme.colors.primaryAction, fontWeight: '700' }}>
+                                    Enable AI Processing for this entry
+                                </Text>
                             </AnimatedScaleButton>
                         ) : (
                             <View style={styles.shimmerContainer}>
@@ -238,18 +248,26 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
                         <Text style={styles.summaryHeaderText}>AI Summary</Text>
                         {aiProcessing && (
-                            <ActivityIndicator size="small" color={theme.colors.primaryAction} style={{ marginLeft: 'auto' }} />
+                            <ActivityIndicator
+                                size="small"
+                                color={theme.colors.primaryAction}
+                                style={{ marginLeft: 'auto' }}
+                            />
                         )}
                     </View>
                     {!hasAiSummary ? (
                         queueState.serverOnline === false ? (
-                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Summary unavailable.</Text>
+                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
+                                Summary unavailable.
+                            </Text>
                         ) : isTooShortForAi ? (
                             <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
                                 Short entry — AI summary not available
                             </Text>
                         ) : !aiProcessing ? (
-                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>Tap 'Enable AI Processing' above to generate summary.</Text>
+                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
+                                Tap 'Enable AI Processing' above to generate summary.
+                            </Text>
                         ) : (
                             <View style={styles.shimmerContainer}>
                                 <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
@@ -273,12 +291,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 <View style={styles.sectionContainer}>
                     <View style={styles.editHeader}>
                         <Text style={styles.sectionLabel}>
-                            <MaterialCommunityIcons name="pencil-outline" size={14} color={theme.colors.textMuted} /> YOUR ENTRY
+                            <MaterialCommunityIcons name="pencil-outline" size={14} color={theme.colors.textMuted} />{' '}
+                            YOUR ENTRY
                         </Text>
-                        <AnimatedScaleButton
-                            style={styles.editToggle}
-                            onPress={() => setIsEditing(!isEditing)}
-                        >
+                        <AnimatedScaleButton style={styles.editToggle} onPress={() => setIsEditing(!isEditing)}>
                             <MaterialCommunityIcons
                                 name={isEditing ? 'check' : 'pencil'}
                                 size={14}
@@ -293,16 +309,25 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     {isEditing ? (
                         <TextInput
                             key={renderKey}
-                            style={[styles.editableTextInput, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]}
+                            style={[
+                                styles.editableTextInput,
+                                { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
+                            ]}
                             defaultValue={editableTextRef.current}
-                            onChangeText={(val) => editableTextRef.current = val}
+                            onChangeText={(val) => (editableTextRef.current = val)}
                             multiline
                             autoFocus
                             selectionColor={theme.colors.primaryAction}
                         />
                     ) : (
                         <View style={styles.readOnlyTextContainer}>
-                            <RichText style={[styles.readOnlyText, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]} text={editableTextRef.current} />
+                            <RichText
+                                style={[
+                                    styles.readOnlyText,
+                                    { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
+                                ]}
+                                text={editableTextRef.current}
+                            />
                         </View>
                     )}
                 </View>
@@ -318,7 +343,11 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             {grammarLoading ? (
                                 <ActivityIndicator size="small" color={theme.colors.primaryAction} />
                             ) : (
-                                <MaterialCommunityIcons name="spellcheck" size={20} color={theme.colors.primaryAction} />
+                                <MaterialCommunityIcons
+                                    name="spellcheck"
+                                    size={20}
+                                    color={theme.colors.primaryAction}
+                                />
                             )}
                             <Text style={styles.grammarBtnText}>
                                 {grammarLoading ? 'Checking...' : 'Check Grammar & Spelling'}
@@ -331,8 +360,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 <Text style={styles.grammarResultTitle}>
                                     {grammarSuggestions.length === 0
                                         ? 'No issues found! ✨'
-                                        : `${grammarSuggestions.length} suggestion${grammarSuggestions.length > 1 ? 's' : ''}`
-                                    }
+                                        : `${grammarSuggestions.length} suggestion${grammarSuggestions.length > 1 ? 's' : ''}`}
                                 </Text>
                             </View>
 
@@ -346,7 +374,11 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                     <View style={styles.suggestionContent}>
                                         <View style={styles.suggestionTexts}>
                                             <Text style={styles.suggestionOriginal}>{s.original}</Text>
-                                            <MaterialCommunityIcons name="arrow-right" size={14} color={theme.colors.textMuted} />
+                                            <MaterialCommunityIcons
+                                                name="arrow-right"
+                                                size={14}
+                                                color={theme.colors.textMuted}
+                                            />
                                             <Text style={styles.suggestionFixed}>{s.suggestion}</Text>
                                         </View>
                                         <Text style={styles.suggestionExplanation}>{s.explanation}</Text>

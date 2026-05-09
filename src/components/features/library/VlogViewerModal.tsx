@@ -1,12 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    useWindowDimensions,
-    Modal,
-    Pressable,
-} from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, Modal, Pressable } from 'react-native';
 
 import { vibrate } from '@/lib/haptics';
 import Animated, {
@@ -27,6 +20,7 @@ import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { usePreferences, useVlogs } from '@/lib/hooks/useStorage';
 import { compressVideo } from '@/lib/videoCompressor';
+import { logger } from '@/lib/logger';
 import type { VideoPlayer } from 'expo-video';
 
 /** Represents a bounding box in window coordinates (from view.measureInWindow) */
@@ -52,19 +46,12 @@ interface InternalVlogPlayerProps {
 }
 
 const InternalVlogPlayer = React.memo(({ uri }: InternalVlogPlayerProps) => {
-    const player = useVideoPlayer(uri, p => {
+    const player = useVideoPlayer(uri, (p) => {
         p.loop = true;
         p.play();
     });
 
-    return (
-        <VideoView
-            style={styles.videoPlayer}
-            player={player}
-            nativeControls={false}
-            contentFit="contain"
-        />
-    );
+    return <VideoView style={styles.videoPlayer} player={player} nativeControls={false} contentFit="contain" />;
 });
 
 interface VlogPlayerProps {
@@ -77,12 +64,7 @@ interface VlogPlayerProps {
 const VlogPlayer = React.memo(({ uri, sharedPlayer }: VlogPlayerProps) => {
     if (sharedPlayer) {
         return (
-            <VideoView
-                style={styles.videoPlayer}
-                player={sharedPlayer}
-                nativeControls={false}
-                contentFit="contain"
-            />
+            <VideoView style={styles.videoPlayer} player={sharedPlayer} nativeControls={false} contentFit="contain" />
         );
     }
     return <InternalVlogPlayer uri={uri} />;
@@ -146,6 +128,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                 runOnJS(handleCloseInternal)();
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible, initialIndex, panX, panY, progress, activePlayer]);
 
     /** Sync UI with native player.
@@ -157,7 +140,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
         // Native event listener (primary)
         const timeSub = activePlayer.addListener('timeUpdate', (event) => {
-            const t = typeof event === 'number' ? event : event?.currentTime ?? 0;
+            const t = typeof event === 'number' ? event : (event?.currentTime ?? 0);
             setCurrentTime(t);
         });
         const playSub = activePlayer.addListener('playingChange', (event) => {
@@ -168,7 +151,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         const pollTimer = setInterval(() => {
             try {
                 setCurrentTime(activePlayer.currentTime);
-            } catch { /* ignore */ }
+            } catch {
+                /* ignore */
+            }
         }, 500);
 
         return () => {
@@ -217,34 +202,44 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     }, [onClose, panX, panY, SCREEN_HEIGHT]);
 
     // Handle swipe to dismiss (only on the card, not the backdrop)
-    const panGesture = useMemo(() => Gesture.Pan()
-        .onUpdate((e) => {
-            panX.value = e.translationX;
-            panY.value = e.translationY;
-        })
-        .onEnd((e) => {
-            const distance = Math.sqrt(e.translationX ** 2 + e.translationY ** 2);
-            if (distance > 80 || Math.abs(e.velocityY) > 800) {
-                runOnJS(handleSwipeDismiss)();
-            } else {
-                panX.value = withSpring(0, { damping: 20, stiffness: 200 });
-                panY.value = withSpring(0, { damping: 20, stiffness: 200 });
-            }
-        }), [handleSwipeDismiss, panX, panY]);
+    const panGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .onUpdate((e) => {
+                    panX.value = e.translationX;
+                    panY.value = e.translationY;
+                })
+                .onEnd((e) => {
+                    const distance = Math.sqrt(e.translationX ** 2 + e.translationY ** 2);
+                    if (distance > 80 || Math.abs(e.velocityY) > 800) {
+                        runOnJS(handleSwipeDismiss)();
+                    } else {
+                        panX.value = withSpring(0, { damping: 20, stiffness: 200 });
+                        panY.value = withSpring(0, { damping: 20, stiffness: 200 });
+                    }
+                }),
+        [handleSwipeDismiss, panX, panY],
+    );
 
     // Backdrop tap — only closes when tapping outside the card
-    const backdropTapGesture = useMemo(() => Gesture.Tap()
-        .onEnd(() => {
-            runOnJS(handleCloseInternal)();
-        }), [handleCloseInternal]);
+    const backdropTapGesture = useMemo(
+        () =>
+            Gesture.Tap().onEnd(() => {
+                runOnJS(handleCloseInternal)();
+            }),
+        [handleCloseInternal],
+    );
 
-    const swipeVlog = useCallback((direction: number) => {
-        const newIdx = expandedIndex + direction;
-        if (newIdx >= 0 && newIdx < vlogs.length) {
-            setExpandedIndex(newIdx);
-            vibrate(10);
-        }
-    }, [vlogs.length, expandedIndex]);
+    const swipeVlog = useCallback(
+        (direction: number) => {
+            const newIdx = expandedIndex + direction;
+            if (newIdx >= 0 && newIdx < vlogs.length) {
+                setExpandedIndex(newIdx);
+                vibrate(10);
+            }
+        },
+        [vlogs.length, expandedIndex],
+    );
 
     const formatDuration = (sec: number) => {
         const totalSeconds = Math.floor(sec);
@@ -268,7 +263,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                 });
             }
         } catch (error) {
-            console.error('Manual compression failed', error);
+            logger('error', 'VlogViewerModal', 'Manual compression failed', error);
         } finally {
             setIsCompressing(false);
         }
@@ -280,9 +275,17 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const togglePlayPause = useCallback(() => {
         if (!activePlayer) return;
         if (activePlayer.playing) {
-            try { activePlayer.pause(); } catch { /* ignore */ }
+            try {
+                activePlayer.pause();
+            } catch {
+                /* ignore */
+            }
         } else {
-            try { activePlayer.play(); } catch { /* ignore */ }
+            try {
+                activePlayer.play();
+            } catch {
+                /* ignore */
+            }
         }
         vibrate(10);
         setShowControls(true);
@@ -293,7 +296,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const toggleMute = useCallback(() => {
         if (!activePlayer) return;
         const nextMuted = activePlayer.volume === 0;
-        try { activePlayer.volume = nextMuted ? 1 : 0; } catch { /* ignore */ }
+        try {
+            activePlayer.volume = nextMuted ? 1 : 0;
+        } catch {
+            /* ignore */
+        }
         setIsMuted(!nextMuted);
         vibrate(10);
         setShowControls(true);
@@ -301,17 +308,22 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     }, [activePlayer, scheduleControlsHide]);
 
     /** Skip forward/backward 10 seconds */
-    const skip = useCallback((seconds: number) => {
-        if (!activePlayer) return;
-        try {
-            const target = Math.max(0, Math.min(activePlayer.duration, activePlayer.currentTime + seconds));
-            activePlayer.currentTime = target;
-            setCurrentTime(target);
-        } catch { /* ignore */ }
-        vibrate(10);
-        setShowControls(true);
-        scheduleControlsHide();
-    }, [activePlayer, scheduleControlsHide]);
+    const skip = useCallback(
+        (seconds: number) => {
+            if (!activePlayer) return;
+            try {
+                const target = Math.max(0, Math.min(activePlayer.duration, activePlayer.currentTime + seconds));
+                activePlayer.currentTime = target;
+                setCurrentTime(target);
+            } catch {
+                /* ignore */
+            }
+            vibrate(10);
+            setShowControls(true);
+            scheduleControlsHide();
+        },
+        [activePlayer, scheduleControlsHide],
+    );
 
     // Card Animated Style (morphing width, height, top, left + pan dragging)
     const cardAnimatedStyle = useAnimatedStyle(() => {
@@ -338,11 +350,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             width: currentWidth,
             height: currentHeight,
             borderRadius: currentBorderRadius,
-            transform: [
-                { translateX: panX.value },
-                { translateY: panY.value },
-                { scale: dragScale },
-            ],
+            transform: [{ translateX: panX.value }, { translateY: panY.value }, { scale: dragScale }],
             opacity: interpolate(progress.value, [0, 0.1], [0, 1], Extrapolation.CLAMP),
         };
     });
@@ -370,10 +378,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             {/* Card — contains video, custom controls, info bar, swipe nav */}
             <GestureDetector gesture={panGesture}>
                 <Animated.View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-                    <Animated.View
-                        style={[styles.expandedCard, cardAnimatedStyle]}
-                        pointerEvents="auto"
-                    >
+                    <Animated.View style={[styles.expandedCard, cardAnimatedStyle]} pointerEvents="auto">
                         <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
                         <View style={styles.expandedTint} />
 
@@ -385,7 +390,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                             <Pressable
                                 style={StyleSheet.absoluteFillObject}
                                 onPress={() => {
-                                    setShowControls(prev => !prev);
+                                    setShowControls((prev) => !prev);
                                     if (!showControls) scheduleControlsHide();
                                 }}
                             />
@@ -393,10 +398,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                             {/* Top-right mute button */}
                             {showControls && (
                                 <View style={styles.muteBtnContainer} pointerEvents="box-none">
-                                    <AnimatedScaleButton
-                                        style={styles.controlIconBtn}
-                                        onPress={toggleMute}
-                                    >
+                                    <AnimatedScaleButton style={styles.controlIconBtn} onPress={toggleMute}>
                                         <MaterialCommunityIcons
                                             name={isMuted ? 'volume-off' : 'volume-high'}
                                             size={20}
@@ -456,10 +458,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                 <View style={styles.devWatermark} pointerEvents="box-none">
                                     <Text style={styles.devWatermarkText}>
                                         DEV: {currentVlog.compressionPreset || 'Uncompressed'}{' '}
-                                        {currentVlog.originalFileSizeBytes ?
-                                            `(${Math.round(100 - (currentVlog.fileSizeBytes / currentVlog.originalFileSizeBytes) * 100)}% saved)`
-                                            : ''
-                                        }
+                                        {currentVlog.originalFileSizeBytes
+                                            ? `(${Math.round(100 - (currentVlog.fileSizeBytes / currentVlog.originalFileSizeBytes) * 100)}% saved)`
+                                            : ''}
                                     </Text>
                                     {(currentVlog.compressionPreset === 'off' || !currentVlog.compressionPreset) && (
                                         <AnimatedScaleButton
@@ -480,7 +481,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.expandedDate}>{currentVlog.dateStr}</Text>
                                 <Text style={styles.expandedMeta}>
-                                    {formatDuration(currentVlog.durationSec)} • {(currentVlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
+                                    {formatDuration(currentVlog.durationSec)} •{' '}
+                                    {(currentVlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
                                 </Text>
                             </View>
 
@@ -492,7 +494,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                         disabled={expandedIndex === 0}
                                         style={[styles.swipeBtn, expandedIndex === 0 && { opacity: 0.3 }]}
                                     >
-                                        <MaterialCommunityIcons name="chevron-left" size={24} color={theme.colors.textPrimary} />
+                                        <MaterialCommunityIcons
+                                            name="chevron-left"
+                                            size={24}
+                                            color={theme.colors.textPrimary}
+                                        />
                                     </AnimatedScaleButton>
                                     <Text style={styles.swipeCounter}>
                                         {expandedIndex + 1}/{vlogs.length}
@@ -500,9 +506,16 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                     <AnimatedScaleButton
                                         onPress={() => swipeVlog(1)}
                                         disabled={expandedIndex === vlogs.length - 1}
-                                        style={[styles.swipeBtn, expandedIndex === vlogs.length - 1 && { opacity: 0.3 }]}
+                                        style={[
+                                            styles.swipeBtn,
+                                            expandedIndex === vlogs.length - 1 && { opacity: 0.3 },
+                                        ]}
                                     >
-                                        <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textPrimary} />
+                                        <MaterialCommunityIcons
+                                            name="chevron-right"
+                                            size={24}
+                                            color={theme.colors.textPrimary}
+                                        />
                                     </AnimatedScaleButton>
                                 </View>
                             )}
@@ -516,7 +529,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                     style={styles.deleteBtn}
                                     onPress={() => setShowDeleteConfirm(currentVlog.id)}
                                 >
-                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} />
+                                    <MaterialCommunityIcons
+                                        name="delete-outline"
+                                        size={18}
+                                        color={theme.colors.danger}
+                                    />
                                     <Text style={styles.deleteBtnText}>Delete</Text>
                                 </AnimatedScaleButton>
                             </View>
@@ -539,7 +556,12 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                     style={[styles.deleteModalBtn, { backgroundColor: theme.colors.glassBackground }]}
                                     onPress={() => setShowDeleteConfirm(null)}
                                 >
-                                    <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
+                                    <MaterialCommunityIcons
+                                        name="close"
+                                        size={18}
+                                        color={theme.colors.textPrimary}
+                                        style={{ marginRight: 6 }}
+                                    />
                                     <Text style={styles.deleteModalBtnText}>Cancel</Text>
                                 </AnimatedScaleButton>
                                 <AnimatedScaleButton
@@ -556,7 +578,12 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                         }
                                     }}
                                 >
-                                    <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
+                                    <MaterialCommunityIcons
+                                        name="delete-outline"
+                                        size={18}
+                                        color={theme.colors.textPrimary}
+                                        style={{ marginRight: 6 }}
+                                    />
                                     <Text style={styles.deleteModalBtnText}>Delete</Text>
                                 </AnimatedScaleButton>
                             </View>
@@ -762,19 +789,19 @@ const styles = StyleSheet.create({
         maxWidth: 340,
         borderWidth: 1,
         borderColor: theme.colors.glassBorder,
-        alignItems: 'center'
+        alignItems: 'center',
     },
     deleteModalTitle: {
         color: theme.colors.textPrimary,
         fontSize: 20,
         fontWeight: 'bold',
-        marginBottom: 8
+        marginBottom: 8,
     },
     deleteModalSub: {
         color: theme.colors.textSecondary,
         fontSize: 15,
         textAlign: 'center',
-        lineHeight: 22
+        lineHeight: 22,
     },
     deleteModalBtn: {
         flex: 1,
@@ -782,11 +809,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 16,
-        borderRadius: 16
+        borderRadius: 16,
     },
     deleteModalBtnText: {
         color: theme.colors.textPrimary,
         fontSize: 16,
-        fontWeight: 'bold'
-    }
+        fontWeight: 'bold',
+    },
 });

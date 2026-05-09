@@ -27,12 +27,16 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 // Vector icons mock
 jest.mock('@expo/vector-icons', () => ({
-    MaterialCommunityIcons: function MaterialCommunityIconsMock() { return null; },
+    MaterialCommunityIcons: function MaterialCommunityIconsMock() {
+        return null;
+    },
 }));
 
 // AnimatedScaleButton mock
 jest.mock('@/components/ui/AnimatedScaleButton', () => ({
-    AnimatedScaleButton: function AnimatedScaleButtonMock({ children }) { return children || null; },
+    AnimatedScaleButton: function AnimatedScaleButtonMock({ children }) {
+        return children || null;
+    },
 }));
 
 // Mock react-native
@@ -97,7 +101,7 @@ jest.mock('react-native-worklets', () => ({
     useWorklet: (fn) => fn,
     Worklets: {
         createContext: jest.fn(),
-    }
+    },
 }));
 
 // Gesture handler mock
@@ -106,8 +110,12 @@ jest.mock('react-native-gesture-handler', () => ({
         Pan: () => ({ onUpdate: () => ({ onEnd: () => ({}) }) }),
         Tap: () => ({ onEnd: () => ({}) }),
     },
-    GestureDetector: function GestureDetectorMock({ children }) { return children || null; },
-    ScrollView: function ScrollViewMock({ children }) { return children || null; },
+    GestureDetector: function GestureDetectorMock({ children }) {
+        return children || null;
+    },
+    ScrollView: function ScrollViewMock({ children }) {
+        return children || null;
+    },
 }));
 
 // Compressor mock
@@ -134,7 +142,7 @@ jest.mock('expo-video', () => {
 
     const emit = (event, payload) => {
         const subs = listeners.get(event) || [];
-        subs.forEach(cb => cb(payload));
+        subs.forEach((cb) => cb(payload));
     };
 
     const createPlayer = (uri, setupFn) => {
@@ -154,14 +162,31 @@ jest.mock('expo-video', () => {
                 isPlaying = false;
                 emit('playingChange', { isPlaying: false });
             }),
-            get currentTime() { return currentTime; },
-            set currentTime(v) { currentTime = v; emit('timeUpdate', { currentTime: v }); },
-            get duration() { return duration; },
-            set duration(v) { duration = v; },
-            get loop() { return loop; },
-            set loop(v) { loop = v; },
-            get volume() { return volume; },
-            set volume(v) { volume = v; },
+            get currentTime() {
+                return currentTime;
+            },
+            set currentTime(v) {
+                currentTime = v;
+                emit('timeUpdate', { currentTime: v });
+            },
+            get duration() {
+                return duration;
+            },
+            set duration(v) {
+                duration = v;
+            },
+            get loop() {
+                return loop;
+            },
+            set loop(v) {
+                loop = v;
+            },
+            get volume() {
+                return volume;
+            },
+            set volume(v) {
+                volume = v;
+            },
             addListener: jest.fn((event, callback) => {
                 if (!listeners.has(event)) listeners.set(event, []);
                 listeners.get(event).push(callback);
@@ -170,10 +195,13 @@ jest.mock('expo-video', () => {
                         const arr = listeners.get(event) || [];
                         const idx = arr.indexOf(callback);
                         if (idx >= 0) arr.splice(idx, 1);
-                    }
+                    },
                 };
             }),
-            _mockTime: (t) => { currentTime = t; emit('timeUpdate', { currentTime: t }); },
+            _mockTime: (t) => {
+                currentTime = t;
+                emit('timeUpdate', { currentTime: t });
+            },
             _getPlaying: () => isPlaying,
         };
 

@@ -1,14 +1,26 @@
 /**
- * Structured Logger — Reduces console noise in production while keeping
- * error logs visible everywhere.
+ * Structured Logger — Runtime-configurable log mode.
  *
  * Rules:
- * - error: Always shown (production + dev)
- * - warn: Shown in dev, suppressed in production unless explicitly forced
- * - info / debug: Dev only
+ * - error: Always shown (production + dev) — never suppressed, these are critical
+ * - warn: Shown when logMode is enabled OR in __DEV__
+ * - info / debug: Only shown when logMode is enabled (regardless of __DEV__)
+ *
+ * Log mode is toggled via Settings → Developer Tools. Turning on devMode
+ * automatically enables logMode, but logMode can be turned off independently.
  */
 
-const isDev = __DEV__;
+let _logModeEnabled = __DEV__;
+
+/** Enable or disable verbose logging at runtime */
+export function setLogMode(enabled: boolean): void {
+    _logModeEnabled = enabled;
+}
+
+/** Check if verbose logging is currently enabled */
+export function getLogMode(): boolean {
+    return _logModeEnabled;
+}
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -17,11 +29,12 @@ export function logger(level: LogLevel, tag: string, message: string, ...args: u
     const prefix = `[${tag}] ${message}`;
     if (level === 'error') {
         console.error(prefix, ...args);
-    } else if (level === 'warn') {
-        if (isDev) {
-            console.warn(prefix, ...args);
-        }
-    } else if (isDev) {
+        return;
+    }
+    if (!_logModeEnabled) return;
+    if (level === 'warn') {
+        console.warn(prefix, ...args);
+    } else {
         // eslint-disable-next-line no-console
         console.log(prefix, ...args);
     }

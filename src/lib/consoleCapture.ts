@@ -7,6 +7,7 @@
  *
  * Only active when devMode is enabled to avoid production overhead.
  */
+/* eslint-disable no-console */
 export interface CapturedLog {
     level: 'log' | 'warn' | 'error' | 'info';
     message: string;

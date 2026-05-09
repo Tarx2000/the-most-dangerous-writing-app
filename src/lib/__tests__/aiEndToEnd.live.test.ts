@@ -31,6 +31,7 @@ jest.mock('@/lib/aiLogger', () => ({
   logAi: jest.fn(() => Promise.resolve()),
   getAiLog: jest.fn(() => Promise.resolve([])),
   clearAiLog: jest.fn(() => Promise.resolve()),
+  logStartupDiagnostics: jest.fn(),
 }));
 
 /* ── Imports ───────────────────────────────────────────────────────────── */
@@ -95,36 +96,24 @@ class AiTestTracer {
 describe('AI End-to-End (Live API)', () => {
   let serverOnline = false;
 
-  // Gate the entire suite on server reachability AND responsiveness
+  // Gate the entire suite on server reachability.
+  // We only ping the server here; the actual inference tests below will
+  // catch model-level failures.  Previously we also ran a generateTitle
+  // probe, but cloud models often need >60 s to warm up on the first
+  // request, causing false-negative skips even though the server is
+  // healthy.  Trust pingServer and let the real tests speak.
   beforeAll(async () => {
     const pingResult = await pingServer();
     if (!pingResult.online) {
       serverOnline = false;
 
       console.warn(
-        '[LIVE TEST] Ollama Cloud unreachable — skipping live suite',
+        `[LIVE TEST] Ollama Cloud unreachable — skipping live suite. Error: ${pingResult.error}`,
       );
       return;
     }
 
-    // Extra guard: the model must answer a trivial prompt within 120s.
-    // Under concurrent test load the server queues requests behind other
-    // running suites, so we allow a very generous window.
-    try {
-      await Promise.race([
-        generateTitle('hello world'),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Model probe timeout')), 120_000),
-        ),
-      ]);
-      serverOnline = true;
-    } catch {
-      serverOnline = false;
-
-      console.warn(
-        '[LIVE TEST] Ollama Cloud model unresponsive — skipping live suite',
-      );
-    }
+    serverOnline = true;
   });
 
   beforeEach(() => {
@@ -140,8 +129,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 1: Ping Server ─────────────────────────────────────────────── */
   it('should ping the server and report online', async () => {
     if (!serverOnline) {
-
-      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
+      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive (see beforeAll logs)');
       return;
     }
     const tracer = new AiTestTracer();
@@ -164,8 +152,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 2: Generate Title Live ─────────────────────────────────────── */
   it('should generate a title from the dummy entry', async () => {
     if (!serverOnline) {
-
-      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
+      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive (see beforeAll logs)');
       return;
     }
     const tracer = new AiTestTracer();
@@ -192,8 +179,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 3: Generate Summary Live ─────────────────────────────────────── */
   it('should generate a summary from the dummy entry', async () => {
     if (!serverOnline) {
-
-      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
+      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive (see beforeAll logs)');
       return;
     }
     const tracer = new AiTestTracer();
@@ -223,8 +209,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 4: Check Grammar Live ────────────────────────────────────────── */
   it('should find grammar issues in the dummy entry with typos', async () => {
     if (!serverOnline) {
-
-      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
+      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive (see beforeAll logs)');
       return;
     }
     const tracer = new AiTestTracer();
@@ -253,8 +238,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 5: Process Note Live ─────────────────────────────────────────── */
   it('should process a note end-to-end with title and summary', async () => {
     if (!serverOnline) {
-
-      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
+      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive (see beforeAll logs)');
       return;
     }
     const tracer = new AiTestTracer();
@@ -285,8 +269,7 @@ describe('AI End-to-End (Live API)', () => {
   /* ── Test 6: Full Queue Lifecycle Live ───────────────────────────────── */
   it('should process a note through the full queue lifecycle', async () => {
     if (!serverOnline) {
-
-      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive');
+      console.warn('[LIVE TEST] Skipping — Ollama Cloud is offline or unresponsive (see beforeAll logs)');
       return;
     }
     const tracer = new AiTestTracer();

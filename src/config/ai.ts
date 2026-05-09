@@ -51,8 +51,13 @@ export const AI_LOG_MAX_ENTRIES = 200;
  */
 export const MIN_AI_WORDS = 50;
 
-/** Timeout for a single AI request in milliseconds (per XHR call) */
-export const AI_REQUEST_TIMEOUT_MS = 60_000;
+/**
+ * Timeout for a single AI request in milliseconds (per XHR call).
+ * Cloud-hosted models (e.g. Ollama Cloud) can take well over 60 s to
+ * cold-start on the first request of a session.  180 s keeps us under
+ * the 300 s Jest ceiling while giving the model room to wake up.
+ */
+export const AI_REQUEST_TIMEOUT_MS = 180_000;
 
 /**
  * Hard timeout for an entire AI job (title + summary + retries).

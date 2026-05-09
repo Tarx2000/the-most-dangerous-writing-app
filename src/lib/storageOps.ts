@@ -422,6 +422,7 @@ export function createPreferencesOps(
         debugLayout: Ref<boolean>;
         visionBoard: Ref<VisionBoard | null>;
         preferPinAuth: Ref<boolean>;
+        logMode: Ref<boolean>;
     },
     setters: {
         setFontIndex: Setter<number>;
@@ -435,6 +436,7 @@ export function createPreferencesOps(
         setDebugLayout: Setter<boolean>;
         setVisionBoard: Setter<VisionBoard | null>;
         setPreferPinAuth: Setter<boolean>;
+        setLogMode: Setter<boolean>;
     },
 ) {
     const savePreferences = async (fIdx: number, sIdx: number) => {
@@ -576,10 +578,24 @@ export function createPreferencesOps(
         }
     };
 
+    const toggleLogMode = async () => {
+        const prevVal = refs.logMode.current;
+        const newVal = !prevVal;
+        setters.setLogMode(newVal);
+        refs.logMode.current = newVal;
+        try {
+            await setSetting('LOG_MODE', JSON.stringify(newVal));
+        } catch (error) {
+            logger("error", "Storage", "Failed to toggle log mode:", error);
+            setters.setLogMode(prevVal);
+            refs.logMode.current = prevVal;
+        }
+    };
+
     return {
         savePreferences, updateBiometricsPref, updateHapticsPref, updateLockTimeout,
         updateVlogQuality, updateCompressionPreset, toggleDevMode, toggleDebugLayout,
-        saveVisionBoard, updatePreferPinAuth,
+        saveVisionBoard, updatePreferPinAuth, toggleLogMode,
     };
 }
 

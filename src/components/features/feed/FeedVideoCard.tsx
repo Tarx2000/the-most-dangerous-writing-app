@@ -15,6 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { useVlogs, usePreferences } from '@/lib/hooks/useStorage';
 import { formatRelativeTime } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import type { SavedVlog } from '@/types';
@@ -94,7 +95,7 @@ const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = R
                 player.pause();
             }
         } catch (err) {
-            console.error('[FeedVideoCard] Failed to control player playback:', err instanceof Error ? err.message : String(err));
+            logger('error', 'FeedVideoCard', 'Failed to control player playback:', err instanceof Error ? err.message : String(err));
         }
         setIsPlaying(autoPlay);
     }, [autoPlay, player]);

@@ -4,6 +4,7 @@ import type { StyleProp } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { interpolate } from 'flubber';
 import { theme } from '@/styles/theme';
+import { logger } from '@/lib/logger';
 
 /* ── CONFIGURATION ─────────────────────────────────────────────────────────── */
 
@@ -260,7 +261,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
                     frames[i] = sanitizePath(morphFn(easedT));
                 }
             } catch (err: unknown) {
-                console.warn('[LiquidMorphIcon] Flubber morph failed, falling back to instant swap:', err);
+                logger('warn', 'LiquidMorphIcon', 'Flubber morph failed, falling back to instant swap:', err);
 
                 // Graceful fallback: instant swap if flubber fails
                 pathStringRef.current = endPath;

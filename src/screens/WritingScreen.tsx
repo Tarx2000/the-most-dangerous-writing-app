@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -56,7 +56,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         handleTextChange,
         resumeWritingFreely,
         clearTimers,
-        skipTimer
+        skipTimer,
     } = useSession(timeIndex, diffIndex, inputRef);
 
     const { saveNote } = useNotes();
@@ -87,7 +87,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             durationMin: isQuickNote ? 0 : sessionTimeSelected / 60,
             won: noteWon,
             ...(mode === 'circles' && personId ? { personId } : {}),
-            isQuickNote
+            isQuickNote,
         };
 
         const result = await saveNote(newNote);
@@ -115,7 +115,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     };
 
     const animatedShakeStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: shakeAnimation.value }]
+        transform: [{ translateX: shakeAnimation.value }],
     }));
 
     const currentFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
@@ -127,17 +127,27 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         const node = inputRef.current;
         if (node) {
             if (Platform.OS === 'android') {
-                node.setNativeProps({ style: { fontFamily: currentFont, fontSize: currentSize, lineHeight: currentLineHeight } });
+                node.setNativeProps({
+                    style: { fontFamily: currentFont, fontSize: currentSize, lineHeight: currentLineHeight },
+                });
             } else {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                node.setNativeProps({ style: { fontFamily: currentFont, fontSize: currentSize, lineHeight: currentLineHeight } as any });
+                node.setNativeProps({
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    style: { fontFamily: currentFont, fontSize: currentSize, lineHeight: currentLineHeight } as any,
+                });
             }
         }
     }, [currentFont, currentSize, currentLineHeight]);
 
+    /** Memoize inline style objects to prevent new references on every render */
+    const containerStyle = useMemo(() => ({ flex: 1, backgroundColor: theme.colors.background }), []);
+
     return (
-        <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-            <KeyboardAvoidingView style={commonStyles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={containerStyle}>
+            <KeyboardAvoidingView
+                style={commonStyles.safeArea}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
                 <DangerOverlay
                     idleTimeMsShared={idleTimeMsShared}
                     difficultyLimit={difficultyLimit}
@@ -156,10 +166,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         })()}
                         {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
                         {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNote && (
-                            <AnimatedScaleButton
-                                onPress={skipTimer}
-                                style={styles.skipButton}
-                            >
+                            <AnimatedScaleButton onPress={skipTimer} style={styles.skipButton}>
                                 <Text style={styles.skipButtonText}>⏩ Skip</Text>
                             </AnimatedScaleButton>
                         )}
@@ -174,15 +181,18 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         >
                             <TextInput
                                 ref={inputRef}
-                                style={[commonStyles.textInput, {
-                                    flex: 1,
-                                    fontSize: currentSize,
-                                    lineHeight: currentLineHeight,
-                                    fontFamily: currentFont,
-                                    fontWeight: 'normal',
-                                    textAlignVertical: 'top',
-                                    paddingBottom: 200 // Ensures text doesn't stay hidden under keyboard
-                                }]}
+                                style={[
+                                    commonStyles.textInput,
+                                    {
+                                        flex: 1,
+                                        fontSize: currentSize,
+                                        lineHeight: currentLineHeight,
+                                        fontFamily: currentFont,
+                                        fontWeight: 'normal',
+                                        textAlignVertical: 'top',
+                                        paddingBottom: 200, // Ensures text doesn't stay hidden under keyboard
+                                    },
+                                ]}
                                 scrollEnabled={false}
                                 multiline
                                 autoFocus
@@ -198,10 +208,16 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                     {(sessionTimeRemaining === 0 || isContinuingAfterLoss || isQuickNote) && !hasLost && (
                         <View style={commonStyles.finishedActionsContainer}>
-                            <AnimatedScaleButton style={[commonStyles.saveActionBtn, { opacity: 0.6 }]} onPress={handleSave}>
+                            <AnimatedScaleButton
+                                style={[commonStyles.saveActionBtn, { opacity: 0.6 }]}
+                                onPress={handleSave}
+                            >
                                 <Text style={commonStyles.saveActionText}>SAVE ENTRY</Text>
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={[commonStyles.menuActionBtn, { opacity: 0.6 }]} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                            <AnimatedScaleButton
+                                style={[commonStyles.menuActionBtn, { opacity: 0.6 }]}
+                                onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+                            >
                                 <Text style={commonStyles.menuActionText}>Return to Menu</Text>
                             </AnimatedScaleButton>
                         </View>
@@ -221,7 +237,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 {/* Floating Buttons on Death Screen */}
                 {hasLost && (
                     <View style={commonStyles.floatingActionRow}>
-                        <AnimatedScaleButton style={commonStyles.floatHomeBtn} onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}>
+                        <AnimatedScaleButton
+                            style={commonStyles.floatHomeBtn}
+                            onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+                        >
                             <Text style={commonStyles.floatBtnText}>🏠 Menu</Text>
                         </AnimatedScaleButton>
                         <AnimatedScaleButton style={commonStyles.floatSaveBtn} onPress={handleSave}>

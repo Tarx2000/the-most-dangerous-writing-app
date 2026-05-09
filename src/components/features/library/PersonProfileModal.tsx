@@ -16,6 +16,7 @@ import { BaseModal } from '@/components/ui/BaseModal';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { Person, SavedNote, RELATIONSHIP_OPTIONS } from '@/types';
 import { theme } from '@/styles/theme';
+import { logger } from '@/lib/logger';
 
 /**
  * CONFIGURABLE: Max number of recent notes to preview in the profile.
@@ -192,7 +193,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
             const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
             return date.toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' });
         } catch (err: unknown) {
-            console.warn("[PersonProfileModal] Failed to parse birthday:", dateStr, err);
+            logger('warn', 'PersonProfileModal', `Failed to parse birthday: ${dateStr}`, err);
             return dateStr;
         }
     };

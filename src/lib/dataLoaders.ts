@@ -17,6 +17,7 @@ import {
     DEFAULT_OLLAMA_MODEL,
 } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
+import { setLogMode } from '@/lib/logger';
 import { mark as perfMark, log as perfLog } from '@/lib/perf';
 
 export type Ref<T> = { current: T };
@@ -57,6 +58,7 @@ export interface LoadContext {
     setDebugLayout: Setter<boolean>;
     setVisionBoard: Setter<VisionBoard | null>;
     setPreferPinAuth: Setter<boolean>;
+    setLogMode: Setter<boolean>;
     setLastReflectionDate: Setter<number | null>;
     setSavedVlogs: Setter<SavedVlog[]>;
     setTotalVlogStorageBytes: Setter<number>;
@@ -92,12 +94,20 @@ export async function loadVlogs(ctx: LoadContext): Promise<void> {
 export async function loadAllData(ctx: LoadContext): Promise<void> {
     perfMark('storage.start');
 
-    await loadNotes(ctx);
-    await loadPersons(ctx);
+    /* ════════════════════════════════════════════════════════════════════
+       PHASE 1 — Parallel independent loads
+       Notes + Persons + Settings can all load simultaneously from SQLite.
+       ════════════════════════════════════════════════════════════════════ */
+    const [notes, persons, allSettings] = await Promise.all([
+        getAllNotes(),
+        getAllPersons(),
+        getAllSettings(),
+    ]);
 
-    const allSettings = await getAllSettings();
+    ctx.setSavedNotes(notes);
+    ctx.setPersons(persons);
 
-    /* ── Preferences ─────────────────────────────────────────────────────── */
+    /* ── Preferences ─────────────────────────────────────────────────── */
     const fontIdx = parseInt(allSettings['USER_FONT_IDX'] ?? '0', 10);
     if (!Number.isNaN(fontIdx)) ctx.setFontIndex(fontIdx);
 
@@ -124,17 +134,31 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     const lastReflectionDate = parseInt(allSettings['LAST_REFLECTION_DATE'] ?? '', 10);
     if (!Number.isNaN(lastReflectionDate)) ctx.setLastReflectionDate(lastReflectionDate);
 
-    /* ── Streak ──────────────────────────────────────────────────────────── */
+    /* ── Log mode ──────────────────────────────────────────────────────── */
+    const rawLogMode = safeParse<boolean>('LOG_MODE', allSettings['LOG_MODE'], __DEV__);
+    ctx.setLogMode(rawLogMode);
+    setLogMode(rawLogMode);
+
+    /* ── Streak ────────────────────────────────────────────────────────── */
     const storedStreak = parseInt(allSettings['CURRENT_STREAK'] ?? '', 10);
     ctx.setCurrentStreak(Number.isNaN(storedStreak) ? 0 : storedStreak);
     ctx.setLastWinDate(allSettings['LAST_WIN_DATE'] ?? '');
 
     perfMark('storage.critical');
 
-    /* ── Deferred data ──────────────────────────────────────────────────── */
-    await loadVlogs(ctx);
+    /* ════════════════════════════════════════════════════════════════════
+       PHASE 2 — Deferred data (vlogs, AI config, feed, streak history)
+       These depend on settings being loaded first, or are heavy enough
+       to defer past the critical rendering path.
+       ════════════════════════════════════════════════════════════════════ */
 
-    /* ── AI Config ──────────────────────────────────────────────────────── */
+    /* ── Vlogs ─────────────────────────────────────────────────────────── */
+    const vlogs = await getAllVlogs();
+    ctx.setSavedVlogs(vlogs);
+    const totalBytes = vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
+    ctx.setTotalVlogStorageBytes(totalBytes);
+
+    /* ── AI Config ─────────────────────────────────────────────────────── */
     const storedApiKey = allSettings[AI_STORAGE_KEYS.API_KEY];
     const storedBaseUrl = allSettings[AI_STORAGE_KEYS.BASE_URL];
     const storedModel = allSettings[AI_STORAGE_KEYS.MODEL];
@@ -154,18 +178,17 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     const storedFavorites = safeParse<string[]>('AI_FAVORITE_MODELS', allSettings[AI_STORAGE_KEYS.FAVORITE_MODELS], []);
     ctx.setAiFavoriteModels(storedFavorites);
 
-    /* ── Feed ───────────────────────────────────────────────────────────── */
+    /* ── Feed ──────────────────────────────────────────────────────────── */
     ctx.setBookmarkedNoteIds(safeParse<string[]>('BOOKMARKED_NOTE_IDS', allSettings['BOOKMARKED_NOTE_IDS'], []));
     ctx.setFeedComments(safeParse<Record<string, string>>('FEED_COMMENTS', allSettings['FEED_COMMENTS'], {}));
     ctx.setAutoPlayFeedVideos(safeParse('AUTO_PLAY_FEED_VIDEOS', allSettings['AUTO_PLAY_FEED_VIDEOS'], true));
 
-    /* ── Streak History ──────────────────────────────────────────────────── */
+    /* ── Streak History ────────────────────────────────────────────────── */
     const rawHistory = safeParse<string[]>('STREAK_HISTORY', allSettings['STREAK_HISTORY'], []);
     if (rawHistory.length > 0) {
         ctx.setStreakHistory(rawHistory);
     } else {
-        // Backfill from notes
-        const notes = await getAllNotes();
+        /* Backfill from notes (reuse the notes already loaded in Phase 1) */
         const historySet = new Set<string>();
         for (const n of notes) {
             if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
@@ -179,7 +202,6 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     }
 
     /* ── Recalculate streak if stale ─────────────────────────────────────── */
-    const notes = await getAllNotes();
     const noteHistory = new Set<string>();
     for (const n of notes) {
         if (n.won && n.durationMin >= 3 && !n.isQuickNote) {

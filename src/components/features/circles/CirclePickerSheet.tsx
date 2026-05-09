@@ -231,8 +231,8 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
                     <LinearGradient
                         colors={[
                             'transparent',
-                            'rgba(0,0,0,0.2)',
-                            'rgba(0,0,0,0.5)',
+                            theme.colors.overlayLight,
+                            theme.colors.overlaySoft,
                             theme.colors.surfaceDark,
                         ]}
                         style={styles.bottomFade}

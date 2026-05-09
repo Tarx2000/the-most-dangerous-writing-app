@@ -13,6 +13,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { theme } from '@/styles/theme';
+import { logger } from '@/lib/logger';
 
 /** Max retry attempts before disabling the retry button. Cumulative across errors. */
 const MAX_RETRIES = 3;
@@ -38,7 +39,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    logger('error', 'ErrorBoundary', 'Caught an error:', error, errorInfo);
   }
 
   handleRetry = (): void => {

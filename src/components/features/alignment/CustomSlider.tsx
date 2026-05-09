@@ -10,7 +10,6 @@ interface CustomSliderProps {
     value: number;
     onValueChange: (v: number) => void;
 }
-
 const THUMB_SIZE = 36;
 const TICK_COUNT = 10;
 

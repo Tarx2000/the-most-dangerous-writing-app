@@ -1,19 +1,21 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Platform,
-    StatusBar,
-    useWindowDimensions,
-    DeviceEventEmitter,
-} from 'react-native';
+import { View, Text, StyleSheet, Platform, StatusBar, useWindowDimensions, DeviceEventEmitter } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, cancelAnimation, runOnJS, SharedValue, useAnimatedScrollHandler, useAnimatedReaction } from 'react-native-reanimated';
+import Animated, {
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+    cancelAnimation,
+    runOnJS,
+    SharedValue,
+    useAnimatedScrollHandler,
+    useAnimatedReaction,
+} from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { FeedCard } from '@/components/features/feed/FeedCard';
 import { FeedVideoCard } from '@/components/features/feed/FeedVideoCard';
@@ -40,6 +42,84 @@ const SCROLL_TOP_SHOW_THRESHOLD = 300;
 // React Native typing limitation. The component works correctly at runtime.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
+
+/* ── Stable list sub-components (hoisted to avoid re-create on every render) ─ */
+
+const FeedFooter = React.memo(() => (
+    <View style={styles.footerContainer}>
+        <Text style={styles.footerText}>You've reached the beginning of time</Text>
+    </View>
+));
+
+interface FeedEmptyProps {
+    filterBookmarked: boolean;
+}
+
+const FeedEmpty = React.memo(({ filterBookmarked }: FeedEmptyProps) => (
+    <View style={styles.emptyContainer}>
+        <MaterialCommunityIcons name="text-box-outline" size={48} color={theme.colors.textMuted} />
+        <Text style={styles.emptyTitle}>{filterBookmarked ? 'No bookmarked entries' : 'Your feed is empty'}</Text>
+        <Text style={styles.emptyHint}>
+            {filterBookmarked
+                ? 'Bookmark entries to save them here'
+                : 'Complete a writing session to see your entries here'}
+        </Text>
+    </View>
+));
+
+/* ── Stable feed header (hoisted to avoid re-create on every render) ─ */
+
+interface FeedHeaderProps {
+    entryCount: number;
+    filterBookmarked: boolean;
+    onToggleFilter: (bookmarked: boolean) => void;
+    onClose: () => void;
+}
+
+const FeedHeader = React.memo(({ entryCount, filterBookmarked, onToggleFilter, onClose }: FeedHeaderProps) => (
+    <Animated.View style={styles.headerContainer}>
+        {/* Title row */}
+        <View style={styles.titleRow}>
+            <View>
+                <Text style={styles.feedTitle}>Feed</Text>
+                <Text style={styles.feedSubtitle}>
+                    {entryCount} {entryCount === 1 ? 'entry' : 'entries'}
+                </Text>
+            </View>
+            <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
+                <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
+            </AnimatedScaleButton>
+        </View>
+
+        {/* Filter toggle: All / Bookmarked */}
+        <View style={styles.filterRow}>
+            <AnimatedScaleButton
+                style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
+                onPress={() => onToggleFilter(false)}
+            >
+                <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
+            </AnimatedScaleButton>
+            <AnimatedScaleButton
+                style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
+                onPress={() => onToggleFilter(true)}
+            >
+                <MaterialCommunityIcons
+                    name="bookmark"
+                    size={14}
+                    color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
+                    style={{ marginRight: 4 }}
+                />
+                <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>Bookmarked</Text>
+            </AnimatedScaleButton>
+        </View>
+
+        {/* Newest first notice */}
+        <View style={styles.chronoNotice}>
+            <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
+            <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
+        </View>
+    </Animated.View>
+));
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
 
@@ -97,7 +177,9 @@ const FeedScreenInner: React.FC<Props> = ({
     const { height: screenHeight } = useWindowDimensions();
     /** SharedValue for Reanimated worklets — kept in sync via useEffect to avoid render-phase writes */
     const screenHeightSV = useSharedValue(screenHeight);
-    useEffect(() => { screenHeightSV.value = screenHeight; }, [screenHeight, screenHeightSV]);
+    useEffect(() => {
+        screenHeightSV.value = screenHeight;
+    }, [screenHeight, screenHeightSV]);
 
     const { savedNotes } = useNotes();
     const { savedVlogs } = useVlogs();
@@ -132,7 +214,7 @@ const FeedScreenInner: React.FC<Props> = ({
      * IMPORTANT: progress starts at 1.0 (fully open) and goes toward 0.0 (closed).
      * A threshold of 0.70 means dragging 30% of screen height (~240px) commits.
      */
-    const CLOSE_COMMIT_THRESHOLD = 0.70;
+    const CLOSE_COMMIT_THRESHOLD = 0.7;
     /**
      * Velocity threshold: a downward flick faster than this (positive = down, px/s)
      * commits to close. At 3000, ONLY a very fast flick commits.
@@ -172,17 +254,14 @@ const FeedScreenInner: React.FC<Props> = ({
             const shouldShow = currentY > SCROLL_TOP_SHOW_THRESHOLD;
             showScrollTopButton.value = shouldShow ? 1 : 0;
         },
-        []
+        [],
     );
 
     const scrollToTopButtonStyle = useAnimatedStyle(() => ({
         opacity: withTiming(showScrollTopButton.value, { duration: 250 }),
         transform: [
             {
-                translateY: withTiming(
-                    showScrollTopButton.value === 1 ? 0 : 10,
-                    { duration: 250 }
-                ),
+                translateY: withTiming(showScrollTopButton.value === 1 ? 0 : 10, { duration: 250 }),
             },
         ],
     }));
@@ -192,6 +271,17 @@ const FeedScreenInner: React.FC<Props> = ({
     }, []);
 
     /**
+     * Precompute person lookup so feedItems derivation doesn't rebuild the map
+     * when only savedNotes/savedVlogs change. This splits the dependency graph
+     * and reduces O(m) Map construction overhead on high-frequency updates.
+     */
+    const personMap = useMemo(() => {
+        const map = new Map<string, Person>();
+        persons.forEach((p) => map.set(p.id, p));
+        return map;
+    }, [persons]);
+
+    /**
      * Merge all content types into a single chronological feed.
      * Notes, vlogs, and check-ins are all unified into FeedItem objects
      * and sorted by timestamp (newest LAST — oldest at top).
@@ -199,16 +289,11 @@ const FeedScreenInner: React.FC<Props> = ({
     const feedItems = useMemo(() => {
         const items: FeedItem[] = [];
 
-        // Build person lookup for circle entries
-        const personMap = new Map<string, Person>();
-        persons.forEach(p => personMap.set(p.id, p));
-
         // Process text notes (journals, circles, check-ins)
-        savedNotes.forEach(note => {
+        savedNotes.forEach((note) => {
             const wordCount = (note.text || '').split(/\s+/).filter(Boolean).length;
             const isCheckin = isAlignmentReflection(note);
-            const type: FeedItemType = isCheckin ? 'checkin'
-                : wordCount < TWEET_THRESHOLD ? 'tweet' : 'story';
+            const type: FeedItemType = isCheckin ? 'checkin' : wordCount < TWEET_THRESHOLD ? 'tweet' : 'story';
 
             const person = note.personId ? personMap.get(note.personId) : undefined;
 
@@ -222,7 +307,7 @@ const FeedScreenInner: React.FC<Props> = ({
         });
 
         // Process vlogs
-        savedVlogs.forEach(vlog => {
+        savedVlogs.forEach((vlog) => {
             items.push({
                 type: 'clip',
                 timestamp: vlog.timestamp,
@@ -234,17 +319,25 @@ const FeedScreenInner: React.FC<Props> = ({
         items.sort((a, b) => b.timestamp - a.timestamp);
 
         return items;
-    }, [savedNotes, savedVlogs, persons]);
+    }, [savedNotes, savedVlogs, personMap]);
 
     /** Apply bookmark filter if active (uses Set for O(1) lookups) */
     const bookmarkSet = useMemo(() => new Set(bookmarkedNoteIds), [bookmarkedNoteIds]);
     const displayItems = useMemo(() => {
         if (!filterBookmarked) return feedItems;
-        return feedItems.filter(item => {
+        return feedItems.filter((item) => {
             const id = item.note?.id || item.vlog?.id || '';
             return bookmarkSet.has(id);
         });
     }, [feedItems, filterBookmarked, bookmarkSet]);
+
+    /** Refs for stable renderItem access — prevents re-render cascade when
+     *  bookmarks/comments change on ONE card. The renderItem reads from refs
+     *  (always current) while extraData triggers targeted re-renders only. */
+    const bookmarkSetRef = useRef(bookmarkSet);
+    bookmarkSetRef.current = bookmarkSet;
+    const feedCommentsRef = useRef(feedComments);
+    feedCommentsRef.current = feedComments;
 
     /** Track visible items for video auto-play — only clips that are on-screen should play */
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<FeedItem>[] }) => {
@@ -271,7 +364,7 @@ const FeedScreenInner: React.FC<Props> = ({
             if (isFullyOpen !== prevIsFullyOpen) {
                 runOnJS(setFeedScrollEnabled)(isFullyOpen);
             }
-        }
+        },
     );
 
     // Safety net REMOVED — it fights onEnd with asymmetric thresholds.
@@ -280,7 +373,7 @@ const FeedScreenInner: React.FC<Props> = ({
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (e) => {
             listScrollY.value = e.contentOffset.y;
-        }
+        },
     });
 
     /**
@@ -294,63 +387,78 @@ const FeedScreenInner: React.FC<Props> = ({
      *
      * 1:1 finger tracking with snappier commit threshold and velocity.
      */
-    const feedPanGesture = useMemo(() => Gesture.Pan()
-        .simultaneousWithExternalGesture(listRef as unknown as React.RefObject<React.ComponentType>)
-        .activeOffsetY([-10000, 8])    // Only activate on DOWNWARD movement (8px = very responsive)
-        .failOffsetX([-20, 20])          // Allow some horizontal jitter
-        .onStart(() => {
-            if (!feedProgress) return;
-            cancelAnimation(feedProgress);
-            gestureStartProgress.value = feedProgress.value;
-            startTranslationOffset.value = 0;
-            isFeedGestureActive.value = false;
-        })
-        .onUpdate((e) => {
-            if (!feedProgress) return;
-
-            // Only start driving feedProgress when at top of list + swiping down.
-            // Use a 2px tolerance for scrollY because some devices report small
-            // positive values at the top due to pixel rounding.
-            if (!isFeedGestureActive.value) {
-                const atTopOfList = listScrollY.value <= 2;
-                const swipingDown = e.translationY > 5;
-
-                if (atTopOfList && swipingDown) {
-                    isFeedGestureActive.value = true;
+    const feedPanGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .simultaneousWithExternalGesture(listRef as unknown as React.RefObject<React.ComponentType>)
+                .activeOffsetY([-10000, 8]) // Only activate on DOWNWARD movement (8px = very responsive)
+                .failOffsetX([-20, 20]) // Allow some horizontal jitter
+                .onStart(() => {
+                    if (!feedProgress) return;
+                    cancelAnimation(feedProgress);
                     gestureStartProgress.value = feedProgress.value;
-                    startTranslationOffset.value = e.translationY;
-                }
-                return;
-            }
+                    startTranslationOffset.value = 0;
+                    isFeedGestureActive.value = false;
+                })
+                .onUpdate((e) => {
+                    if (!feedProgress) return;
 
-            // Follow finger in both directions from activation point
-            const delta = e.translationY - startTranslationOffset.value;
-            const progressDelta = delta / screenHeightSV.value;
-            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
-            feedProgress.value = newProgress;
-        })
-        .onEnd((e) => {
-            if (!feedProgress) return;
-            if (!isFeedGestureActive.value) return;
-            isFeedGestureActive.value = false;
+                    // Only start driving feedProgress when at top of list + swiping down.
+                    // Use a 2px tolerance for scrollY because some devices report small
+                    // positive values at the top due to pixel rounding.
+                    if (!isFeedGestureActive.value) {
+                        const atTopOfList = listScrollY.value <= 2;
+                        const swipingDown = e.translationY > 5;
 
-            // Velocity projection: where would we land if velocity carried us?
-            // This mimics native ScrollView paging — a flick "throws" the content.
-            const projectedProgress = feedProgress.value - (e.velocityY * CLOSE_VELOCITY_PROJECTION_FACTOR / screenHeightSV.value);
+                        if (atTopOfList && swipingDown) {
+                            isFeedGestureActive.value = true;
+                            gestureStartProgress.value = feedProgress.value;
+                            startTranslationOffset.value = e.translationY;
+                        }
+                        return;
+                    }
 
-            const shouldClose = feedProgress.value < CLOSE_COMMIT_THRESHOLD
-                || e.velocityY > CLOSE_VELOCITY_THRESHOLD
-                || projectedProgress < 0.5;
+                    // Follow finger in both directions from activation point
+                    const delta = e.translationY - startTranslationOffset.value;
+                    const progressDelta = delta / screenHeightSV.value;
+                    const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
+                    feedProgress.value = newProgress;
+                })
+                .onEnd((e) => {
+                    if (!feedProgress) return;
+                    if (!isFeedGestureActive.value) return;
+                    isFeedGestureActive.value = false;
 
-            // Gesture decision made — spring to target
-            const target = shouldClose ? 0 : 1;
-            feedProgress.value = withSpring(target, theme.animation.springSnappy);
-            if (shouldClose) runOnJS(onClose)();
-            else runOnJS(onOpen)();
-        })
-        .onFinalize(() => {
-            isFeedGestureActive.value = false;
-        }), [onClose, onOpen, feedProgress, screenHeightSV, listScrollY, gestureStartProgress, isFeedGestureActive, startTranslationOffset]);
+                    // Velocity projection: where would we land if velocity carried us?
+                    // This mimics native ScrollView paging — a flick "throws" the content.
+                    const projectedProgress =
+                        feedProgress.value - (e.velocityY * CLOSE_VELOCITY_PROJECTION_FACTOR) / screenHeightSV.value;
+
+                    const shouldClose =
+                        feedProgress.value < CLOSE_COMMIT_THRESHOLD ||
+                        e.velocityY > CLOSE_VELOCITY_THRESHOLD ||
+                        projectedProgress < 0.5;
+
+                    // Gesture decision made — spring to target
+                    const target = shouldClose ? 0 : 1;
+                    feedProgress.value = withSpring(target, theme.animation.springSnappy);
+                    if (shouldClose) runOnJS(onClose)();
+                    else runOnJS(onOpen)();
+                })
+                .onFinalize(() => {
+                    isFeedGestureActive.value = false;
+                }),
+        [
+            onClose,
+            onOpen,
+            feedProgress,
+            screenHeightSV,
+            listScrollY,
+            gestureStartProgress,
+            isFeedGestureActive,
+            startTranslationOffset,
+        ],
+    );
 
     /** Close button — cancel in-flight animation, spring closed, set state immediately */
     const handleCloseButton = useCallback(() => {
@@ -360,90 +468,144 @@ const FeedScreenInner: React.FC<Props> = ({
         onClose();
     }, [onClose, feedProgress]);
 
-    const renderFeedItem = useCallback(({ item }: { item: FeedItem }) => {
-        const itemId = item.note?.id || item.vlog?.id || '';
-        // A video should only auto-play if: (1) auto-play is enabled in settings,
-        // (2) the item is visible in the viewport, AND (3) the feed is fully revealed
-        const isVisible = visibleItemIds.has(itemId) && isFeedVisible;
-        return (
-            <View style={styles.cardWrapper}>
-                {/* Use FeedVideoCard for clips, FeedCard for everything else */}
-                {item.type === 'clip' && item.vlog && onOpenVlog ? (
-                    <FeedVideoCard
-                        item={item}
-                        isBookmarked={bookmarkSet.has(item.vlog.id)}
-                        comment={feedComments[item.vlog.id]}
-                        autoPlay={autoPlayFeedVideos && isVisible}
-                        onToggleBookmark={toggleBookmark}
-                        onSaveComment={saveFeedComment}
-                        onOpenVlog={onOpenVlog}
-                    />
-                ) : (
-                    <FeedCard
-                        item={item}
-                        isBookmarked={bookmarkSet.has(
-                            item.note?.id || item.vlog?.id || ''
-                        )}
-                        comment={feedComments[item.note?.id || item.vlog?.id || '']}
-                        onToggleBookmark={toggleBookmark}
-                        onSaveComment={saveFeedComment}
-                        onOpenEntry={onOpenNote}
-                        onOpenVlog={onOpenVlog}
-                    />
-                )}
-            </View>
-        );
-    }, [bookmarkSet, feedComments, autoPlayFeedVideos, visibleItemIds, isFeedVisible, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog]);
+    const renderFeedItem = useCallback(
+        ({ item }: { item: FeedItem }) => {
+            const itemId = item.note?.id || item.vlog?.id || '';
+            // A video should only auto-play if: (1) auto-play is enabled in settings,
+            // (2) the item is visible in the viewport, AND (3) the feed is fully revealed
+            const isVisible = visibleItemIds.has(itemId) && isFeedVisible;
+            return (
+                <View style={styles.cardWrapper}>
+                    {/* Use FeedVideoCard for clips, FeedCard for everything else */}
+                    {item.type === 'clip' && item.vlog && onOpenVlog ? (
+                        <FeedVideoCard
+                            item={item}
+                            isBookmarked={bookmarkSetRef.current.has(item.vlog.id)}
+                            comment={feedCommentsRef.current[item.vlog.id]}
+                            autoPlay={autoPlayFeedVideos && isVisible}
+                            onToggleBookmark={toggleBookmark}
+                            onSaveComment={saveFeedComment}
+                            onOpenVlog={onOpenVlog}
+                        />
+                    ) : (
+                        <FeedCard
+                            item={item}
+                            isBookmarked={bookmarkSetRef.current.has(item.note?.id || item.vlog?.id || '')}
+                            comment={feedCommentsRef.current[item.note?.id || item.vlog?.id || '']}
+                            onToggleBookmark={toggleBookmark}
+                            onSaveComment={saveFeedComment}
+                            onOpenEntry={onOpenNote}
+                            onOpenVlog={onOpenVlog}
+                        />
+                    )}
+                </View>
+            );
+        },
+        [visibleItemIds, isFeedVisible, autoPlayFeedVideos, toggleBookmark, saveFeedComment, onOpenNote, onOpenVlog],
+    );
+    // ^^^ bookmarkSet and feedComments removed — read from refs to prevent cascade
 
     /* ── Render: Lock screen ───────────────────────────────────────── */
     /**
      * Lock screen pan gesture: follow-finger drag down to dismiss.
      * Uses the same distance-scaled mechanics as the main close gesture.
      */
-    const lockPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 8])   // Only activate on DOWNWARD movement (8px = very responsive)
-        .onStart(() => {
-            if (!feedProgress) return;
-            cancelAnimation(feedProgress);
-            gestureStartProgress.value = feedProgress.value;
-            startTranslationOffset.value = 0;
-            isFeedGestureActive.value = false;
-        })
-        .onUpdate((e) => {
-            if (!feedProgress) return;
-            if (!isFeedGestureActive.value) {
-                if (e.translationY > 5) {
-                    isFeedGestureActive.value = true;
+    const lockPanGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .activeOffsetY([-10000, 8]) // Only activate on DOWNWARD movement (8px = very responsive)
+                .onStart(() => {
+                    if (!feedProgress) return;
+                    cancelAnimation(feedProgress);
                     gestureStartProgress.value = feedProgress.value;
-                    startTranslationOffset.value = e.translationY;
-                }
-                return;
-            }
-            const delta = e.translationY - startTranslationOffset.value;
-            const progressDelta = delta / screenHeightSV.value;
-            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
-            feedProgress.value = newProgress;
-        })
-        .onEnd((e) => {
-            if (!feedProgress || !isFeedGestureActive.value) return;
-            isFeedGestureActive.value = false;
+                    startTranslationOffset.value = 0;
+                    isFeedGestureActive.value = false;
+                })
+                .onUpdate((e) => {
+                    if (!feedProgress) return;
+                    if (!isFeedGestureActive.value) {
+                        if (e.translationY > 5) {
+                            isFeedGestureActive.value = true;
+                            gestureStartProgress.value = feedProgress.value;
+                            startTranslationOffset.value = e.translationY;
+                        }
+                        return;
+                    }
+                    const delta = e.translationY - startTranslationOffset.value;
+                    const progressDelta = delta / screenHeightSV.value;
+                    const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value - progressDelta));
+                    feedProgress.value = newProgress;
+                })
+                .onEnd((e) => {
+                    if (!feedProgress || !isFeedGestureActive.value) return;
+                    isFeedGestureActive.value = false;
 
-            // Velocity projection: where would we land if velocity carried us?
-            const projectedProgress = feedProgress.value - (e.velocityY * CLOSE_VELOCITY_PROJECTION_FACTOR / screenHeightSV.value);
+                    // Velocity projection: where would we land if velocity carried us?
+                    const projectedProgress =
+                        feedProgress.value - (e.velocityY * CLOSE_VELOCITY_PROJECTION_FACTOR) / screenHeightSV.value;
 
-            const shouldClose = feedProgress.value < CLOSE_COMMIT_THRESHOLD
-                || e.velocityY > CLOSE_VELOCITY_THRESHOLD
-                || projectedProgress < 0.5;
+                    const shouldClose =
+                        feedProgress.value < CLOSE_COMMIT_THRESHOLD ||
+                        e.velocityY > CLOSE_VELOCITY_THRESHOLD ||
+                        projectedProgress < 0.5;
 
-            const target = shouldClose ? 0 : 1;
-            feedProgress.value = withSpring(target, theme.animation.springSnappy);
-            if (shouldClose) runOnJS(onClose)();
-            else runOnJS(onOpen)();
-        })
-        .onFinalize(() => {
-            isFeedGestureActive.value = false;
-        }), [onClose, onOpen, feedProgress, gestureStartProgress, isFeedGestureActive, screenHeightSV, startTranslationOffset]);
+                    const target = shouldClose ? 0 : 1;
+                    feedProgress.value = withSpring(target, theme.animation.springSnappy);
+                    if (shouldClose) runOnJS(onClose)();
+                    else runOnJS(onOpen)();
+                })
+                .onFinalize(() => {
+                    isFeedGestureActive.value = false;
+                }),
+        [
+            onClose,
+            onOpen,
+            feedProgress,
+            gestureStartProgress,
+            isFeedGestureActive,
+            screenHeightSV,
+            startTranslationOffset,
+        ],
+    );
 
+    /** Precompute stable empty element BEFORE the lock-screen early return */
+    const emptyComponent = useMemo(() => <FeedEmpty filterBookmarked={filterBookmarked} />, [filterBookmarked]);
+
+    /** Precompute stable header element — memoized props prevent re-create */
+    const feedHeaderElement = useMemo(
+        () => (
+            <FeedHeader
+                entryCount={feedItems.length}
+                filterBookmarked={filterBookmarked}
+                onToggleFilter={setFilterBookmarked}
+                onClose={handleCloseButton}
+            />
+        ),
+        [feedItems.length, filterBookmarked, handleCloseButton],
+    );
+
+    /** getItemLayout: approximate heights for FlashList fast-path layout.
+     *  FlashList corrects actual heights after measurement. */
+    const getFeedItemLayout = useCallback(
+        (_: FeedItem[] | null, index: number) => ({
+            length: 250,
+            offset: 250 * index,
+            index,
+        }),
+        [],
+    );
+
+    /** extraData: lightweight trigger that changes when bookmarks/comments update.
+     *  FlashList re-renders visible items when this changes, but the stable
+     *  renderItem reads from refs (no function re-creation). */
+    const commentKeyCount = Object.keys(feedComments).length;
+    const feedExtraData = useMemo(
+        () => ({
+            bookmarkVersion: bookmarkedNoteIds.length,
+            commentVersion: commentKeyCount,
+        }),
+        [bookmarkedNoteIds.length, commentKeyCount],
+    );
 
     if (!isUnlocked) {
         return (
@@ -460,7 +622,12 @@ const FeedScreenInner: React.FC<Props> = ({
                                 if (success) vibrate(50);
                             }}
                         >
-                            <MaterialCommunityIcons name="fingerprint" size={24} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
+                            <MaterialCommunityIcons
+                                name="fingerprint"
+                                size={24}
+                                color={theme.colors.textPrimary}
+                                style={{ marginRight: 10 }}
+                            />
                             <Text style={styles.unlockBtnText}>Unlock Feed</Text>
                         </AnimatedScaleButton>
                     </View>
@@ -468,77 +635,6 @@ const FeedScreenInner: React.FC<Props> = ({
             </GestureDetector>
         );
     }
-
-    /* ── Render: Feed header ────────────────────────────────────────── */
-    const renderHeader = () => (
-        <Animated.View style={styles.headerContainer}>
-            {/* Title row */}
-            <View style={styles.titleRow}>
-                <View>
-                    <Text style={styles.feedTitle}>Feed</Text>
-                    <Text style={styles.feedSubtitle}>
-                        {feedItems.length} {feedItems.length === 1 ? 'entry' : 'entries'}
-                    </Text>
-                </View>
-                <AnimatedScaleButton style={styles.closeBtn} onPress={handleCloseButton}>
-                    <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
-                </AnimatedScaleButton>
-            </View>
-
-            {/* Filter toggle: All / Bookmarked */}
-            <View style={styles.filterRow}>
-                <AnimatedScaleButton
-                    style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
-                    onPress={() => setFilterBookmarked(false)}
-                >
-                    <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
-                </AnimatedScaleButton>
-                <AnimatedScaleButton
-                    style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
-                    onPress={() => setFilterBookmarked(true)}
-                >
-                    <MaterialCommunityIcons
-                        name="bookmark"
-                        size={14}
-                        color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
-                        style={{ marginRight: 4 }}
-                    />
-                    <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
-                        Bookmarked
-                    </Text>
-                </AnimatedScaleButton>
-            </View>
-
-            {/* Newest first notice */}
-            <View style={styles.chronoNotice}>
-                <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
-                <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
-            </View>
-        </Animated.View>
-    );
-
-    /* ── Render: Empty state ────────────────────────────────────────── */
-    const renderEmpty = () => (
-        <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="text-box-outline" size={48} color={theme.colors.textMuted} />
-            <Text style={styles.emptyTitle}>
-                {filterBookmarked ? 'No bookmarked entries' : 'Your feed is empty'}
-            </Text>
-            <Text style={styles.emptyHint}>
-                {filterBookmarked
-                    ? 'Bookmark entries to save them here'
-                    : 'Complete a writing session to see your entries here'
-                }
-            </Text>
-        </View>
-    );
-
-    /* ── Render: Footer ───────────────────── */
-    const renderFooter = () => (
-        <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>You've reached the beginning of time</Text>
-        </View>
-    );
 
     return (
         <View style={styles.container}>
@@ -549,10 +645,11 @@ const FeedScreenInner: React.FC<Props> = ({
                             ref={listRef}
                             renderScrollComponent={RNGHScrollView}
                             data={displayItems}
-                            ListHeaderComponent={renderHeader}
-                            ListFooterComponent={renderFooter}
-                            ListEmptyComponent={renderEmpty}
+                            ListHeaderComponent={feedHeaderElement}
+                            ListFooterComponent={FeedFooter}
+                            ListEmptyComponent={emptyComponent}
                             estimatedItemSize={250}
+                            getItemLayout={getFeedItemLayout}
                             keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
                             bounces={false}
                             overScrollMode="never"
@@ -561,6 +658,7 @@ const FeedScreenInner: React.FC<Props> = ({
                             onScrollBeginDrag={() => DeviceEventEmitter.emit('RESET_LOCK_TIMER')}
                             scrollEventThrottle={16}
                             renderItem={renderFeedItem}
+                            extraData={feedExtraData}
                             onViewableItemsChanged={onViewableItemsChanged}
                             viewabilityConfig={viewabilityConfig}
                             contentContainerStyle={styles.listContent}

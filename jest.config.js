@@ -8,6 +8,7 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
+  testPathIgnorePatterns: ['\\.live\\.test\\.ts$'],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     '!src/types/**',

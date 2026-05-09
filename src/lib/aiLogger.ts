@@ -60,9 +60,7 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
  * Writes are serialized to avoid race conditions where concurrent calls
  * read stale data and overwrite each other's entries.
  */
-export async function logAi(
-    entry: Omit<AiLogEntry, 'timestamp'>
-): Promise<void> {
+export async function logAi(entry: Omit<AiLogEntry, 'timestamp'>): Promise<void> {
     // Chain each write so reads happen after previous writes complete
     writeChain = writeChain.then(async () => {
         try {
@@ -75,14 +73,12 @@ export async function logAi(
             const updated = [...existing, fullEntry];
 
             // FIFO trim: keep only the most recent entries
-            const trimmed = updated.length > AI_LOG_MAX_ENTRIES
-                ? updated.slice(updated.length - AI_LOG_MAX_ENTRIES)
-                : updated;
+            const trimmed =
+                updated.length > AI_LOG_MAX_ENTRIES ? updated.slice(updated.length - AI_LOG_MAX_ENTRIES) : updated;
 
             await storage.setItem(AI_STORAGE_KEYS.LOG, JSON.stringify(trimmed));
 
-            // Enhanced console logging for ALL modes (not just __DEV__)
-            // This is critical for debugging stalled AI processing
+            // Console logging goes through structured logger so it respects logMode
             const emoji = LOG_EMOJIS[entry.action] || '📝';
             const desc = ACTION_DESCRIPTIONS[entry.action] || entry.action;
             const durationStr = entry.durationMs ? ` | ${entry.durationMs}ms` : '';
@@ -91,16 +87,11 @@ export async function logAi(
             const noteStr = entry.noteId ? ` | note=${entry.noteId}` : '';
             const phaseStr = entry.phase ? ` | phase=${entry.phase}` : '';
 
-            // Always log to console — these are critical for diagnosing AI issues
-            // eslint-disable-next-line no-console
-            console.log(
-                `[AI ${emoji}] ${desc}${noteStr}${modelStr}${phaseStr}${durationStr}${errorStr}`
-            );
+            logger('info', 'AI', `${emoji} ${desc}${noteStr}${modelStr}${phaseStr}${durationStr}${errorStr}`);
 
-            // If it's an error-level action, also log with console.error for visibility
+            // If it's an error-level action, also log with error level for visibility
             if (entry.action === 'fail' || entry.action === 'timeout' || entry.action === 'stall_recovery') {
-                // eslint-disable-next-line no-console
-                console.error(`[AI CRITICAL] ${desc}${noteStr}${errorStr}`);
+                logger('error', 'AI CRITICAL', `${desc}${noteStr}${errorStr}`);
             }
         } catch (err) {
             logger('warn', 'AI Logger', 'Failed to persist log entry:', err);
@@ -147,13 +138,10 @@ export function logStartupDiagnostics(config: {
     pendingJobs: number;
 }): void {
     const keyPresent = config.apiKey && config.apiKey.trim().length > 0;
-    const keyMasked = keyPresent
-        ? `${config.apiKey.slice(0, 8)}...${config.apiKey.slice(-4)}`
-        : 'NOT SET';
+    const keyMasked = keyPresent ? `${config.apiKey.slice(0, 8)}...${config.apiKey.slice(-4)}` : 'NOT SET';
     const urlPresent = config.baseUrl && config.baseUrl.trim().length > 0;
 
-    // eslint-disable-next-line no-console
-    console.log(`
+    logger('info', 'AI Startup', `
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                    🤖 AI QUEUE STARTUP DIAGNOSTICS                  ║
 ╠══════════════════════════════════════════════════════════════════════╣
@@ -168,15 +156,12 @@ export function logStartupDiagnostics(config: {
     `);
 
     if (!keyPresent) {
-        // eslint-disable-next-line no-console
-        console.error('❌ CRITICAL: AI_API_KEY is missing. AI processing will FAIL.');
+        logger('error', 'AI Startup', 'AI_API_KEY is missing. AI processing will FAIL.');
     }
     if (!urlPresent) {
-        // eslint-disable-next-line no-console
-        console.error('❌ CRITICAL: AI_BASE_URL is missing. AI processing will FAIL.');
+        logger('error', 'AI Startup', 'AI_BASE_URL is missing. AI processing will FAIL.');
     }
     if (!config.pingResult.online) {
-        // eslint-disable-next-line no-console
-        console.error('❌ WARNING: Server ping failed. AI jobs will stall until server responds.');
+        logger('error', 'AI Startup', 'Server ping failed. AI jobs will stall until server responds.');
     }
 }

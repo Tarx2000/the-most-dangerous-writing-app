@@ -25,16 +25,16 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 /* -- CONFIGURABLE ---------------------------------------------------------- */
 
 /**
- * HomeScreen — Root container wrapping horizontal Start ? Library scroll
+ * HomeScreen â€” Root container wrapping horizontal Start ? Library scroll
  * and the vertical pull-down Feed page.
  *
  * Architecture:
  * +--------------------------+
- * ¦      Feed (hidden above) ¦  ? revealed by swiping DOWN from Start
- * +--------------------------¦
- * ¦  Start  ¦  Library       ¦  ? horizontal paging scroll
- * +--------------------------¦
- * ¦  LiquidGlassNav (float)  ¦  ? persistent bottom nav
+ * Â¦      Feed (hidden above) Â¦  ? revealed by swiping DOWN from Start
+ * +--------------------------Â¦
+ * Â¦  Start  Â¦  Library       Â¦  ? horizontal paging scroll
+ * +--------------------------Â¦
+ * Â¦  LiquidGlassNav (float)  Â¦  ? persistent bottom nav
  * +--------------------------+
  *
  * The Feed page starts at translateY = -SCREEN_HEIGHT (above viewport).
@@ -42,7 +42,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
  * (Start + Library) slides down while the Feed slides into view from above.
  *
  * Closing: When at the bottom of the Feed (newest entries), swiping up
- * past the content boundary triggers the dismiss — the Feed slides back
+ * past the content boundary triggers the dismiss â€” the Feed slides back
  * up and the HomeScreen returns to its original position.
  */
 export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
@@ -51,7 +51,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     const scrollViewRef = useRef<ScrollView>(null);
 
     /**
-     * Shared session mode — drives both Start hero content and Library tab.
+     * Shared session mode â€” drives both Start hero content and Library tab.
      * 'journal' = free writing / notes
      * 'circles' = relationship journal / circles tab
      * 'checkin' = alignment check-in / checkins tab
@@ -109,7 +109,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     const handleModeChange = useCallback((mode: string) => {
         // Immediate nav update
         setActiveTabId(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
-        
+
         // Defer heavier screen content re-renders
         startTransition(() => {
             setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
@@ -145,7 +145,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     ], [isCheckinUrgent]);
 
     /* --------------------------------------------------------------------------
-       FEED GESTURE — delegated to useHomeGestures hook
+       FEED GESTURE â€” delegated to useHomeGestures hook
        -------------------------------------------------------------------------- */
 
     const {
@@ -170,8 +170,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     return (
         <View style={styles.container}>
-            {/* Feed Page — positioned below viewport, slides up when revealed */}
-            <Animated.View style={[styles.feedLayer, feedAnimStyle, { height: screenHeight }]}>
+            {/* Feed Page â€” positioned below viewport, slides up when revealed */}
+            <Animated.View style={useMemo(() => [styles.feedLayer, feedAnimStyle, { height: screenHeight }], [feedAnimStyle, screenHeight])}>
                 <FeedScreen
                     isUnlocked={security.isFeedUnlocked}
                     onUnlock={security.unlockNotes}
@@ -204,7 +204,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 onClose={handleCloseVlogModal}
             />
 
-            {/* Main Content — Start + Library horizontal scroll */}
+            {/* Main Content â€” Start + Library horizontal scroll */}
             <GestureDetector gesture={feedPanGesture}>
                 <Animated.View style={[styles.mainContent, mainContentAnimStyle]}>
                     <ScrollView
@@ -220,8 +220,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                         scrollEventThrottle={16}
                         decelerationRate="fast"
                     >
-                        {/* Start Screen — writing mode setup */}
-                        <View style={[styles.page, { width: screenWidth }]}>
+                        {/* Start Screen â€” writing mode setup */}
+                        <View style={useMemo(() => [styles.page, { width: screenWidth }], [screenWidth])}>
                             <StartScreen
                                 navigation={navigation}
                                 route={route as Route<string, RootStackParamList['Home']>}
@@ -232,7 +232,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                             />
                         </View>
 
-                        {/* Library Screen — saved notes & circles */}
+                        {/* Library Screen â€” saved notes & circles */}
                         <View style={[styles.page, { width: screenWidth }]}>
                             <LibraryScreen
                                 navigation={navigation}
@@ -245,7 +245,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 </Animated.View>
             </GestureDetector>
 
-            {/* Persistent Liquid Glass Navigation — fades out and slides down when feed opens */}
+            {/* Persistent Liquid Glass Navigation â€” fades out and slides down when feed opens */}
             <Animated.View style={navAnimStyle}>
                 <LiquidGlassNav
                     items={navItems}
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
-    /** Main content layer — Start + Library + NavBar */
+    /** Main content layer â€” Start + Library + NavBar */
     mainContent: {
         flex: 1,
     },
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     /**
-     * Feed layer — positioned absolutely to cover the full screen.
+     * Feed layer â€” positioned absolutely to cover the full screen.
      * Starts below the viewport (translateY = screenHeightSV via animated style)
      * and slides into view when the user swipes UP.
      * Height is overridden inline with useWindowDimensions().

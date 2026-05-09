@@ -49,7 +49,7 @@ import {
     createCrossCuttingOps,
 } from '@/lib/storageOps';
 import { loadAllData as loadAllDataFromDataLoaders, inspectAsyncStorage, safeReMigrateAsyncStorage, exportAsyncStorageToFile } from '@/lib/dataLoaders';
-import { logger } from '@/lib/logger';
+import { setLogMode as setGlobalLogMode } from '@/lib/logger';
 import { CONFIG } from '@/config';
 import { processPendingCompressions } from '@/lib/videoCompressor';
 
@@ -105,6 +105,8 @@ interface PreferencesContextType {
     toggleDebugLayout: () => Promise<void>;
     saveVisionBoard: (board: VisionBoard) => Promise<void>;
     updatePreferPinAuth: (val: boolean) => Promise<void>;
+    logMode: boolean;
+    toggleLogMode: () => Promise<void>;
 }
 
 /** AI Configuration — almost never changes */
@@ -194,6 +196,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [visionBoard, setVisionBoard] = useState<VisionBoard | null>(null);
     const [lastReflectionDate, setLastReflectionDate] = useState<number | null>(null);
     const [preferPinAuth, setPreferPinAuth] = useState<boolean>(false);
+    const [logMode, setLogMode] = useState<boolean>(__DEV__);
     const [savedVlogs, setSavedVlogs] = useState<SavedVlog[]>([]);
     const [totalVlogStorageBytes, setTotalVlogStorageBytes] = useState<number>(0);
     const [bookmarkedNoteIds, setBookmarkedNoteIds] = useState<string[]>([]);
@@ -225,6 +228,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const debugLayoutRef = useRef(debugLayout); debugLayoutRef.current = debugLayout;
     const visionBoardRef = useRef(visionBoard); visionBoardRef.current = visionBoard;
     const preferPinAuthRef = useRef(preferPinAuth); preferPinAuthRef.current = preferPinAuth;
+    const logModeRef = useRef(logMode); logModeRef.current = logMode;
     const bookmarkedNoteIdsRef = useRef(bookmarkedNoteIds); bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
     const feedCommentsRef = useRef(feedComments); feedCommentsRef.current = feedComments;
     const aiApiKeyRef = useRef(aiApiKey); aiApiKeyRef.current = aiApiKey;
@@ -269,12 +273,12 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             lockTimeoutMins: lockTimeoutMinsRef, vlogQuality: vlogQualityRef,
             compressionPreset: compressionPresetRef, devMode: devModeRef,
             debugLayout: debugLayoutRef, visionBoard: visionBoardRef,
-            preferPinAuth: preferPinAuthRef,
+            preferPinAuth: preferPinAuthRef, logMode: logModeRef,
         },
         {
             setFontIndex, setSizeIndex, setUseBiometrics, setEnableHaptics,
             setLockTimeoutMins, setVlogQuality, setCompressionPreset,
-            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth,
+            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth, setLogMode,
         },
     ), []);
 
@@ -297,7 +301,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
             setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
             setEnableHaptics, setLockTimeoutMins, setVlogQuality, setCompressionPreset,
-            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth,
+            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth, setLogMode,
             setLastReflectionDate, setSavedVlogs, setTotalVlogStorageBytes,
             setBookmarkedNoteIds, setFeedComments, setAutoPlayFeedVideos,
             setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
@@ -337,7 +341,11 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         },
     ), [notesOps]);
 
-    /* ── Pending compressions on startup ---------------------------- */
+    /* ── Dev Mode & Log Mode Sync ----------------------------------------- */
+    useEffect(() => {
+        const effectiveLogMode = devMode || logMode;
+        setGlobalLogMode(effectiveLogMode);
+    }, [devMode, logMode]);
     useEffect(() => {
         const isMountedRef = { current: true };
         const timer = setTimeout(async () => {
@@ -353,7 +361,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                     }
                 }
             } catch (error) {
-                console.error('[Startup] Failed to process pending compressions:', error);
+                logger('error', 'Startup', 'Failed to process pending compressions:', error);
             }
         }, CONFIG.PENDING_COMPRESSION_DELAY_MS);
         return () => {
@@ -387,9 +395,9 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     }), [currentStreak, lastWinDate, streakHistory]);
 
     const preferencesValue = useMemo<PreferencesContextType>(() => ({
-        fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth,
+        fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth, logMode,
         ...preferencesOps,
-    }), [fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth, preferencesOps]);
+    }), [fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth, logMode, preferencesOps]);
 
     const aiConfigValue = useMemo<AiConfigContextType>(() => ({
         aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels,

@@ -362,6 +362,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                     <FlashList
                         data={VERSION_HISTORY}
                         keyExtractor={(v) => v.version}
+                        estimatedItemSize={80}
                         renderItem={({ item: v }) => (
                             <View style={[commonStyles.cardsRow, { marginTop: 20 }, preferences.debugLayout && { borderWidth: 1, borderColor: theme.colors.dangerBorder }]}>
                                 <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>

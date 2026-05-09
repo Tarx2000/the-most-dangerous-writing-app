@@ -28,7 +28,7 @@ type DeveloperToolsPanelProps = {
     notes: { savedNotes: SavedNote[]; clearAllAiMetadata: () => Promise<void> };
     personsHook: { persons: Person[] };
     streak: { currentStreak: number; lastWinDate: string; streakHistory: string[] };
-    preferences: { devMode: boolean; debugLayout: boolean; fontIndex: number; sizeIndex: number; toggleDevMode: () => Promise<void>; toggleDebugLayout: () => Promise<void> };
+    preferences: { devMode: boolean; debugLayout: boolean; logMode: boolean; fontIndex: number; sizeIndex: number; toggleDevMode: () => Promise<void>; toggleDebugLayout: () => Promise<void>; toggleLogMode: () => Promise<void> };
     aiConfig: { aiPrompts: AiPrompts; saveAiPrompts: (prompts: AiPrompts) => Promise<void> };
     vlogs: { savedVlogs: SavedVlog[]; totalVlogStorageBytes: number };
     storageActions: {
@@ -174,6 +174,21 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
             >
                 <Text style={[commonStyles.closeVersionBtnText, preferences.devMode && { color: theme.colors.gold }]}>Dev Mode</Text>
                 <Text style={{ color: preferences.devMode ? theme.colors.gold : theme.colors.textMuted, fontSize: 13, fontWeight: 'bold' }}>{preferences.devMode ? 'ON' : 'OFF'}</Text>
+            </AnimatedScaleButton>
+
+            {/* Log Mode Toggle */}
+            <AnimatedScaleButton
+                style={[commonStyles.closeVersionBtn, { backgroundColor: preferences.logMode ? theme.colors.goldFillMedium : theme.colors.glassHighlight, marginTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                onPress={() => {
+                    vibrate(15);
+                    preferences.toggleLogMode();
+                }}
+            >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <MaterialCommunityIcons name="format-list-text" size={16} color={preferences.logMode ? theme.colors.gold : theme.colors.textMuted} />
+                    <Text style={[commonStyles.closeVersionBtnText, preferences.logMode && { color: theme.colors.gold }]}>Verbose Logging</Text>
+                </View>
+                <Text style={{ color: preferences.logMode ? theme.colors.gold : theme.colors.textMuted, fontSize: 13, fontWeight: 'bold' }}>{preferences.logMode ? 'ON' : 'OFF'}</Text>
             </AnimatedScaleButton>
 
             {/* Dev Actions */}

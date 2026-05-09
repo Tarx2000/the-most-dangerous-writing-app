@@ -18,19 +18,17 @@ import { useNotes, usePersons, useVlogs, usePreferences } from '@/lib/hooks/useS
 import { CONFIG } from '@/config';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
-import { NoteCard } from '@/components/features/library/NoteCard';
 import { ExpandablePersonCard } from '@/components/features/library/ExpandablePersonCard';
 import { PersonProfileModal } from '@/components/features/library/PersonProfileModal';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogCalendarGallery } from '@/components/features/library/VlogCalendarGallery';
+import { LibraryNotesList } from '@/components/features/library/LibraryNotesList';
 import { FlashList } from '@shopify/flash-list';
 import { SortOption, SavedNote, Person, AiJobCategory, isAlignmentReflection as isAlignmentRef } from '@/types';
 import { useLibraryNotes } from '@/lib/hooks/useLibraryNotes';
-import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 
 type Props = {
     navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -80,7 +78,14 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     /** Central AI Queue — single instance via AiQueueProvider */
     const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueueContext();
 
+    /* ── Memoized FlashList props to prevent re-create on every render ─ */
+    const circlesListContentStyle = useMemo(() => ({ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }), []);
 
+    const circlesExtraData = useMemo(() => ({
+        selectedCircleId,
+        notesLength: savedNotes.length,
+        isUnlocked: security.isNotesUnlocked,
+    }), [selectedCircleId, savedNotes.length, security.isNotesUnlocked]);
 
     /**
      * Precompute notes grouped by person for O(1) lookups.
@@ -97,6 +102,17 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
         }
         return map;
     }, [savedNotes]);
+
+    /**
+     * O(1) person name lookup map.
+     * Previously, every NoteCard did `persons.find(p => p.id === note.personId)`.
+     * That was O(persons.length) per visible row — with many circles, this adds up.
+     */
+    const personMap = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const p of persons) map.set(p.id, p.name);
+        return map;
+    }, [persons]);
 
     const sortedPersons = useMemo(() => {
         return [...persons].sort((a, b) => {
@@ -124,12 +140,6 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
 
     const { groupedNotes } = useLibraryNotes(savedNotes, libraryTab, sortBy, selectedCircleId);
 
-    const getScoreDetails = getAlignmentScoreDetails;
-
-    /**
-     * Enqueue a note for AI processing via the central queue.
-     * Replaces the old direct generateTitle/generateSummary calls.
-     */
     const handleRegenerateAi = useCallback(async (note: SavedNote) => {
         vibrate(30);
         const category: AiJobCategory = isAlignmentRef(note)
@@ -165,6 +175,8 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
             return null;
         });
     }, [deletePerson]);
+
+    const activeNoteIds = useMemo(() => queueState.jobs.map(j => j.noteId), [queueState.jobs]);
 
     return (
         <View style={commonStyles.libraryContainer}>
@@ -221,125 +233,23 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                 </View>
             )}
 
-            {/* Scrollable Content Area with Top & Bottom Fade Dissolve */}
+            {/* Scrollable Content Area */}
             <View style={{ flex: 1 }}>
-                {libraryTab !== 'vlogs' && (
-                    <>
-                        {/* Dissolve/Fade out mask at the top of the list to prevent the hard line */}
-                        <LinearGradient
-                            colors={[
-                                theme.colors.background,
-                                theme.colors.overlayDark,
-                                'rgba(0,0,0,0.7)',
-                                theme.colors.overlaySubtle,
-                                'transparent',
-                            ]}
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: -20,
-                                right: -20,
-                                height: 32,
-                                zIndex: 10,
-                            }}
-                            pointerEvents="none"
-                        />
-
-                        {/* Dissolve/Fade out mask at the bottom of the list */}
-                        <LinearGradient
-                            colors={[
-                                'transparent',
-                                'rgba(0,0,0,0.1)',
-                                'rgba(0,0,0,0.4)',
-                                'rgba(0,0,0,0.7)',
-                                'rgba(0,0,0,0.9)',
-                                theme.colors.background,
-                            ]}
-                            style={{
-                                position: 'absolute',
-                                bottom: 0,
-                                left: -20,
-                                right: -20,
-                                height: 60,
-                                zIndex: 10,
-                            }}
-                            pointerEvents="none"
-                        />
-                    </>
-                )}
-
                 {/* Tab content — Notes & Check-ins */}
                 {(libraryTab === 'notes' || libraryTab === 'checkins') && (
-                    <>
-                        {groupedNotes.length === 0 ? (
-                            <EmptyLibraryState
-                                icon={libraryTab === 'checkins' ? "compass-outline" : "notebook-outline"}
-                                title={libraryTab === 'checkins' ? "No check-ins yet" : "No entries found"}
-                                description={libraryTab === 'checkins' ? "Start your weekly alignment check-in to track your progress over time." : "Start writing to build your library of dangerous sessions."}
-                                actionLabel="Start Writing"
-                                onAction={onGoToStart}
-                            />
-                        ) : (
-                            <FlashList
-                                style={{ marginHorizontal: -20 }}
-                                data={groupedNotes}
-                                keyExtractor={(item) => item.type === 'header' ? `header-${item.title}` : (item.note?.id || `unknown-${Math.random()}`)}
-                                getItemType={(item) => item.type}
-                                contentContainerStyle={{ paddingBottom: 120, paddingTop: 12, paddingHorizontal: 20 }}
-                                showsVerticalScrollIndicator={false}
-                                extraData={{
-                                    activeNoteIds: queueState.jobs.map(j => j.noteId),
-                                    isProcessing: queueState.isProcessing,
-                                    isUnlocked: security.isNotesUnlocked,
-                                }}
-                                renderItem={({ item }) => {
-                                    if (item.type === 'header') {
-                                        return (
-                                            <View style={styles.dateHeader}>
-                                                <Text style={commonStyles.groupTitle}>{item.title}</Text>
-                                            </View>
-                                        );
-                                    }
-
-                                    const note = item.note as SavedNote;
-                                    const _isAlignment = isAlignmentRef(note);
-
-                                    return (
-                                        <View>
-                                            {_isAlignment ? (
-                                                <AnimatedScaleButton
-                                                    style={styles.reflectionCard}
-                                                    onPress={() => setViewNoteModal(note)}
-                                                    disabled={!security.isNotesUnlocked}
-                                                >
-                                                    <LinearGradient colors={[theme.colors.glassSurfaceSubtle, 'transparent']} style={StyleSheet.absoluteFillObject} />
-                                                    <View style={styles.reflectionHeader}>
-                                                        <View>
-                                                            <Text style={styles.reflectionDate}>{note.dateStr}</Text>
-                                                            <Text style={styles.reflectionScore}>Score: {isAlignmentRef(note) ? note.alignmentScore : 0}/10</Text>
-                                                        </View>
-                                                        <MaterialCommunityIcons name={getScoreDetails(isAlignmentRef(note) ? note.alignmentScore : 0).icon} size={36} color={getScoreDetails(isAlignmentRef(note) ? note.alignmentScore : 0).color} />
-                                                    </View>
-                                                    <Text style={[commonStyles.noteCardPreview, { fontFamily: activeFont }]} numberOfLines={2}>
-                                                        {!security.isNotesUnlocked ? '•••• •••••••• •••••' : note.text}
-                                                    </Text>
-                                                </AnimatedScaleButton>
-                                            ) : (
-                                                <NoteCard
-                                                    note={note}
-                                                    onPress={setViewNoteModal}
-                                                    personName={note.personId ? persons.find(p => p.id === note.personId)?.name : undefined}
-                                                    isLocked={!security.isNotesUnlocked}
-                                                    isProcessing={isNoteActive(note.id)}
-                                                    isQueued={isNoteQueued(note.id)}
-                                                />
-                                            )}
-                                        </View>
-                                    );
-                                }}
-                            />
-                        )}
-                    </>
+                    <LibraryNotesList
+                        groupedNotes={groupedNotes}
+                        libraryTab={libraryTab}
+                        personMap={personMap}
+                        isUnlocked={security.isNotesUnlocked}
+                        activeNoteIds={activeNoteIds}
+                        isProcessing={queueState.isProcessing}
+                        isNoteActive={isNoteActive}
+                        isNoteQueued={isNoteQueued}
+                        activeFont={activeFont}
+                        onPressNote={setViewNoteModal}
+                        onGoToStart={onGoToStart}
+                    />
                 )}
 
                 {/* Tab content — Circles */}
@@ -379,14 +289,16 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                                             style={{ marginHorizontal: -20 }}
                                             data={sortedPersons}
                                             keyExtractor={(p) => p.id}
-                                            extraData={{
-                                                selectedCircleId,
-                                                notesLength: savedNotes.length,
-                                                isUnlocked: security.isNotesUnlocked
-                                            }}
+                                            estimatedItemSize={80}
+                                            getItemLayout={(_: ArrayLike<Person> | null | undefined, index: number) => ({
+                                                length: 80,
+                                                offset: 80 * index,
+                                                index,
+                                            })}
+                                            extraData={circlesExtraData}
                                             renderItem={renderPersonItem}
                                             showsVerticalScrollIndicator={false}
-                                            contentContainerStyle={{ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }}
+                                            contentContainerStyle={circlesListContentStyle}
                                         />
                                     </View>
                                 )}
@@ -523,34 +435,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: 60
     },
-    reflectionCard: {
-        backgroundColor: theme.colors.glassSurfaceSubtle,
-        padding: 18,
-        borderRadius: 16,
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: theme.colors.glassSurfaceMedium,
-        overflow: 'hidden'
-    },
-    reflectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12
-    },
-    reflectionDate: {
-        color: theme.colors.textPrimary,
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 4
-    },
-    reflectionScore: {
-        color: theme.colors.textSecondary,
-        fontSize: 13,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5
-    },
 
     /* ── Circles Lock Overlay ────────────────────────────────────────── */
     circlesLockOverlay: {
@@ -627,14 +511,6 @@ const styles = StyleSheet.create({
     filterDropdownActive: {
         color: theme.colors.textPrimary,
         fontWeight: 'bold',
-    },
-    dateHeader: {
-        paddingTop: 20,
-        paddingBottom: 10,
-    },
-    flexFill: {
-        flex: 1,
-        width: '100%',
     },
     iconMarginLeftAuto: {
         marginLeft: 'auto',

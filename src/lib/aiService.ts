@@ -23,6 +23,7 @@ import {
     AI_MAX_RETRIES,
     type AiPrompts,
 } from '@/config/ai';
+import { logAi } from '@/lib/logger';
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
@@ -57,8 +58,6 @@ export interface AiProcessResult {
     /** True when the AI call failed or returned empty results */
     failed: boolean;
 }
-
-
 
 /* ── Connection Health State ──────────────────────────────────────────── */
 
@@ -119,10 +118,8 @@ function isTransientError(error: Error): boolean {
  * Sleep helper — returns a promise that resolves after `ms` milliseconds.
  */
 function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-
 
 /* ── Cancel Token ─────────────────────────────────────────────────── */
 
@@ -159,7 +156,7 @@ async function ollamaChatSingle(
     config: AiConfig = {},
     optionsOverwrite: Record<string, unknown> = {},
     onChunk?: (text: string) => void,
-    cancelToken?: AiCancelToken
+    cancelToken?: AiCancelToken,
 ): Promise<string> {
     const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
     const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
@@ -191,7 +188,10 @@ async function ollamaChatSingle(
             if (settled) return;
             settled = true;
             clearTimeout(timeoutId);
-            if (cancelCheckInterval) { clearInterval(cancelCheckInterval); cancelCheckInterval = null; }
+            if (cancelCheckInterval) {
+                clearInterval(cancelCheckInterval);
+                cancelCheckInterval = null;
+            }
             if (fn === 'resolve') resolve(value as string);
             else reject(value as Error);
         };
@@ -207,7 +207,13 @@ async function ollamaChatSingle(
                     settle('reject', new Error(`Ollama API error ${xhr.status}`));
                 }
             } else if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) {
-                if (!xhr.responseText) return;
+                if (!xhr.responseText) {
+                    // On DONE with empty body, settle to prevent promise from hanging forever
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        settle('resolve', '');
+                    }
+                    return;
+                }
                 const newText = xhr.responseText.substring(processedLength);
                 processedLength = xhr.responseText.length;
                 rawBuffer += newText;
@@ -234,9 +240,11 @@ async function ollamaChatSingle(
                             }
 
                             // Support both OpenAI (choices[0].delta.content) and Ollama native (message.content)
-                            const chunkStr = parsed.choices?.[0]?.delta?.content ||
+                            const chunkStr =
+                                parsed.choices?.[0]?.delta?.content ||
                                 parsed.choices?.[0]?.message?.content ||
-                                parsed.message?.content || '';
+                                parsed.message?.content ||
+                                '';
 
                             fullResponse += chunkStr;
 
@@ -244,14 +252,17 @@ async function ollamaChatSingle(
                                 wordBuffer += chunkStr;
 
                                 // Flush wordBuffer when a boundary is found (space, tab, newline, common or Chinese punctuation, or CJK characters)
-                                if (/[ \t\n.,!?\-:;，。！？、"”'"\u4e00-\u9fa5]/.test(chunkStr.slice(-1)) || wordBuffer.length > 12) {
+                                if (
+                                    /[ \t\n.,!?\-:;，。！？、"”'"\u4e00-\u9fa5]/.test(chunkStr.slice(-1)) ||
+                                    wordBuffer.length > 12
+                                ) {
                                     streamedResponse += wordBuffer;
                                     wordBuffer = '';
                                     onChunk(streamedResponse);
                                 }
                             }
                         } catch (err) {
-                            console.warn('[AI] Failed to parse stream line:', line, err);
+                            logAi('warn', 'Failed to parse stream line:', { line, err });
                         }
                     }
                 }
@@ -268,7 +279,7 @@ async function ollamaChatSingle(
             }
         };
         xhr.onerror = () => {
-            console.warn('[AI] XHR Error occurred. ReadyState:', xhr.readyState, 'Status:', xhr.status);
+            logAi('warn', 'XHR Error occurred', { readyState: xhr.readyState, status: xhr.status });
             settle('reject', new Error(`Network request failed (connection dropped or unreachable)`));
         };
 
@@ -293,15 +304,17 @@ async function ollamaChatSingle(
             }, 200);
         }
 
-        xhr.send(JSON.stringify({
-            model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userMessage },
-            ],
-            stream: true, // ALWAYS stream to prevent silent idle connection timeouts
-            options: mergedOptions,
-        }));
+        xhr.send(
+            JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userMessage },
+                ],
+                stream: true, // ALWAYS stream to prevent silent idle connection timeouts
+                options: mergedOptions,
+            }),
+        );
     });
 }
 
@@ -322,7 +335,7 @@ async function ollamaChat(
     config: AiConfig = {},
     optionsOverwrite: Record<string, unknown> = {},
     onChunk?: (text: string) => void,
-    cancelToken?: AiCancelToken
+    cancelToken?: AiCancelToken,
 ): Promise<string> {
     const maxAttempts = AI_MAX_RETRIES + 1; // e.g. AI_MAX_RETRIES=2 → 3 attempts
     let lastError: Error = new Error('Unknown error');
@@ -357,7 +370,7 @@ async function ollamaChat(
                 const delayMs = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s, ...
                 console.warn(
                     `[AI] Transient error (attempt ${attempt + 1}/${maxAttempts}), ` +
-                    `retrying in ${delayMs}ms: ${(error as Error)?.message}`
+                        `retrying in ${delayMs}ms: ${(error as Error)?.message}`,
                 );
                 // If cancelled, don't retry
                 if (cancelToken && cancelToken.aborted) {
@@ -386,10 +399,10 @@ export async function generateTitle(
     config: AiConfig = {},
     onChunk?: (text: string) => void,
     relationship?: RelationshipContext,
-    cancelToken?: AiCancelToken
+    cancelToken?: AiCancelToken,
 ): Promise<string> {
     if (!text || text.trim().length === 0) {
-        console.warn('[AI] generateTitle called with empty text');
+        logAi('warn', 'generateTitle called with empty text');
         return '';
     }
     let prompt = config.prompts?.title || DEFAULT_AI_PROMPTS.title;
@@ -416,10 +429,10 @@ export async function generateSummary(
     config: AiConfig = {},
     onChunk?: (text: string) => void,
     relationship?: RelationshipContext,
-    cancelToken?: AiCancelToken
+    cancelToken?: AiCancelToken,
 ): Promise<string[]> {
     if (!text || text.trim().length === 0) {
-        console.warn('[AI] generateSummary called with empty text');
+        logAi('warn', 'generateSummary called with empty text');
         return [];
     }
     let prompt = config.prompts?.summary || DEFAULT_AI_PROMPTS.summary;
@@ -433,8 +446,8 @@ export async function generateSummary(
     // Parse bullet points: split by newline, strip "• " or "- " prefixes
     const bullets = raw
         .split('\n')
-        .map(line => line.replace(/^[\s•\-*]+/, '').trim())
-        .filter(line => line.length > 0);
+        .map((line) => line.replace(/^[\s•\-*]+/, '').trim())
+        .filter((line) => line.length > 0);
 
     // Clamp to 2-5 bullets
     return bullets.slice(0, 5);
@@ -451,14 +464,17 @@ export async function checkGrammar(
     text: string,
     config: AiConfig = {},
     onChunk?: (text: string) => void,
-    cancelToken?: AiCancelToken
+    cancelToken?: AiCancelToken,
 ): Promise<GrammarSuggestion[]> {
     const prompt = config.prompts?.grammar || DEFAULT_AI_PROMPTS.grammar;
     const raw = await ollamaChat(prompt, text, config, {}, onChunk, cancelToken);
 
     try {
         // Try to extract JSON from the response (model might wrap in code fences)
-        const jsonStr = raw.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+        const jsonStr = raw
+            .replace(/```json?\s*/g, '')
+            .replace(/```/g, '')
+            .trim();
         const parsed = JSON.parse(jsonStr);
 
         if (!Array.isArray(parsed)) return [];
@@ -468,10 +484,10 @@ export async function checkGrammar(
             (item: unknown): item is GrammarSuggestion =>
                 typeof (item as Record<string, unknown>).original === 'string' &&
                 typeof (item as Record<string, unknown>).suggestion === 'string' &&
-                typeof (item as Record<string, unknown>).explanation === 'string'
+                typeof (item as Record<string, unknown>).explanation === 'string',
         );
     } catch (err: unknown) {
-        console.warn('[AI] Failed to parse grammar response as JSON:', raw, err);
+        logAi('warn', 'Failed to parse grammar response as JSON:', raw, err);
         return [];
     }
 }
@@ -592,38 +608,30 @@ export async function processNote(
     text: string,
     config: AiConfig = {},
     relationship?: RelationshipContext,
-    cancelToken?: AiCancelToken
+    cancelToken?: AiCancelToken,
 ): Promise<AiProcessResult> {
     const model = config.model || DEFAULT_OLLAMA_MODEL;
     try {
-        // eslint-disable-next-line no-console
-        console.log(`[AI 🔧] processNote START | model=${model} | textLength=${text.length} | relationship=${relationship ? 'yes' : 'no'}`);
+        logAi('info', 'processNote START', { model, textLength: text.length, hasRelationship: !!relationship });
 
-        // eslint-disable-next-line no-console
-        console.log(`[AI 🔧] Calling generateTitle... | model=${model}`);
+        logAi('info', 'Calling generateTitle...', { model });
         const title = await generateTitle(text, config, undefined, relationship, cancelToken);
-        // eslint-disable-next-line no-console
-        console.log(`[AI 🔧] generateTitle DONE | title="${title.slice(0, 50)}${title.length > 50 ? '...' : ''}"`);
+        logAi('info', 'generateTitle DONE', { titlePreview: title.slice(0, 50) });
 
-        // eslint-disable-next-line no-console
-        console.log(`[AI 🔧] Calling generateSummary... | model=${model}`);
+        logAi('info', 'Calling generateSummary...', { model });
         const summary = await generateSummary(text, config, undefined, relationship, cancelToken);
-        // eslint-disable-next-line no-console
-        console.log(`[AI 🔧] generateSummary DONE | bullets=${summary.length}`);
+        logAi('info', 'generateSummary DONE', { bulletCount: summary.length });
 
         if (!title || title.trim().length === 0 || summary.length === 0) {
-            // eslint-disable-next-line no-console
-            console.warn(`[AI 🔧] processNote FAILED — empty results | titleEmpty=${!title || title.trim().length === 0} | summaryEmpty=${summary.length === 0}`);
+            logAi('warn', 'processNote FAILED — empty results', { titleEmpty: !title || title.trim().length === 0, summaryEmpty: summary.length === 0 });
             return { title: title || '', summary, failed: true };
         }
 
-        // eslint-disable-next-line no-console
-        console.log(`[AI 🔧] processNote SUCCESS | model=${model}`);
+        logAi('info', 'processNote SUCCESS', { model });
         return { title, summary, failed: false };
     } catch (error: unknown) {
         const errMsg = error instanceof Error ? error.message : String(error);
-        // eslint-disable-next-line no-console
-        console.error(`[AI 🔧] processNote EXCEPTION | model=${model} | error=${errMsg}`);
+        logAi('error', 'processNote EXCEPTION', { model, error: errMsg });
         return { title: '', summary: [], failed: true };
     }
 }

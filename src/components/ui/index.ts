@@ -10,5 +10,5 @@ export { PinPadModal } from './PinPadModal';
 export { RichText } from './RichText';
 export { SettingsCard } from './SettingsCard';
 export { ShimmerLine } from './ShimmerLine';
-export { SwipeableModal } from './SwipeableModal';
+
 export { TickDial } from './TickDial';
