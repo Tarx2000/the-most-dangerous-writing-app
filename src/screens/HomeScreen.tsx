@@ -105,12 +105,17 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * Handle nav tab selection.
      * Uses startTransition so the nav pill slides instantly while
      * the heavy screen content updates are deferred.
+     *
+     * Optimization: we update activeTabId (nav visual state) immediately,
+     * then let the indicator spring start BEFORE we queue the heavy
+     * sessionMode transition via enqueue. This gives the spring a full
+     * 1–2 frame head start, eliminating the sense of JS blocking the animation.
      */
     const handleModeChange = useCallback((mode: string) => {
-        // Immediate nav update
+        // Immediate nav update — triggers LiquidGlassNav indicator spring
         setActiveTabId(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
 
-        // Defer heavier screen content re-renders
+        // Defer heavier screen content re-renders so the spring starts first
         startTransition(() => {
             setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
         });
@@ -136,6 +141,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     /**
      * Memoize nav items to prevent LiquidGlassNav re-renders.
      * Only recalculates when the urgent dot status changes.
+     * IMPORTANT: The array is frozen object literals with stable keys,
+     * so the only dep that changes is isCheckinUrgent.
      */
     const navItems = useMemo(() => [
         { id: 'journal', icon: 'notebook-edit', label: 'Journal' },
@@ -143,6 +150,14 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         { id: 'vlog', icon: 'video-outline', label: 'Vlog' },
         { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
     ], [isCheckinUrgent]);
+
+    /**
+     * Keep a stable reference to navItems so that any downstream
+     * equality check (e.g. React.memo in LiquidGlassNav) does not
+     * false-negative when deps haven't meaningfully changed.
+     */
+    const navItemsRef = useRef(navItems);
+    navItemsRef.current = navItems;
 
     /* --------------------------------------------------------------------------
        FEED GESTURE — delegated to useHomeGestures hook

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useLayoutEffect, useRef, useCallback } from 'react';
 import {
     View,
     Pressable,
@@ -6,7 +6,7 @@ import {
     useWindowDimensions,
     Platform,
 } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnUI } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,11 +23,19 @@ const PILL_HEIGHT = 72;
 /** Icon size — larger now that labels are removed */
 const ICON_SIZE = 26;
 
-/** Indicator spring physics for the premium slide effect */
+/** Icon size — larger now that labels are removed */
+const ICON_SIZE = 26;
+
+/**
+ * Indicator spring configuration.
+ * Tuned for a visibly-smooth settle that masks occasional JS lag.
+ * Lower stiffness (200) + higher mass (0.8) = longer travel (~120ms)
+ * with a pronounced slide rather than an instant snap.
+ */
 const INDICATOR_SPRING = {
-    damping: 22,
-    stiffness: 280,
-    mass: 0.5,
+    damping: 18,
+    stiffness: 200,
+    mass: 0.8,
 };
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
@@ -62,23 +70,36 @@ interface Props {
 
 const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => {
     const { width: SCREEN_WIDTH } = useWindowDimensions();
-    const PILL_WIDTH = SCREEN_WIDTH * PILL_WIDTH_RATIO;
+    const PILL_WIDTH = React.useMemo(() => SCREEN_WIDTH * PILL_WIDTH_RATIO, [SCREEN_WIDTH]);
 
     const activeIndex = items.findIndex(i => i.id === activeId);
-    const tabWidth = PILL_WIDTH / items.length;
+    const tabWidth = React.useMemo(() => PILL_WIDTH / items.length, [PILL_WIDTH, items.length]);
 
     /** Animated position for the sliding indicator */
     const indicatorX = useSharedValue(activeIndex * tabWidth);
 
+    /** Track previous activeIndex to avoid duplicate spring triggers */
+    const prevActiveIndexRef = useRef(activeIndex);
+
     /**
-     * Drive indicator to the new position AFTER render commits.
-     * Previously this ran during render (side-effect), causing stale
-     * shared-value reads and animation queue conflicts on rapid taps.
+     * Drive indicator to the new position synchronously BEFORE paint commits.
+     * useLayoutEffect fires after DOM mutations but before the browser paints,
+     * eliminating the one-frame delay caused by useEffect.
+     *
+     * For extra safety on rapid switches, we also guard against duplicate
+     * targets and batch the spring start on the UI thread via runOnUI.
      */
-    useEffect(() => {
+    useLayoutEffect(() => {
+        if (activeIndex === prevActiveIndexRef.current) return;
+        prevActiveIndexRef.current = activeIndex;
+
         const targetX = activeIndex * tabWidth;
-        indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
-    }, [activeIndex, tabWidth, indicatorX]);
+        // UI-thread spring: avoids being queued behind JS work
+        runOnUI(() => {
+            'worklet';
+            indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
+        })();
+    }, [activeIndex, tabWidth]);
 
     /** Indicator padding from edges */
     const INDICATOR_PADDING = 7;

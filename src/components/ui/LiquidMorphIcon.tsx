@@ -183,6 +183,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({ mode, size 
             const startTime = performance.now();
 
             const animateColor = () => {
+                'worklet';
                 const elapsed = performance.now() - startTime;
                 const progress = Math.min(elapsed / 150, 1);
 
