@@ -23,9 +23,6 @@ const PILL_HEIGHT = 72;
 /** Icon size — larger now that labels are removed */
 const ICON_SIZE = 26;
 
-/** Icon size — larger now that labels are removed */
-const ICON_SIZE = 26;
-
 /**
  * Indicator spring configuration.
  * Tuned for a visibly-smooth settle that masks occasional JS lag.

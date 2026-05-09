@@ -49,7 +49,7 @@ import {
     createCrossCuttingOps,
 } from '@/lib/storageOps';
 import { loadAllData as loadAllDataFromDataLoaders, inspectAsyncStorage, safeReMigrateAsyncStorage, exportAsyncStorageToFile } from '@/lib/dataLoaders';
-import { setLogMode as setGlobalLogMode } from '@/lib/logger';
+import { logger, setLogMode as setGlobalLogMode } from '@/lib/logger';
 import { CONFIG } from '@/config';
 import { processPendingCompressions } from '@/lib/videoCompressor';
 
