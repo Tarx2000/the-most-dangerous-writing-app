@@ -18,6 +18,7 @@ export type RootStackParamList = {
     /** Vlog recording screen — receives timeIndex for timer duration */
     VlogRecording: {
         timeIndex: number;
+        isQuickVideo?: boolean;
     };
     /** Post-writing AI review screen — enriches a saved note with AI title, summary, grammar */
     PostWriting: {

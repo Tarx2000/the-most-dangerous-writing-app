@@ -37,7 +37,7 @@ interface VideoCompressorModule {
     compress: (
         uri: string,
         options: Record<string, unknown>,
-        onProgress: (progress: number) => void
+        onProgress: (progress: number) => void,
     ) => Promise<string>;
 }
 
@@ -51,9 +51,12 @@ try {
     const mod = require('react-native-compressor') as { Video: VideoCompressorModule };
     VideoCompressor = mod.Video;
     isNativeModuleAvailable = true;
-    logger("info", "Compressor", "Native module loaded successfully");
+    logger('info', 'Compressor', 'Native module loaded successfully');
 } catch (err) {
-    console.warn('[Compressor] Native module not available (Expo Go mode) — compression will be skipped. Reason:', err instanceof Error ? err.message : String(err));
+    console.warn(
+        '[Compressor] Native module not available (Expo Go mode) — compression will be skipped. Reason:',
+        err instanceof Error ? err.message : String(err),
+    );
 }
 
 /**
@@ -114,7 +117,7 @@ export interface PendingCompression {
  * Falls back to 'balanced' if the ID is unknown.
  */
 export function getPreset(presetId: string): CompressionPreset {
-    const found = CONFIG.VLOG_COMPRESSION_PRESETS.find(p => p.id === presetId);
+    const found = CONFIG.VLOG_COMPRESSION_PRESETS.find((p) => p.id === presetId);
     // Default to 'balanced' if preset not found
     return found || CONFIG.VLOG_COMPRESSION_PRESETS[2];
 }
@@ -143,14 +146,14 @@ export async function compressVideo(
 ): Promise<CompressionResult> {
     // Get original file size
     const originalInfo = await FileSystem.getInfoAsync(inputUri);
-    const originalSizeBytes = ('size' in originalInfo ? (originalInfo as { size: number }).size : 0);
+    const originalSizeBytes = 'size' in originalInfo ? (originalInfo as { size: number }).size : 0;
 
     const preset = getPreset(presetId);
 
     // Skip compression if preset is 'off', missing config, or native module unavailable
     if (preset.id === 'off' || preset.maxSize === 0 || !isNativeModuleAvailable) {
         if (!isNativeModuleAvailable && preset.id !== 'off') {
-            logger("info", "Compressor", "Skipping compression — native module not available (Expo Go)");
+            logger('info', 'Compressor', 'Skipping compression — native module not available (Expo Go)');
         }
         onProgress?.(1);
         return {
@@ -163,7 +166,11 @@ export async function compressVideo(
     }
 
     try {
-        logger("info", "Compressor", `Starting compression: preset=${preset.id}, maxSize=${preset.maxSize}, bitrate=${preset.bitrate}`);
+        logger(
+            'info',
+            'Compressor',
+            `Starting compression: preset=${preset.id}, maxSize=${preset.maxSize}, bitrate=${preset.bitrate}`,
+        );
 
         // isNativeModuleAvailable being true guarantees VideoCompressor is set
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -180,13 +187,17 @@ export async function compressVideo(
 
         // Get compressed file size
         const compressedInfo = await FileSystem.getInfoAsync(compressedUri);
-        const compressedSizeBytes = ('size' in compressedInfo ? (compressedInfo as { size: number }).size : 0);
+        const compressedSizeBytes = 'size' in compressedInfo ? (compressedInfo as { size: number }).size : 0;
 
         // If compression somehow made the file bigger, use the original
         if (compressedSizeBytes >= originalSizeBytes) {
-            logger("warn", "Compressor", "Compressed file is larger than original — keeping original");
+            logger('warn', 'Compressor', 'Compressed file is larger than original — keeping original');
             // Clean up the compressed file
-            try { await FileSystem.deleteAsync(compressedUri, { idempotent: true }); } catch (err) { logger("warn", "Compressor", "Failed to delete compressed file:", err); }
+            try {
+                await FileSystem.deleteAsync(compressedUri, { idempotent: true });
+            } catch (err) {
+                logger('warn', 'Compressor', 'Failed to delete compressed file:', err);
+            }
             onProgress?.(1);
             return {
                 outputUri: inputUri,
@@ -200,10 +211,11 @@ export async function compressVideo(
         const savingsPercent = Math.round((1 - compressedSizeBytes / originalSizeBytes) * 100);
         const origMb = (originalSizeBytes / 1024 / 1024).toFixed(1);
         const compMb = (compressedSizeBytes / 1024 / 1024).toFixed(1);
-        logger("info", "Compressor", `Done: ${origMb}MB → ${compMb}MB (${savingsPercent}% saved)`);
+        logger('info', 'Compressor', `Done: ${origMb}MB → ${compMb}MB (${savingsPercent}% saved)`);
 
-        // Replace the original file with the compressed version
-        await FileSystem.deleteAsync(inputUri, { idempotent: true });
+        // Replace the original file with the compressed version.
+        // moveAsync overwrites the destination, so we never delete the original first.
+        // This eliminates the window where a crash would leave us with no file.
         await FileSystem.moveAsync({ from: compressedUri, to: inputUri });
 
         onProgress?.(1);
@@ -215,7 +227,7 @@ export async function compressVideo(
             savingsPercent,
         };
     } catch (error) {
-        logger("error", "Compressor", "Compression failed, keeping original:", error);
+        logger('error', 'Compressor', 'Compression failed, keeping original:', error);
         onProgress?.(1);
         return {
             outputUri: inputUri,
@@ -244,11 +256,11 @@ export async function addToPendingQueue(entry: PendingCompression): Promise<void
         const raw = await storage.getItem(CONFIG.PENDING_COMPRESSION_KEY);
         const queue: PendingCompression[] = raw ? JSON.parse(raw) : [];
         // Avoid duplicates
-        const filtered = queue.filter(p => p.vlogId !== entry.vlogId);
+        const filtered = queue.filter((p) => p.vlogId !== entry.vlogId);
         filtered.push(entry);
         await storage.setItem(CONFIG.PENDING_COMPRESSION_KEY, JSON.stringify(filtered));
     } catch (error) {
-        logger("error", "Compressor", "Failed to add to pending queue:", error);
+        logger('error', 'Compressor', 'Failed to add to pending queue:', error);
     }
 }
 
@@ -261,10 +273,10 @@ export async function removeFromPendingQueue(vlogId: string): Promise<void> {
         const raw = await storage.getItem(CONFIG.PENDING_COMPRESSION_KEY);
         if (!raw) return;
         const queue: PendingCompression[] = JSON.parse(raw);
-        const filtered = queue.filter(p => p.vlogId !== vlogId);
+        const filtered = queue.filter((p) => p.vlogId !== vlogId);
         await storage.setItem(CONFIG.PENDING_COMPRESSION_KEY, JSON.stringify(filtered));
     } catch (error) {
-        logger("error", "Compressor", "Failed to remove from pending queue:", error);
+        logger('error', 'Compressor', 'Failed to remove from pending queue:', error);
     }
 }
 
@@ -294,14 +306,14 @@ export async function processPendingCompressions(
         const queue: PendingCompression[] = JSON.parse(raw);
         if (queue.length === 0) return 0;
 
-        logger("info", "Compressor", `Found ${queue.length} pending compression(s), processing...`);
+        logger('info', 'Compressor', `Found ${queue.length} pending compression(s), processing...`);
 
         for (const entry of queue) {
             try {
                 // Check if the file still exists
                 const fileInfo = await FileSystem.getInfoAsync(entry.inputUri);
                 if (!fileInfo.exists) {
-                    logger("info", "Compressor", `Pending file missing, removing from queue: ${entry.vlogId}`);
+                    logger('info', 'Compressor', `Pending file missing, removing from queue: ${entry.vlogId}`);
                     await removeFromPendingQueue(entry.vlogId);
                     continue;
                 }
@@ -321,15 +333,18 @@ export async function processPendingCompressions(
                 await removeFromPendingQueue(entry.vlogId);
                 processed++;
 
-                logger("info", "Compressor", `Pending compression completed: ${entry.vlogId} (${result.savingsPercent}% saved)`);
+                logger(
+                    'info',
+                    'Compressor',
+                    `Pending compression completed: ${entry.vlogId} (${result.savingsPercent}% saved)`,
+                );
             } catch (error) {
-                logger("error", "Compressor", `Failed to process pending compression for ${entry.vlogId}:`, error);
+                logger('error', 'Compressor', `Failed to process pending compression for ${entry.vlogId}:`, error);
             }
         }
     } catch (error) {
-        logger("error", "Compressor", "Failed to process pending queue:", error);
+        logger('error', 'Compressor', 'Failed to process pending queue:', error);
     }
 
     return processed;
 }
-

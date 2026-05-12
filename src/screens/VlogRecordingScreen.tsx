@@ -1,7 +1,16 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, StatusBar, Platform, Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence, withRepeat, cancelAnimation } from 'react-native-reanimated';
+import { useKeepAwake } from 'expo-keep-awake';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withTiming,
+    withSequence,
+    withRepeat,
+    cancelAnimation,
+} from 'react-native-reanimated';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
@@ -14,7 +23,13 @@ import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { generateId } from '@/lib/utils';
-import { compressVideo, addToPendingQueue, removeFromPendingQueue, isCompressionAvailable } from '@/lib/videoCompressor';
+import {
+    compressVideo,
+    addToPendingQueue,
+    removeFromPendingQueue,
+    isCompressionAvailable,
+} from '@/lib/videoCompressor';
+import { logger } from '@/lib/logger';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VlogRecording'>;
 
@@ -35,29 +50,36 @@ const PULSE_DURATION_MS = 1200;
  * 1. Request camera + microphone permissions
  * 2. Show 3-2-1 countdown with smooth animation
  * 3. Start recording (front camera, 1080p, with audio)
- * 4. Display countdown timer (MM:SS) in liquid glass overlay
- * 5. When timer reaches 0 → show stop button (user decides when to stop)
- * 6. On stop → save video to private app storage, update streak, navigate home
+ * 4. Display timer in liquid glass overlay
+ *    - Regular mode: countdown timer (MM:SS remaining)
+ *    - Quick Video mode: elapsed timer (MM:SS recorded)
+ * 5. Regular mode: when timer reaches 0 → show stop button
+ *    Quick Video mode: stop button visible from the start
+ * 6. On stop → save video to private app storage, navigate home
+ * 7. Compression (if enabled) runs asynchronously in the background
  *
  * The camera always faces the front (selfie mode).
- * No pause button exists. The user must complete the minimum timer duration.
  */
 export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
-    const { timeIndex } = route.params;
+    const { timeIndex, isQuickVideo } = route.params;
+
+    /* ── Keep screen awake during the entire recording flow ──────────── */
+    useKeepAwake();
 
     /* ── Timer duration from config ────────────────────────────────────── */
     const durationMin = CONFIG.VLOG_SESSION_OPTIONS_MINS[timeIndex] || 1;
-    const totalDurationSec = durationMin * 60;
+    const totalDurationSec = isQuickVideo ? 0 : durationMin * 60;
 
     /* ── Permissions ───────────────────────────────────────────────────── */
     const [cameraPermission, requestCameraPermission] = useCameraPermissions();
     const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
     /* ── State machine ─────────────────────────────────────────────────── */
-    type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'compressing' | 'saving' | 'idle';
+    type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'idle';
     const [phase, setPhase] = useState<RecordingPhase>('permissions');
     const [countdownNum, setCountdownNum] = useState(COUNTDOWN_SECONDS);
     const [timeRemaining, setTimeRemaining] = useState(totalDurationSec);
+    const [elapsedSec, setElapsedSec] = useState(0);
 
     /* ── Refs ──────────────────────────────────────────────────────────── */
     const cameraRef = useRef<CameraView>(null);
@@ -86,11 +108,9 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { saveVlog } = useVlogs();
     const { vlogQuality, compressionPreset } = usePreferences();
 
-    /* ── Compression progress (0.0 → 1.0) ─────────────────────────────── */
-    const [compressionProgress, setCompressionProgress] = useState(0);
-    const [compressionSavings, setCompressionSavings] = useState<string | null>(null);
+    const compressionPresetRef = useRef(compressionPreset);
+    compressionPresetRef.current = compressionPreset;
 
-    // Removed loadAllData call
     /* ── Permission flow ───────────────────────────────────────────────── */
     useEffect(() => {
         const checkPermissions = async () => {
@@ -107,7 +127,6 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             }
 
             if (camGranted && micGranted) {
-                // Small delay so camera preview has time to initialize
                 setTimeout(() => setPhase('countdown'), 500);
             }
         };
@@ -117,109 +136,118 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         }
     }, [phase, cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
 
-    /* ── Handle completed recording — save to private storage ──────────── */
-    const compressionPresetRef = useRef(compressionPreset);
-    compressionPresetRef.current = compressionPreset;
-
-    const handleRecordingComplete = useCallback(async (tempUri: string) => {
-        isRecordingRef.current = false;
-
-        // If user cancelled, just delete the temp file and go back
-        if (isCancelledRef.current) {
-            try {
-                await FileSystem.deleteAsync(tempUri, { idempotent: true });
-            } catch (err) { console.warn('[Vlog] Failed to delete temp file on cancel:', err); }
-            navigation.goBack();
-            return;
-        }
-
-        try {
-            // Ensure the vlogs directory exists
-            const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
-            const dirInfo = await FileSystem.getInfoAsync(vlogDir);
-            if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(vlogDir, { intermediates: true });
-            }
-
-            // Generate unique filename and move from cache to private storage
-            const vlogId = generateId();
-            const permanentPath = `${vlogDir}${vlogId}.mp4`;
-            await FileSystem.moveAsync({
-                from: tempUri,
-                to: permanentPath,
-            });
-
-            // Get raw file size before compression
-            const rawInfo = await FileSystem.getInfoAsync(permanentPath);
-            const rawSizeBytes = ('size' in rawInfo ? (rawInfo as { size: number }).size : 0);
-
-            // ── Compression phase ──────────────────────────────────────
-            const currentPreset = compressionPresetRef.current;
-            let finalSizeBytes = rawSizeBytes;
-            let originalSizeBytes: number | undefined;
-
-            if (currentPreset !== 'off' && isCompressionAvailable()) {
-                setPhase('compressing');
-                setCompressionProgress(0);
-
-                // Add to pending queue so we can resume if interrupted
-                await addToPendingQueue({
-                    vlogId,
-                    inputUri: permanentPath,
-                    presetId: currentPreset,
-                    createdAt: Date.now(),
-                });
-
-                const result = await compressVideo(
-                    permanentPath,
-                    currentPreset,
-                    (progress) => setCompressionProgress(progress),
-                );
-
-                finalSizeBytes = result.outputSizeBytes;
-                if (result.wasCompressed) {
-                    originalSizeBytes = result.originalSizeBytes;
-                    setCompressionSavings(
-                        `Saved ${result.savingsPercent}% — ${(result.originalSizeBytes / 1024 / 1024).toFixed(0)}MB → ${(result.outputSizeBytes / 1024 / 1024).toFixed(0)}MB`
-                    );
-                }
-
-                // Remove from pending queue — compression completed
-                await removeFromPendingQueue(vlogId);
-            }
-
-            setPhase('saving');
-
-            // Build the vlog metadata — use actual elapsed time, not the preset timer
-            const now = new Date();
-            const newVlog: SavedVlog = {
-                id: vlogId,
-                filePath: permanentPath,
-                dateStr: now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                timestamp: now.getTime(),
-                durationSec: elapsedRef.current,
-                fileSizeBytes: finalSizeBytes,
-                compressionPreset: currentPreset,
-                originalFileSizeBytes: originalSizeBytes,
-                compressionPending: false,
-            };
-
-            // Save to storage + update streak
-            const result = await saveVlog(newVlog);
-
-            // Navigate back to Home with streak info
+    /* ── Save the vlog to storage and navigate home ───────────────────── */
+    const saveAndNavigateHome = useCallback(
+        async (newVlog: SavedVlog, streakResult: { streakIncreased: boolean; newStreak: number }) => {
             navigation.reset({
                 index: 0,
-                routes: [{
-                    name: 'Home',
-                    params: {
-                        streakIncreased: result.streakIncreased,
-                        newStreak: result.newStreak,
+                routes: [
+                    {
+                        name: 'Home',
+                        params: {
+                            streakIncreased: streakResult.streakIncreased,
+                            newStreak: streakResult.newStreak,
+                        },
                     },
-                }],
+                ],
             });
-        } catch (err) { console.error('Failed to save vlog:', err); setPhase('idle'); Alert.alert('Save Failed', 'Unable to save your recording. Please try again.', [{ text: 'OK' }]); }
-    }, [saveVlog, navigation]);
+        },
+        [navigation],
+    );
+
+    /* ── Background compression — runs after user has already left ───── */
+    const runBackgroundCompression = useCallback(async (vlogId: string, permanentPath: string) => {
+        const currentPreset = compressionPresetRef.current;
+        if (currentPreset === 'off' || !isCompressionAvailable()) return;
+
+        try {
+            await addToPendingQueue({
+                vlogId,
+                inputUri: permanentPath,
+                presetId: currentPreset,
+                createdAt: Date.now(),
+            });
+
+            const result = await compressVideo(permanentPath, currentPreset);
+
+            if (result.wasCompressed) {
+                logger('info', 'VlogRecording', `Background compression success: ${result.savingsPercent}% saved`);
+            } else {
+                logger('warn', 'VlogRecording', 'Background compression did not reduce file size or failed');
+            }
+
+            await removeFromPendingQueue(vlogId);
+        } catch (error) {
+            logger('error', 'VlogRecording', 'Background compression failed, original preserved:', error);
+            // Do NOT remove from pending queue — processPendingCompressions will retry on next launch
+        }
+    }, []);
+
+    /* ── Handle completed recording — save immediately, compress later ─── */
+    const handleRecordingComplete = useCallback(
+        async (tempUri: string) => {
+            isRecordingRef.current = false;
+
+            if (isCancelledRef.current) {
+                try {
+                    await FileSystem.deleteAsync(tempUri, { idempotent: true });
+                } catch (err) {
+                    console.warn('[Vlog] Failed to delete temp file on cancel:', err);
+                }
+                navigation.goBack();
+                return;
+            }
+
+            try {
+                const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
+                const dirInfo = await FileSystem.getInfoAsync(vlogDir);
+                if (!dirInfo.exists) {
+                    await FileSystem.makeDirectoryAsync(vlogDir, { intermediates: true });
+                }
+
+                const vlogId = generateId();
+                const permanentPath = `${vlogDir}${vlogId}.mp4`;
+                await FileSystem.moveAsync({ from: tempUri, to: permanentPath });
+
+                const rawInfo = await FileSystem.getInfoAsync(permanentPath);
+                const rawSizeBytes = 'size' in rawInfo ? (rawInfo as { size: number }).size : 0;
+
+                const now = new Date();
+                const currentPreset = compressionPresetRef.current;
+                const shouldCompress = currentPreset !== 'off' && isCompressionAvailable();
+
+                const newVlog: SavedVlog = {
+                    id: vlogId,
+                    filePath: permanentPath,
+                    dateStr:
+                        now.toLocaleDateString() +
+                        ' ' +
+                        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    timestamp: now.getTime(),
+                    durationSec: elapsedRef.current,
+                    fileSizeBytes: rawSizeBytes,
+                    compressionPreset: shouldCompress ? currentPreset : 'off',
+                    originalFileSizeBytes: shouldCompress ? rawSizeBytes : undefined,
+                    compressionPending: shouldCompress,
+                };
+
+                const result = await saveVlog(newVlog);
+
+                // Navigate home immediately — user doesn't wait for compression
+                await saveAndNavigateHome(newVlog, result);
+
+                // Fire-and-forget compression in the background
+                if (shouldCompress) {
+                    runBackgroundCompression(vlogId, permanentPath);
+                }
+            } catch (err) {
+                console.error('Failed to save vlog:', err);
+                setPhase('idle');
+                Alert.alert('Save Failed', 'Unable to save your recording. Please try again.', [{ text: 'OK' }]);
+            }
+        },
+        [saveVlog, saveAndNavigateHome, runBackgroundCompression, navigation],
+    );
 
     /* ── Start recording ───────────────────────────────────────────────── */
     const startRecording = useCallback(async () => {
@@ -227,52 +255,58 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
         setPhase('recording');
         setTimeRemaining(totalDurationSec);
+        setElapsedSec(0);
         isRecordingRef.current = true;
         isCancelledRef.current = false;
         elapsedRef.current = 0;
 
-        // Start the countdown timer
+        // Quick Video: show stop button immediately
+        if (isQuickVideo) {
+            setPhase('canStop');
+            stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
+        }
+
+        // Start the timer
         let remaining = totalDurationSec;
         timerRef.current = setInterval(() => {
-            remaining--;
             elapsedRef.current++;
-            setTimeRemaining(remaining);
+            setElapsedSec(elapsedRef.current);
 
-            if (remaining <= 0) {
-                // Timer complete — show stop button, but DON'T stop recording
-                if (timerRef.current) {
-                    clearInterval(timerRef.current);
+            if (!isQuickVideo) {
+                remaining--;
+                setTimeRemaining(remaining);
+
+                if (remaining <= 0) {
+                    if (timerRef.current) clearInterval(timerRef.current);
+                    timerRef.current = null;
+                    setPhase('canStop');
+                    vibrate([0, 100, 50, 100]);
+                    stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
                 }
-                timerRef.current = null;
-                setPhase('canStop');
-                vibrate([0, 100, 50, 100]); // Double vibrate to signal timer done
-
-                // Slide in the stop button
-                stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
             }
         }, TIMER_TICK_MS);
 
-        // Actually start the camera recording (no maxDuration — we control stopping)
         try {
             const video = await cameraRef.current.recordAsync({});
-
-            // This promise resolves when stopRecording() is called
             if (video?.uri) {
                 await handleRecordingComplete(video.uri);
             }
-        } catch (err) { console.error('Recording error:', err); isRecordingRef.current = false; Alert.alert('Recording Failed', 'Unable to record video. Please try again.', [{ text: 'OK' }]); navigation.goBack(); }
-    }, [totalDurationSec, handleRecordingComplete, navigation, stopBtnSlide]);
+        } catch (err) {
+            console.error('Recording error:', err);
+            isRecordingRef.current = false;
+            Alert.alert('Recording Failed', 'Unable to record video. Please try again.', [{ text: 'OK' }]);
+            navigation.goBack();
+        }
+    }, [totalDurationSec, isQuickVideo, handleRecordingComplete, navigation, stopBtnSlide]);
 
-    /* ── Stop recording (user taps stop button after timer completes) ─── */
+    /* ── Stop recording (user taps stop button) ────────────────────────── */
     const stopRecording = useCallback(() => {
         if (!isRecordingRef.current) return;
-        setPhase('saving');
         cameraRef.current?.stopRecording();
     }, []);
 
     /**
      * Cancel recording — stops camera, discards the video file, and navigates back.
-     * Called when user taps the X button before the timer completes.
      */
     const cancelRecording = useCallback(() => {
         isCancelledRef.current = true;
@@ -285,11 +319,8 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             countdownRef.current = null;
         }
         if (isRecordingRef.current) {
-            // Stop the camera — recordAsync promise will resolve, but handleRecordingComplete
-            // will check isCancelledRef and skip saving
             cameraRef.current?.stopRecording();
         } else {
-            // Not recording yet (still in countdown) — just navigate back
             navigation.goBack();
         }
     }, [navigation]);
@@ -301,14 +332,11 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         let count = COUNTDOWN_SECONDS;
         setCountdownNum(count);
 
-        /** Animate a single countdown number: scale up + fade in, then fade out */
         const animateNumber = () => {
             countdownScale.value = 0.3;
             countdownOpacity.value = 0;
-
             countdownScale.value = withSpring(1, { damping: 12, stiffness: 180 });
             countdownOpacity.value = withTiming(1, { duration: 200 });
-
             vibrate(50);
         };
 
@@ -320,10 +348,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                 setCountdownNum(count);
                 animateNumber();
             } else {
-                // Countdown complete — start recording
-                if (countdownRef.current) {
-                    clearInterval(countdownRef.current);
-                }
+                if (countdownRef.current) clearInterval(countdownRef.current);
                 countdownRef.current = null;
                 startRecording();
             }
@@ -342,10 +367,10 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         pulseAnim.value = withRepeat(
             withSequence(
                 withTiming(0.4, { duration: PULSE_DURATION_MS / 2 }),
-                withTiming(1, { duration: PULSE_DURATION_MS / 2 })
+                withTiming(1, { duration: PULSE_DURATION_MS / 2 }),
             ),
             -1,
-            false
+            false,
         );
 
         return () => {
@@ -404,22 +429,14 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             {/* 3-2-1 Countdown Overlay */}
             {phase === 'countdown' && (
                 <View style={styles.countdownOverlay}>
-                    <Animated.Text style={[
-                        styles.countdownText,
-                        countdownStyle
-                    ]}>
-                        {countdownNum}
-                    </Animated.Text>
+                    <Animated.Text style={[styles.countdownText, countdownStyle]}>{countdownNum}</Animated.Text>
                     <Text style={styles.countdownLabel}>Get Ready</Text>
                 </View>
             )}
 
-            {/* Cancel button — visible during countdown and recording (before timer ends) */}
+            {/* Cancel button — visible during countdown and recording (before canStop) */}
             {(phase === 'countdown' || phase === 'recording') && (
-                <AnimatedScaleButton
-                    style={styles.cancelBtn}
-                    onPress={cancelRecording}
-                >
+                <AnimatedScaleButton style={styles.cancelBtn} onPress={cancelRecording}>
                     <View style={styles.cancelBtnInner}>
                         <MaterialCommunityIcons name="close" size={22} color={theme.colors.textPrimary} />
                     </View>
@@ -427,7 +444,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             )}
 
             {/* Recording UI — Timer bar + recording indicator */}
-            {(phase === 'recording' || phase === 'canStop' || phase === 'compressing' || phase === 'saving') && (
+            {(phase === 'recording' || phase === 'canStop') && (
                 <>
                     {/* Top glass bar — Timer + Recording dot */}
                     <View style={styles.topBarWrapper}>
@@ -438,95 +455,62 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                             <View style={styles.topBarContent}>
                                 {/* Pulsing recording dot */}
                                 <View style={styles.recIndicator}>
-                                    <Animated.View style={[
-                                        styles.recDot,
-                                        pulseStyle,
-                                    ]} />
+                                    <Animated.View style={[styles.recDot, pulseStyle]} />
                                     <Text style={styles.recText}>
-                                        {phase === 'compressing' ? 'OPTIMIZING...' : phase === 'canStop' ? 'COMPLETE' : phase === 'saving' ? 'SAVING...' : 'REC'}
+                                        {isQuickVideo ? 'REC' : phase === 'canStop' ? 'COMPLETE' : 'REC'}
                                     </Text>
                                 </View>
 
-                                {/* Timer countdown */}
-                                <Text style={[
-                                    styles.timerText,
-                                    phase === 'canStop' && styles.timerComplete,
-                                ]}>
-                                    {phase === 'canStop'
-                                        ? formatTime(0)
-                                        : formatTime(timeRemaining)
-                                    }
+                                {/* Timer display */}
+                                <Text
+                                    style={[
+                                        styles.timerText,
+                                        phase === 'canStop' && !isQuickVideo && styles.timerComplete,
+                                    ]}
+                                >
+                                    {isQuickVideo
+                                        ? formatTime(elapsedSec)
+                                        : phase === 'canStop'
+                                          ? formatTime(0)
+                                          : formatTime(timeRemaining)}
                                 </Text>
 
-                                {/* Duration badge */}
+                                {/* Duration / mode badge */}
                                 <View style={styles.durationBadge}>
-                                    <Text style={styles.durationBadgeText}>{durationMin}m</Text>
+                                    <Text style={styles.durationBadgeText}>
+                                        {isQuickVideo ? 'Quick' : `${durationMin}m`}
+                                    </Text>
                                 </View>
                             </View>
                         </View>
                     </View>
 
-                    {/* Bottom area — Stop button (only after timer completes) */}
+                    {/* Bottom area — Stop button */}
                     {phase === 'canStop' && (
-                        <Animated.View style={[
-                            styles.stopBtnWrapper,
-                            stopBtnStyle,
-                        ]}>
+                        <Animated.View style={[styles.stopBtnWrapper, stopBtnStyle]}>
                             <View style={styles.stopBtnContainer}>
                                 <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
                                 <View style={styles.topBarTint} />
 
-                                <Text style={styles.stopHintText}>Timer complete! You can continue or stop.</Text>
+                                <Text style={styles.stopHintText}>
+                                    {isQuickVideo
+                                        ? 'Recording your quick video...'
+                                        : 'Timer complete! You can continue or stop.'}
+                                </Text>
 
-                                <AnimatedScaleButton
-                                    style={styles.stopBtn}
-                                    onPress={stopRecording}
-                                >
+                                <AnimatedScaleButton style={styles.stopBtn} onPress={stopRecording}>
                                     <View style={styles.stopBtnInner}>
-                                        <MaterialCommunityIcons name="stop" size={32} color={theme.colors.textPrimary} />
+                                        <MaterialCommunityIcons
+                                            name="stop"
+                                            size={32}
+                                            color={theme.colors.textPrimary}
+                                        />
                                     </View>
                                 </AnimatedScaleButton>
 
                                 <Text style={styles.stopBtnLabel}>Stop & Save</Text>
                             </View>
                         </Animated.View>
-                    )}
-
-                    {/* Compression overlay — shown between recording and saving */}
-                    {phase === 'compressing' && (
-                        <View style={styles.savingOverlay}>
-                            <View style={styles.savingCard}>
-                                <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
-                                <View style={styles.topBarTint} />
-                                <View style={styles.compressionRing}>
-                                    <View style={[styles.compressionRingFill, {
-                                        transform: [{ rotate: `${compressionProgress * 360}deg` }],
-                                    }]} />
-                                    <Text style={styles.compressionPercent}>
-                                        {Math.round(compressionProgress * 100)}%
-                                    </Text>
-                                </View>
-                                <Text style={styles.savingText}>Optimizing your vlog...</Text>
-                                <Text style={styles.compressionSubtext}>
-                                    This keeps the quality but reduces file size
-                                </Text>
-                            </View>
-                        </View>
-                    )}
-
-                    {/* Saving overlay */}
-                    {(phase === 'saving') && (
-                        <View style={styles.savingOverlay}>
-                            <View style={styles.savingCard}>
-                                <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
-                                <View style={styles.topBarTint} />
-                                <MaterialCommunityIcons name="check-circle" size={48} color={theme.colors.green} />
-                                <Text style={styles.savingText}>Saving Vlog...</Text>
-                                {compressionSavings && (
-                                    <Text style={styles.compressionSavingsText}>{compressionSavings}</Text>
-                                )}
-                            </View>
-                        </View>
                     )}
                 </>
             )}
@@ -542,7 +526,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     );
 };
 
-/* ──────────────────────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -694,75 +678,6 @@ const styles = StyleSheet.create({
         zIndex: 2,
     },
 
-    /* ── Saving Overlay ────────────────────────────────────────────────── */
-    savingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.overlayVideoMuted,
-        zIndex: 20,
-    },
-    savingCard: {
-        borderRadius: 28,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: theme.colors.glassBorderMedium,
-        padding: 40,
-        alignItems: 'center',
-        minWidth: 200,
-    },
-    savingText: {
-        color: theme.colors.textPrimary,
-        fontSize: 18,
-        fontWeight: '700',
-        marginTop: 16,
-        zIndex: 2,
-    },
-
-    /* ── Compression Progress ──────────────────────────────────────────── */
-    compressionRing: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        borderWidth: 3,
-        borderColor: theme.colors.glassHighlight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 2,
-    },
-    compressionRingFill: {
-        position: 'absolute',
-        top: -3,
-        left: -3,
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        borderWidth: 3,
-        borderColor: theme.colors.green,
-        borderTopColor: 'transparent',
-        borderRightColor: 'transparent',
-    },
-    compressionPercent: {
-        color: theme.colors.textPrimary,
-        fontSize: 22,
-        fontWeight: '800',
-        fontVariant: ['tabular-nums'] as ('tabular-nums')[] | undefined,
-    },
-    compressionSubtext: {
-        color: theme.colors.textDim,
-        fontSize: 13,
-        marginTop: 8,
-        zIndex: 2,
-        textAlign: 'center',
-    },
-    compressionSavingsText: {
-        color: theme.colors.green,
-        fontSize: 13,
-        fontWeight: '600',
-        marginTop: 8,
-        zIndex: 2,
-    },
-
     /* ── Permission States ─────────────────────────────────────────────── */
     permissionDenied: {
         flex: 1,
@@ -823,8 +738,3 @@ const styles = StyleSheet.create({
 });
 
 export default VlogRecordingScreen;
-
-
-
-
-
