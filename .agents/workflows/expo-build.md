@@ -21,7 +21,21 @@ description: Local Android Build — runs all tests first, then builds a release
 
 ---
 
-## Step 1 — Run Test Suite
+## Step 1 — Lint Check (Zero Errors Required)
+
+Run ESLint. **The build is blocked if any errors are present.**
+
+```bash
+npm run lint
+```
+
+> [!CAUTION]
+> **STOP HERE if ESLint reports any errors.** Do NOT proceed to Step 2.  
+> Warnings are acceptable, but **errors must be zero**. Report the error output and help the user fix it. Only continue after `npm run lint` exits clean.
+
+---
+
+## Step 2 — Run Test Suite
 
 Run all project tests. **Every single test must pass before proceeding.**
 
@@ -30,7 +44,7 @@ npm test
 ```
 
 > [!CAUTION]
-> **STOP HERE if any test fails.** Do NOT proceed to Step 2.  
+> **STOP HERE if any test fails.** Do NOT proceed to Step 3.  
 > Instead, report the failing tests to the user and help them fix the issues. But dont fix anything yourself! ONLY REPORT THE ISSUE!
 > Only continue to the build step after re-running tests and confirming 100% pass rate.
 
@@ -38,13 +52,22 @@ npm test
 
 ---
 
-## Step 2 — Build Release APK
+## Step 3 — Build Release APK
 
 Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction):
 
+**Unix/macOS:**
 ```bash
 cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
+
+**Windows (must use `cmd /c` for `.bat` scripts):**
+```cmd
+cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a"
+```
+
+> [!NOTE]
+> `gradlew.bat` is a batch file and requires the `cmd /c` wrapper to execute correctly in non-CMD shells. Direct execution via `cd android && gradlew.bat ...` fails with "'gradlew.bat' is not recognized" because the shell spawns a new process that cannot resolve `.bat` files directly.
 
 ---
 
@@ -75,3 +98,4 @@ org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
 - **"Metro bundler error after installing native modules"**: Run `npx expo start -c` to clear cache.
 - **"Build fails with missing babel-preset-expo"**: Run `npm install --save-dev babel-preset-expo`.
 - **"App crashes on startup after adding reanimated"**: Ensure `babel.config.js` includes `'react-native-reanimated/plugin'` as the LAST plugin.
+- **`gradlew.bat` not recognized on Windows**: Batch files (`.bat`) cannot be executed directly from non-CMD shells. Always use `cmd /c "cd /d android && gradlew.bat ..."` instead of `cd android && gradlew.bat ...`.
