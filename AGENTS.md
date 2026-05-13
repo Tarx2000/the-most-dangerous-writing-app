@@ -8,6 +8,7 @@ React Native (Expo SDK 55) journaling app where stopping typing destroys your te
 - **Animation**: React Native Reanimated v4 + React Native Gesture Handler + Flubber (SVG path morphing)
 - **Storage**: SQLite (expo-sqlite v15) for structured data, AsyncStorage for legacy migration flags, expo-file-system (vlog video files)
 - **AI**: Ollama Cloud API (XHR streaming) with singleton queue manager (`aiQueue.ts`)
+- **Compression**: Singleton video compression queue (`compressionQueue.ts`) with real-time progress, retries, and UI troubleshooting panel
 - **Security**: expo-local-authentication (3-tier biometric unlock)
 - **Build**: Babel with react-compiler plugin (target 19), TypeScript 5.9 strict mode
 
@@ -22,17 +23,19 @@ src/
     index.ts               — All TypeScript interfaces (SavedNote, Person, SavedVlog, AiJob, etc.)
     navigation.types.ts    — RootStackParamList
     flubber.d.ts           — Flubber type declarations
-  lib/
-    aiService.ts           — XHR streaming client for Ollama Cloud
-    aiQueue.ts             — Singleton AI job queue (persistence, retry, health checks)
-    aiLogger.ts            — Structured AI operation logging (FIFO 200 entries)
-    utils.ts               — generateId() utility
-    hooks/
-      useStorage.tsx       — 8 domain contexts + providers
-      useSession.ts        — Writing session idle timer + death logic
-      useSecurity.ts       — 3-tier biometric security
-      useAiQueueProvider.tsx — Single-instance AI queue context provider
-      useThumbnails.ts     — Lazy video thumbnail extraction
+    lib/
+      aiService.ts           — XHR streaming client for Ollama Cloud
+      aiQueue.ts             — Singleton AI job queue (persistence, retry, health checks)
+      compressionQueue.ts    — Singleton compression job queue (progress, retry, cancel, dev UI)
+      aiLogger.ts            — Structured AI operation logging (FIFO 200 entries)
+      utils.ts               — generateId() utility
+      hooks/
+        useStorage.tsx       — 8 domain contexts + providers
+        useSession.ts        — Writing session idle timer + death logic
+        useSecurity.ts       — 3-tier biometric security
+        useAiQueueProvider.tsx — Single-instance AI queue context provider
+        useCompressionQueueProvider.tsx — Single-instance compression queue context provider
+        useThumbnails.ts     — Lazy video thumbnail extraction
   screens/
     HomeScreen.tsx         — Root container (horizontal swipe: Start/Library, vertical: Feed)
     StartScreen.tsx        — Mode selection + settings + AI config

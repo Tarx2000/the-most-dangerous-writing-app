@@ -3,12 +3,12 @@ import { Platform } from 'react-native';
 /** Re-export tweet threshold for convenience (zero native deps, safe in Jest) */
 export { TWEET_THRESHOLD, isTweet } from './tweet';
 
-export const APP_VERSION = "1.5.7";
+export const APP_VERSION = '1.5.7';
 export const CONFIG = {
     DIFFICULTIES: [
         { label: 'EASY', value: 12000, desc: '12s Idle Limit' },
         { label: 'MID', value: 8000, desc: '8s Idle Limit' },
-        { label: 'HARD', value: 5000, desc: '5s Idle Limit' }
+        { label: 'HARD', value: 5000, desc: '5s Idle Limit' },
     ],
     BLUR_RATIO_START: 0.5,
     TICK_RATE_MS: 100,
@@ -57,10 +57,34 @@ export const CONFIG = {
      * 'balanced' is the default — ~60% file size reduction with great quality.
      */
     VLOG_COMPRESSION_PRESETS: [
-        { id: 'off', label: 'Off (Raw)', desc: 'No compression — largest files, original quality', maxSize: 0, bitrate: 0 },
-        { id: 'light', label: 'Light', desc: '~40% smaller, virtually identical quality', maxSize: 1920, bitrate: 4_000_000 },
-        { id: 'balanced', label: 'Balanced', desc: '~60% smaller, great quality (recommended)', maxSize: 1080, bitrate: 2_500_000 },
-        { id: 'max', label: 'Maximum Savings', desc: '~80% smaller, good quality, smaller resolution', maxSize: 720, bitrate: 1_200_000 },
+        {
+            id: 'off',
+            label: 'Off (Raw)',
+            desc: 'No compression — largest files, original quality',
+            maxSize: 0,
+            bitrate: 0,
+        },
+        {
+            id: 'light',
+            label: 'Light',
+            desc: '~40% smaller, virtually identical quality',
+            maxSize: 1920,
+            bitrate: 4_000_000,
+        },
+        {
+            id: 'balanced',
+            label: 'Balanced',
+            desc: '~60% smaller, great quality (recommended)',
+            maxSize: 1080,
+            bitrate: 2_500_000,
+        },
+        {
+            id: 'max',
+            label: 'Maximum Savings',
+            desc: '~80% smaller, good quality, smaller resolution',
+            maxSize: 720,
+            bitrate: 1_200_000,
+        },
     ] as const,
 
     /**
@@ -74,8 +98,11 @@ export const CONFIG = {
         '2160p': 12_000_000,
     } as Record<string, number>,
 
-    /** AsyncStorage key for tracking pending (interrupted) compressions */
+    /** AsyncStorage key for tracking pending (interrupted) compressions — LEGACY, migrated on startup */
     PENDING_COMPRESSION_KEY: 'PENDING_COMPRESSIONS',
+
+    /** AsyncStorage key for the new compression job queue (supersedes PENDING_COMPRESSION_KEY) */
+    COMPRESSION_JOBS_KEY: 'COMPRESSION_JOBS_QUEUE',
 
     /** AsyncStorage key for storing the fallback 4-digit security PIN */
     SECURITY_PIN_KEY: '@mda_security_pin',

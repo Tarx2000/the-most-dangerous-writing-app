@@ -45,5 +45,7 @@ try {
 4. Create and export domain-specific hook
 5. **Never** add state to the legacy `useStorage` monolith
 
+## Compression Queue Provider
+`CompressionQueueProvider` (`src/lib/hooks/useCompressionQueueProvider.tsx`) is a standalone context provider (not part of useStorage). It wraps `compressionQueue` singleton and auto-initializes with the latest `updateVlog` callback from `useVlogs()`. Use `useCompressionQueueContext()` to access state and actions.
 ## Storage Adapter
 `src/lib/storage.ts` wraps `@react-native-async-storage/async-storage`. If switching to MMKV in a future dev build, only this file changes.

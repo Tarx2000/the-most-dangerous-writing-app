@@ -23,13 +23,8 @@ import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { generateId } from '@/lib/utils';
-import {
-    compressVideo,
-    addToPendingQueue,
-    removeFromPendingQueue,
-    isCompressionAvailable,
-} from '@/lib/videoCompressor';
-import { logger } from '@/lib/logger';
+import { isCompressionAvailable } from '@/lib/videoCompressor';
+import { useCompressionQueueContext } from '@/lib/hooks/useCompressionQueueProvider';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VlogRecording'>;
 
@@ -107,6 +102,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const { saveVlog } = useVlogs();
     const { vlogQuality, compressionPreset } = usePreferences();
+    const { enqueueVlog } = useCompressionQueueContext();
 
     const compressionPresetRef = useRef(compressionPreset);
     compressionPresetRef.current = compressionPreset;
@@ -155,33 +151,15 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         [navigation],
     );
 
-    /* ── Background compression — runs after user has already left ───── */
-    const runBackgroundCompression = useCallback(async (vlogId: string, permanentPath: string) => {
-        const currentPreset = compressionPresetRef.current;
-        if (currentPreset === 'off' || !isCompressionAvailable()) return;
-
-        try {
-            await addToPendingQueue({
-                vlogId,
-                inputUri: permanentPath,
-                presetId: currentPreset,
-                createdAt: Date.now(),
-            });
-
-            const result = await compressVideo(permanentPath, currentPreset);
-
-            if (result.wasCompressed) {
-                logger('info', 'VlogRecording', `Background compression success: ${result.savingsPercent}% saved`);
-            } else {
-                logger('warn', 'VlogRecording', 'Background compression did not reduce file size or failed');
-            }
-
-            await removeFromPendingQueue(vlogId);
-        } catch (error) {
-            logger('error', 'VlogRecording', 'Background compression failed, original preserved:', error);
-            // Do NOT remove from pending queue — processPendingCompressions will retry on next launch
-        }
-    }, []);
+    /* ── Background compression — enqueue via the centralized queue ──────── */
+    const runBackgroundCompression = useCallback(
+        async (vlogId: string, permanentPath: string) => {
+            const currentPreset = compressionPresetRef.current;
+            if (currentPreset === 'off' || !isCompressionAvailable()) return;
+            await enqueueVlog(vlogId, permanentPath, currentPreset);
+        },
+        [enqueueVlog],
+    );
 
     /* ── Handle completed recording — save immediately, compress later ─── */
     const handleRecordingComplete = useCallback(

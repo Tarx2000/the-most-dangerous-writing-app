@@ -18,9 +18,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import { usePreferences, useVlogs } from '@/lib/hooks/useStorage';
-import { compressVideo } from '@/lib/videoCompressor';
-import { logger } from '@/lib/logger';
+import { usePreferences } from '@/lib/hooks/useStorage';
+import { useCompressionQueueContext } from '@/lib/hooks/useCompressionQueueProvider';
 import type { VideoPlayer } from 'expo-video';
 
 /** Represents a bounding box in window coordinates (from view.measureInWindow) */
@@ -86,9 +85,10 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const CARD_TARGET_Y = (SCREEN_HEIGHT - CARD_HEIGHT) / 2;
     const [expandedIndex, setExpandedIndex] = useState(initialIndex);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-    const [isCompressing, setIsCompressing] = useState(false);
     const { devMode, compressionPreset: activeCompressionPreset } = usePreferences();
-    const { updateVlog } = useVlogs();
+    const { enqueueVlog, getJobForVlog } = useCompressionQueueContext();
+    const activeJob = getJobForVlog(vlogs[expandedIndex]?.id ?? '');
+    const isQueuedOrProcessing = !!activeJob;
 
     // Keep visible state synced locally for enter/exit animations
     const [isRendered, setIsRendered] = useState(visible);
@@ -250,23 +250,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
     const handleManualCompress = async () => {
         const vlog = vlogs[expandedIndex];
-        if (!vlog || isCompressing) return;
-        setIsCompressing(true);
-        try {
-            const result = await compressVideo(vlog.filePath, activeCompressionPreset);
-            if (result.wasCompressed) {
-                await updateVlog(vlog.id, {
-                    fileSizeBytes: result.outputSizeBytes,
-                    originalFileSizeBytes: result.originalSizeBytes,
-                    compressionPreset: activeCompressionPreset,
-                    compressionPending: false,
-                });
-            }
-        } catch (error) {
-            logger('error', 'VlogViewerModal', 'Manual compression failed', error);
-        } finally {
-            setIsCompressing(false);
-        }
+        if (!vlog || isQueuedOrProcessing) return;
+        await enqueueVlog(vlog.id, vlog.filePath, activeCompressionPreset);
     };
 
     /** Toggle play/pause on the active player.
@@ -453,28 +438,78 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                 </Text>
                             </View>
 
-                            {/* Compression trigger — shown when file is uncompressed or compression failed */}
-                            {(currentVlog.compressionPreset === 'off' ||
-                                !currentVlog.compressionPreset ||
-                                currentVlog.compressionPending) && (
-                                <View style={styles.compressBtnContainer} pointerEvents="box-none">
-                                    <AnimatedScaleButton
-                                        style={[styles.compressBtn, isCompressing && styles.compressBtnDisabled]}
-                                        onPress={handleManualCompress}
-                                        disabled={isCompressing}
-                                    >
+                            {/* Compression trigger / progress overlay */}
+                            {activeJob && (activeJob.status === 'processing' || activeJob.status === 'queued') && (
+                                <View style={styles.compressProgressOverlay} pointerEvents="box-none">
+                                    <View style={styles.compressProgressPill}>
                                         <MaterialCommunityIcons
-                                            name={isCompressing ? 'loading' : 'zip-box'}
-                                            size={16}
+                                            name={activeJob.status === 'processing' ? 'loading' : 'clock-outline'}
+                                            size={14}
                                             color={theme.colors.textPrimary}
                                             style={{ marginRight: 6 }}
                                         />
-                                        <Text style={styles.compressBtnText}>
-                                            {isCompressing ? 'Compressing...' : 'Compress Video'}
+                                        <Text style={styles.compressProgressText}>
+                                            {activeJob.status === 'processing'
+                                                ? `Compressing… ${Math.round((activeJob.progress ?? 0) * 100)}%`
+                                                : 'Queued for compression'}
                                         </Text>
-                                    </AnimatedScaleButton>
+                                    </View>
+                                    {activeJob.status === 'processing' && (
+                                        <View style={styles.compressProgressBarTrack}>
+                                            <View
+                                                style={[
+                                                    styles.compressProgressBarFill,
+                                                    { width: `${Math.round((activeJob.progress ?? 0) * 100)}%` },
+                                                ]}
+                                            />
+                                        </View>
+                                    )}
                                 </View>
                             )}
+
+                            {activeJob?.status === 'failed' && (
+                                <View style={styles.compressProgressOverlay} pointerEvents="box-none">
+                                    <View
+                                        style={[
+                                            styles.compressProgressPill,
+                                            { backgroundColor: theme.colors.dangerFill },
+                                        ]}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name="alert-circle-outline"
+                                            size={14}
+                                            color={theme.colors.danger}
+                                            style={{ marginRight: 6 }}
+                                        />
+                                        <Text
+                                            style={[styles.compressProgressText, { color: theme.colors.danger }]}
+                                            numberOfLines={1}
+                                        >
+                                            Failed{activeJob.error ? `: ${activeJob.error}` : ''}
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+
+                            {(currentVlog.compressionPreset === 'off' ||
+                                !currentVlog.compressionPreset ||
+                                currentVlog.compressionPending) &&
+                                !activeJob && (
+                                    <View style={styles.compressBtnContainer} pointerEvents="box-none">
+                                        <AnimatedScaleButton
+                                            style={[styles.compressBtn, { opacity: 1 }]}
+                                            onPress={handleManualCompress}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name="zip-box"
+                                                size={16}
+                                                color={theme.colors.textPrimary}
+                                                style={{ marginRight: 6 }}
+                                            />
+                                            <Text style={styles.compressBtnText}>Compress Video</Text>
+                                        </AnimatedScaleButton>
+                                    </View>
+                                )}
 
                             {/* Dev watermark overlay */}
                             {devMode && (
@@ -688,6 +723,43 @@ const styles = StyleSheet.create({
         color: theme.colors.textPrimary,
         fontSize: 12,
         fontWeight: '700',
+    },
+
+    compressProgressOverlay: {
+        position: 'absolute',
+        bottom: 12,
+        left: 12,
+        right: 12,
+        zIndex: 10,
+        alignItems: 'center',
+    },
+    compressProgressPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.overlayVideoStrong,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorderMedium,
+    },
+    compressProgressText: {
+        color: theme.colors.textPrimary,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    compressProgressBarTrack: {
+        width: '100%',
+        maxWidth: 200,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: theme.colors.glassSurface,
+        marginTop: 4,
+    },
+    compressProgressBarFill: {
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: theme.colors.primaryAction,
     },
 
     /* ── Compress Button ─────────────────────────────────────────────── */

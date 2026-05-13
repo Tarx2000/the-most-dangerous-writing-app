@@ -6,6 +6,7 @@ import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming } f
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
 import { AnimatedSymmetricalRing } from '@/components/ui/AnimatedSymmetricalRing';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
+import { useCompressionQueueContext } from '@/lib/hooks/useCompressionQueueProvider';
 import { clearAiLog, getAiLog } from '@/lib/aiLogger';
 import { theme } from '@/styles/theme';
 import { useSecurity } from '@/lib/hooks/useSecurity';
@@ -97,6 +98,9 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
 
     /** Central AI Queue — single instance via AiQueueProvider */
     const { queueState, startBatch, cancelBatch } = useAiQueueContext();
+
+    /** Compression Queue — single instance via CompressionQueueProvider */
+    const { compressionState, cancelJob, retryJob, clearPending } = useCompressionQueueContext();
 
     const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
     const isModalOpenRef = useRef(isModalOpen);
@@ -353,8 +357,24 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                                 <Text style={styles.heroTitle}>Free Writing</Text>
                                 <Text style={styles.heroSubtitle}>Write continuously, or all is lost.</Text>
                                 {getFeatureFlags().ENABLE_TWEET_IN_JOURNAL_MODE && (
-                                    <AnimatedScaleButton style={styles.tweetBtn} onPress={() => { vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'journal', personId: null, isTweet: true }); }}>
-                                        <MaterialCommunityIcons name="chat-processing-outline" size={16} color={theme.colors.background} />
+                                    <AnimatedScaleButton
+                                        style={styles.tweetBtn}
+                                        onPress={() => {
+                                            vibrate(30);
+                                            navigation.navigate('Writing', {
+                                                timeIndex: 0,
+                                                diffIndex,
+                                                mode: 'journal',
+                                                personId: null,
+                                                isTweet: true,
+                                            });
+                                        }}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name="chat-processing-outline"
+                                            size={16}
+                                            color={theme.colors.background}
+                                        />
                                         <Text style={styles.tweetBtnText}>New Tweet</Text>
                                     </AnimatedScaleButton>
                                 )}
@@ -381,8 +401,24 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                                     </Text>
                                 </AnimatedScaleButton>
                                 {selectedPersonId && getFeatureFlags().ENABLE_TWEET_IN_CIRCLE_MODE && (
-                                    <AnimatedScaleButton style={styles.tweetBtn} onPress={() => { vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isTweet: true }); }}>
-                                        <MaterialCommunityIcons name="chat-processing-outline" size={16} color={theme.colors.background} />
+                                    <AnimatedScaleButton
+                                        style={styles.tweetBtn}
+                                        onPress={() => {
+                                            vibrate(30);
+                                            navigation.navigate('Writing', {
+                                                timeIndex: 0,
+                                                diffIndex,
+                                                mode: 'circles',
+                                                personId: selectedPersonId,
+                                                isTweet: true,
+                                            });
+                                        }}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name="chat-processing-outline"
+                                            size={16}
+                                            color={theme.colors.background}
+                                        />
                                         <Text style={styles.tweetBtnText}>Tweet</Text>
                                     </AnimatedScaleButton>
                                 )}
@@ -602,6 +638,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                     loadAiLog,
                     clearAiLog,
                 }}
+                compressionState={compressionState}
+                onCancelCompression={cancelJob}
+                onRetryCompression={retryJob}
+                onClearPendingCompressions={clearPending}
                 activeFont={activeFont}
                 activeSize={activeSize}
             />
@@ -661,12 +701,12 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 20,
         marginTop: 15,
-        gap: 6
+        gap: 6,
     },
     tweetBtnText: {
         color: theme.colors.background,
         fontWeight: 'bold',
-        fontSize: 13
+        fontSize: 13,
     },
     personSmallSelectBtn: {
         backgroundColor: theme.colors.glassBorder,

@@ -28,7 +28,6 @@ import { logger, logAiQueue } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
 import { logAi, logStartupDiagnostics } from '@/lib/aiLogger';
-import { TWEET_THRESHOLD } from '@/config/tweet';
 import { generateId } from '@/lib/utils';
 import {
     AI_STORAGE_KEYS,
@@ -449,7 +448,9 @@ class AiQueueManager {
         // Filter notes that need processing (skip tweets — they never get AI)
         const notesToProcess = forceOverwrite
             ? allNotes.filter((n) => !n.isTweet)
-            : allNotes.filter((n) => !n.isTweet && (!n.aiTitle || !n.aiSummary || n.aiSummary.length === 0 || !n.aiModelUsed));
+            : allNotes.filter(
+                  (n) => !n.isTweet && (!n.aiTitle || !n.aiSummary || n.aiSummary.length === 0 || !n.aiModelUsed),
+              );
 
         if (notesToProcess.length === 0) return 0;
 
@@ -730,7 +731,11 @@ class AiQueueManager {
 
         // Skip AI title/summary for very short notes (too short to meaningfully summarize)
         const wordCount = note.text.match(/\S+/g)?.length ?? 0;
-        logAiQueue('info', 'processNext — wordCount check', { noteId: nextJob.noteId, wordCount, minRequired: MIN_AI_WORDS });
+        logAiQueue('info', 'processNext — wordCount check', {
+            noteId: nextJob.noteId,
+            wordCount,
+            minRequired: MIN_AI_WORDS,
+        });
         if (wordCount < MIN_AI_WORDS) {
             logAiQueue('info', 'processNext — SKIPPING (too short)', { noteId: nextJob.noteId });
             nextJob.status = 'done';
@@ -830,7 +835,9 @@ class AiQueueManager {
             }
 
             if (result.failed) {
-                logAiQueue('warn', 'processNext — result.failed=true, throwing to retry path', { noteId: nextJob.noteId });
+                logAiQueue('warn', 'processNext — result.failed=true, throwing to retry path', {
+                    noteId: nextJob.noteId,
+                });
                 throw new Error('AI processing returned empty results');
             }
 

@@ -19,7 +19,6 @@ import {
     DEFAULT_AI_PROMPTS,
 } from '@/config/ai';
 import { APP_VERSION, CONFIG, TWEET_THRESHOLD, isTweet } from '@/config';
-import { isTweet as isTweetDirect, TWEET_THRESHOLD as TWEET_THRESHOLD_DIRECT } from '@/config/tweet';
 
 describe('AI Config (ai.ts)', () => {
     describe('isApiKeyConfigured', () => {

@@ -13,6 +13,7 @@ import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { StorageProvider, useAiConfig } from '@/lib/hooks/useStorage';
 import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
+import { CompressionQueueProvider } from '@/lib/hooks/useCompressionQueueProvider';
 import { PinProvider } from '@/lib/hooks/usePinProvider';
 import { PinPadModal } from '@/components/ui/PinPadModal';
 import { ApiKeySetupModal } from '@/components/features/settings/ApiKeySetupModal';
@@ -38,34 +39,36 @@ perfMark('app.entry');
 
 // Global error handlers — catch unhandled errors that escape React boundaries
 if (typeof ErrorUtils !== 'undefined') {
-  try {
-    const originalHandler = ErrorUtils.getGlobalHandler();
-    ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
-      console.error('[GlobalErrorHandler]', isFatal ? 'FATAL' : 'NON-FATAL', error);
-      if (originalHandler) originalHandler(error, isFatal);
-    });
-  } catch {
-    // ErrorUtils may not be available on some runtimes
-  }
+    try {
+        const originalHandler = ErrorUtils.getGlobalHandler();
+        ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+            console.error('[GlobalErrorHandler]', isFatal ? 'FATAL' : 'NON-FATAL', error);
+            if (originalHandler) originalHandler(error, isFatal);
+        });
+    } catch {
+        // ErrorUtils may not be available on some runtimes
+    }
 }
 
 // Catch unhandled promise rejections (Hermes-specific, guarded)
 if (typeof globalThis !== 'undefined') {
-  try {
-    // Hermes fires unhandled promise events through the global error handler
-    // above — this is a safety net for any that slip through
-    const _global = globalThis as unknown as Record<string, unknown>;
-    const rejectionTracking = _global.__rejectionTracking as {
-      setUnhandledRejectionHandler?: (handler: (id: string, error: Error) => void) => void;
-    } | undefined;
-    if (rejectionTracking?.setUnhandledRejectionHandler) {
-      rejectionTracking.setUnhandledRejectionHandler((id: string, error: Error) => {
-        console.error('[UnhandledPromise]', id, error);
-      });
+    try {
+        // Hermes fires unhandled promise events through the global error handler
+        // above — this is a safety net for any that slip through
+        const _global = globalThis as unknown as Record<string, unknown>;
+        const rejectionTracking = _global.__rejectionTracking as
+            | {
+                  setUnhandledRejectionHandler?: (handler: (id: string, error: Error) => void) => void;
+              }
+            | undefined;
+        if (rejectionTracking?.setUnhandledRejectionHandler) {
+            rejectionTracking.setUnhandledRejectionHandler((id: string, error: Error) => {
+                console.error('[UnhandledPromise]', id, error);
+            });
+        }
+    } catch {
+        // Rejection tracking may not be available on all runtimes
     }
-  } catch {
-    // Rejection tracking may not be available on all runtimes
-  }
 }
 
 /**
@@ -73,86 +76,100 @@ if (typeof globalThis !== 'undefined') {
  * Lives inside StorageProvider so it can read/write aiConfig.
  */
 function AiConfigGate() {
-  const { aiApiKey, aiBaseUrl, aiModel, saveAiApiKey, saveAiBaseUrl, saveAiModel } = useAiConfig();
-  const [hasSkipped, setHasSkipped] = useState(false);
+    const { aiApiKey, aiBaseUrl, aiModel, saveAiApiKey, saveAiBaseUrl, saveAiModel } = useAiConfig();
+    const [hasSkipped, setHasSkipped] = useState(false);
 
-  const showSetup = !hasSkipped && !isApiKeyConfigured({ apiKey: aiApiKey });
+    const showSetup = !hasSkipped && !isApiKeyConfigured({ apiKey: aiApiKey });
 
-  return (
-    <>
-      <NavigationContainer theme={DarkTheme}>
-        <StatusBar hidden={true} translucent={true} />
-        <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: theme.colors.background } }}>
-          <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
-          <Stack.Screen name="Writing" component={withErrorBoundary(WritingScreen)} />
-          <Stack.Screen name="PostWriting" component={withErrorBoundary(PostWritingScreen)} />
-          <Stack.Screen name="VisionBoard" component={withErrorBoundary(VisionBoardScreen)} />
-          <Stack.Screen name="AlignmentWriting" component={withErrorBoundary(AlignmentWritingScreen)} />
-          <Stack.Screen name="VlogRecording" component={withErrorBoundary(VlogRecordingScreen)} />
-          <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
-        </Stack.Navigator>
-      </NavigationContainer>
-      <PinPadModal />
-      <ApiKeySetupModal
-        visible={showSetup}
-        initialKey={aiApiKey}
-        initialBaseUrl={aiBaseUrl}
-        initialModel={aiModel}
-        onSave={(key, url, m) => {
-          saveAiApiKey(key);
-          saveAiBaseUrl(url);
-          saveAiModel(m);
-        }}
-        onSkip={() => setHasSkipped(true)}
-      />
-    </>
-  );
+    return (
+        <>
+            <NavigationContainer theme={DarkTheme}>
+                <StatusBar hidden={true} translucent={true} />
+                <Stack.Navigator
+                    screenOptions={{
+                        headerShown: false,
+                        animation: 'fade',
+                        contentStyle: { backgroundColor: theme.colors.background },
+                    }}
+                >
+                    <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
+                    <Stack.Screen name="Writing" component={withErrorBoundary(WritingScreen)} />
+                    <Stack.Screen name="PostWriting" component={withErrorBoundary(PostWritingScreen)} />
+                    <Stack.Screen name="VisionBoard" component={withErrorBoundary(VisionBoardScreen)} />
+                    <Stack.Screen name="AlignmentWriting" component={withErrorBoundary(AlignmentWritingScreen)} />
+                    <Stack.Screen name="VlogRecording" component={withErrorBoundary(VlogRecordingScreen)} />
+                    <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
+                </Stack.Navigator>
+            </NavigationContainer>
+            <PinPadModal />
+            <ApiKeySetupModal
+                visible={showSetup}
+                initialKey={aiApiKey}
+                initialBaseUrl={aiBaseUrl}
+                initialModel={aiModel}
+                onSave={(key, url, m) => {
+                    saveAiApiKey(key);
+                    saveAiBaseUrl(url);
+                    saveAiModel(m);
+                }}
+                onSkip={() => setHasSkipped(true)}
+            />
+        </>
+    );
 }
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function AppContent() {
-  const [fontsLoaded] = useFonts({
-    ...MaterialCommunityIcons.font,
-    ...Feather.font,
-    PlayfairDisplay_400Regular,
-    SpaceMono_400Regular,
-    Caveat_400Regular,
-    Lora_400Regular,
-    ZillaSlab_400Regular,
-    CrimsonPro_400Regular,
-    DMSans_400Regular,
-    EagleLake_400Regular,
-  });
+    const [fontsLoaded] = useFonts({
+        ...MaterialCommunityIcons.font,
+        ...Feather.font,
+        PlayfairDisplay_400Regular,
+        SpaceMono_400Regular,
+        Caveat_400Regular,
+        Lora_400Regular,
+        ZillaSlab_400Regular,
+        CrimsonPro_400Regular,
+        DMSans_400Regular,
+        EagleLake_400Regular,
+    });
 
-  if (!fontsLoaded) {
+    if (!fontsLoaded) {
+        return (
+            <View
+                style={{
+                    flex: 1,
+                    backgroundColor: theme.colors.background,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                }}
+            >
+                <ActivityIndicator size="large" color={theme.colors.textPrimary} />
+            </View>
+        );
+    }
+
+    perfMark('fonts.loaded');
+
     return (
-      <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={theme.colors.textPrimary} />
-      </View>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <StorageProvider>
+                <PinProvider>
+                    <AiQueueProvider>
+                        <CompressionQueueProvider>
+                            <AiConfigGate />
+                        </CompressionQueueProvider>
+                    </AiQueueProvider>
+                </PinProvider>
+            </StorageProvider>
+        </GestureHandlerRootView>
     );
-  }
-
-  perfMark('fonts.loaded');
-
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <StorageProvider>
-        <PinProvider>
-          <AiQueueProvider>
-            <AiConfigGate />
-          </AiQueueProvider>
-        </PinProvider>
-      </StorageProvider>
-    </GestureHandlerRootView>
-  );
 }
 
 export default function App() {
-  return (
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
-  );
+    return (
+        <ErrorBoundary>
+            <AppContent />
+        </ErrorBoundary>
+    );
 }
-

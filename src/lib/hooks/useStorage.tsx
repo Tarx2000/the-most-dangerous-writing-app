@@ -21,16 +21,7 @@
  * wiring, and the provider tree.
  */
 
-import {
-    useState,
-    useCallback,
-    useMemo,
-    useRef,
-    createContext,
-    useContext,
-    useEffect,
-    type ReactNode,
-} from 'react';
+import { useState, useCallback, useMemo, useRef, createContext, useContext, useEffect, type ReactNode } from 'react';
 import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
 import {
     DEFAULT_AI_PROMPTS,
@@ -48,10 +39,13 @@ import {
     createAiConfigOps,
     createCrossCuttingOps,
 } from '@/lib/storageOps';
-import { loadAllData as loadAllDataFromDataLoaders, inspectAsyncStorage, safeReMigrateAsyncStorage, exportAsyncStorageToFile } from '@/lib/dataLoaders';
-import { logger, setLogMode as setGlobalLogMode } from '@/lib/logger';
-import { CONFIG } from '@/config';
-import { processPendingCompressions } from '@/lib/videoCompressor';
+import {
+    loadAllData as loadAllDataFromDataLoaders,
+    inspectAsyncStorage,
+    safeReMigrateAsyncStorage,
+    exportAsyncStorageToFile,
+} from '@/lib/dataLoaders';
+import { setLogMode as setGlobalLogMode } from '@/lib/logger';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONTEXT TYPE DEFINITIONS
@@ -151,10 +145,22 @@ interface VlogContextType {
 /** Cross-cutting storage operations */
 interface StorageActionsContextType {
     clearAllData: () => Promise<void>;
-    saveAlignmentReflection: (reflection: AlignmentReflection) => Promise<{ streakIncreased: boolean; newStreak: number }>;
+    saveAlignmentReflection: (
+        reflection: AlignmentReflection,
+    ) => Promise<{ streakIncreased: boolean; newStreak: number }>;
     loadAllData: () => Promise<void>;
-    inspectAsyncStorage: () => Promise<{ keys: string[]; keySizes: Record<string, number>; maybeJson: Record<string, { length: number; sample: string }> }>;
-    safeReMigrateAsyncStorage: () => Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number; skipped: boolean; errors: string[] }>;
+    inspectAsyncStorage: () => Promise<{
+        keys: string[];
+        keySizes: Record<string, number>;
+        maybeJson: Record<string, { length: number; sample: string }>;
+    }>;
+    safeReMigrateAsyncStorage: () => Promise<{
+        notesRecovered: number;
+        personsRecovered: number;
+        vlogsRecovered: number;
+        skipped: boolean;
+        errors: string[];
+    }>;
     exportAsyncStorageToFile: () => Promise<{ filePath: string; fileSizeKB: number; keyCount: number }>;
     scanOrphanVlogs: () => Promise<{ orphans: { fileName: string; fileSizeBytes: number; modDate: string }[] }>;
     reattachOrphanVlogs: () => Promise<{ reattached: number; failed: number }>;
@@ -211,246 +217,431 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [aiFavoriteModels, setAiFavoriteModels] = useState<string[]>([]);
 
     /* ── Refs (fresh-read pattern) --------------------------------─── */
-    const savedNotesRef = useRef(savedNotes); savedNotesRef.current = savedNotes;
-    const personsRef = useRef(persons); personsRef.current = persons;
-    const currentStreakRef = useRef(currentStreak); currentStreakRef.current = currentStreak;
-    const lastWinDateRef = useRef(lastWinDate); lastWinDateRef.current = lastWinDate;
-    const streakHistoryRef = useRef(streakHistory); streakHistoryRef.current = streakHistory;
-    const savedVlogsRef = useRef(savedVlogs); savedVlogsRef.current = savedVlogs;
-    const fontIndexRef = useRef(fontIndex); fontIndexRef.current = fontIndex;
-    const sizeIndexRef = useRef(sizeIndex); sizeIndexRef.current = sizeIndex;
-    const useBiometricsRef = useRef(useBiometrics); useBiometricsRef.current = useBiometrics;
-    const enableHapticsRef = useRef(enableHaptics); enableHapticsRef.current = enableHaptics;
-    const lockTimeoutMinsRef = useRef(lockTimeoutMins); lockTimeoutMinsRef.current = lockTimeoutMins;
-    const vlogQualityRef = useRef(vlogQuality); vlogQualityRef.current = vlogQuality;
-    const compressionPresetRef = useRef(compressionPreset); compressionPresetRef.current = compressionPreset;
-    const devModeRef = useRef(devMode); devModeRef.current = devMode;
-    const debugLayoutRef = useRef(debugLayout); debugLayoutRef.current = debugLayout;
-    const visionBoardRef = useRef(visionBoard); visionBoardRef.current = visionBoard;
-    const preferPinAuthRef = useRef(preferPinAuth); preferPinAuthRef.current = preferPinAuth;
-    const logModeRef = useRef(logMode); logModeRef.current = logMode;
-    const bookmarkedNoteIdsRef = useRef(bookmarkedNoteIds); bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
-    const feedCommentsRef = useRef(feedComments); feedCommentsRef.current = feedComments;
-    const aiApiKeyRef = useRef(aiApiKey); aiApiKeyRef.current = aiApiKey;
-    const aiBaseUrlRef = useRef(aiBaseUrl); aiBaseUrlRef.current = aiBaseUrl;
-    const aiModelRef = useRef(aiModel); aiModelRef.current = aiModel;
-    const aiGrammarModelRef = useRef(aiGrammarModel); aiGrammarModelRef.current = aiGrammarModel;
-    const aiPromptsRef = useRef(aiPrompts); aiPromptsRef.current = aiPrompts;
-    const autoGenerateSummariesRef = useRef(autoGenerateSummaries); autoGenerateSummariesRef.current = autoGenerateSummaries;
-    const aiFavoriteModelsRef = useRef(aiFavoriteModels); aiFavoriteModelsRef.current = aiFavoriteModels;
-    const autoPlayFeedVideosRef = useRef(autoPlayFeedVideos); autoPlayFeedVideosRef.current = autoPlayFeedVideos;
-    const totalVlogStorageBytesRef = useRef(totalVlogStorageBytes); totalVlogStorageBytesRef.current = totalVlogStorageBytes;
+    const savedNotesRef = useRef(savedNotes);
+    savedNotesRef.current = savedNotes;
+    const personsRef = useRef(persons);
+    personsRef.current = persons;
+    const currentStreakRef = useRef(currentStreak);
+    currentStreakRef.current = currentStreak;
+    const lastWinDateRef = useRef(lastWinDate);
+    lastWinDateRef.current = lastWinDate;
+    const streakHistoryRef = useRef(streakHistory);
+    streakHistoryRef.current = streakHistory;
+    const savedVlogsRef = useRef(savedVlogs);
+    savedVlogsRef.current = savedVlogs;
+    const fontIndexRef = useRef(fontIndex);
+    fontIndexRef.current = fontIndex;
+    const sizeIndexRef = useRef(sizeIndex);
+    sizeIndexRef.current = sizeIndex;
+    const useBiometricsRef = useRef(useBiometrics);
+    useBiometricsRef.current = useBiometrics;
+    const enableHapticsRef = useRef(enableHaptics);
+    enableHapticsRef.current = enableHaptics;
+    const lockTimeoutMinsRef = useRef(lockTimeoutMins);
+    lockTimeoutMinsRef.current = lockTimeoutMins;
+    const vlogQualityRef = useRef(vlogQuality);
+    vlogQualityRef.current = vlogQuality;
+    const compressionPresetRef = useRef(compressionPreset);
+    compressionPresetRef.current = compressionPreset;
+    const devModeRef = useRef(devMode);
+    devModeRef.current = devMode;
+    const debugLayoutRef = useRef(debugLayout);
+    debugLayoutRef.current = debugLayout;
+    const visionBoardRef = useRef(visionBoard);
+    visionBoardRef.current = visionBoard;
+    const preferPinAuthRef = useRef(preferPinAuth);
+    preferPinAuthRef.current = preferPinAuth;
+    const logModeRef = useRef(logMode);
+    logModeRef.current = logMode;
+    const bookmarkedNoteIdsRef = useRef(bookmarkedNoteIds);
+    bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
+    const feedCommentsRef = useRef(feedComments);
+    feedCommentsRef.current = feedComments;
+    const aiApiKeyRef = useRef(aiApiKey);
+    aiApiKeyRef.current = aiApiKey;
+    const aiBaseUrlRef = useRef(aiBaseUrl);
+    aiBaseUrlRef.current = aiBaseUrl;
+    const aiModelRef = useRef(aiModel);
+    aiModelRef.current = aiModel;
+    const aiGrammarModelRef = useRef(aiGrammarModel);
+    aiGrammarModelRef.current = aiGrammarModel;
+    const aiPromptsRef = useRef(aiPrompts);
+    aiPromptsRef.current = aiPrompts;
+    const autoGenerateSummariesRef = useRef(autoGenerateSummaries);
+    autoGenerateSummariesRef.current = autoGenerateSummaries;
+    const aiFavoriteModelsRef = useRef(aiFavoriteModels);
+    aiFavoriteModelsRef.current = aiFavoriteModels;
+    const autoPlayFeedVideosRef = useRef(autoPlayFeedVideos);
+    autoPlayFeedVideosRef.current = autoPlayFeedVideos;
+    const totalVlogStorageBytesRef = useRef(totalVlogStorageBytes);
+    totalVlogStorageBytesRef.current = totalVlogStorageBytes;
 
     /* ── Operation factories ---------------------------------------- */
-    const notesOps = useMemo(() => createNotesOps(
-        savedNotesRef, setSavedNotes,
-        currentStreakRef, setCurrentStreak,
-        lastWinDateRef, setLastWinDate,
-        streakHistoryRef, setStreakHistory,
-    ), []);
+    const notesOps = useMemo(
+        () =>
+            createNotesOps(
+                savedNotesRef,
+                setSavedNotes,
+                currentStreakRef,
+                setCurrentStreak,
+                lastWinDateRef,
+                setLastWinDate,
+                streakHistoryRef,
+                setStreakHistory,
+            ),
+        [],
+    );
 
-    const personsOps = useMemo(() => createPersonsOps(
-        personsRef, setPersons,
-        savedNotesRef, setSavedNotes,
-    ), []);
+    const personsOps = useMemo(() => createPersonsOps(personsRef, setPersons, savedNotesRef, setSavedNotes), []);
 
-    const vlogOps = useMemo(() => createVlogOps(
-        savedVlogsRef, setSavedVlogs,
-        totalVlogStorageBytesRef, setTotalVlogStorageBytes,
-        currentStreakRef,
-    ), []);
+    const vlogOps = useMemo(
+        () =>
+            createVlogOps(
+                savedVlogsRef,
+                setSavedVlogs,
+                totalVlogStorageBytesRef,
+                setTotalVlogStorageBytes,
+                currentStreakRef,
+            ),
+        [],
+    );
 
-    const feedOps = useMemo(() => createFeedOps(
-        bookmarkedNoteIdsRef, setBookmarkedNoteIds,
-        feedCommentsRef, setFeedComments,
-        autoPlayFeedVideosRef, setAutoPlayFeedVideos,
-    ), []);
+    const feedOps = useMemo(
+        () =>
+            createFeedOps(
+                bookmarkedNoteIdsRef,
+                setBookmarkedNoteIds,
+                feedCommentsRef,
+                setFeedComments,
+                autoPlayFeedVideosRef,
+                setAutoPlayFeedVideos,
+            ),
+        [],
+    );
 
-    const preferencesOps = useMemo(() => createPreferencesOps(
-        {
-            fontIndex: fontIndexRef, sizeIndex: sizeIndexRef,
-            useBiometrics: useBiometricsRef, enableHaptics: enableHapticsRef,
-            lockTimeoutMins: lockTimeoutMinsRef, vlogQuality: vlogQualityRef,
-            compressionPreset: compressionPresetRef, devMode: devModeRef,
-            debugLayout: debugLayoutRef, visionBoard: visionBoardRef,
-            preferPinAuth: preferPinAuthRef, logMode: logModeRef,
-        },
-        {
-            setFontIndex, setSizeIndex, setUseBiometrics, setEnableHaptics,
-            setLockTimeoutMins, setVlogQuality, setCompressionPreset,
-            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth, setLogMode,
-        },
-    ), []);
+    const preferencesOps = useMemo(
+        () =>
+            createPreferencesOps(
+                {
+                    fontIndex: fontIndexRef,
+                    sizeIndex: sizeIndexRef,
+                    useBiometrics: useBiometricsRef,
+                    enableHaptics: enableHapticsRef,
+                    lockTimeoutMins: lockTimeoutMinsRef,
+                    vlogQuality: vlogQualityRef,
+                    compressionPreset: compressionPresetRef,
+                    devMode: devModeRef,
+                    debugLayout: debugLayoutRef,
+                    visionBoard: visionBoardRef,
+                    preferPinAuth: preferPinAuthRef,
+                    logMode: logModeRef,
+                },
+                {
+                    setFontIndex,
+                    setSizeIndex,
+                    setUseBiometrics,
+                    setEnableHaptics,
+                    setLockTimeoutMins,
+                    setVlogQuality,
+                    setCompressionPreset,
+                    setDevMode,
+                    setDebugLayout,
+                    setVisionBoard,
+                    setPreferPinAuth,
+                    setLogMode,
+                },
+            ),
+        [],
+    );
 
-    const aiConfigOps = useMemo(() => createAiConfigOps(
-        {
-            aiApiKey: aiApiKeyRef, aiBaseUrl: aiBaseUrlRef,
-            aiModel: aiModelRef, aiGrammarModel: aiGrammarModelRef,
-            aiPrompts: aiPromptsRef, autoGenerateSummaries: autoGenerateSummariesRef,
-            aiFavoriteModels: aiFavoriteModelsRef,
-        },
-        {
-            setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
-            setAiPrompts, setAutoGenerateSummaries, setAiFavoriteModels,
-        },
-    ), []);
+    const aiConfigOps = useMemo(
+        () =>
+            createAiConfigOps(
+                {
+                    aiApiKey: aiApiKeyRef,
+                    aiBaseUrl: aiBaseUrlRef,
+                    aiModel: aiModelRef,
+                    aiGrammarModel: aiGrammarModelRef,
+                    aiPrompts: aiPromptsRef,
+                    autoGenerateSummaries: autoGenerateSummariesRef,
+                    aiFavoriteModels: aiFavoriteModelsRef,
+                },
+                {
+                    setAiApiKey,
+                    setAiBaseUrl,
+                    setAiModel,
+                    setAiGrammarModel,
+                    setAiPrompts,
+                    setAutoGenerateSummaries,
+                    setAiFavoriteModels,
+                },
+            ),
+        [],
+    );
 
     /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
         await loadAllDataFromDataLoaders({
-            setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
-            setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
-            setEnableHaptics, setLockTimeoutMins, setVlogQuality, setCompressionPreset,
-            setDevMode, setDebugLayout, setVisionBoard, setPreferPinAuth, setLogMode,
-            setLastReflectionDate, setSavedVlogs, setTotalVlogStorageBytes,
-            setBookmarkedNoteIds, setFeedComments, setAutoPlayFeedVideos,
-            setAiApiKey, setAiBaseUrl, setAiModel, setAiGrammarModel,
-            setAiPrompts, setAutoGenerateSummaries, setAiFavoriteModels,
+            setSavedNotes,
+            setPersons,
+            setCurrentStreak,
+            setLastWinDate,
+            setStreakHistory,
+            setFontIndex,
+            setSizeIndex,
+            setUseBiometrics,
+            setEnableHaptics,
+            setLockTimeoutMins,
+            setVlogQuality,
+            setCompressionPreset,
+            setDevMode,
+            setDebugLayout,
+            setVisionBoard,
+            setPreferPinAuth,
+            setLogMode,
+            setLastReflectionDate,
+            setSavedVlogs,
+            setTotalVlogStorageBytes,
+            setBookmarkedNoteIds,
+            setFeedComments,
+            setAutoPlayFeedVideos,
+            setAiApiKey,
+            setAiBaseUrl,
+            setAiModel,
+            setAiGrammarModel,
+            setAiPrompts,
+            setAutoGenerateSummaries,
+            setAiFavoriteModels,
         });
     }, []);
 
-    useEffect(() => { loadAllData(); }, [loadAllData]);
+    useEffect(() => {
+        loadAllData();
+    }, [loadAllData]);
 
     /* ── Cross-cutting ops ----------------------------------------─── */
-    const crossCuttingOps = useMemo(() => createCrossCuttingOps(
-        notesOps,
-        {
-            notesRef: savedNotesRef,
-            personsRef: personsRef,
-            currentStreakRef: currentStreakRef,
-            lastWinDateRef: lastWinDateRef,
-            streakHistoryRef: streakHistoryRef,
-            fontIndexRef: fontIndexRef,
-            sizeIndexRef: sizeIndexRef,
-            useBiometricsRef: useBiometricsRef,
-            devModeRef: devModeRef,
-            debugLayoutRef: debugLayoutRef,
-            visionBoardRef: visionBoardRef,
-            savedVlogsRef: savedVlogsRef,
-            totalVlogStorageBytesRef: totalVlogStorageBytesRef,
-            bookmarkedNoteIdsRef: bookmarkedNoteIdsRef,
-            feedCommentsRef: feedCommentsRef,
-            autoPlayFeedVideosRef: autoPlayFeedVideosRef,
-        },
-        {
-            setSavedNotes, setPersons, setCurrentStreak, setLastWinDate,
-            setStreakHistory, setFontIndex, setSizeIndex, setUseBiometrics,
-            setDevMode, setDebugLayout, setVisionBoard, setLastReflectionDate,
-            setSavedVlogs, setTotalVlogStorageBytes,
-            setBookmarkedNoteIds, setFeedComments, setAutoPlayFeedVideos,
-        },
-    ), [notesOps]);
+    const crossCuttingOps = useMemo(
+        () =>
+            createCrossCuttingOps(
+                notesOps,
+                {
+                    notesRef: savedNotesRef,
+                    personsRef: personsRef,
+                    currentStreakRef: currentStreakRef,
+                    lastWinDateRef: lastWinDateRef,
+                    streakHistoryRef: streakHistoryRef,
+                    fontIndexRef: fontIndexRef,
+                    sizeIndexRef: sizeIndexRef,
+                    useBiometricsRef: useBiometricsRef,
+                    devModeRef: devModeRef,
+                    debugLayoutRef: debugLayoutRef,
+                    visionBoardRef: visionBoardRef,
+                    savedVlogsRef: savedVlogsRef,
+                    totalVlogStorageBytesRef: totalVlogStorageBytesRef,
+                    bookmarkedNoteIdsRef: bookmarkedNoteIdsRef,
+                    feedCommentsRef: feedCommentsRef,
+                    autoPlayFeedVideosRef: autoPlayFeedVideosRef,
+                },
+                {
+                    setSavedNotes,
+                    setPersons,
+                    setCurrentStreak,
+                    setLastWinDate,
+                    setStreakHistory,
+                    setFontIndex,
+                    setSizeIndex,
+                    setUseBiometrics,
+                    setDevMode,
+                    setDebugLayout,
+                    setVisionBoard,
+                    setLastReflectionDate,
+                    setSavedVlogs,
+                    setTotalVlogStorageBytes,
+                    setBookmarkedNoteIds,
+                    setFeedComments,
+                    setAutoPlayFeedVideos,
+                },
+            ),
+        [notesOps],
+    );
 
     /* ── Dev Mode & Log Mode Sync ----------------------------------------- */
     useEffect(() => {
         const effectiveLogMode = devMode || logMode;
         setGlobalLogMode(effectiveLogMode);
     }, [devMode, logMode]);
+
+    /* ── Compression Queue Dependency Update ─────────────────────── */
+    /*
+     * The CompressionQueueProvider (in App.tsx) auto-initializes when
+     * mounted.  This effect simply makes sure the queue always has
+     * the latest updateVlog callback as the context value changes.
+     */
     useEffect(() => {
-        const isMountedRef = { current: true };
-        const timer = setTimeout(async () => {
+        // Dynamic import avoids a hard circular dependency at module load time
+        // between useStorage and compressionQueue (which imports useVlogs).
+        const updateQueueDeps = async () => {
             try {
-                const processed = await processPendingCompressions(vlogOps.updateVlog);
-                if (processed > 0) {
-                    logger("info", "Startup", `Processed ${processed} pending compression(s)`);
-                    const freshVlogs = savedVlogsRef.current;
-                    const newTotal = freshVlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
-                    if (isMountedRef.current) {
-                        setTotalVlogStorageBytes(newTotal);
-                        totalVlogStorageBytesRef.current = newTotal;
-                    }
+                const mod = await import('@/lib/compressionQueue');
+                if (mod.compressionQueue?.updateDependencies) {
+                    mod.compressionQueue.updateDependencies(vlogOps.updateVlog);
                 }
-            } catch (error) {
-                logger('error', 'Startup', 'Failed to process pending compressions:', error);
+            } catch {
+                // Queue may not have been instantiated yet (very early startup)
             }
-        }, CONFIG.PENDING_COMPRESSION_DELAY_MS);
-        return () => {
-            isMountedRef.current = false;
-            clearTimeout(timer);
         };
+        updateQueueDeps();
     }, [vlogOps.updateVlog]);
 
     /* ── Vlog storage summary (cross-domain) ------------------------ */
-    const getStorageSummary = useCallback(() => ({
-        vlogCount: savedVlogsRef.current.length,
-        vlogBytes: savedVlogsRef.current.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0),
-        noteCount: savedNotesRef.current.length,
-        personCount: personsRef.current.length,
-    }), []);
+    const getStorageSummary = useCallback(
+        () => ({
+            vlogCount: savedVlogsRef.current.length,
+            vlogBytes: savedVlogsRef.current.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0),
+            noteCount: savedNotesRef.current.length,
+            personCount: personsRef.current.length,
+        }),
+        [],
+    );
 
     /* ══════════════════════════════════════════════════════════════════════
        MEMOIZED CONTEXT VALUES
        ══════════════════════════════════════════════════════════════════════ */
 
-    const notesValue = useMemo<NotesContextType>(() => ({
-        savedNotes, ...notesOps,
-    }), [savedNotes, notesOps]);
+    const notesValue = useMemo<NotesContextType>(
+        () => ({
+            savedNotes,
+            ...notesOps,
+        }),
+        [savedNotes, notesOps],
+    );
 
-    const personsValue = useMemo<PersonsContextType>(() => ({
-        persons, ...personsOps,
-    }), [persons, personsOps]);
+    const personsValue = useMemo<PersonsContextType>(
+        () => ({
+            persons,
+            ...personsOps,
+        }),
+        [persons, personsOps],
+    );
 
-    const streakValue = useMemo<StreakContextType>(() => ({
-        currentStreak, lastWinDate, streakHistory,
-    }), [currentStreak, lastWinDate, streakHistory]);
+    const streakValue = useMemo<StreakContextType>(
+        () => ({
+            currentStreak,
+            lastWinDate,
+            streakHistory,
+        }),
+        [currentStreak, lastWinDate, streakHistory],
+    );
 
-    const preferencesValue = useMemo<PreferencesContextType>(() => ({
-        fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth, logMode,
-        ...preferencesOps,
-    }), [fontIndex, sizeIndex, useBiometrics, enableHaptics, lockTimeoutMins, vlogQuality, compressionPreset, devMode, debugLayout, visionBoard, lastReflectionDate, preferPinAuth, logMode, preferencesOps]);
+    const preferencesValue = useMemo<PreferencesContextType>(
+        () => ({
+            fontIndex,
+            sizeIndex,
+            useBiometrics,
+            enableHaptics,
+            lockTimeoutMins,
+            vlogQuality,
+            compressionPreset,
+            devMode,
+            debugLayout,
+            visionBoard,
+            lastReflectionDate,
+            preferPinAuth,
+            logMode,
+            ...preferencesOps,
+        }),
+        [
+            fontIndex,
+            sizeIndex,
+            useBiometrics,
+            enableHaptics,
+            lockTimeoutMins,
+            vlogQuality,
+            compressionPreset,
+            devMode,
+            debugLayout,
+            visionBoard,
+            lastReflectionDate,
+            preferPinAuth,
+            logMode,
+            preferencesOps,
+        ],
+    );
 
-    const aiConfigValue = useMemo<AiConfigContextType>(() => ({
-        aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels,
-        ...aiConfigOps,
-    }), [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels, aiConfigOps]);
+    const aiConfigValue = useMemo<AiConfigContextType>(
+        () => ({
+            aiApiKey,
+            aiBaseUrl,
+            aiModel,
+            aiGrammarModel,
+            aiPrompts,
+            autoGenerateSummaries,
+            aiFavoriteModels,
+            ...aiConfigOps,
+        }),
+        [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels, aiConfigOps],
+    );
 
-    const feedValue = useMemo<FeedContextType>(() => ({
-        bookmarkedNoteIds, feedComments, autoPlayFeedVideos,
-        ...feedOps,
-    }), [bookmarkedNoteIds, feedComments, autoPlayFeedVideos, feedOps]);
+    const feedValue = useMemo<FeedContextType>(
+        () => ({
+            bookmarkedNoteIds,
+            feedComments,
+            autoPlayFeedVideos,
+            ...feedOps,
+        }),
+        [bookmarkedNoteIds, feedComments, autoPlayFeedVideos, feedOps],
+    );
 
-    const vlogValue = useMemo<VlogContextType>(() => ({
-        savedVlogs, totalVlogStorageBytes,
-        saveVlog: vlogOps.saveVlog,
-        deleteVlog: vlogOps.deleteVlog,
-        updateVlog: vlogOps.updateVlog,
-        cleanupOrphanedVlogs: vlogOps.cleanupOrphanedVlogs,
-        getStorageSummary,
-    }), [savedVlogs, totalVlogStorageBytes, vlogOps, getStorageSummary]);
+    const vlogValue = useMemo<VlogContextType>(
+        () => ({
+            savedVlogs,
+            totalVlogStorageBytes,
+            saveVlog: vlogOps.saveVlog,
+            deleteVlog: vlogOps.deleteVlog,
+            updateVlog: vlogOps.updateVlog,
+            cleanupOrphanedVlogs: vlogOps.cleanupOrphanedVlogs,
+            getStorageSummary,
+        }),
+        [savedVlogs, totalVlogStorageBytes, vlogOps, getStorageSummary],
+    );
 
-    const actionsValue = useMemo<StorageActionsContextType>(() => ({
-        ...crossCuttingOps, loadAllData,
-        inspectAsyncStorage,
-        safeReMigrateAsyncStorage,
-        exportAsyncStorageToFile,
-        scanOrphanVlogs: async () => {
-            const known = new Set(savedVlogsRef.current.map(v => v.filePath));
-            const { scanOrphanVlogFiles } = await import('@/lib/storageManager');
-            const orphans = await scanOrphanVlogFiles(known);
-            return {
-                orphans: orphans.map(o => ({
-                    fileName: o.fileName,
-                    fileSizeBytes: o.fileSizeBytes,
-                    modDate: new Date(o.modificationTime).toLocaleDateString(),
-                }))
-            };
-        },
-        reattachOrphanVlogs: async () => {
-            const known = new Set(savedVlogsRef.current.map(v => v.filePath));
-            const { scanOrphanVlogFiles, reattachOrphanVlogFiles } = await import('@/lib/storageManager');
-            const orphans = await scanOrphanVlogFiles(known);
-            const result = await reattachOrphanVlogFiles(orphans);
-            // Refresh vlogs in state
-            const { getAllVlogs } = await import('@/lib/repositories/vlogsRepository');
-            const fresh = await getAllVlogs();
-            setSavedVlogs(fresh);
-            savedVlogsRef.current = fresh;
-            const totalBytes = fresh.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
-            setTotalVlogStorageBytes(totalBytes);
-            totalVlogStorageBytesRef.current = totalBytes;
-            return result;
-        },
-    }), [crossCuttingOps, loadAllData]);
+    const actionsValue = useMemo<StorageActionsContextType>(
+        () => ({
+            ...crossCuttingOps,
+            loadAllData,
+            inspectAsyncStorage,
+            safeReMigrateAsyncStorage,
+            exportAsyncStorageToFile,
+            scanOrphanVlogs: async () => {
+                const known = new Set(savedVlogsRef.current.map((v) => v.filePath));
+                const { scanOrphanVlogFiles } = await import('@/lib/storageManager');
+                const orphans = await scanOrphanVlogFiles(known);
+                return {
+                    orphans: orphans.map((o) => ({
+                        fileName: o.fileName,
+                        fileSizeBytes: o.fileSizeBytes,
+                        modDate: new Date(o.modificationTime).toLocaleDateString(),
+                    })),
+                };
+            },
+            reattachOrphanVlogs: async () => {
+                const known = new Set(savedVlogsRef.current.map((v) => v.filePath));
+                const { scanOrphanVlogFiles, reattachOrphanVlogFiles } = await import('@/lib/storageManager');
+                const orphans = await scanOrphanVlogFiles(known);
+                const result = await reattachOrphanVlogFiles(orphans);
+                // Refresh vlogs in state
+                const { getAllVlogs } = await import('@/lib/repositories/vlogsRepository');
+                const fresh = await getAllVlogs();
+                setSavedVlogs(fresh);
+                savedVlogsRef.current = fresh;
+                const totalBytes = fresh.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
+                setTotalVlogStorageBytes(totalBytes);
+                totalVlogStorageBytesRef.current = totalBytes;
+                return result;
+            },
+        }),
+        [crossCuttingOps, loadAllData],
+    );
 
     /* ══════════════════════════════════════════════════════════════════════
        PROVIDER TREE
@@ -536,7 +727,9 @@ export function useStorageActions(): StorageActionsContextType {
 /** @deprecated Use domain-specific hooks (useNotes, usePersons, etc.) instead. */
 export function useStorage() {
     if (__DEV__) {
-        console.warn('[useStorage] Deprecated: This hook subscribes to ALL contexts and causes mass re-renders. Use domain-specific hooks instead (useNotes, usePersons, useStreak, etc.).');
+        console.warn(
+            '[useStorage] Deprecated: This hook subscribes to ALL contexts and causes mass re-renders. Use domain-specific hooks instead (useNotes, usePersons, useStreak, etc.).',
+        );
     }
     const notes = useNotes();
     const persons = usePersons();
@@ -548,7 +741,13 @@ export function useStorage() {
     const actions = useStorageActions();
 
     return {
-        ...notes, ...persons, ...streak, ...preferences,
-        ...aiConfig, ...feedData, ...vlogs, ...actions,
+        ...notes,
+        ...persons,
+        ...streak,
+        ...preferences,
+        ...aiConfig,
+        ...feedData,
+        ...vlogs,
+        ...actions,
     };
 }

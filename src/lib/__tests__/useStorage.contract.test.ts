@@ -13,10 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const SOURCE = fs.readFileSync(
-    path.resolve(__dirname, '../hooks/useStorage.tsx'),
-    'utf-8',
-);
+const SOURCE = fs.readFileSync(path.resolve(__dirname, '../hooks/useStorage.tsx'), 'utf-8');
 
 describe('useStorage source code contracts', () => {
     describe('domain contexts and providers', () => {
@@ -78,7 +75,9 @@ describe('useStorage source code contracts', () => {
         it('uses useEffect for loading data on mount', () => {
             const providerBody = SOURCE.match(/export const StorageProvider[\s\S]*?\n\};/)?.[0];
             expect(providerBody).toBeDefined();
-            expect(providerBody).toContain('useEffect(() => { loadAllData(); }, [loadAllData]);');
+            expect(providerBody).toContain('useEffect(() => {');
+            expect(providerBody).toContain('loadAllData();');
+            expect(providerBody).toContain('}, [loadAllData]);');
         });
 
         it('has crossCuttingOps with refs', () => {
@@ -92,7 +91,7 @@ describe('useStorage source code contracts', () => {
         });
 
         it('has getStorageSummary returning vlogCount, vlogBytes, noteCount, personCount', () => {
-            const getStorageSummaryFn = SOURCE.match(/const getStorageSummary[\s\S]*?\}\), \[\]\);/)?.[0];
+            const getStorageSummaryFn = SOURCE.match(/const getStorageSummary[\s\S]*?\[\s*\]\s*,\s*\)\s*;/)?.[0];
             expect(getStorageSummaryFn).toBeDefined();
             expect(getStorageSummaryFn).toContain('vlogCount');
             expect(getStorageSummaryFn).toContain('vlogBytes');
@@ -149,7 +148,7 @@ describe('useStorage source code contracts', () => {
         it('passes refs and setters to notesOps factory', () => {
             const notesOpsSection = SOURCE.substring(
                 SOURCE.indexOf('const notesOps = useMemo'),
-                SOURCE.indexOf('const personsOps = useMemo')
+                SOURCE.indexOf('const personsOps = useMemo'),
             );
             expect(notesOpsSection).toContain('savedNotesRef');
             expect(notesOpsSection).toContain('setSavedNotes');
@@ -160,7 +159,7 @@ describe('useStorage source code contracts', () => {
         it('passes refs and setters to personsOps factory', () => {
             const personsOpsSection = SOURCE.substring(
                 SOURCE.indexOf('const personsOps = useMemo'),
-                SOURCE.indexOf('const vlogOps = useMemo')
+                SOURCE.indexOf('const vlogOps = useMemo'),
             );
             expect(personsOpsSection).toContain('personsRef');
             expect(personsOpsSection).toContain('setPersons');
@@ -171,7 +170,7 @@ describe('useStorage source code contracts', () => {
         it('passes refs and setters to vlogOps factory', () => {
             const vlogOpsSection = SOURCE.substring(
                 SOURCE.indexOf('const vlogOps = useMemo'),
-                SOURCE.indexOf('const feedOps = useMemo')
+                SOURCE.indexOf('const feedOps = useMemo'),
             );
             expect(vlogOpsSection).toContain('savedVlogsRef');
             expect(vlogOpsSection).toContain('setSavedVlogs');

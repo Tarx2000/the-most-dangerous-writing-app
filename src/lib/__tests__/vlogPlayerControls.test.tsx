@@ -44,6 +44,21 @@ jest.mock('@/lib/hooks/useThumbnails', () => ({
     useThumbnails: () => ({ getThumbnail: jest.fn() }),
 }));
 
+jest.mock('@/lib/hooks/useCompressionQueueProvider', () => ({
+    useCompressionQueueContext: () => ({
+        compressionState: { jobs: [], currentJob: null, pendingCount: 0, isProcessing: false },
+        isVlogActive: () => false,
+        isVlogQueued: () => false,
+        isVlogInQueue: () => false,
+        getJobForVlog: () => undefined,
+        enqueueVlog: jest.fn(),
+        cancelJob: jest.fn(),
+        retryJob: jest.fn(),
+        clearPending: jest.fn(),
+        activeCount: 0,
+    }),
+}));
+
 describe('FeedVideoCard + VlogViewerModal player interaction', () => {
     beforeEach(() => {
         jest.clearAllMocks();
@@ -64,7 +79,7 @@ describe('FeedVideoCard + VlogViewerModal player interaction', () => {
                 onToggleBookmark={jest.fn()}
                 onSaveComment={jest.fn()}
                 onOpenVlog={jest.fn()}
-            />
+            />,
         );
 
         // Grab the player instance created by FeedVideoCard's useVideoPlayer hook
@@ -103,13 +118,7 @@ describe('FeedVideoCard + VlogViewerModal player interaction', () => {
         player.play();
 
         render(
-            <VlogViewerModal
-                visible={true}
-                vlogs={[mockVlog]}
-                sourceRect={null}
-                player={player}
-                onClose={jest.fn()}
-            />
+            <VlogViewerModal visible={true} vlogs={[mockVlog]} sourceRect={null} player={player} onClose={jest.fn()} />,
         );
 
         // play/pause button is the center AnimatedScaleButton
@@ -135,13 +144,7 @@ describe('FeedVideoCard + VlogViewerModal player interaction', () => {
         const player = jest.requireMock('expo-video').useVideoPlayer('file:///test.mp4');
 
         render(
-            <VlogViewerModal
-                visible={true}
-                vlogs={[mockVlog]}
-                sourceRect={null}
-                player={player}
-                onClose={jest.fn()}
-            />
+            <VlogViewerModal visible={true} vlogs={[mockVlog]} sourceRect={null} player={player} onClose={jest.fn()} />,
         );
 
         // Simulate native timeUpdate event
@@ -161,13 +164,7 @@ describe('FeedVideoCard + VlogViewerModal player interaction', () => {
         const player = jest.requireMock('expo-video').useVideoPlayer('file:///test.mp4');
 
         render(
-            <VlogViewerModal
-                visible={true}
-                vlogs={[mockVlog]}
-                sourceRect={null}
-                player={player}
-                onClose={jest.fn()}
-            />
+            <VlogViewerModal visible={true} vlogs={[mockVlog]} sourceRect={null} player={player} onClose={jest.fn()} />,
         );
 
         // Don't emit timeUpdate — just change the property
