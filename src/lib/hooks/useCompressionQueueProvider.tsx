@@ -69,7 +69,7 @@ export const CompressionQueueProvider = ({ children }: { children: ReactNode }) 
 
     // Auto-initialize once storage has the vlog update function
     useEffect(() => {
-        if (!queueInitedRef.current && !compressionQueue.isInitialized && updateVlog) {
+        if (!queueInitedRef.current && !compressionQueue.isInitialized) {
             queueInitedRef.current = true;
             compressionQueue.initialize((id, patch) => updateVlogRef.current(id, patch));
         }

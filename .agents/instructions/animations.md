@@ -50,3 +50,6 @@ The feed reveal/dismiss uses `feedProgress` SharedValue (0→1) driving three an
 
 ## Haptic Feedback
 `useSession` implements a 4-level escalating haptic pattern during idle danger. Thresholds are constants at the top of the file — adjust values there, not in comments. Each level fires exactly once per idle period (tracked via `lastHapticLevelRef`).
+
+## Video Auto-Play (Viewport-Driven)
+`FeedVideoCard`: `autoPlay` prop (viewport-driven) → `userPausedRef` (manual override) → `playingChange` listener (force-resume). **CRITICAL: `VideoView` has `pointerEvents: 'none'`**, use `Pressable` overlay with `zIndex` for taps.

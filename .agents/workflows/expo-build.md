@@ -54,16 +54,18 @@ npm test
 
 ## Step 3 — Build Release APK
 
-Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction):
+Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction).
+
+**CRITICAL: Use `--quiet` flag** — Gradle produces thousands of lines of task output. Without `--quiet`, the agent's shell buffer overflows (51,200-byte / 2,000-line limit), causing a perceived infinite hang on Windows even though the build already finished. `--quiet` suppresses task spam and only prints warnings, errors, and the final `BUILD SUCCESSFUL` message.
 
 **Unix/macOS:**
 ```bash
-cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet
 ```
 
 **Windows (must use `cmd /c` for `.bat` scripts):**
 ```cmd
-cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a"
+cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet"
 ```
 
 > [!NOTE]
@@ -71,7 +73,7 @@ cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=
 
 ---
 
-## Step 3 — Report APK Location
+## Step 4 — Report APK Location
 
 After a successful build, report the APK location to the user with a clickable link:
 
@@ -99,3 +101,4 @@ org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
 - **"Build fails with missing babel-preset-expo"**: Run `npm install --save-dev babel-preset-expo`.
 - **"App crashes on startup after adding reanimated"**: Ensure `babel.config.js` includes `'react-native-reanimated/plugin'` as the LAST plugin.
 - **`gradlew.bat` not recognized on Windows**: Batch files (`.bat`) cannot be executed directly from non-CMD shells. Always use `cmd /c "cd /d android && gradlew.bat ..."` instead of `cd android && gradlew.bat ...`.
+- **Agent appears stuck during build (Windows)**: Gradle prints thousands of task lines. The bash tool truncates output at 51,200 bytes / 2,000 lines, and the buffer flush can take 20–30 seconds after the build actually finished. **Fix:** Always append `--quiet` to the Gradle command (see Step 3). This suppresses the task spam and prevents the buffer overflow hang.
