@@ -1,12 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import {
-    View,
-    Text,
-    Image,
-    StyleSheet,
-    ScrollView,
-    useWindowDimensions,
-} from 'react-native';
+import { View, Text, Image, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
@@ -23,11 +16,11 @@ const FALLBACK_HEIGHT = 800;
 const ThumbnailFetcher: React.FC<{ vlog: SavedVlog }> = ({ vlog }) => {
     const { updateVlog } = useVlogs();
     const { getThumbnail } = useThumbnails(updateVlog);
-    
+
     useEffect(() => {
         if (!vlog.thumbnailPath) getThumbnail(vlog);
     }, [vlog, getThumbnail]);
-    
+
     return null;
 };
 
@@ -41,7 +34,8 @@ interface Props {
     vlogs: SavedVlog[];
     isLocked: boolean;
     onUnlock: () => Promise<boolean>;
-    onDeleteVlog: (id: string) => Promise<void>;
+    /** Called when user requests deletion — parent should show a ConfirmDialog */
+    onRequestDeleteVlog: (id: string) => void;
 }
 
 /**
@@ -56,12 +50,7 @@ interface Props {
  * - Month navigation (prev/next)
  * - Biometric lock overlay (same pattern as Circles)
  */
-export const VlogCalendarGallery: React.FC<Props> = ({
-    vlogs,
-    isLocked,
-    onUnlock,
-    onDeleteVlog,
-}) => {
+export const VlogCalendarGallery: React.FC<Props> = ({ vlogs, isLocked, onUnlock, onRequestDeleteVlog }) => {
     /* ── Current displayed month ───────────────────────────────────────── */
     const { width: screenWidth } = useWindowDimensions();
     /** Width of each calendar cell (computed from live screen width with padding) */
@@ -81,20 +70,20 @@ export const VlogCalendarGallery: React.FC<Props> = ({
     /* ── Month navigation ──────────────────────────────────────────────── */
     const vlogsByDate = useMemo(() => {
         const map: Record<string, SavedVlog[]> = {};
-        vlogs.forEach(v => {
+        vlogs.forEach((v) => {
             const d = new Date(v.timestamp);
             const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
             if (!map[key]) map[key] = [];
             map[key].push(v);
         });
         // Sort each day's vlogs newest first
-        Object.values(map).forEach(arr => arr.sort((a, b) => b.timestamp - a.timestamp));
+        Object.values(map).forEach((arr) => arr.sort((a, b) => b.timestamp - a.timestamp));
         return map;
     }, [vlogs]);
 
     /* ── Month navigation ──────────────────────────────────────────────── */
     const goToMonth = useCallback((offset: number) => {
-        setDisplayDate(prev => {
+        setDisplayDate((prev) => {
             const d = new Date(prev);
             d.setMonth(d.getMonth() + offset);
             return d;
@@ -127,23 +116,26 @@ export const VlogCalendarGallery: React.FC<Props> = ({
     }, [currentYear, currentMonth]);
 
     /* ── Open expanded view ────────────────────────────────────────────── */
-    const openDay = useCallback((dateKey: string) => {
-        const dayVlogs = vlogsByDate[dateKey];
-        if (!dayVlogs || dayVlogs.length === 0) return;
+    const openDay = useCallback(
+        (dateKey: string) => {
+            const dayVlogs = vlogsByDate[dateKey];
+            if (!dayVlogs || dayVlogs.length === 0) return;
 
-        const cellRef = cellRefs.current[dateKey];
-        if (cellRef) {
-            cellRef.measureInWindow((x, y, width, height) => {
-                setSourceRect({ x, y, width, height });
+            const cellRef = cellRefs.current[dateKey];
+            if (cellRef) {
+                cellRef.measureInWindow((x, y, width, height) => {
+                    setSourceRect({ x, y, width, height });
+                    setExpandedDayVlogs(dayVlogs);
+                    vibrate(20);
+                });
+            } else {
+                setSourceRect(null);
                 setExpandedDayVlogs(dayVlogs);
                 vibrate(20);
-            });
-        } else {
-            setSourceRect(null);
-            setExpandedDayVlogs(dayVlogs);
-            vibrate(20);
-        }
-    }, [vlogsByDate]);
+            }
+        },
+        [vlogsByDate],
+    );
 
     /* ── Format helpers ────────────────────────────────────────────────── */
     const monthLabel = new Date(currentYear, currentMonth).toLocaleString('default', {
@@ -159,16 +151,19 @@ export const VlogCalendarGallery: React.FC<Props> = ({
 
     const today = new Date();
     const isToday = (day: number) =>
-        day === today.getDate() &&
-        currentMonth === today.getMonth() &&
-        currentYear === today.getFullYear();
+        day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
 
     /* ── Biometric lock overlay ────────────────────────────────────────── */
     if (isLocked) {
         return (
             <View style={styles.lockOverlay}>
                 <View style={styles.lockCard}>
-                    <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
+                    <MaterialCommunityIcons
+                        name="lock-outline"
+                        size={48}
+                        color={theme.colors.primaryAction}
+                        style={{ marginBottom: 16 }}
+                    />
                     <Text style={styles.lockTitle}>Vlogs Protected</Text>
                     <Text style={styles.lockSubtitle}>Verify your identity to view your video journals</Text>
                     <AnimatedScaleButton
@@ -178,7 +173,12 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                             if (success) vibrate(50);
                         }}
                     >
-                        <MaterialCommunityIcons name="fingerprint" size={22} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
+                        <MaterialCommunityIcons
+                            name="fingerprint"
+                            size={22}
+                            color={theme.colors.textPrimary}
+                            style={{ marginRight: 10 }}
+                        />
                         <Text style={styles.unlockBtnText}>Unlock Vlogs</Text>
                     </AnimatedScaleButton>
                 </View>
@@ -203,7 +203,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
 
                 {/* Weekday header row */}
                 <View style={styles.weekdayRow}>
-                    {WEEKDAYS.map(day => (
+                    {WEEKDAYS.map((day) => (
                         <View key={day} style={[styles.weekdayCell, { width: cellSize }]}>
                             <Text style={styles.weekdayText}>{day}</Text>
                         </View>
@@ -221,7 +221,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                             <AnimatedScaleButton
                                 key={idx}
                                 style={[styles.dayCell, { width: cellSize, height: thumbHeight + 10 }]}
-                                onPress={() => hasVlogs ? openDay(cell.dateKey) : null}
+                                onPress={() => (hasVlogs ? openDay(cell.dateKey) : null)}
                                 activeOpacity={hasVlogs ? 0.7 : 1}
                                 disabled={!hasVlogs}
                             >
@@ -230,19 +230,29 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                         {hasVlogs ? (
                                             /* Day with vlog — gradient or thumbnail */
                                             <View
-                                                ref={el => { if (cell.dateKey) cellRefs.current[cell.dateKey] = el; }}
+                                                ref={(el) => {
+                                                    if (cell.dateKey) cellRefs.current[cell.dateKey] = el;
+                                                }}
                                                 collapsable={false}
                                                 style={[
-                                                styles.vlogThumb,
-                                                { width: cellSize - 6, height: thumbHeight },
-                                                isToday(cell.day) && styles.vlogThumbToday,
-                                            ]}>
+                                                    styles.vlogThumb,
+                                                    { width: cellSize - 6, height: thumbHeight },
+                                                    isToday(cell.day) && styles.vlogThumbToday,
+                                                ]}
+                                            >
                                                 {/* Image Thumbnail or Gradient background as placeholder */}
                                                 {dayVlogs?.[0].thumbnailPath ? (
-                                                    <Image source={{ uri: dayVlogs[0].thumbnailPath }} style={styles.vlogThumbGradient} />
+                                                    <Image
+                                                        source={{ uri: dayVlogs[0].thumbnailPath }}
+                                                        style={styles.vlogThumbGradient}
+                                                    />
                                                 ) : (
                                                     <View style={styles.vlogThumbGradient}>
-                                                        <MaterialCommunityIcons name="play-circle-outline" size={20} color={theme.colors.textBodyDim} />
+                                                        <MaterialCommunityIcons
+                                                            name="play-circle-outline"
+                                                            size={20}
+                                                            color={theme.colors.textBodyDim}
+                                                        />
                                                     </View>
                                                 )}
 
@@ -268,14 +278,10 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                                             </View>
                                         ) : (
                                             /* Empty day — just the number */
-                                            <View style={[
-                                                styles.emptyDay,
-                                                isToday(cell.day) && styles.todayCircle,
-                                            ]}>
-                                                <Text style={[
-                                                    styles.dayText,
-                                                    isToday(cell.day) && styles.todayText,
-                                                ]}>{cell.day}</Text>
+                                            <View style={[styles.emptyDay, isToday(cell.day) && styles.todayCircle]}>
+                                                <Text style={[styles.dayText, isToday(cell.day) && styles.todayText]}>
+                                                    {cell.day}
+                                                </Text>
                                             </View>
                                         )}
                                     </>
@@ -309,7 +315,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({
                 vlogs={expandedDayVlogs || []}
                 sourceRect={sourceRect}
                 onClose={() => setExpandedDayVlogs(null)}
-                onDelete={onDeleteVlog}
+                onRequestDelete={onRequestDeleteVlog}
             />
         </View>
     );
@@ -669,4 +675,3 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
 });
-

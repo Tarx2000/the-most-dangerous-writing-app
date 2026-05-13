@@ -19,6 +19,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { logger } from '@/lib/logger';
 import { CONFIG } from '@/config';
+import { generateId } from '@/lib/utils';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * NATIVE MODULE AVAILABILITY CHECK
@@ -197,14 +198,28 @@ export async function compressVideo(
         const compMb = (compressedSizeBytes / 1024 / 1024).toFixed(1);
         logger('info', 'Compressor', `Done: ${origMb}MB → ${compMb}MB (${savingsPercent}% saved)`);
 
-        // Replace the original file with the compressed version.
-        // moveAsync overwrites the destination, so we never delete the original first.
-        // This eliminates the window where a crash would leave us with no file.
-        await FileSystem.moveAsync({ from: compressedUri, to: inputUri });
+        /* ── iOS-safe file replacement strategy ───────────────────────────
+         *  Instead of moveAsync to the original path (which fails on iOS
+         *  when the destination already exists), we move the compressed
+         *  file to a NEW permanent filename and delete the original.
+         *  The caller is responsible for updating the vlog's filePath field.
+         * ──────────────────────────────────────────────────────────────── */
+        const vlogDir = inputUri.substring(0, inputUri.lastIndexOf('/') + 1);
+        const newFileName = `compressed_${generateId()}.mp4`;
+        const permanentUri = `${vlogDir}${newFileName}`;
+
+        await FileSystem.moveAsync({ from: compressedUri, to: permanentUri });
+
+        // Delete original only after compressed file is safely moved
+        try {
+            await FileSystem.deleteAsync(inputUri, { idempotent: true });
+        } catch (err) {
+            logger('warn', 'Compressor', 'Failed to delete original file:', err);
+        }
 
         onProgress?.(1);
         return {
-            outputUri: inputUri,
+            outputUri: permanentUri,
             outputSizeBytes: compressedSizeBytes,
             originalSizeBytes,
             wasCompressed: true,

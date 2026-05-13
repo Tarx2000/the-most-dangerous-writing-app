@@ -22,15 +22,22 @@ import { AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
 import { setPerfEnabled } from '@/lib/perf';
 import {
-    insertNote, deleteNote as repoDeleteNote, updateNote as repoUpdateNote,
-    clearAllAiMetadata as repoClearAllAiMetadata, deleteAllNotes,
+    insertNote,
+    deleteNote as repoDeleteNote,
+    updateNote as repoUpdateNote,
+    clearAllAiMetadata as repoClearAllAiMetadata,
+    deleteAllNotes,
 } from '@/lib/repositories/notesRepository';
 import {
-    insertPerson, deletePerson as repoDeletePerson, updatePerson as repoUpdatePerson,
+    insertPerson,
+    deletePerson as repoDeletePerson,
+    updatePerson as repoUpdatePerson,
     deleteAllPersons,
 } from '@/lib/repositories/personsRepository';
 import {
-    insertVlog, deleteVlog as repoDeleteVlog, updateVlog as repoUpdateVlog,
+    insertVlog,
+    deleteVlog as repoDeleteVlog,
+    updateVlog as repoUpdateVlog,
     deleteAllVlogs,
 } from '@/lib/repositories/vlogsRepository';
 import { setSetting } from '@/lib/repositories/settingsRepository';
@@ -111,7 +118,7 @@ export function createNotesOps(
                 ]);
             }
         } catch (error) {
-            logger("error", "Storage", "Failed to save note:", error);
+            logger('error', 'Storage', 'Failed to save note:', error);
             vibrate([0, 500]);
             notesRef.current = prevNotes;
             setNotes(prevNotes);
@@ -128,14 +135,14 @@ export function createNotesOps(
 
     const deleteNote = async (id: string) => {
         const prevNotes = [...notesRef.current];
-        const updatedNotes = prevNotes.filter(n => n.id !== id);
+        const updatedNotes = prevNotes.filter((n) => n.id !== id);
         notesRef.current = updatedNotes;
         setNotes(updatedNotes);
 
         try {
             await repoDeleteNote(id);
         } catch (error) {
-            logger("error", "Storage", "Failed to delete note:", error);
+            logger('error', 'Storage', 'Failed to delete note:', error);
             vibrate([0, 500]);
             notesRef.current = prevNotes;
             setNotes(prevNotes);
@@ -144,14 +151,14 @@ export function createNotesOps(
 
     const updateNote = async (id: string, updates: Partial<SavedNote>) => {
         const prevNotes = [...notesRef.current];
-        const updatedNotes = prevNotes.map(n => n.id === id ? { ...n, ...updates } : n);
+        const updatedNotes = prevNotes.map((n) => (n.id === id ? { ...n, ...updates } : n));
         notesRef.current = updatedNotes;
         setNotes(updatedNotes);
 
         try {
             await repoUpdateNote(id, updates);
         } catch (error) {
-            logger("error", "Storage", "Failed to update note:", error);
+            logger('error', 'Storage', 'Failed to update note:', error);
             notesRef.current = prevNotes;
             setNotes(prevNotes);
         }
@@ -159,7 +166,7 @@ export function createNotesOps(
 
     const clearAllAiMetadata = async () => {
         const prevNotes = [...notesRef.current];
-        const updatedNotes = prevNotes.map(n => ({
+        const updatedNotes = prevNotes.map((n) => ({
             ...n,
             aiTitle: undefined,
             aiSummary: undefined,
@@ -171,7 +178,7 @@ export function createNotesOps(
         try {
             await repoClearAllAiMetadata();
         } catch (error) {
-            logger("error", "Storage", "Failed to clear AI metadata:", error);
+            logger('error', 'Storage', 'Failed to clear AI metadata:', error);
             notesRef.current = prevNotes;
             setNotes(prevNotes);
         }
@@ -202,7 +209,7 @@ export function createPersonsOps(
         try {
             await insertPerson(newPerson);
         } catch (error) {
-            logger("error", "Storage", "Failed to add person:", error);
+            logger('error', 'Storage', 'Failed to add person:', error);
             vibrate([0, 500]);
             personsRef.current = prevPersons;
             setPersons(prevPersons);
@@ -213,8 +220,8 @@ export function createPersonsOps(
     const deletePerson = async (id: string) => {
         const prevPersons = [...personsRef.current];
         const prevNotes = [...notesRef.current];
-        const updatedPersons = prevPersons.filter(p => p.id !== id);
-        const updatedNotes = prevNotes.map(n => n.personId === id ? { ...n, personId: undefined } : n);
+        const updatedPersons = prevPersons.filter((p) => p.id !== id);
+        const updatedNotes = prevNotes.map((n) => (n.personId === id ? { ...n, personId: undefined } : n));
 
         personsRef.current = updatedPersons;
         notesRef.current = updatedNotes;
@@ -224,7 +231,7 @@ export function createPersonsOps(
         try {
             await repoDeletePerson(id);
         } catch (error) {
-            logger("error", "Storage", "Failed to delete person:", error);
+            logger('error', 'Storage', 'Failed to delete person:', error);
             personsRef.current = prevPersons;
             notesRef.current = prevNotes;
             setPersons(prevPersons);
@@ -236,14 +243,14 @@ export function createPersonsOps(
 
     const updatePerson = async (id: string, updates: Partial<Person>) => {
         const prevPersons = [...personsRef.current];
-        const updatedPersons = prevPersons.map(p => p.id === id ? { ...p, ...updates } : p);
+        const updatedPersons = prevPersons.map((p) => (p.id === id ? { ...p, ...updates } : p));
         personsRef.current = updatedPersons;
         setPersons(updatedPersons);
 
         try {
             await repoUpdatePerson(id, updates);
         } catch (error) {
-            logger("error", "Storage", "Failed to update person:", error);
+            logger('error', 'Storage', 'Failed to update person:', error);
             personsRef.current = prevPersons;
             setPersons(prevPersons);
         }
@@ -276,7 +283,7 @@ export function createVlogOps(
         try {
             await insertVlog(vlog);
         } catch (error) {
-            logger("error", "Storage", "Failed to save vlog:", error);
+            logger('error', 'Storage', 'Failed to save vlog:', error);
             vlogsRef.current = prevVlogs;
             setVlogs(prevVlogs);
             totalBytesRef.current = prevBytes;
@@ -288,8 +295,8 @@ export function createVlogOps(
 
     const deleteVlog = async (id: string) => {
         const prevVlogs = [...vlogsRef.current];
-        const vlog = prevVlogs.find(v => v.id === id);
-        const updatedVlogs = prevVlogs.filter(v => v.id !== id);
+        const vlog = prevVlogs.find((v) => v.id === id);
+        const updatedVlogs = prevVlogs.filter((v) => v.id !== id);
         vlogsRef.current = updatedVlogs;
         setVlogs(updatedVlogs);
         const prevBytes = totalBytesRef.current;
@@ -298,13 +305,15 @@ export function createVlogOps(
             const newBytes = Math.max(0, prevBytes - (vlog.fileSizeBytes || 0));
             setTotalBytes(newBytes);
             totalBytesRef.current = newBytes;
-            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch((err: Error) => logger("warn", "Storage", "Failed to delete vlog file:", err));
+            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch((err: Error) =>
+                logger('warn', 'Storage', 'Failed to delete vlog file:', err),
+            );
         }
 
         try {
             await repoDeleteVlog(id);
         } catch (error) {
-            logger("error", "Storage", "Failed to delete vlog:", error);
+            logger('error', 'Storage', 'Failed to delete vlog:', error);
             vlogsRef.current = prevVlogs;
             setVlogs(prevVlogs);
             setTotalBytes(prevBytes);
@@ -315,21 +324,41 @@ export function createVlogOps(
 
     const updateVlog = async (id: string, patch: Partial<SavedVlog>) => {
         const prevVlogs = [...vlogsRef.current];
-        const updatedVlogs = prevVlogs.map(v => v.id === id ? { ...v, ...patch } : v);
+        const oldVlog = prevVlogs.find((v) => v.id === id);
+        const updatedVlogs = prevVlogs.map((v) => (v.id === id ? { ...v, ...patch } : v));
         vlogsRef.current = updatedVlogs;
         setVlogs(updatedVlogs);
+
+        // Recalculate total vlog storage if fileSize changed
+        if (oldVlog && patch.fileSizeBytes !== undefined) {
+            const prevBytes = totalBytesRef.current;
+            const delta = patch.fileSizeBytes - (oldVlog.fileSizeBytes || 0);
+            const newBytes = Math.max(0, prevBytes + delta);
+            totalBytesRef.current = newBytes;
+            setTotalBytes(newBytes);
+        }
 
         try {
             await repoUpdateVlog(id, patch);
         } catch (error) {
-            logger("error", "Storage", "Failed to update vlog:", error);
+            logger('error', 'Storage', 'Failed to update vlog:', error);
             vlogsRef.current = prevVlogs;
             setVlogs(prevVlogs);
+
+            // Also rollback totalBytes if we changed it
+            if (oldVlog && patch.fileSizeBytes !== undefined) {
+                const prevBytes = totalBytesRef.current;
+                const delta = patch.fileSizeBytes - (oldVlog.fileSizeBytes || 0);
+                const newBytes = Math.max(0, prevBytes - delta);
+                totalBytesRef.current = newBytes;
+                setTotalBytes(newBytes);
+            }
+            throw error;
         }
     };
 
     const cleanupOrphanedVlogs = async (): Promise<number> => {
-        const knownPaths = new Set(vlogsRef.current.map(v => v.filePath));
+        const knownPaths = new Set(vlogsRef.current.map((v) => v.filePath));
         return cleanupOrphanFiles(knownPaths);
     };
 
@@ -357,9 +386,7 @@ export function createFeedOps(
 ) {
     const toggleBookmark = async (noteId: string) => {
         const prev = [...bookmarksRef.current];
-        const updated = prev.includes(noteId)
-            ? prev.filter(id => id !== noteId)
-            : [...prev, noteId];
+        const updated = prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId];
         bookmarksRef.current = updated;
         setBookmarks(updated);
 
@@ -367,7 +394,7 @@ export function createFeedOps(
             await setSetting('BOOKMARKED_NOTE_IDS', JSON.stringify(updated));
             vibrate([0, 20, 0, 20]);
         } catch (error) {
-            logger("error", "Storage", "Failed to toggle bookmark:", error);
+            logger('error', 'Storage', 'Failed to toggle bookmark:', error);
             bookmarksRef.current = prev;
             setBookmarks(prev);
             vibrate([0, 500]);
@@ -378,9 +405,7 @@ export function createFeedOps(
         const prev = commentsRef.current;
         let updated: Record<string, string>;
         if (!comment.trim()) {
-            updated = Object.fromEntries(
-                Object.entries(prev).filter(([key]) => key !== noteId)
-            );
+            updated = Object.fromEntries(Object.entries(prev).filter(([key]) => key !== noteId));
         } else {
             updated = { ...prev, [noteId]: comment };
         }
@@ -390,7 +415,7 @@ export function createFeedOps(
         try {
             await setSetting('FEED_COMMENTS', JSON.stringify(updated));
         } catch (error) {
-            logger("error", "Storage", "Failed to save comment:", error);
+            logger('error', 'Storage', 'Failed to save comment:', error);
             commentsRef.current = prev;
             setComments(prev);
         }
@@ -403,7 +428,7 @@ export function createFeedOps(
         try {
             await setSetting('AUTO_PLAY_FEED_VIDEOS', JSON.stringify(enabled));
         } catch (error) {
-            logger("error", "Storage", "Failed to toggle auto-play:", error);
+            logger('error', 'Storage', 'Failed to toggle auto-play:', error);
             setAutoPlay(prev);
             autoPlayRef.current = prev;
         }
@@ -457,7 +482,7 @@ export function createPreferencesOps(
             await setSetting('USER_FONT_IDX', String(fIdx));
             await setSetting('USER_SIZE_IDX', String(sIdx));
         } catch (error) {
-            logger("error", "Storage", "Failed to save preferences:", error);
+            logger('error', 'Storage', 'Failed to save preferences:', error);
             setters.setFontIndex(prevFont);
             setters.setSizeIndex(prevSize);
             refs.fontIndex.current = prevFont;
@@ -472,7 +497,7 @@ export function createPreferencesOps(
         try {
             await setSetting('USE_BIOMETRICS', JSON.stringify(val));
         } catch (error) {
-            logger("error", "Storage", "Failed to update biometrics pref:", error);
+            logger('error', 'Storage', 'Failed to update biometrics pref:', error);
             setters.setUseBiometrics(prev);
             refs.useBiometrics.current = prev;
         }
@@ -539,7 +564,7 @@ export function createPreferencesOps(
         try {
             await setSetting('DEV_MODE', JSON.stringify(newVal));
         } catch (error) {
-            logger("error", "Storage", "Failed to toggle dev mode:", error);
+            logger('error', 'Storage', 'Failed to toggle dev mode:', error);
             setters.setDevMode(prevVal);
             refs.devMode.current = prevVal;
         }
@@ -553,7 +578,7 @@ export function createPreferencesOps(
         try {
             await setSetting('DEBUG_LAYOUT', JSON.stringify(newVal));
         } catch (error) {
-            logger("error", "Storage", "Failed to toggle debug layout:", error);
+            logger('error', 'Storage', 'Failed to toggle debug layout:', error);
             setters.setDebugLayout(prevVal);
             refs.debugLayout.current = prevVal;
         }
@@ -566,7 +591,7 @@ export function createPreferencesOps(
         try {
             await setSetting('VISION_BOARD', JSON.stringify(newBoard));
         } catch (error) {
-            logger("error", "Storage", "Failed to save vision board:", error);
+            logger('error', 'Storage', 'Failed to save vision board:', error);
             setters.setVisionBoard(prev);
             refs.visionBoard.current = prev;
         }
@@ -579,7 +604,7 @@ export function createPreferencesOps(
         try {
             await setSetting('PREFER_PIN_AUTH', JSON.stringify(val));
         } catch (error) {
-            logger("error", "Storage", "Failed to update prefer PIN auth:", error);
+            logger('error', 'Storage', 'Failed to update prefer PIN auth:', error);
             setters.setPreferPinAuth(prev);
             refs.preferPinAuth.current = prev;
         }
@@ -593,16 +618,24 @@ export function createPreferencesOps(
         try {
             await setSetting('LOG_MODE', JSON.stringify(newVal));
         } catch (error) {
-            logger("error", "Storage", "Failed to toggle log mode:", error);
+            logger('error', 'Storage', 'Failed to toggle log mode:', error);
             setters.setLogMode(prevVal);
             refs.logMode.current = prevVal;
         }
     };
 
     return {
-        savePreferences, updateBiometricsPref, updateHapticsPref, updateLockTimeout,
-        updateVlogQuality, updateCompressionPreset, toggleDevMode, toggleDebugLayout,
-        saveVisionBoard, updatePreferPinAuth, toggleLogMode,
+        savePreferences,
+        updateBiometricsPref,
+        updateHapticsPref,
+        updateLockTimeout,
+        updateVlogQuality,
+        updateCompressionPreset,
+        toggleDevMode,
+        toggleDebugLayout,
+        saveVisionBoard,
+        updatePreferPinAuth,
+        toggleLogMode,
     };
 }
 
@@ -637,7 +670,7 @@ export function createAiConfigOps(
         try {
             await setSetting(AI_STORAGE_KEYS.API_KEY, key);
         } catch (error) {
-            logger("error", "Storage", "Failed to save AI API key:", error);
+            logger('error', 'Storage', 'Failed to save AI API key:', error);
             setters.setAiApiKey(prev);
             refs.aiApiKey.current = prev;
         }
@@ -650,7 +683,7 @@ export function createAiConfigOps(
         try {
             await setSetting(AI_STORAGE_KEYS.BASE_URL, url);
         } catch (error) {
-            logger("error", "Storage", "Failed to save AI base URL:", error);
+            logger('error', 'Storage', 'Failed to save AI base URL:', error);
             setters.setAiBaseUrl(prev);
             refs.aiBaseUrl.current = prev;
         }
@@ -663,7 +696,7 @@ export function createAiConfigOps(
         try {
             await setSetting(AI_STORAGE_KEYS.MODEL, model);
         } catch (error) {
-            logger("error", "Storage", "Failed to save AI model:", error);
+            logger('error', 'Storage', 'Failed to save AI model:', error);
             setters.setAiModel(prev);
             refs.aiModel.current = prev;
         }
@@ -676,7 +709,7 @@ export function createAiConfigOps(
         try {
             await setSetting(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
         } catch (error) {
-            logger("error", "Storage", "Failed to save AI grammar model:", error);
+            logger('error', 'Storage', 'Failed to save AI grammar model:', error);
             setters.setAiGrammarModel(prev);
             refs.aiGrammarModel.current = prev;
         }
@@ -689,7 +722,7 @@ export function createAiConfigOps(
         try {
             await setSetting(AI_STORAGE_KEYS.PROMPTS, JSON.stringify(prompts));
         } catch (error) {
-            logger("error", "Storage", "Failed to save AI prompts:", error);
+            logger('error', 'Storage', 'Failed to save AI prompts:', error);
             setters.setAiPrompts(prev);
             refs.aiPrompts.current = prev;
         }
@@ -714,13 +747,21 @@ export function createAiConfigOps(
         try {
             await setSetting(AI_STORAGE_KEYS.FAVORITE_MODELS, JSON.stringify(models));
         } catch (error) {
-            logger("error", "Storage", "Failed to save AI favorite models:", error);
+            logger('error', 'Storage', 'Failed to save AI favorite models:', error);
             setters.setAiFavoriteModels(prev);
             refs.aiFavoriteModels.current = prev;
         }
     };
 
-    return { saveAiApiKey, saveAiBaseUrl, saveAiModel, saveAiGrammarModel, saveAiPrompts, updateAutoGenerateSummaries, saveAiFavoriteModels };
+    return {
+        saveAiApiKey,
+        saveAiBaseUrl,
+        saveAiModel,
+        saveAiGrammarModel,
+        saveAiPrompts,
+        updateAutoGenerateSummaries,
+        saveAiFavoriteModels,
+    };
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -775,7 +816,11 @@ export function createCrossCuttingOps(
 
         // Also clean local files
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
-        try { await FileSystem.deleteAsync(vlogDir, { idempotent: true }); } catch (err) { logger("warn", "Storage", "Failed to delete vlog directory:", err); }
+        try {
+            await FileSystem.deleteAsync(vlogDir, { idempotent: true });
+        } catch (err) {
+            logger('warn', 'Storage', 'Failed to delete vlog directory:', err);
+        }
 
         refs.notesRef.current = [];
         setters.setSavedNotes([]);
@@ -812,7 +857,7 @@ export function createCrossCuttingOps(
     };
 
     const saveAlignmentReflection = async (
-        reflection: AlignmentReflection
+        reflection: AlignmentReflection,
     ): Promise<{ streakIncreased: boolean; newStreak: number }> => {
         const result = await notesOps.saveNote(reflection);
         const now = Date.now();
@@ -820,7 +865,7 @@ export function createCrossCuttingOps(
         try {
             await setSetting('LAST_REFLECTION_DATE', String(now));
         } catch (error) {
-            logger("error", "Storage", "Failed to save reflection date:", error);
+            logger('error', 'Storage', 'Failed to save reflection date:', error);
         }
         return result;
     };
@@ -828,4 +873,4 @@ export function createCrossCuttingOps(
     return { clearAllData, saveAlignmentReflection };
 }
 
-// Re-export safeParse for backwards compat with existing 
+// Re-export safeParse for backwards compat with existing

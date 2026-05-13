@@ -350,7 +350,17 @@ class CompressionQueueManager {
                     originalFileSizeBytes: result.originalSizeBytes,
                     compressionPreset: nextJob.presetId,
                     compressionPending: false,
+                    filePath: result.outputUri,
                 });
+                // Only delete the old file after DB update succeeds, so we don't
+                // leave the record pointing to a deleted file if the DB fails.
+                try {
+                    await FileSystem.deleteAsync(nextJob.filePath, { idempotent: true });
+                } catch (err) {
+                    logger('warn', 'CompressionQueue', 'Failed to delete old vlog file:', err);
+                }
+                // Update job filePath so future retries/inspections point to the new file
+                nextJob.filePath = result.outputUri;
             } else {
                 // Even if not compressed, mark not pending
                 await this.updateVlog(nextJob.vlogId, {

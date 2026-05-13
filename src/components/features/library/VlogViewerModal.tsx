@@ -37,36 +37,57 @@ export interface VlogViewerModalProps {
     initialIndex?: number;
     player?: VideoPlayer;
     onClose: () => void;
-    onDelete?: (id: string) => void;
+    /** Called when user taps the Delete button — parent should show a ConfirmDialog */
+    onRequestDelete?: (id: string) => void;
 }
 
 interface InternalVlogPlayerProps {
     uri: string;
+    onPlayerReady?: (player: VideoPlayer) => void;
 }
 
-const InternalVlogPlayer = React.memo(({ uri }: InternalVlogPlayerProps) => {
+const InternalVlogPlayer = React.memo(({ uri, onPlayerReady }: InternalVlogPlayerProps) => {
     const player = useVideoPlayer(uri, (p) => {
         p.loop = true;
         p.play();
     });
 
-    return <VideoView style={styles.videoPlayer} player={player} nativeControls={false} contentFit="contain" />;
+    useEffect(() => {
+        onPlayerReady?.(player);
+    }, [player, onPlayerReady]);
+
+    return (
+        <VideoView
+            style={styles.videoPlayer}
+            player={player}
+            nativeControls={false}
+            contentFit="contain"
+            pointerEvents="none"
+        />
+    );
 });
 
 interface VlogPlayerProps {
     uri: string;
     sharedPlayer?: VideoPlayer;
+    onPlayerReady?: (player: VideoPlayer) => void;
 }
 
 /** Only creates an internal player when no shared player is provided.
  *  Prevents allocating an orphaned native player instance. */
-const VlogPlayer = React.memo(({ uri, sharedPlayer }: VlogPlayerProps) => {
+const VlogPlayer = React.memo(({ uri, sharedPlayer, onPlayerReady }: VlogPlayerProps) => {
     if (sharedPlayer) {
         return (
-            <VideoView style={styles.videoPlayer} player={sharedPlayer} nativeControls={false} contentFit="contain" />
+            <VideoView
+                style={styles.videoPlayer}
+                player={sharedPlayer}
+                nativeControls={false}
+                contentFit="contain"
+                pointerEvents="none"
+            />
         );
     }
-    return <InternalVlogPlayer uri={uri} />;
+    return <InternalVlogPlayer uri={uri} onPlayerReady={onPlayerReady} />;
 });
 
 const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
@@ -76,7 +97,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     sourceRect,
     player: sharedPlayer,
     onClose,
-    onDelete,
+    onRequestDelete,
 }) => {
     const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
     const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -84,7 +105,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const CARD_TARGET_X = 16;
     const CARD_TARGET_Y = (SCREEN_HEIGHT - CARD_HEIGHT) / 2;
     const [expandedIndex, setExpandedIndex] = useState(initialIndex);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const { devMode, compressionPreset: activeCompressionPreset } = usePreferences();
     const { enqueueVlog, getJobForVlog } = useCompressionQueueContext();
     const activeJob = getJobForVlog(vlogs[expandedIndex]?.id ?? '');
@@ -106,7 +126,14 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const [currentTime, setCurrentTime] = useState(0);
     const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const activePlayer = sharedPlayer || null;
+    /** Internal player instance created by VlogPlayer when no shared player is provided */
+    const [internalPlayer, setInternalPlayer] = useState<VideoPlayer | null>(null);
+    const activePlayer = sharedPlayer || internalPlayer;
+
+    /** Stable callback to receive the player from InternalVlogPlayer */
+    const handlePlayerReady = useCallback((player: VideoPlayer) => {
+        setInternalPlayer(player);
+    }, []);
 
     useEffect(() => {
         if (visible) {
@@ -171,6 +198,14 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         }, 3000);
     }, []);
 
+    /** If vlogs array shrinks (e.g. parent deletes one), clamp expandedIndex so
+     *  we never point to a removed element — which would crash the modal. */
+    useEffect(() => {
+        if (expandedIndex >= vlogs.length) {
+            setExpandedIndex(Math.max(0, vlogs.length - 1));
+        }
+    }, [vlogs.length, expandedIndex]);
+
     useEffect(() => {
         if (showControls) scheduleControlsHide();
         return () => {
@@ -205,6 +240,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const panGesture = useMemo(
         () =>
             Gesture.Pan()
+                .minDistance(10)
+                .activeOffsetY(10)
                 .onUpdate((e) => {
                     panX.value = e.translationX;
                     panY.value = e.translationY;
@@ -369,14 +406,21 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
                         {/* Video Player Area with Custom Controls */}
                         <View style={styles.expandedVideoContainer}>
-                            <VlogPlayer uri={currentVlog.filePath} sharedPlayer={sharedPlayer} />
+                            <VlogPlayer
+                                uri={currentVlog.filePath}
+                                sharedPlayer={sharedPlayer}
+                                onPlayerReady={handlePlayerReady}
+                            />
 
                             {/* Tap overlay to toggle controls visibility */}
                             <Pressable
                                 style={StyleSheet.absoluteFillObject}
                                 onPress={() => {
-                                    setShowControls((prev) => !prev);
-                                    if (!showControls) scheduleControlsHide();
+                                    setShowControls((prev) => {
+                                        const next = !prev;
+                                        if (next) scheduleControlsHide();
+                                        return next;
+                                    });
                                 }}
                             />
 
@@ -535,6 +579,12 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                 </Text>
                             </View>
 
+                            {/* Close button (explicit, reliable escape hatch) */}
+                            <AnimatedScaleButton style={styles.closeBtn} onPress={handleCloseInternal}>
+                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
+                                <Text style={styles.closeBtnText}>Close</Text>
+                            </AnimatedScaleButton>
+
                             {/* Swipe navigation */}
                             {vlogs.length > 1 && (
                                 <View style={styles.swipeNav}>
@@ -571,12 +621,12 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                         </View>
 
                         {/* Actions */}
-                        {onDelete && (
+                        {onRequestDelete && (
                             <View style={styles.expandedActions}>
                                 <View style={{ flex: 1 }} />
                                 <AnimatedScaleButton
                                     style={styles.deleteBtn}
-                                    onPress={() => setShowDeleteConfirm(currentVlog.id)}
+                                    onPress={() => onRequestDelete(currentVlog.id)}
                                 >
                                     <MaterialCommunityIcons
                                         name="delete-outline"
@@ -590,56 +640,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                     </Animated.View>
                 </Animated.View>
             </GestureDetector>
-
-            {/* Delete Confirmation Modal */}
-            {showDeleteConfirm && (
-                <Modal visible transparent animationType="fade">
-                    <View style={styles.deleteModalOverlay}>
-                        <View style={styles.deleteModalCard}>
-                            <Text style={styles.deleteModalTitle}>Delete Vlog?</Text>
-                            <Text style={styles.deleteModalSub}>
-                                This will permanently delete this video. This cannot be undone.
-                            </Text>
-                            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                                <AnimatedScaleButton
-                                    style={[styles.deleteModalBtn, { backgroundColor: theme.colors.glassBackground }]}
-                                    onPress={() => setShowDeleteConfirm(null)}
-                                >
-                                    <MaterialCommunityIcons
-                                        name="close"
-                                        size={18}
-                                        color={theme.colors.textPrimary}
-                                        style={{ marginRight: 6 }}
-                                    />
-                                    <Text style={styles.deleteModalBtnText}>Cancel</Text>
-                                </AnimatedScaleButton>
-                                <AnimatedScaleButton
-                                    style={[styles.deleteModalBtn, { backgroundColor: theme.colors.danger }]}
-                                    onPress={() => {
-                                        if (onDelete && showDeleteConfirm) {
-                                            onDelete(showDeleteConfirm);
-                                            setShowDeleteConfirm(null);
-                                            if (vlogs.length <= 1) {
-                                                handleCloseInternal();
-                                            } else if (expandedIndex >= vlogs.length - 1) {
-                                                setExpandedIndex(Math.max(0, expandedIndex - 1));
-                                            }
-                                        }
-                                    }}
-                                >
-                                    <MaterialCommunityIcons
-                                        name="delete-outline"
-                                        size={18}
-                                        color={theme.colors.textPrimary}
-                                        style={{ marginRight: 6 }}
-                                    />
-                                    <Text style={styles.deleteModalBtnText}>Delete</Text>
-                                </AnimatedScaleButton>
-                            </View>
-                        </View>
-                    </View>
-                </Modal>
-            )}
         </Modal>
     );
 };
@@ -882,48 +882,20 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         fontSize: 14,
     },
-
-    /* ── Delete Modal ─────────────────────────────────────────────────── */
-    deleteModalOverlay: {
-        flex: 1,
-        backgroundColor: theme.colors.overlayMedium,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    deleteModalCard: {
-        backgroundColor: theme.colors.surfaceRaised,
-        borderRadius: 24,
-        padding: 24,
-        width: '100%',
-        maxWidth: 340,
-        borderWidth: 1,
-        borderColor: theme.colors.glassBorder,
-        alignItems: 'center',
-    },
-    deleteModalTitle: {
-        color: theme.colors.textPrimary,
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 8,
-    },
-    deleteModalSub: {
-        color: theme.colors.textSecondary,
-        fontSize: 15,
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    deleteModalBtn: {
-        flex: 1,
+    closeBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 16,
-        borderRadius: 16,
+        backgroundColor: theme.colors.glassBorder,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 100,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+        gap: 6,
     },
-    deleteModalBtnText: {
+    closeBtnText: {
         color: theme.colors.textPrimary,
-        fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '600',
+        fontSize: 14,
     },
 });

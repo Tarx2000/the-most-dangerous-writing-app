@@ -1,11 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Platform,
-    ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
@@ -52,9 +46,13 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
      * Map shared sessionMode to library tab.
      * 'journal' -> 'notes', 'circles' -> 'circles', 'checkin' -> 'checkins', 'vlog' -> 'vlogs'
      */
-    const libraryTab = sessionMode === 'journal' ? 'notes'
-        : sessionMode === 'circles' ? 'circles'
-            : sessionMode === 'vlog' ? 'vlogs'
+    const libraryTab =
+        sessionMode === 'journal'
+            ? 'notes'
+            : sessionMode === 'circles'
+              ? 'circles'
+              : sessionMode === 'vlog'
+                ? 'vlogs'
                 : 'checkins';
 
     const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -66,6 +64,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [personToDelete, setPersonToDelete] = useState<string | null>(null);
+    const [vlogToDelete, setVlogToDelete] = useState<string | null>(null);
     const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
     /** Person whose profile modal is currently open */
     const [profilePerson, setProfilePerson] = useState<Person | null>(null);
@@ -81,11 +80,14 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     /* ── Memoized FlashList props to prevent re-create on every render ─ */
     const circlesListContentStyle = useMemo(() => ({ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }), []);
 
-    const circlesExtraData = useMemo(() => ({
-        selectedCircleId,
-        notesLength: savedNotes.length,
-        isUnlocked: security.isNotesUnlocked,
-    }), [selectedCircleId, savedNotes.length, security.isNotesUnlocked]);
+    const circlesExtraData = useMemo(
+        () => ({
+            selectedCircleId,
+            notesLength: savedNotes.length,
+            isUnlocked: security.isNotesUnlocked,
+        }),
+        [selectedCircleId, savedNotes.length, security.isNotesUnlocked],
+    );
 
     /**
      * Precompute notes grouped by person for O(1) lookups.
@@ -122,33 +124,35 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
         });
     }, [persons, notesByPerson]);
 
-    const renderPersonItem = useCallback(({ item: p }: { item: Person }) => (
-        <View style={styles.personItemWrapper}>
-            <ExpandablePersonCard
-                person={p}
-                notes={notesByPerson.get(p.id) || []}
-                isExpanded={selectedCircleId === p.id}
-                isLocked={!security.isNotesUnlocked}
-                onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
-                onNotePress={setViewNoteModal}
-                onProfilePress={() => setProfilePerson(p)}
-                isNoteActive={isNoteActive}
-                isNoteQueued={isNoteQueued}
-            />
-        </View>
-    ), [selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued, notesByPerson]);
+    const renderPersonItem = useCallback(
+        ({ item: p }: { item: Person }) => (
+            <View style={styles.personItemWrapper}>
+                <ExpandablePersonCard
+                    person={p}
+                    notes={notesByPerson.get(p.id) || []}
+                    isExpanded={selectedCircleId === p.id}
+                    isLocked={!security.isNotesUnlocked}
+                    onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
+                    onNotePress={setViewNoteModal}
+                    onProfilePress={() => setProfilePerson(p)}
+                    isNoteActive={isNoteActive}
+                    isNoteQueued={isNoteQueued}
+                />
+            </View>
+        ),
+        [selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued, notesByPerson],
+    );
 
     const { groupedNotes } = useLibraryNotes(savedNotes, libraryTab, sortBy, selectedCircleId);
 
-    const handleRegenerateAi = useCallback(async (note: SavedNote) => {
-        vibrate(30);
-        const category: AiJobCategory = isAlignmentRef(note)
-            ? 'checkin'
-            : note.personId
-                ? 'circle'
-                : 'journal';
-        await enqueueNote(note.id, category);
-    }, [enqueueNote]);
+    const handleRegenerateAi = useCallback(
+        async (note: SavedNote) => {
+            vibrate(30);
+            const category: AiJobCategory = isAlignmentRef(note) ? 'checkin' : note.personId ? 'circle' : 'journal';
+            await enqueueNote(note.id, category);
+        },
+        [enqueueNote],
+    );
 
     /* ── Stable modal callbacks (prevents child re-renders) ────────── */
     const handleCloseViewNote = useCallback(() => setViewNoteModal(null), []);
@@ -161,22 +165,31 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
         setPersonToDelete(id);
     }, []);
     const handleConfirmDeleteNote = useCallback(() => {
-        setNoteToDelete(prev => {
+        setNoteToDelete((prev) => {
             if (prev) deleteNote(prev);
             return null;
         });
     }, [deleteNote]);
     const handleConfirmDeletePerson = useCallback(() => {
-        setPersonToDelete(prev => {
+        setPersonToDelete((prev) => {
             if (prev) {
                 deletePerson(prev);
-                setSelectedCircleId(current => current === prev ? null : current);
+                setSelectedCircleId((current) => (current === prev ? null : current));
             }
             return null;
         });
     }, [deletePerson]);
+    const handleRequestDeleteVlog = useCallback((id: string) => {
+        setVlogToDelete(id);
+    }, []);
+    const handleConfirmDeleteVlog = useCallback(() => {
+        setVlogToDelete((prev) => {
+            if (prev) deleteVlog(prev);
+            return null;
+        });
+    }, [deleteVlog]);
 
-    const activeNoteIds = useMemo(() => queueState.jobs.map(j => j.noteId), [queueState.jobs]);
+    const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
 
     return (
         <View style={commonStyles.libraryContainer}>
@@ -192,31 +205,62 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                                 <Text style={styles.aiBadgeText}>
                                     {queueState.batchProgress
                                         ? `${queueState.batchProgress.current}/${queueState.batchProgress.total}`
-                                        : 'AI'
-                                    }
+                                        : 'AI'}
                                 </Text>
                             </View>
                         )}
                     </View>
-                    <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>{savedNotes.length} Entries • {persons.length} Circles</Text>
+                    <Text style={[commonStyles.librarySubtitle, { marginBottom: 0 }]}>
+                        {savedNotes.length} Entries • {persons.length} Circles
+                    </Text>
                 </View>
                 {!security.isNotesUnlocked ? (
                     <AnimatedScaleButton
-                        style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.primaryAction, borderColor: theme.colors.primaryAction }]}
+                        style={[
+                            commonStyles.iconButton,
+                            {
+                                paddingHorizontal: 15,
+                                paddingVertical: 10,
+                                backgroundColor: theme.colors.primaryAction,
+                                borderColor: theme.colors.primaryAction,
+                            },
+                        ]}
                         onPress={async () => {
                             const success = await security.unlockNotes();
                             if (success) vibrate(50);
                         }}
                     >
-                        <MaterialCommunityIcons name="lock-open-variant" size={16} color={theme.colors.primaryActionText} style={styles.iconMarginRight} />
-                        <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>Unlock</Text>
+                        <MaterialCommunityIcons
+                            name="lock-open-variant"
+                            size={16}
+                            color={theme.colors.primaryActionText}
+                            style={styles.iconMarginRight}
+                        />
+                        <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>
+                            Unlock
+                        </Text>
                     </AnimatedScaleButton>
                 ) : (
                     <AnimatedScaleButton
-                        style={[commonStyles.iconButton, { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: theme.colors.glassBackground, borderColor: theme.colors.glassBorder }]}
-                        onPress={() => { security.lockAll(); }}
+                        style={[
+                            commonStyles.iconButton,
+                            {
+                                paddingHorizontal: 15,
+                                paddingVertical: 10,
+                                backgroundColor: theme.colors.glassBackground,
+                                borderColor: theme.colors.glassBorder,
+                            },
+                        ]}
+                        onPress={() => {
+                            security.lockAll();
+                        }}
                     >
-                        <MaterialCommunityIcons name="lock" size={16} color={theme.colors.textPrimary} style={styles.iconMarginRight} />
+                        <MaterialCommunityIcons
+                            name="lock"
+                            size={16}
+                            color={theme.colors.textPrimary}
+                            style={styles.iconMarginRight}
+                        />
                         <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock</Text>
                     </AnimatedScaleButton>
                 )}
@@ -226,9 +270,24 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
             {libraryTab !== 'circles' && libraryTab !== 'vlogs' && (
                 <View style={styles.filterRow}>
                     <AnimatedScaleButton style={styles.filterDropdownBtn} onPress={() => setShowSortModal(true)}>
-                        <MaterialCommunityIcons name="sort" size={18} color={theme.colors.textSecondary} style={styles.iconMarginRight8} />
-                        <Text style={styles.filterDropdownText}>Sort by: <Text style={styles.filterDropdownActive}>{SORT_OPTIONS_DATA.find(o => o.id === sortBy)?.label}</Text></Text>
-                        <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} style={styles.iconMarginLeftAuto} />
+                        <MaterialCommunityIcons
+                            name="sort"
+                            size={18}
+                            color={theme.colors.textSecondary}
+                            style={styles.iconMarginRight8}
+                        />
+                        <Text style={styles.filterDropdownText}>
+                            Sort by:{' '}
+                            <Text style={styles.filterDropdownActive}>
+                                {SORT_OPTIONS_DATA.find((o) => o.id === sortBy)?.label}
+                            </Text>
+                        </Text>
+                        <MaterialCommunityIcons
+                            name="chevron-down"
+                            size={20}
+                            color={theme.colors.textSecondary}
+                            style={styles.iconMarginLeftAuto}
+                        />
                     </AnimatedScaleButton>
                 </View>
             )}
@@ -258,9 +317,16 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                         {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
                             <View style={styles.circlesLockOverlay}>
                                 <View style={styles.circlesLockCard}>
-                                    <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={styles.iconMarginBottom16} />
+                                    <MaterialCommunityIcons
+                                        name="lock-outline"
+                                        size={48}
+                                        color={theme.colors.primaryAction}
+                                        style={styles.iconMarginBottom16}
+                                    />
                                     <Text style={styles.circlesLockTitle}>Circles Protected</Text>
-                                    <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
+                                    <Text style={styles.circlesLockSubtitle}>
+                                        Verify your identity to view your circles
+                                    </Text>
                                     <AnimatedScaleButton
                                         style={styles.circlesUnlockBtn}
                                         onPress={async () => {
@@ -268,7 +334,12 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                                             if (success) vibrate(50);
                                         }}
                                     >
-                                        <MaterialCommunityIcons name="fingerprint" size={22} color={theme.colors.textPrimary} style={styles.iconMarginRight10} />
+                                        <MaterialCommunityIcons
+                                            name="fingerprint"
+                                            size={22}
+                                            color={theme.colors.textPrimary}
+                                            style={styles.iconMarginRight10}
+                                        />
                                         <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
                                     </AnimatedScaleButton>
                                 </View>
@@ -290,7 +361,10 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                                             data={sortedPersons}
                                             keyExtractor={(p) => p.id}
                                             estimatedItemSize={80}
-                                            getItemLayout={(_: ArrayLike<Person> | null | undefined, index: number) => ({
+                                            getItemLayout={(
+                                                _: ArrayLike<Person> | null | undefined,
+                                                index: number,
+                                            ) => ({
                                                 length: 80,
                                                 offset: 80 * index,
                                                 index,
@@ -313,7 +387,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                         vlogs={savedVlogs}
                         isLocked={!security.isCirclesUnlocked && !security.isNotesUnlocked}
                         onUnlock={security.unlockCircles}
-                        onDeleteVlog={deleteVlog}
+                        onRequestDeleteVlog={handleRequestDeleteVlog}
                     />
                 )}
             </View>
@@ -324,7 +398,10 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                 title="Sort Library By"
                 options={[...SORT_OPTIONS_DATA]}
                 activeId={sortBy}
-                onSelect={(id) => { setSortBy(id as SortOption); setShowSortModal(false); }}
+                onSelect={(id) => {
+                    setSortBy(id as SortOption);
+                    setShowSortModal(false);
+                }}
                 onClose={() => setShowSortModal(false)}
             />
 
@@ -372,13 +449,29 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                 />
             </ErrorBoundary>
 
+            {/* Delete Vlog Confirmation — unified ConfirmDialog */}
+            <ErrorBoundary>
+                <ConfirmDialog
+                    visible={!!vlogToDelete}
+                    title="Delete Vlog?"
+                    message="This will permanently delete this video. This cannot be undone."
+                    confirmLabel="Delete"
+                    cancelLabel="Cancel"
+                    icon="delete-outline"
+                    cancelIcon="close"
+                    destructive
+                    onConfirm={handleConfirmDeleteVlog}
+                    onCancel={() => setVlogToDelete(null)}
+                />
+            </ErrorBoundary>
+
             {/* Person Profile Modal */}
             <ErrorBoundary>
                 <PersonProfileModal
                     visible={!!profilePerson}
                     onClose={() => setProfilePerson(null)}
                     person={profilePerson}
-                    notes={profilePerson ? savedNotes.filter(n => n.personId === profilePerson.id) : []}
+                    notes={profilePerson ? savedNotes.filter((n) => n.personId === profilePerson.id) : []}
                     isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
                     onUnlock={security.unlockProfile}
                     onUpdatePerson={updatePerson}
@@ -389,7 +482,6 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                     isNoteQueued={isNoteQueued}
                 />
             </ErrorBoundary>
-
         </View>
     );
 };
@@ -413,7 +505,7 @@ const styles = StyleSheet.create({
         fontWeight: '800',
     },
     filterRow: {
-        marginBottom: 20
+        marginBottom: 20,
     },
     filterDropdownBtn: {
         flexDirection: 'row',
@@ -423,7 +515,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: theme.colors.glassBorder
+        borderColor: theme.colors.glassBorder,
     },
     filterDropdownText: {
         color: theme.colors.textSecondary,
@@ -433,7 +525,7 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 60
+        marginTop: 60,
     },
 
     /* ── Circles Lock Overlay ────────────────────────────────────────── */
