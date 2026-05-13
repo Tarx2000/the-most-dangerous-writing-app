@@ -95,10 +95,16 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     useEffect(() => {
         if (!note || aiEnqueuedRef.current || !autoGenerateSummaries) return;
 
-        // Skip AI for very short notes
+        // Skip AI for tweets (short entries) — tweets don't get title/summary
+        if (note.isTweet) {
+            aiEnqueuedRef.current = true;
+            return;
+        }
+
+        // Skip AI for very short notes (below AI threshold)
         const noteWordCount = note.text.trim().split(/\s+/).filter(Boolean).length;
         if (noteWordCount < MIN_AI_WORDS) {
-            aiEnqueuedRef.current = true; // Mark as "handled" so we don't re-check
+            aiEnqueuedRef.current = true;
             return;
         }
 
@@ -116,6 +122,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /* ── Manual AI Generate ─────────────────────────────────────────── */
     const handleManualGenerate = useCallback(() => {
         if (!note) return;
+        if (note.isTweet) return;
         const noteWordCount = note.text.trim().split(/\s+/).filter(Boolean).length;
         if (noteWordCount < MIN_AI_WORDS) return;
         aiEnqueuedRef.current = true;
@@ -185,7 +192,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         return editableTextRef.current.trim().split(/\s+/).filter(Boolean).length;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [renderKey]);
-    const isTooShortForAi = wordCount < MIN_AI_WORDS;
+    const isTooShortForAi = note?.isTweet || wordCount < MIN_AI_WORDS;
 
     return (
         <View style={styles.container}>

@@ -11,6 +11,12 @@ import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { CONFIG } from '@/config';
 import { DEFAULT_AI_PROMPTS, type AiPrompts } from '@/config/ai';
+import {
+    FEATURE_FLAG_METADATA,
+    DEFAULT_FEATURE_FLAGS,
+    type FeatureFlags,
+} from '@/config/flags';
+import { getFeatureFlags, updateFeatureFlag, persistFeatureFlags } from '@/lib/featureFlags';
 import type { SavedNote, Person, SavedVlog, AiQueueState, AiLogEntry } from '@/types';
 import { startConsoleCapture, stopConsoleCapture, getCapturedLogs, clearCapturedLogs, type CapturedLog } from '@/lib/consoleCapture';
 
@@ -51,6 +57,41 @@ type DeveloperToolsPanelProps = {
     aiLogEntries: AiLogEntry[];
     setAiLogEntries: (val: AiLogEntry[]) => void;
     clearAiLog: () => Promise<void>;
+};
+
+const FeatureFlagsSection: React.FC = () => {
+    const [flags, setFlags] = React.useState<FeatureFlags>(getFeatureFlags());
+    const handleToggle = async (key: keyof FeatureFlags) => {
+        vibrate(15);
+        const next = { ...flags, [key]: !flags[key] };
+        setFlags(next);
+        updateFeatureFlag(key, !flags[key] as never);
+        await persistFeatureFlags();
+    };
+    return (
+        <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
+            <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🎛️ Feature Flags</Text>
+            {(Object.keys(DEFAULT_FEATURE_FLAGS) as (keyof FeatureFlags)[]).map((key) => (
+                <AnimatedScaleButton
+                    key={key}
+                    style={[commonStyles.devToolBtn, { backgroundColor: flags[key] ? theme.colors.successBorder : theme.colors.glassBackground, marginBottom: 8 }]}
+                    onPress={() => handleToggle(key)}
+                >
+                    <View style={commonStyles.devToolIconBox}>
+                        <MaterialCommunityIcons name={flags[key] ? 'check-circle' : 'circle-outline'} size={16} color={flags[key] ? theme.colors.green : theme.colors.textMuted} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[commonStyles.devToolBtnText, { color: flags[key] ? theme.colors.green : theme.colors.textMuted }]}>
+                            {FEATURE_FLAG_METADATA[key].label}
+                        </Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 11 }} numberOfLines={2}>
+                            {FEATURE_FLAG_METADATA[key].description}
+                        </Text>
+                    </View>
+                </AnimatedScaleButton>
+            ))}
+        </View>
+    );
 };
 
 /**
@@ -613,6 +654,8 @@ export const DeveloperToolsPanel: React.FC<DeveloperToolsPanelProps> = ({
                             <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Reset to defaults</Text>
                         </AnimatedScaleButton>
                     </View>
+
+                    <FeatureFlagsSection />
 
                     <View style={{ backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 12, marginTop: 10 }}>
                         <Text style={{ color: theme.colors.gold, fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>🔥 Debug Injectors</Text>

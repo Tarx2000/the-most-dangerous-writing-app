@@ -128,6 +128,14 @@ const MIGRATIONS: Migration[] = [
             );`,
         ],
     },
+    {
+        version: 3,
+        name: 'Add is_tweet column',
+        up: [
+            `ALTER TABLE notes ADD COLUMN is_tweet INTEGER NOT NULL DEFAULT 0;`,
+            `UPDATE notes SET is_tweet = 1 WHERE (LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1) <= 45;`,
+        ],
+    },
 ];
 
 async function migrate(db: SQLiteDatabase): Promise<void> {

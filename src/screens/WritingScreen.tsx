@@ -15,7 +15,7 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
-import { CONFIG } from '@/config';
+import { CONFIG, TWEET_THRESHOLD } from '@/config';
 import { useSession } from '@/lib/hooks/useSession';
 import { useNotes, usePreferences } from '@/lib/hooks/useStorage';
 import { SavedNote } from '@/types';
@@ -27,8 +27,9 @@ import { generateId, formatSessionDate } from '@/lib/utils';
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 
 /** Derive the status label and style based on session state */
-function getStatusDisplay(hasLost: boolean, isQuickNote: boolean | undefined, timeRemaining: number) {
+function getStatusDisplay(hasLost: boolean, isQuickNote: boolean | undefined, isTweet: boolean | undefined, timeRemaining: number) {
     if (hasLost) return { text: 'YOU DIED', style: commonStyles.lossText };
+    if (isTweet) return { text: 'TWEET', style: styles.tweetLabel };
     if (isQuickNote) return { text: 'QUICK NOTE', style: styles.quickNoteLabel };
     if (timeRemaining === 0) return { text: 'YOU SURVIVED', style: styles.winText };
     const mins = Math.floor(timeRemaining / 60);
@@ -37,7 +38,9 @@ function getStatusDisplay(hasLost: boolean, isQuickNote: boolean | undefined, ti
 }
 
 export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
-    const { timeIndex, diffIndex, mode, personId, isQuickNote } = route.params;
+    const { timeIndex, diffIndex, mode, personId, isQuickNote, isTweet } = route.params;
+    const isTweetMode = isTweet === true;
+    const isQuickNoteMode = isQuickNote === true || isTweetMode; // tweets behave like quick notes
 
     const inputRef = useRef<TextInput>(null);
     const lastTimerResetRef = useRef(0);
@@ -64,12 +67,29 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     // On mount, start the session immediately
     useEffect(() => {
-        startSession(isQuickNote);
+        startSession(isQuickNoteMode);
         vibrate(50);
         return () => {
             clearTimers();
         };
-    }, [startSession, clearTimers, isQuickNote]);
+    }, [startSession, clearTimers, isQuickNoteMode]);
+
+    // Clamp text to tweet threshold
+    const handleTextChangeLocal = (newText: string) => {
+        const now = Date.now();
+        if (now - lastTimerResetRef.current > 1000) {
+            DeviceEventEmitter.emit('RESET_LOCK_TIMER');
+            lastTimerResetRef.current = now;
+        }
+        if (isTweetMode) {
+            const currentWords = newText.trim().split(/\s+/).filter(Boolean).length;
+            if (currentWords > TWEET_THRESHOLD) {
+                // Block typing past threshold
+                return;
+            }
+        }
+        handleTextChange(newText);
+    };
 
     const handleSave = async () => {
         const currentText = textRef.current;
@@ -84,17 +104,32 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             text: currentText,
             dateStr: formatSessionDate(Date.now()),
             timestamp: Date.now(),
-            durationMin: isQuickNote ? 0 : sessionTimeSelected / 60,
+            durationMin: isQuickNoteMode ? 0 : sessionTimeSelected / 60,
             won: noteWon,
             ...(mode === 'circles' && personId ? { personId } : {}),
-            isQuickNote,
+            isQuickNote: isQuickNoteMode || undefined,
+            isTweet: isTweetMode || undefined,
         };
 
         const result = await saveNote(newNote);
 
+        if (isTweetMode) {
+            // Tweets skip PostWriting — no AI processing needed
+            navigation.reset({
+                index: 0,
+                routes: [
+                    {
+                        name: 'Home',
+                        params: result.streakIncreased
+                            ? { streakIncreased: true, newStreak: result.newStreak }
+                            : undefined,
+                    },
+                ],
+            });
+            return;
+        }
+
         // Navigate to PostWriting AI review screen — AI enrichment happens there
-        // We use 'navigate' instead of 'reset' so the WritingScreen stays in the background
-        // beneath the transparent modal presentation of PostWriting.
         navigation.navigate('PostWriting', {
             noteId: newNote.id,
             streakIncreased: result.streakIncreased,
@@ -104,15 +139,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
 
-    const handleTextChangeLocal = (newText: string) => {
-        // Throttle security timer reset to once per second to avoid O(n) event overhead per keystroke
-        const now = Date.now();
-        if (now - lastTimerResetRef.current > 1000) {
-            DeviceEventEmitter.emit('RESET_LOCK_TIMER');
-            lastTimerResetRef.current = now;
-        }
-        handleTextChange(newText);
-    };
+
 
     const animatedShakeStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: shakeAnimation.value }],
@@ -154,18 +181,20 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     hasLost={hasLost}
                     isContinuingAfterLoss={isContinuingAfterLoss}
                     sessionTimeRemaining={sessionTimeRemaining}
-                    isDisabled={isQuickNote ?? false}
+                    isDisabled={isQuickNoteMode}
                 />
 
                 <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
                     <View style={commonStyles.header}>
-                        <Text style={commonStyles.wordCount}>{wordCount} Words</Text>
+                        <Text style={[commonStyles.wordCount, isTweetMode && wordCount > TWEET_THRESHOLD - 10 && { color: theme.colors.danger }]}>
+                            {isTweetMode ? `${wordCount} / ${TWEET_THRESHOLD} Words` : `${wordCount} Words`}
+                        </Text>
                         {(() => {
-                            const { text, style } = getStatusDisplay(hasLost, isQuickNote, sessionTimeRemaining);
+                            const { text, style } = getStatusDisplay(hasLost, isQuickNote, isTweet, sessionTimeRemaining);
                             return <Text style={style}>{text}</Text>;
                         })()}
                         {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
-                        {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNote && (
+                        {devMode && sessionTimeRemaining > 0 && !hasLost && !isQuickNoteMode && (
                             <AnimatedScaleButton onPress={skipTimer} style={styles.skipButton}>
                                 <Text style={styles.skipButtonText}>⏩ Skip</Text>
                             </AnimatedScaleButton>
@@ -206,7 +235,21 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </ScrollView>
                     </View>
 
-                    {(sessionTimeRemaining === 0 || isContinuingAfterLoss || isQuickNote) && !hasLost && (
+                    {isTweetMode && !hasLost && (
+                        <View style={styles.tweetProgressContainer}>
+                            <View style={styles.tweetProgressTrack}>
+                                <View style={[styles.tweetProgressFill, {
+                                    width: `${Math.min(100, (wordCount / TWEET_THRESHOLD) * 100)}%`,
+                                    backgroundColor: wordCount >= TWEET_THRESHOLD ? theme.colors.danger : theme.colors.primaryAction,
+                                }]} />
+                            </View>
+                            <Text style={[styles.tweetProgressText, wordCount >= TWEET_THRESHOLD && { color: theme.colors.danger }]}>
+                                {wordCount >= TWEET_THRESHOLD ? 'Maximum length reached' : `${TWEET_THRESHOLD - wordCount} words left`}
+                            </Text>
+                        </View>
+                    )}
+
+                    {(sessionTimeRemaining === 0 || isContinuingAfterLoss || isQuickNoteMode) && !hasLost && (
                         <View style={commonStyles.finishedActionsContainer}>
                             <AnimatedScaleButton
                                 style={[commonStyles.saveActionBtn, { opacity: 0.6 }]}
@@ -257,6 +300,12 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 export default WritingScreen;
 
 const styles = StyleSheet.create({
+    tweetLabel: {
+        color: theme.colors.primaryAction,
+        fontSize: 14,
+        fontWeight: '900',
+        letterSpacing: 1,
+    },
     quickNoteLabel: {
         color: theme.colors.textMuted,
         fontSize: 14,
@@ -282,5 +331,30 @@ const styles = StyleSheet.create({
         color: theme.colors.background,
         fontSize: 12,
         fontWeight: 'bold',
+    },
+    tweetProgressContainer: {
+        position: 'absolute',
+        bottom: 20,
+        left: 20,
+        right: 20,
+        zIndex: 10,
+        alignItems: 'center',
+    },
+    tweetProgressTrack: {
+        width: '100%',
+        height: 4,
+        backgroundColor: theme.colors.glassSurface,
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    tweetProgressFill: {
+        height: '100%',
+        borderRadius: 2,
+    },
+    tweetProgressText: {
+        color: theme.colors.textMuted,
+        fontSize: 11,
+        fontWeight: '600',
+        marginTop: 4,
     },
 });

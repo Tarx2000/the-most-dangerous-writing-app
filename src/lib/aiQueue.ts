@@ -28,7 +28,7 @@ import { logger, logAiQueue } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
 import { logAi, logStartupDiagnostics } from '@/lib/aiLogger';
-import { MIN_AI_WORDS } from '@/config/ai';
+import { TWEET_THRESHOLD } from '@/config/tweet';
 import { generateId } from '@/lib/utils';
 import {
     AI_STORAGE_KEYS,
@@ -37,6 +37,7 @@ import {
     AI_HEALTH_CHECK_INTERVAL_MS,
     AI_JOB_TIMEOUT_MS,
     AI_STALL_DETECTION_MS,
+    MIN_AI_WORDS,
 } from '@/config/ai';
 import type { AiJob, AiJobCategory, AiQueueState, SavedNote, Person } from '@/types';
 import { isAlignmentReflection } from '@/types';
@@ -445,10 +446,10 @@ class AiQueueManager {
     async enqueueBatch(forceOverwrite: boolean = false, categoryFilter?: Set<AiJobCategory>): Promise<number> {
         const allNotes = this.getAllNotes();
 
-        // Filter notes that need processing
+        // Filter notes that need processing (skip tweets — they never get AI)
         const notesToProcess = forceOverwrite
-            ? allNotes
-            : allNotes.filter((n) => !n.aiTitle || !n.aiSummary || n.aiSummary.length === 0 || !n.aiModelUsed);
+            ? allNotes.filter((n) => !n.isTweet)
+            : allNotes.filter((n) => !n.isTweet && (!n.aiTitle || !n.aiSummary || n.aiSummary.length === 0 || !n.aiModelUsed));
 
         if (notesToProcess.length === 0) return 0;
 
@@ -712,6 +713,20 @@ class AiQueueManager {
         }
 
         logAiQueue('info', 'processNext — note found', { noteId: nextJob.noteId, textLength: note.text.length });
+
+        // Skip tweets entirely — tweets don't get AI processing
+        if (note.isTweet) {
+            logAiQueue('info', 'processNext — SKIPPING (isTweet)', { noteId: nextJob.noteId });
+            nextJob.status = 'done';
+            nextJob.completedAt = Date.now();
+            this.clearJobTimeout();
+            await this.persistQueue();
+            this.emitState();
+            this.processing = false;
+            this.currentJobStartTime = 0;
+            this.scheduleNext();
+            return;
+        }
 
         // Skip AI title/summary for very short notes (too short to meaningfully summarize)
         const wordCount = note.text.match(/\S+/g)?.length ?? 0;

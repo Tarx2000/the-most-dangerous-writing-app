@@ -18,7 +18,8 @@ import {
     AI_STORAGE_KEYS,
     DEFAULT_AI_PROMPTS,
 } from '@/config/ai';
-import { APP_VERSION, CONFIG } from '@/config';
+import { APP_VERSION, CONFIG, TWEET_THRESHOLD, isTweet } from '@/config';
+import { isTweet as isTweetDirect, TWEET_THRESHOLD as TWEET_THRESHOLD_DIRECT } from '@/config/tweet';
 
 describe('AI Config (ai.ts)', () => {
     describe('isApiKeyConfigured', () => {
@@ -207,6 +208,28 @@ describe('App Config (index.ts)', () => {
     describe('TICK_RATE_MS', () => {
         it('is 100', () => {
             expect(CONFIG.TICK_RATE_MS).toBe(100);
+        });
+    });
+
+    describe('TWEET_THRESHOLD integration', () => {
+        it('config/tweet.ts exports a positive TWEET_THRESHOLD', () => {
+            expect(TWEET_THRESHOLD).toBeGreaterThan(0);
+        });
+
+        it('config/tweet.ts isTweet function correctly classifies word counts', () => {
+            expect(isTweet(0)).toBe(true);
+            expect(isTweet(1)).toBe(true);
+            expect(isTweet(TWEET_THRESHOLD)).toBe(true);
+            expect(isTweet(TWEET_THRESHOLD + 1)).toBe(false);
+        });
+
+        it('config/ai.ts can be imported without Platform.OS crash (regression test)', () => {
+            // This test guards against a startup crash where config/ai.ts
+            // imported TWEET_THRESHOLD from config/index.ts, which bundles
+            // Platform.OS at module load — causing a Jest runtime crash.
+            // MIN_AI_WORDS must be a positive integer derived from the threshold.
+            expect(MIN_AI_WORDS).toBe(TWEET_THRESHOLD);
+            expect(typeof MIN_AI_WORDS).toBe('number');
         });
     });
 });

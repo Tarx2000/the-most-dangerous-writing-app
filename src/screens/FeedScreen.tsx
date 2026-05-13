@@ -25,11 +25,6 @@ import type { SavedNote, SavedVlog, Person, FeedItem, FeedItemType } from '@/typ
 import { isAlignmentReflection } from '@/types';
 import type { LayoutRect } from '../components/features/library/VlogViewerModal';
 
-/* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
-
-/** Word count threshold for tweet vs story classification */
-const TWEET_THRESHOLD = 50;
-
 /** Scroll distance before showing the scroll-to-top button */
 const SCROLL_TOP_SHOW_THRESHOLD = 300;
 
@@ -73,10 +68,15 @@ interface FeedHeaderProps {
     entryCount: number;
     filterBookmarked: boolean;
     onToggleFilter: (bookmarked: boolean) => void;
+    showJournals: boolean;
+    showTweets: boolean;
+    showVlogs: boolean;
+    showCheckins: boolean;
+    onToggleType: (type: 'journals' | 'tweets' | 'vlogs' | 'checkins') => void;
     onClose: () => void;
 }
 
-const FeedHeader = React.memo(({ entryCount, filterBookmarked, onToggleFilter, onClose }: FeedHeaderProps) => (
+const FeedHeader = React.memo(({ entryCount, filterBookmarked, onToggleFilter, showJournals, showTweets, showVlogs, showCheckins, onToggleType, onClose }: FeedHeaderProps) => (
     <Animated.View style={styles.headerContainer}>
         {/* Title row */}
         <View style={styles.titleRow}>
@@ -89,6 +89,32 @@ const FeedHeader = React.memo(({ entryCount, filterBookmarked, onToggleFilter, o
             <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
                 <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
             </AnimatedScaleButton>
+        </View>
+
+        {/* Type filter checkboxes */}
+        <View style={styles.checkboxRow}>
+            {
+                ([
+                    { key: 'journals' as const, label: 'Journals', active: showJournals, icon: 'notebook-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
+                    { key: 'tweets' as const, label: 'Tweets', active: showTweets, icon: 'chat-processing-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
+                    { key: 'vlogs' as const, label: 'Vlogs', active: showVlogs, icon: 'video-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
+                    { key: 'checkins' as const, label: 'Check-ins', active: showCheckins, icon: 'compass-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
+                ]).map((item) => (
+                    <AnimatedScaleButton
+                        key={item.key}
+                        style={[styles.checkboxBtn, item.active && styles.checkboxBtnActive]}
+                        onPress={() => onToggleType(item.key)}
+                    >
+                        <MaterialCommunityIcons
+                            name={item.icon}
+                            size={14}
+                            color={item.active ? theme.colors.textPrimary : theme.colors.textMuted}
+                            style={{ marginRight: 4 }}
+                        />
+                        <Text style={[styles.checkboxText, item.active && styles.checkboxTextActive]}>{item.label}</Text>
+                    </AnimatedScaleButton>
+                ))
+            }
         </View>
 
         {/* Filter toggle: All / Bookmarked */}
@@ -188,6 +214,11 @@ const FeedScreenInner: React.FC<Props> = ({
 
     const [filterBookmarked, setFilterBookmarked] = useState(false);
     const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
+    /** Type filter checkboxes — which entry types to show */
+    const [showJournals, setShowJournals] = useState(true);
+    const [showTweets, setShowTweets] = useState(true);
+    const [showVlogs, setShowVlogs] = useState(true);
+    const [showCheckins, setShowCheckins] = useState(true);
     /** Track which feed items are currently visible in the viewport for video auto-play */
     const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(new Set());
     // FlashList ref for gesture interop — FlashListRef is the proper ref type
@@ -270,6 +301,13 @@ const FeedScreenInner: React.FC<Props> = ({
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
     }, []);
 
+    const handleToggleType = useCallback((type: 'journals' | 'tweets' | 'vlogs' | 'checkins') => {
+        if (type === 'journals') setShowJournals(p => !p);
+        if (type === 'tweets') setShowTweets(p => !p);
+        if (type === 'vlogs') setShowVlogs(p => !p);
+        if (type === 'checkins') setShowCheckins(p => !p);
+    }, []);
+
     /**
      * Precompute person lookup so feedItems derivation doesn't rebuild the map
      * when only savedNotes/savedVlogs change. This splits the dependency graph
@@ -291,9 +329,8 @@ const FeedScreenInner: React.FC<Props> = ({
 
         // Process text notes (journals, circles, check-ins)
         savedNotes.forEach((note) => {
-            const wordCount = (note.text || '').split(/\s+/).filter(Boolean).length;
             const isCheckin = isAlignmentReflection(note);
-            const type: FeedItemType = isCheckin ? 'checkin' : wordCount < TWEET_THRESHOLD ? 'tweet' : 'story';
+            const type: FeedItemType = isCheckin ? 'checkin' : note.isTweet ? 'tweet' : 'story';
 
             const person = note.personId ? personMap.get(note.personId) : undefined;
 
@@ -323,13 +360,21 @@ const FeedScreenInner: React.FC<Props> = ({
 
     /** Apply bookmark filter if active (uses Set for O(1) lookups) */
     const bookmarkSet = useMemo(() => new Set(bookmarkedNoteIds), [bookmarkedNoteIds]);
+    /** Apply bookmark + type filters */
     const displayItems = useMemo(() => {
-        if (!filterBookmarked) return feedItems;
-        return feedItems.filter((item) => {
-            const id = item.note?.id || item.vlog?.id || '';
-            return bookmarkSet.has(id);
-        });
-    }, [feedItems, filterBookmarked, bookmarkSet]);
+        let items = feedItems;
+        if (!showJournals) items = items.filter(i => i.type !== 'story');
+        if (!showTweets) items = items.filter(i => i.type !== 'tweet');
+        if (!showVlogs) items = items.filter(i => i.type !== 'clip');
+        if (!showCheckins) items = items.filter(i => i.type !== 'checkin');
+        if (filterBookmarked) {
+            items = items.filter((item) => {
+                const id = item.note?.id || item.vlog?.id || '';
+                return bookmarkSet.has(id);
+            });
+        }
+        return items;
+    }, [feedItems, filterBookmarked, bookmarkSet, showJournals, showTweets, showVlogs, showCheckins]);
 
     /** Refs for stable renderItem access — prevents re-render cascade when
      *  bookmarks/comments change on ONE card. The renderItem reads from refs
@@ -578,10 +623,15 @@ const FeedScreenInner: React.FC<Props> = ({
                 entryCount={feedItems.length}
                 filterBookmarked={filterBookmarked}
                 onToggleFilter={setFilterBookmarked}
+                showJournals={showJournals}
+                showTweets={showTweets}
+                showVlogs={showVlogs}
+                showCheckins={showCheckins}
+                onToggleType={handleToggleType}
                 onClose={handleCloseButton}
             />
         ),
-        [feedItems.length, filterBookmarked, handleCloseButton],
+        [feedItems.length, filterBookmarked, showJournals, showTweets, showVlogs, showCheckins, handleToggleType, handleCloseButton],
     );
 
     /** getItemLayout: approximate heights for FlashList fast-path layout.
@@ -784,6 +834,35 @@ const styles = StyleSheet.create({
     },
 
     /* ── Filter toggle ──────────────────────────────────────────────── */
+    checkboxRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 12,
+    },
+    checkboxBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 100,
+        backgroundColor: theme.colors.glassBackground,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
+    checkboxBtnActive: {
+        backgroundColor: theme.colors.primaryAction,
+        borderColor: theme.colors.primaryAction,
+    },
+    checkboxText: {
+        color: theme.colors.textSecondary,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    checkboxTextActive: {
+        color: theme.colors.textPrimary,
+        fontWeight: '700',
+    },
     filterRow: {
         flexDirection: 'row',
         gap: 8,

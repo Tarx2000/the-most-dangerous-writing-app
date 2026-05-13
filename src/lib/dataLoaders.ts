@@ -18,6 +18,7 @@ import {
 } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
 import { setLogMode } from '@/lib/logger';
+import { loadFeatureFlags } from '@/lib/featureFlags';
 import { mark as perfMark, log as perfLog } from '@/lib/perf';
 
 export type Ref<T> = { current: T };
@@ -93,6 +94,9 @@ export async function loadVlogs(ctx: LoadContext): Promise<void> {
 
 export async function loadAllData(ctx: LoadContext): Promise<void> {
     perfMark('storage.start');
+
+    /* ── Feature Flags ─────────────────────────────────────────────────── */
+    await loadFeatureFlags();
 
     /* ════════════════════════════════════════════════════════════════════
        PHASE 1 — Parallel independent loads
@@ -191,7 +195,7 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
         /* Backfill from notes (reuse the notes already loaded in Phase 1) */
         const historySet = new Set<string>();
         for (const n of notes) {
-            if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
+            if (n.won && n.durationMin >= 3 && !n.isQuickNote && !n.isTweet) {
                 const d = new Date(n.timestamp);
                 historySet.add(toLocalDateString(d));
             }

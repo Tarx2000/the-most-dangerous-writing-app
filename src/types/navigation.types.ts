@@ -7,6 +7,7 @@ export type RootStackParamList = {
         mode: 'journal' | 'circles';
         personId: string | null;
         isQuickNote?: boolean;
+        isTweet?: boolean;
     };
     Library: undefined;
     VisionBoard: undefined;

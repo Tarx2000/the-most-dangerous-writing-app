@@ -23,6 +23,7 @@ import { CalendarView } from '@/components/features/library/CalendarView';
 import { BaseModal } from '@/components/ui/BaseModal';
 import { CustomSlider } from '@/components/features/alignment/CustomSlider';
 import { APP_VERSION, CONFIG } from '@/config';
+import { getFeatureFlags } from '@/lib/featureFlags';
 import { VERSION_HISTORY } from '@/config/changelog';
 import { commonStyles } from '@/styles/commonStyles';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -277,6 +278,12 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                             <Animated.View entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)} exiting={FadeOutUp.duration(200)} style={{ position: 'absolute', alignItems: 'center', width: '100%' }}>
                                 <Text style={styles.heroTitle}>Free Writing</Text>
                                 <Text style={styles.heroSubtitle}>Write continuously, or all is lost.</Text>
+                                {getFeatureFlags().ENABLE_TWEET_IN_JOURNAL_MODE && (
+                                    <AnimatedScaleButton style={styles.tweetBtn} onPress={() => { vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'journal', personId: null, isTweet: true }); }}>
+                                        <MaterialCommunityIcons name="chat-processing-outline" size={16} color={theme.colors.background} />
+                                        <Text style={styles.tweetBtnText}>New Tweet</Text>
+                                    </AnimatedScaleButton>
+                                )}
                             </Animated.View>
                         )}
                         {sessionMode === 'circles' && (
@@ -290,10 +297,10 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                                         <Text style={{ opacity: 0.5 }}> ▼</Text>
                                     </Text>
                                 </AnimatedScaleButton>
-                                {selectedPersonId && (
-                                    <AnimatedScaleButton style={styles.quickNoteBtn} onPress={() => { vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isQuickNote: true }); }}>
-                                        <MaterialCommunityIcons name="lightning-bolt" size={16} color={theme.colors.background} />
-                                        <Text style={styles.quickNoteText}>Quick Note</Text>
+                                {selectedPersonId && getFeatureFlags().ENABLE_TWEET_IN_CIRCLE_MODE && (
+                                    <AnimatedScaleButton style={styles.tweetBtn} onPress={() => { vibrate(30); navigation.navigate('Writing', { timeIndex: 0, diffIndex, mode: 'circles', personId: selectedPersonId, isTweet: true }); }}>
+                                        <MaterialCommunityIcons name="chat-processing-outline" size={16} color={theme.colors.background} />
+                                        <Text style={styles.tweetBtnText}>Tweet</Text>
                                     </AnimatedScaleButton>
                                 )}
                             </Animated.View>
@@ -469,6 +476,21 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: theme.colors.textSecondary,
         fontFamily: theme.typography.fontFamily
+    },
+    tweetBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.primaryAction,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 15,
+        gap: 6
+    },
+    tweetBtnText: {
+        color: theme.colors.background,
+        fontWeight: 'bold',
+        fontSize: 13
     },
     personSmallSelectBtn: {
         backgroundColor: theme.colors.glassBorder,

@@ -9,6 +9,8 @@ export interface SavedNote {
     won: boolean;
     personId?: string;
     isQuickNote?: boolean;
+    /** Short entry (≤ TWEET_THRESHOLD words) — no AI, no streak, no timer */
+    isTweet?: boolean;
     /** AI-generated short headline summarizing the entry (max 8 words) */
     aiTitle?: string;
     /** AI-generated bullet-point summary (2-5 key takeaways) */

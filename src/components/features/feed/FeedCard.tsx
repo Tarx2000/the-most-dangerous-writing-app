@@ -20,9 +20,6 @@ import { getAlignmentScoreFeed } from '@/lib/alignmentScores';
 
 /* ── CONFIGURABLE ─────────────────────────────────────────────────────────── */
 
-/** Word count threshold: below this = tweet, at/above = story */
-const TWEET_THRESHOLD = 100;
-
 /** Max preview words shown for a story before "Read more" */
 const STORY_PREVIEW_WORDS = 50;
 
@@ -109,6 +106,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
 
     /** Category label shown in the header */
     const categoryLabel = isCheckin ? 'CHECK-IN'
+        : item.type === 'tweet' ? 'TWEET'
         : isCircle ? item.personName || 'Circle'
         : item.type === 'clip' ? 'VIDEO CLIP'
         : 'JOURNAL';
@@ -118,7 +116,7 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
 
     /** Duration display */
     const durationLabel = item.note
-        ? (item.note.durationMin > 0 ? `${item.note.durationMin} min` : 'Quick Note')
+        ? (item.note.durationMin > 0 ? `${item.note.durationMin} min` : item.type === 'tweet' ? '🐦' : 'Quick Note')
         : item.vlog
         ? `${Math.ceil(item.vlog.durationSec / 60)} min`
         : '';
@@ -141,6 +139,14 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
                     <Text style={[styles.avatarLetter, { color: TYPE_COLORS.circle }]}>
                         {item.personName.charAt(0).toUpperCase()}
                     </Text>
+                </View>
+            );
+        }
+        // Tweet — bird icon
+        if (item.type === 'tweet') {
+            return (
+                <View style={[styles.avatar, { borderColor: theme.colors.primaryAction }]}>
+                    <MaterialCommunityIcons name="chat-processing-outline" size={18} color={theme.colors.primaryAction} />
                 </View>
             );
         }
@@ -186,15 +192,13 @@ export const FeedCard: React.FC<FeedCardProps> = React.memo(({
         }
 
         // Tweet (short entry) — show full text
-        if (wordCount < TWEET_THRESHOLD) {
+        if (item.note.isTweet) {
             return (
                 <View>
-                    {/* AI title shown discreetly for tweets */}
-                    {item.note.aiTitle && (
-                        <Text style={styles.tweetAiTitle} numberOfLines={1}>
-                            {item.note.aiTitle}
-                        </Text>
-                    )}
+                    <View style={styles.tweetBadge}>
+                        <MaterialCommunityIcons name="chat-processing-outline" size={12} color={theme.colors.primaryAction} />
+                        <Text style={styles.tweetBadgeText}>Tweet</Text>
+                    </View>
                     <Text style={[styles.tweetText, { fontFamily: activeFont }]}>{item.note.text}</Text>
                 </View>
             );
@@ -397,6 +401,19 @@ const styles = StyleSheet.create({
         color: theme.colors.textTweet,
         fontSize: 15,
         lineHeight: 23,
+    },
+    tweetBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 8,
+    },
+    tweetBadgeText: {
+        color: theme.colors.primaryAction,
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 1,
+        textTransform: 'uppercase',
     },
     tweetAiTitle: {
         color: theme.colors.textMuted,

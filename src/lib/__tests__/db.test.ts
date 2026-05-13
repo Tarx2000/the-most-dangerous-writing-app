@@ -85,35 +85,49 @@ describe('db', () => {
         expect(openDatabaseAsync).toHaveBeenCalledTimes(2);
     });
 
-    it('migrations: when storage version is 0, both migrations run', async () => {
+    it('migrations: when storage version is 0, all 3 migrations run', async () => {
         const mockDb = createMockDb();
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
         (storage.getItem as jest.Mock).mockResolvedValue(null);
 
         await getDb();
 
-        expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(2);
-        expect(mockDb.execAsync).toHaveBeenCalledTimes(10);
+        expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(3);
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(12);
         expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '1');
         expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '2');
+        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '3');
     });
 
-    it('migrations: when storage version is 1, only migration 2 runs', async () => {
+    it('migrations: when storage version is 1, migrations 2+3 run', async () => {
         const mockDb = createMockDb();
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
         (storage.getItem as jest.Mock).mockResolvedValue('1');
 
         await getDb();
 
-        expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(1);
-        expect(mockDb.execAsync).toHaveBeenCalledTimes(2);
+        expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(2);
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(4);
         expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '2');
+        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '3');
     });
 
-    it('migrations: when storage version is 2, none run', async () => {
+    it('migrations: when storage version is 2, only migration 3 runs', async () => {
         const mockDb = createMockDb();
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
         (storage.getItem as jest.Mock).mockResolvedValue('2');
+
+        await getDb();
+
+        expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(2);
+        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '3');
+    });
+
+    it('migrations: when storage version is 3, none run', async () => {
+        const mockDb = createMockDb();
+        (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
+        (storage.getItem as jest.Mock).mockResolvedValue('3');
 
         await getDb();
 

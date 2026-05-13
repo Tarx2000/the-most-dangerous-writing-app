@@ -15,7 +15,7 @@ import { Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { logger } from '@/lib/logger';
 import * as FileSystem from 'expo-file-system/legacy';
-import { CONFIG } from '@/config';
+import { CONFIG, isTweet as isTweetWordCount } from '@/config';
 import { generateId, toLocalDateString } from '@/lib/utils';
 import { cleanupOrphanedVlogs as cleanupOrphanFiles } from '@/lib/storageManager';
 import { AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
@@ -59,12 +59,19 @@ export function createNotesOps(
         const prevLastWinDate = lastWinDateRef.current;
         const prevHistory = [...streakHistoryRef.current];
 
+        // Auto-classify as tweet if word count <= threshold
+        const wordCount = note.text.trim().split(/\s+/).filter(Boolean).length;
+        const isTweetEntry = isTweetWordCount(wordCount);
+        if (isTweetEntry) {
+            note.isTweet = true;
+        }
+
         let updatedStreak = prevStreak;
         let streakIncreased = false;
         let newLastWinDate = prevLastWinDate;
         const newHistory = [...prevHistory];
 
-        if (note.won && note.durationMin >= 3 && !note.isQuickNote) {
+        if (note.won && note.durationMin >= 3 && !note.isQuickNote && !note.isTweet) {
             const todayStr = toLocalDateString(new Date());
             if (!newHistory.includes(todayStr)) newHistory.push(todayStr);
 
@@ -96,7 +103,7 @@ export function createNotesOps(
 
         try {
             await insertNote(note);
-            if (note.won && note.durationMin >= 3 && !note.isQuickNote) {
+            if (note.won && note.durationMin >= 3 && !note.isQuickNote && !note.isTweet) {
                 await Promise.all([
                     setSetting('CURRENT_STREAK', String(updatedStreak)),
                     setSetting('LAST_WIN_DATE', newLastWinDate),

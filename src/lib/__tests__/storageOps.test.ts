@@ -183,7 +183,7 @@ describe('createNotesOps', () => {
         });
 
         it('should increment streak for won sessions >= 3 minutes', async () => {
-            const note = { id: 'n1', text: 'Good session', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true };
+            const note = { id: 'n1', text: 'This is a very long journal entry with many words so that it exceeds the tweet threshold and does not get auto classified as a tweet during the save operation which would then exclude it from streak counting logic entirely which we do not want here', dateStr: '2026-01-01', timestamp: Date.now(), durationMin: 5, won: true };
             await ops.saveNote(note);
             expect(streakRef.current).toBeGreaterThanOrEqual(1);
         });

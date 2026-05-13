@@ -49,7 +49,9 @@ export const AI_LOG_MAX_ENTRIES = 200;
  * Notes below this threshold are too short to meaningfully summarize.
  * Grammar check still runs independently regardless of length.
  */
-export const MIN_AI_WORDS = 50;
+import { TWEET_THRESHOLD } from '@/config/tweet';
+
+export const MIN_AI_WORDS = TWEET_THRESHOLD;
 
 /**
  * Timeout for a single AI request in milliseconds (per XHR call).

@@ -11,6 +11,7 @@ export interface NoteRow {
     won: number;
     person_id: string | null;
     is_quick_note: number;
+    is_tweet: number;
     ai_title: string | null;
     ai_summary: string | null;
     ai_model_used: string | null;
@@ -31,6 +32,7 @@ function rowToNote(row: NoteRow): SavedNote | AlignmentReflection {
         won: !!row.won,
         personId: row.person_id ?? undefined,
         isQuickNote: !!row.is_quick_note,
+        isTweet: !!row.is_tweet,
         aiTitle: row.ai_title ?? undefined,
         aiSummary: row.ai_summary ? ((): string[] | undefined => { try { return JSON.parse(row.ai_summary) as string[]; } catch { return undefined; } })() : undefined,
         aiModelUsed: row.ai_model_used ?? undefined,
@@ -62,11 +64,12 @@ export async function getNoteById(id: string): Promise<SavedNote | AlignmentRefl
 export async function insertNote(note: SavedNote): Promise<void> {
     const summaryJson = note.aiSummary ? JSON.stringify(note.aiSummary) : null;
     await run(
-        `INSERT INTO notes (id, text, date_str, timestamp, duration_min, won, person_id, is_quick_note, ai_title, ai_summary, ai_model_used, is_alignment_reflection, alignment_score, stop_text, start_text, continue_text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO notes (id, text, date_str, timestamp, duration_min, won, person_id, is_quick_note, is_tweet, ai_title, ai_summary, ai_model_used, is_alignment_reflection, alignment_score, stop_text, start_text, continue_text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             note.id, note.text, note.dateStr, note.timestamp, note.durationMin,
             note.won ? 1 : 0, note.personId ?? null, note.isQuickNote ? 1 : 0,
+            note.isTweet ? 1 : 0,
             note.aiTitle ?? null, summaryJson, note.aiModelUsed ?? null,
             isAlignmentReflection(note) ? 1 : 0,
             isAlignmentReflection(note) ? note.alignmentScore : null,
@@ -88,6 +91,7 @@ export async function updateNote(id: string, updates: Partial<SavedNote>): Promi
     if (updates.won !== undefined) { fields.push('won = ?'); values.push(updates.won ? 1 : 0); }
     if (updates.personId !== undefined) { fields.push('person_id = ?'); values.push(updates.personId ?? null); }
     if (updates.isQuickNote !== undefined) { fields.push('is_quick_note = ?'); values.push(updates.isQuickNote ? 1 : 0); }
+    if (updates.isTweet !== undefined) { fields.push('is_tweet = ?'); values.push(updates.isTweet ? 1 : 0); }
     if (updates.aiTitle !== undefined) { fields.push('ai_title = ?'); values.push(updates.aiTitle ?? null); }
     if (updates.aiSummary !== undefined) { fields.push('ai_summary = ?'); values.push(updates.aiSummary ? JSON.stringify(updates.aiSummary) : null); }
     if (updates.aiModelUsed !== undefined) { fields.push('ai_model_used = ?'); values.push(updates.aiModelUsed ?? null); }
