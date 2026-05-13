@@ -453,6 +453,29 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                 </Text>
                             </View>
 
+                            {/* Compression trigger — shown when file is uncompressed or compression failed */}
+                            {(currentVlog.compressionPreset === 'off' ||
+                                !currentVlog.compressionPreset ||
+                                currentVlog.compressionPending) && (
+                                <View style={styles.compressBtnContainer} pointerEvents="box-none">
+                                    <AnimatedScaleButton
+                                        style={[styles.compressBtn, isCompressing && styles.compressBtnDisabled]}
+                                        onPress={handleManualCompress}
+                                        disabled={isCompressing}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={isCompressing ? 'loading' : 'zip-box'}
+                                            size={16}
+                                            color={theme.colors.textPrimary}
+                                            style={{ marginRight: 6 }}
+                                        />
+                                        <Text style={styles.compressBtnText}>
+                                            {isCompressing ? 'Compressing...' : 'Compress Video'}
+                                        </Text>
+                                    </AnimatedScaleButton>
+                                </View>
+                            )}
+
                             {/* Dev watermark overlay */}
                             {devMode && (
                                 <View style={styles.devWatermark} pointerEvents="box-none">
@@ -461,17 +484,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                         {currentVlog.originalFileSizeBytes
                                             ? `(${Math.round(100 - (currentVlog.fileSizeBytes / currentVlog.originalFileSizeBytes) * 100)}% saved)`
                                             : ''}
+                                        {currentVlog.compressionPending ? ' • PENDING' : ''}
                                     </Text>
-                                    {(currentVlog.compressionPreset === 'off' || !currentVlog.compressionPreset) && (
-                                        <AnimatedScaleButton
-                                            style={styles.devCompressBtn}
-                                            onPress={handleManualCompress}
-                                        >
-                                            <Text style={styles.devCompressBtnText}>
-                                                {isCompressing ? 'Compressing...' : 'Trigger Compression'}
-                                            </Text>
-                                        </AnimatedScaleButton>
-                                    )}
                                 </View>
                             )}
                         </View>
@@ -676,7 +690,31 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
 
-    /* ── Dev Watermark ──────────────────────────────────────────────── */
+    /* ── Compress Button ─────────────────────────────────────────────── */
+    compressBtnContainer: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        zIndex: 10,
+    },
+    compressBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.overlayVideoStrong,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorderMedium,
+    },
+    compressBtnDisabled: {
+        opacity: 0.6,
+    },
+    compressBtnText: {
+        color: theme.colors.textPrimary,
+        fontSize: 13,
+        fontWeight: '700',
+    },
     devWatermark: {
         position: 'absolute',
         top: 10,
