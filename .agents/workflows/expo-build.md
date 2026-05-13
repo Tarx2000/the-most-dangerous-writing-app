@@ -1,14 +1,15 @@
 ---
-description: Local Android Build — runs all tests first, then builds a release APK locally. No implementation plan needed.
+description: Local Android Build — commits pending changes, pushes to remote, runs all tests, then builds a release APK locally. No implementation plan needed.
 ---
 
 <!-- 
   WORKFLOW: Local Android Release Build
   
   This workflow is fully automated (turbo-all). When invoked via /expo-build:
-  1. Run the full test suite — ALL tests must pass
-  2. Build a local release APK via Gradle
-  3. Report the APK location with a clickable link
+  1. Commit and push any pending changes to remote
+  2. Run the full test suite — ALL tests must pass
+  3. Build a local release APK via Gradle
+  4. Report the APK location with a clickable link
   
   NO implementation plan is generated. Execution starts immediately.
 -->
@@ -52,7 +53,32 @@ npm test
 
 ---
 
-## Step 3 — Build Release APK
+## Step 3 — Commit and Push to Remote
+
+**All changes must be committed and pushed to the remote repository before building.** This ensures the APK is built from code that is safely backed up and versioned.
+
+1. Stage all modified files:
+   ```bash
+   git add -A
+   ```
+
+2. Create a conventional commit (the agent should analyze the diff and generate an appropriate `<type>(<scope>): <description>` message):
+   ```bash
+   git commit -m "type(scope): description"
+   ```
+
+3. **Push to remote origin:**
+   ```bash
+   git push origin $(git branch --show-current)
+   ```
+
+> [!NOTE]
+> If there are no changes to commit (working tree clean), skip straight to Step 4.
+> Never commit files that likely contain secrets (`.env`, `credentials.json`, etc.).
+
+---
+
+## Step 4 — Build Release APK
 
 Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction).
 
@@ -73,7 +99,7 @@ cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=
 
 ---
 
-## Step 4 — Report APK Location
+## Step 5 — Report APK Location
 
 After a successful build, report the APK location to the user with a clickable link:
 
@@ -101,4 +127,4 @@ org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
 - **"Build fails with missing babel-preset-expo"**: Run `npm install --save-dev babel-preset-expo`.
 - **"App crashes on startup after adding reanimated"**: Ensure `babel.config.js` includes `'react-native-reanimated/plugin'` as the LAST plugin.
 - **`gradlew.bat` not recognized on Windows**: Batch files (`.bat`) cannot be executed directly from non-CMD shells. Always use `cmd /c "cd /d android && gradlew.bat ..."` instead of `cd android && gradlew.bat ...`.
-- **Agent appears stuck during build (Windows)**: Gradle prints thousands of task lines. The bash tool truncates output at 51,200 bytes / 2,000 lines, and the buffer flush can take 20–30 seconds after the build actually finished. **Fix:** Always append `--quiet` to the Gradle command (see Step 3). This suppresses the task spam and prevents the buffer overflow hang.
+- **Agent appears stuck during build (Windows)**: Gradle prints thousands of task lines. The bash tool truncates output at 51,200 bytes / 2,000 lines, and the buffer flush can take 20–30 seconds after the build actually finished. **Fix:** Always append `--quiet` to the Gradle command (see Step 4). This suppresses the task spam and prevents the buffer overflow hang.

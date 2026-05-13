@@ -105,18 +105,29 @@ jest.mock('react-native-worklets', () => ({
 }));
 
 // Gesture handler mock
-jest.mock('react-native-gesture-handler', () => ({
-    Gesture: {
-        Pan: () => ({ onUpdate: () => ({ onEnd: () => ({}) }) }),
-        Tap: () => ({ onEnd: () => ({}) }),
-    },
-    GestureDetector: function GestureDetectorMock({ children }) {
-        return children || null;
-    },
-    ScrollView: function ScrollViewMock({ children }) {
-        return children || null;
-    },
-}));
+jest.mock('react-native-gesture-handler', () => {
+    const createChainedGesture = () => {
+        const chain = {
+            minDistance: () => chain,
+            activeOffsetY: () => chain,
+            onUpdate: () => chain,
+            onEnd: () => chain,
+        };
+        return chain;
+    };
+    return {
+        Gesture: {
+            Pan: createChainedGesture,
+            Tap: createChainedGesture,
+        },
+        GestureDetector: function GestureDetectorMock({ children }) {
+            return children || null;
+        },
+        ScrollView: function ScrollViewMock({ children }) {
+            return children || null;
+        },
+    };
+});
 
 // Compressor mock
 jest.mock('react-native-compressor', () => ({
