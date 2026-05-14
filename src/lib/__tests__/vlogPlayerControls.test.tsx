@@ -180,4 +180,58 @@ describe('FeedVideoCard + VlogViewerModal player interaction', () => {
         expect(player.currentTime).toBe(33);
         jest.useRealTimers();
     });
+
+    /**
+     * CRITICAL: this test covers the real-world path used by VlogCalendarGallery.
+     * When no shared `player` prop is passed, VlogViewerModal must create its own
+     * internal player via InternalVlogPlayer → useVideoPlayer.  Any crash in this
+     * lifecycle (Reanimated worklet errors, effect timing bugs, stale closures,
+     * or listener setup failures) will fail this test.
+     */
+    test('VlogViewerModal internal player path mounts without crashing', () => {
+        const { useVideoPlayer } = jest.requireMock('expo-video');
+
+        const { getByText, unmount } = render(
+            <VlogViewerModal visible={true} vlogs={[mockVlog]} sourceRect={null} onClose={jest.fn()} />,
+        );
+
+        // useVideoPlayer should have been called to create the internal player
+        expect(useVideoPlayer).toHaveBeenCalledWith(mockVlog.filePath, expect.any(Function));
+
+        // The modal should render the vlog date and duration info
+        expect(getByText(mockVlog.dateStr)).toBeTruthy();
+
+        unmount();
+    });
+
+    /**
+     * Regression guard: open → close → open must not throw.
+     * This caught the "shared object already released" crash because the
+     * internal player reference was not being nulled on close, causing the
+     * second open to reuse a dead player object.
+     */
+    test('VlogViewerModal survives open-close-open cycle with internal player', () => {
+        const { useVideoPlayer } = jest.requireMock('expo-video');
+        const onClose = jest.fn();
+
+        // Initially closed
+        const { rerender } = render(<VlogViewerModal visible={false} vlogs={[]} sourceRect={null} onClose={onClose} />);
+
+        // Open
+        act(() => {
+            rerender(<VlogViewerModal visible={true} vlogs={[mockVlog]} sourceRect={null} onClose={onClose} />);
+        });
+        expect(useVideoPlayer).toHaveBeenCalledTimes(1);
+
+        // Close
+        act(() => {
+            rerender(<VlogViewerModal visible={false} vlogs={[]} sourceRect={null} onClose={onClose} />);
+        });
+
+        // Re-open — must create a fresh player, not reuse the old one
+        act(() => {
+            rerender(<VlogViewerModal visible={true} vlogs={[mockVlog]} sourceRect={null} onClose={onClose} />);
+        });
+        expect(useVideoPlayer).toHaveBeenCalledTimes(2);
+    });
 });

@@ -10,6 +10,7 @@ import Animated, {
     runOnJS,
     interpolate,
     Extrapolation,
+    Easing,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
@@ -179,7 +180,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             panX.value = 0;
             panY.value = 0;
             // Animate in — smooth easing, no spring bounce
-            progress.value = withTiming(1, { duration: 350, easing: (t: number) => t * (2 - t) }); // easeOutQuad
+            // Use built-in Easing worklet instead of inline arrow function
+            // to avoid Reanimated "function not a worklet" runtime crash.
+            progress.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.quad) });
         } else {
             // Parent set visible=false — delegate to handleCloseInternal for consistent exit
             if (!isClosingRef.current) {
@@ -196,16 +199,24 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     useEffect(() => {
         if (!activePlayer || !visible) return;
 
-        logVlog('info', `Syncing listeners to player for vlog ${currentVlog?.id}`);
+        logVlog('info', `Syncing listeners to player for vlog ${vlogs[expandedIndex]?.id}`);
 
         // Native event listener (primary)
-        const timeSub = activePlayer.addListener('timeUpdate', (event) => {
-            const t = typeof event === 'number' ? event : (event?.currentTime ?? 0);
-            setCurrentTime(t);
-        });
-        const playSub = activePlayer.addListener('playingChange', (event) => {
-            setIsPlaying(event.isPlaying);
-        });
+        // Wrap in try/catch because addListener can throw if the native
+        // player is not fully initialised yet (race on first open).
+        let timeSub: { remove: () => void } | null = null;
+        let playSub: { remove: () => void } | null = null;
+        try {
+            timeSub = activePlayer.addListener('timeUpdate', (event) => {
+                const t = typeof event === 'number' ? event : (event?.currentTime ?? 0);
+                setCurrentTime(t);
+            });
+            playSub = activePlayer.addListener('playingChange', (event) => {
+                setIsPlaying(event.isPlaying);
+            });
+        } catch (e) {
+            logVlog('error', 'Failed to attach player listeners:', e);
+        }
 
         // Polling fallback (500ms) — catches timeUpdate gaps
         const pollTimer = setInterval(() => {
@@ -218,11 +229,15 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
         return () => {
             logVlog('info', 'Removing player listeners');
-            timeSub.remove();
-            playSub.remove();
+            try {
+                timeSub?.remove();
+                playSub?.remove();
+            } catch {
+                /* ignore */
+            }
             clearInterval(pollTimer);
         };
-    }, [activePlayer, visible, expandedIndex]);
+    }, [activePlayer, visible, expandedIndex, vlogs]);
 
     /** Auto-hide controls after 3s of inactivity */
     const scheduleControlsHide = useCallback(() => {
