@@ -18,7 +18,8 @@
 
 import { DeviceEventEmitter } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { logger } from '@/lib/logger';
+import { logger, getLogMode } from '@/lib/logger';
+import type { LogLevel } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { compressVideo } from '@/lib/videoCompressor';
 import { CONFIG } from '@/config';
@@ -65,6 +66,12 @@ class CompressionQueueManager {
     /** Currently running job ID (for progress association) */
     private currentJobId: string | null = null;
 
+    /** Internal verbose logger — includes job context and is gated by logMode */
+    private log(level: LogLevel, message: string, ...args: unknown[]): void {
+        if (level !== 'error' && !getLogMode()) return;
+        logger(level, 'CompressionQueue', message, ...args);
+    }
+
     get isInitialized(): boolean {
         return this.initialized;
     }
@@ -97,7 +104,7 @@ class CompressionQueueManager {
     /** Update a vlog's metadata through the injected callback */
     private async updateVlog(id: string, patch: Partial<SavedVlog>): Promise<void> {
         if (!this.updateVlogRef) {
-            logger('warn', 'CompressionQueue', `updateVlog not injected yet, skipping ${id}`);
+            this.log('warn', `updateVlog not injected yet, skipping ${id}`);
             return;
         }
         await this.updateVlogRef(id, patch);
@@ -111,7 +118,7 @@ class CompressionQueueManager {
      */
     async enqueue(vlogId: string, filePath: string, presetId: string): Promise<void> {
         if (presetId === 'off') {
-            logger('info', 'CompressionQueue', `Skipping enqueue for ${vlogId} — preset is 'off'`);
+            this.log('info', `Skipping enqueue for ${vlogId} — preset is 'off'`);
             return;
         }
 
@@ -119,13 +126,13 @@ class CompressionQueueManager {
             (j) => j.vlogId === vlogId && j.status !== 'done' && j.status !== 'cancelled',
         );
         if (alreadyActive) {
-            logger('info', 'CompressionQueue', `Vlog ${vlogId} already in queue, skipping`);
+            this.log('info', `Vlog ${vlogId} already in queue, skipping`);
             return;
         }
 
         const activeJobs = this.jobs.filter((j) => j.status === 'queued' || j.status === 'processing');
         if (activeJobs.length >= MAX_QUEUE_SIZE) {
-            logger('warn', 'CompressionQueue', `Queue at capacity (${MAX_QUEUE_SIZE}), dropping ${vlogId}`);
+            this.log('warn', `Queue at capacity (${MAX_QUEUE_SIZE}), dropping ${vlogId}`);
             return;
         }
 
@@ -155,14 +162,14 @@ class CompressionQueueManager {
         if (!job) return;
 
         if (job.status === 'processing') {
-            logger('warn', 'CompressionQueue', `Cannot cancel active job ${jobId}: compressor has no cancel API`);
+            this.log('warn', `Cannot cancel active job ${jobId}: compressor has no cancel API`);
             return;
         }
 
         if (job.status === 'queued') {
             job.status = 'cancelled';
             job.completedAt = Date.now();
-            logger('info', 'CompressionQueue', `Cancelled queued job ${jobId}`);
+            this.log('info', `Cancelled queued job ${jobId}`);
             await this.persistQueue();
             this.emitState();
             this.startProcessing(); // Kick next if needed
@@ -180,7 +187,7 @@ class CompressionQueueManager {
         job.error = undefined;
         job.completedAt = undefined;
         job.retryCount += 1;
-        logger('info', 'CompressionQueue', `Retrying job ${jobId} (attempt ${job.retryCount})`);
+        this.log('info', `Retrying job ${jobId} (attempt ${job.retryCount})`);
         await this.persistQueue();
         this.emitState();
         this.startProcessing();
@@ -192,7 +199,7 @@ class CompressionQueueManager {
         this.jobs = this.jobs.filter((j) => j.status === 'processing');
         const removed = before - this.jobs.length;
         if (removed > 0) {
-            logger('info', 'CompressionQueue', `Cleared ${removed} pending/failed job(s)`);
+            this.log('info', `Cleared ${removed} pending/failed job(s)`);
             await this.persistQueue();
             this.emitState();
         }
@@ -262,7 +269,7 @@ class CompressionQueueManager {
     private setJobTimeout(job: CompressionJob): void {
         this.clearTimeout();
         this.timeoutId = setTimeout(() => {
-            logger('error', 'CompressionQueue', `TIMEOUT: Job ${job.id} exceeded ${COMPRESSION_TIMEOUT_MS}ms`);
+            this.log('error', `TIMEOUT: Job ${job.id} exceeded ${COMPRESSION_TIMEOUT_MS}ms`);
             job.status = 'failed';
             job.completedAt = Date.now();
             job.error = `Timed out after ${COMPRESSION_TIMEOUT_MS / 1000 / 60} minutes — compressor hung or device too slow`;
@@ -314,13 +321,13 @@ class CompressionQueueManager {
 
         this.setJobTimeout(nextJob);
 
-        logger(
+        this.log(
             'info',
-            'CompressionQueue',
-            `START job ${nextJob.id} — vlog ${nextJob.vlogId}, preset ${nextJob.presetId}`,
+            `PROCESSING job ${nextJob.id} — vlog ${nextJob.vlogId}, preset ${nextJob.presetId}, file ${nextJob.filePath}`,
         );
 
         try {
+            this.log('info', `Calling compressVideo for ${nextJob.vlogId} with preset ${nextJob.presetId}`);
             const result = await compressVideo(nextJob.filePath, nextJob.presetId, (progress: number) => {
                 // Only update if this job is still the active one
                 if (this.currentJobId === nextJob.id && nextJob.status === 'processing') {
@@ -330,11 +337,14 @@ class CompressionQueueManager {
             });
 
             this.clearTimeout();
+            this.log(
+                'info',
+                `compressVideo returned for ${nextJob.vlogId}: wasCompressed=${result.wasCompressed}, outputSize=${(result.outputSizeBytes / 1024 / 1024).toFixed(1)} MB, savings=${result.savingsPercent}%`,
+            );
 
             if (this.currentJobId !== nextJob.id || nextJob.status !== 'processing') {
-                logger(
+                this.log(
                     'warn',
-                    'CompressionQueue',
                     `Job ${nextJob.id} was cancelled or superseded during compression, discarding results`,
                 );
                 this.processing = false;
@@ -345,6 +355,10 @@ class CompressionQueueManager {
 
             // Update vlog metadata
             if (result.wasCompressed) {
+                this.log(
+                    'info',
+                    `Updating vlog ${nextJob.vlogId} metadata: fileSize=${result.outputSizeBytes}, filePath=${result.outputUri}`,
+                );
                 await this.updateVlog(nextJob.vlogId, {
                     fileSizeBytes: result.outputSizeBytes,
                     originalFileSizeBytes: result.originalSizeBytes,
@@ -352,16 +366,20 @@ class CompressionQueueManager {
                     compressionPending: false,
                     filePath: result.outputUri,
                 });
+                this.log('info', `Vlog ${nextJob.vlogId} DB update succeeded`);
                 // Only delete the old file after DB update succeeds, so we don't
                 // leave the record pointing to a deleted file if the DB fails.
                 try {
+                    this.log('info', `Deleting old vlog file ${nextJob.filePath}`);
                     await FileSystem.deleteAsync(nextJob.filePath, { idempotent: true });
+                    this.log('info', `Old vlog file deleted successfully`);
                 } catch (err) {
-                    logger('warn', 'CompressionQueue', 'Failed to delete old vlog file:', err);
+                    this.log('warn', 'Failed to delete old vlog file:', err);
                 }
                 // Update job filePath so future retries/inspections point to the new file
                 nextJob.filePath = result.outputUri;
             } else {
+                this.log('info', `No compression applied for ${nextJob.vlogId}, marking pending=false`);
                 // Even if not compressed, mark not pending
                 await this.updateVlog(nextJob.vlogId, {
                     compressionPending: false,
@@ -371,15 +389,14 @@ class CompressionQueueManager {
             nextJob.status = 'done';
             nextJob.completedAt = Date.now();
             nextJob.progress = 1;
-            logger(
+            this.log(
                 'info',
-                'CompressionQueue',
                 `DONE job ${nextJob.id} — ${result.wasCompressed ? `${result.savingsPercent}% saved` : 'skipped (no savings or module unavailable)'}`,
             );
         } catch (error) {
             this.clearTimeout();
             const errMsg = error instanceof Error ? error.message : 'Unknown compression error';
-            logger('error', 'CompressionQueue', `FAILED job ${nextJob.id}: ${errMsg}`, error);
+            this.log('error', `FAILED job ${nextJob.id}: ${errMsg}`, error);
 
             if (nextJob.retryCount < COMPRESSION_MAX_RETRIES) {
                 nextJob.retryCount += 1;
@@ -387,7 +404,7 @@ class CompressionQueueManager {
                 nextJob.progress = 0;
                 nextJob.startedAt = undefined;
                 nextJob.error = undefined;
-                logger('info', 'CompressionQueue', `RETRY job ${nextJob.id} (attempt ${nextJob.retryCount})`);
+                this.log('info', `RETRY job ${nextJob.id} (attempt ${nextJob.retryCount})`);
             } else {
                 nextJob.status = 'failed';
                 nextJob.completedAt = Date.now();
@@ -446,7 +463,7 @@ class CompressionQueueManager {
             );
             await storage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
         } catch (err) {
-            logger('warn', 'CompressionQueue', 'Failed to persist queue:', err);
+            this.log('warn', 'Failed to persist queue:', err);
         }
     }
 
@@ -464,12 +481,12 @@ class CompressionQueueManager {
                 if (this.isValidJob(item)) {
                     valid.push(item as CompressionJob);
                 } else {
-                    logger('warn', 'CompressionQueue', 'Skipping malformed job:', item);
+                    this.log('warn', 'Skipping malformed job:', item);
                 }
             }
             this.jobs = valid;
         } catch (err) {
-            logger('warn', 'CompressionQueue', 'Failed to load queue:', err);
+            this.log('warn', 'Failed to load queue:', err);
             this.jobs = [];
         }
     }
@@ -503,7 +520,7 @@ class CompressionQueueManager {
             job.startedAt = undefined;
             job.error = undefined;
             job.progress = 0;
-            logger('info', 'CompressionQueue', `Recovered orphan job ${job.id} for vlog ${job.vlogId}`);
+            this.log('info', `Recovered orphan job ${job.id} for vlog ${job.vlogId}`);
         }
         if (orphans.length > 0) {
             await this.persistQueue();
@@ -559,14 +576,14 @@ class CompressionQueueManager {
             }
 
             if (migrated > 0) {
-                logger('info', 'CompressionQueue', `Migrated ${migrated} legacy pending compression(s)`);
+                this.log('info', `Migrated ${migrated} legacy pending compression(s)`);
                 await this.persistQueue();
             }
 
             // Always clear legacy key after migration attempt
             await storage.removeItem(LEGACY_KEY);
         } catch (err) {
-            logger('warn', 'CompressionQueue', 'Legacy migration failed:', err);
+            this.log('warn', 'Legacy migration failed:', err);
         }
     }
 

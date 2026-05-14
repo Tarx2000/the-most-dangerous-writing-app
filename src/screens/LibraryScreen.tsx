@@ -23,6 +23,7 @@ import { useLibraryNotes } from '@/lib/hooks/useLibraryNotes';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { logger } from '@/lib/logger';
 
 type Props = {
     navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -180,11 +181,15 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
         });
     }, [deletePerson]);
     const handleRequestDeleteVlog = useCallback((id: string) => {
+        logger('info', 'LibraryScreen', `Vlog delete requested: ${id}`);
         setVlogToDelete(id);
     }, []);
     const handleConfirmDeleteVlog = useCallback(() => {
         setVlogToDelete((prev) => {
-            if (prev) deleteVlog(prev);
+            if (prev) {
+                logger('info', 'LibraryScreen', `Confirming vlog delete: ${prev}`);
+                deleteVlog(prev);
+            }
             return null;
         });
     }, [deleteVlog]);

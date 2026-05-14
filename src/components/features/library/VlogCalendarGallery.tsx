@@ -8,6 +8,7 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { VlogViewerModal, LayoutRect } from './VlogViewerModal';
 import { useVlogs } from '@/lib/hooks/useStorage';
 import { useThumbnails } from '@/lib/hooks/useThumbnails';
+import { logVlog } from '@/lib/logger';
 
 /** Static fallback for StyleSheet — dimensions may change at runtime via useWindowDimensions */
 const FALLBACK_HEIGHT = 800;
@@ -119,7 +120,11 @@ export const VlogCalendarGallery: React.FC<Props> = ({ vlogs, isLocked, onUnlock
     const openDay = useCallback(
         (dateKey: string) => {
             const dayVlogs = vlogsByDate[dateKey];
-            if (!dayVlogs || dayVlogs.length === 0) return;
+            if (!dayVlogs || dayVlogs.length === 0) {
+                logVlog('info', `openDay: no vlogs for ${dateKey}`);
+                return;
+            }
+            logVlog('info', `openDay: ${dayVlogs.length} vlog(s) for ${dateKey}`);
 
             const cellRef = cellRefs.current[dateKey];
             if (cellRef) {

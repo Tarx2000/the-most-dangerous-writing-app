@@ -41,9 +41,15 @@ export function logger(level: LogLevel, tag: string, message: string, ...args: u
 }
 
 /** Tagged helpers for common domains */
-export const logStorage = (level: LogLevel, message: string, ...args: unknown[]) => logger(level, 'Storage', message, ...args);
+export const logStorage = (level: LogLevel, message: string, ...args: unknown[]) =>
+    logger(level, 'Storage', message, ...args);
 export const logAi = (level: LogLevel, message: string, ...args: unknown[]) => logger(level, 'AI', message, ...args);
-export const logAiQueue = (level: LogLevel, message: string, ...args: unknown[]) => logger(level, 'AI Queue', message, ...args);
-export const logCompressor = (level: LogLevel, message: string, ...args: unknown[]) => logger(level, 'Compressor', message, ...args);
+export const logAiQueue = (level: LogLevel, message: string, ...args: unknown[]) =>
+    logger(level, 'AI Queue', message, ...args);
+export const logCompressor = (level: LogLevel, message: string, ...args: unknown[]) =>
+    logger(level, 'Compressor', message, ...args);
 export const logDb = (level: LogLevel, message: string, ...args: unknown[]) => logger(level, 'DB', message, ...args);
-export const logStartup = (level: LogLevel, message: string, ...args: unknown[]) => logger(level, 'Startup', message, ...args);
+export const logStartup = (level: LogLevel, message: string, ...args: unknown[]) =>
+    logger(level, 'Startup', message, ...args);
+export const logVlog = (level: LogLevel, message: string, ...args: unknown[]) =>
+    logger(level, 'Vlog', message, ...args);

@@ -20,6 +20,7 @@ import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { usePreferences } from '@/lib/hooks/useStorage';
 import { useCompressionQueueContext } from '@/lib/hooks/useCompressionQueueProvider';
+import { logVlog } from '@/lib/logger';
 import type { VideoPlayer } from 'expo-video';
 
 /** Represents a bounding box in window coordinates (from view.measureInWindow) */
@@ -130,20 +131,50 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const [internalPlayer, setInternalPlayer] = useState<VideoPlayer | null>(null);
     const activePlayer = sharedPlayer || internalPlayer;
 
-    /** Stable callback to receive the player from InternalVlogPlayer */
-    const handlePlayerReady = useCallback((player: VideoPlayer) => {
-        setInternalPlayer(player);
-    }, []);
+    /** Stable callback to receive the player from InternalVlogPlayer.
+     *  We gate on `visible` to avoid setting state after the modal has
+     *  already started closing (which would leak a released player). */
+    const handlePlayerReady = useCallback(
+        (player: VideoPlayer) => {
+            if (visible) {
+                logVlog('info', 'Internal player ready, storing in state');
+                setInternalPlayer(player);
+            } else {
+                logVlog('info', 'Modal not visible, ignoring late player ready callback');
+            }
+        },
+        [visible],
+    );
+
+    /** When the modal closes we MUST drop the internal player reference
+     *  so that on the next open `activePlayer` is null until a fresh
+     *  VideoPlayer is created.  expo-video releases the native player
+     *  when InternalVlogPlayer unmounts; keeping the JS wrapper in state
+     *  causes "shared object already released" on second open. */
+    useEffect(() => {
+        if (!visible) {
+            logVlog('info', 'Modal closing — releasing internalPlayer reference');
+            setInternalPlayer(null);
+        }
+    }, [visible]);
 
     useEffect(() => {
         if (visible) {
             isClosingRef.current = false;
             setIsRendered(true);
             setExpandedIndex(initialIndex);
-            setIsPlaying(activePlayer?.playing ?? true);
-            setIsMuted((activePlayer?.volume ?? 1) === 0);
+            try {
+                setIsPlaying(activePlayer?.playing ?? true);
+                setIsMuted((activePlayer?.volume ?? 1) === 0);
+                setCurrentTime(activePlayer?.currentTime ?? 0);
+            } catch {
+                /* activePlayer may be a released shared object —
+                   fall back to defaults so the UI doesn't crash. */
+                setIsPlaying(true);
+                setIsMuted(false);
+                setCurrentTime(0);
+            }
             setShowControls(true);
-            setCurrentTime(activePlayer?.currentTime ?? 0);
             progress.value = 0;
             panX.value = 0;
             panY.value = 0;
@@ -165,6 +196,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     useEffect(() => {
         if (!activePlayer || !visible) return;
 
+        logVlog('info', `Syncing listeners to player for vlog ${currentVlog?.id}`);
+
         // Native event listener (primary)
         const timeSub = activePlayer.addListener('timeUpdate', (event) => {
             const t = typeof event === 'number' ? event : (event?.currentTime ?? 0);
@@ -184,6 +217,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         }, 500);
 
         return () => {
+            logVlog('info', 'Removing player listeners');
             timeSub.remove();
             playSub.remove();
             clearInterval(pollTimer);
@@ -288,26 +322,29 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const handleManualCompress = async () => {
         const vlog = vlogs[expandedIndex];
         if (!vlog || isQueuedOrProcessing) return;
+        logVlog('info', `Manual compress requested for vlog ${vlog.id}, preset ${activeCompressionPreset}`);
         await enqueueVlog(vlog.id, vlog.filePath, activeCompressionPreset);
+        logVlog('info', `Vlog ${vlog.id} enqueued for compression`);
     };
 
     /** Toggle play/pause on the active player.
      *  Uses pause() / play() — the correct methods on expo-video.
      *  The playingChange listener keeps the icon synced. */
     const togglePlayPause = useCallback(() => {
-        if (!activePlayer) return;
-        if (activePlayer.playing) {
-            try {
+        if (!activePlayer) {
+            logVlog('warn', 'togglePlayPause: no activePlayer');
+            return;
+        }
+        try {
+            if (activePlayer.playing) {
+                logVlog('info', 'Pausing video');
                 activePlayer.pause();
-            } catch {
-                /* ignore */
-            }
-        } else {
-            try {
+            } else {
+                logVlog('info', 'Playing video');
                 activePlayer.play();
-            } catch {
-                /* ignore */
             }
+        } catch (e) {
+            logVlog('error', 'togglePlayPause failed:', e);
         }
         vibrate(10);
         setShowControls(true);
@@ -316,12 +353,16 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
     /** Toggle mute on the active player */
     const toggleMute = useCallback(() => {
-        if (!activePlayer) return;
+        if (!activePlayer) {
+            logVlog('warn', 'toggleMute: no activePlayer');
+            return;
+        }
         const nextMuted = activePlayer.volume === 0;
         try {
             activePlayer.volume = nextMuted ? 1 : 0;
-        } catch {
-            /* ignore */
+            logVlog('info', nextMuted ? 'Unmuting video' : 'Muting video');
+        } catch (e) {
+            logVlog('error', 'toggleMute failed:', e);
         }
         setIsMuted(!nextMuted);
         vibrate(10);
@@ -332,13 +373,20 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     /** Skip forward/backward 10 seconds */
     const skip = useCallback(
         (seconds: number) => {
-            if (!activePlayer) return;
+            if (!activePlayer) {
+                logVlog('warn', `skip(${seconds}): no activePlayer`);
+                return;
+            }
             try {
                 const target = Math.max(0, Math.min(activePlayer.duration, activePlayer.currentTime + seconds));
                 activePlayer.currentTime = target;
                 setCurrentTime(target);
-            } catch {
-                /* ignore */
+                logVlog(
+                    'info',
+                    `Skipped ${seconds > 0 ? 'forward' : 'backward'} ${Math.abs(seconds)}s to ${target.toFixed(1)}s`,
+                );
+            } catch (e) {
+                logVlog('error', 'skip failed:', e);
             }
             vibrate(10);
             setShowControls(true);

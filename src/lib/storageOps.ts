@@ -280,14 +280,22 @@ export function createVlogOps(
         totalBytesRef.current = newBytes;
         setTotalBytes(newBytes);
 
+        logger(
+            'info',
+            'Vlog',
+            `Saving vlog ${vlog.id} (${(vlog.fileSizeBytes / 1024 / 1024).toFixed(1)} MB, ${vlog.durationSec}s)`,
+        );
+
         try {
             await insertVlog(vlog);
+            logger('info', 'Vlog', `Vlog ${vlog.id} saved successfully`);
         } catch (error) {
             logger('error', 'Storage', 'Failed to save vlog:', error);
             vlogsRef.current = prevVlogs;
             setVlogs(prevVlogs);
             totalBytesRef.current = prevBytes;
             setTotalBytes(prevBytes);
+            logger('warn', 'Vlog', `Rolled back vlog save for ${vlog.id}`);
         }
 
         return { streakIncreased: false, newStreak: currentStreakRef.current };
@@ -301,23 +309,37 @@ export function createVlogOps(
         setVlogs(updatedVlogs);
         const prevBytes = totalBytesRef.current;
 
+        logger(
+            'info',
+            'Vlog',
+            `Deleting vlog ${id}${vlog ? ` (${(vlog.fileSizeBytes / 1024 / 1024).toFixed(1)} MB)` : ''}`,
+        );
+
         if (vlog) {
             const newBytes = Math.max(0, prevBytes - (vlog.fileSizeBytes || 0));
             setTotalBytes(newBytes);
             totalBytesRef.current = newBytes;
-            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).catch((err: Error) =>
-                logger('warn', 'Storage', 'Failed to delete vlog file:', err),
+            logger(
+                'info',
+                'Vlog',
+                `Freed ${((vlog.fileSizeBytes || 0) / 1024 / 1024).toFixed(1)} MB, new total ${(newBytes / 1024 / 1024).toFixed(1)} MB`,
+            );
+            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).then(
+                () => logger('info', 'Vlog', `Deleted vlog file ${vlog.filePath}`),
+                (err: Error) => logger('warn', 'Storage', 'Failed to delete vlog file:', err),
             );
         }
 
         try {
             await repoDeleteVlog(id);
+            logger('info', 'Vlog', `Vlog ${id} deleted from DB successfully`);
         } catch (error) {
             logger('error', 'Storage', 'Failed to delete vlog:', error);
             vlogsRef.current = prevVlogs;
             setVlogs(prevVlogs);
             setTotalBytes(prevBytes);
             totalBytesRef.current = prevBytes;
+            logger('warn', 'Vlog', `Rolled back vlog delete for ${id}`);
             vibrate([0, 500]);
         }
     };
@@ -330,16 +352,23 @@ export function createVlogOps(
         setVlogs(updatedVlogs);
 
         // Recalculate total vlog storage if fileSize changed
+        let delta = 0;
         if (oldVlog && patch.fileSizeBytes !== undefined) {
             const prevBytes = totalBytesRef.current;
-            const delta = patch.fileSizeBytes - (oldVlog.fileSizeBytes || 0);
+            delta = patch.fileSizeBytes - (oldVlog.fileSizeBytes || 0);
             const newBytes = Math.max(0, prevBytes + delta);
             totalBytesRef.current = newBytes;
             setTotalBytes(newBytes);
+            logger(
+                'info',
+                'Vlog',
+                `Updating vlog ${id} size: ${((oldVlog.fileSizeBytes || 0) / 1024 / 1024).toFixed(1)} MB → ${(patch.fileSizeBytes / 1024 / 1024).toFixed(1)} MB (delta ${(delta / 1024 / 1024).toFixed(1)} MB)`,
+            );
         }
 
         try {
             await repoUpdateVlog(id, patch);
+            logger('info', 'Vlog', `Vlog ${id} updated successfully — ${Object.keys(patch).join(', ')}`);
         } catch (error) {
             logger('error', 'Storage', 'Failed to update vlog:', error);
             vlogsRef.current = prevVlogs;
@@ -348,10 +377,10 @@ export function createVlogOps(
             // Also rollback totalBytes if we changed it
             if (oldVlog && patch.fileSizeBytes !== undefined) {
                 const prevBytes = totalBytesRef.current;
-                const delta = patch.fileSizeBytes - (oldVlog.fileSizeBytes || 0);
                 const newBytes = Math.max(0, prevBytes - delta);
                 totalBytesRef.current = newBytes;
                 setTotalBytes(newBytes);
+                logger('warn', 'Vlog', `Rolled back size update for vlog ${id}`);
             }
             throw error;
         }

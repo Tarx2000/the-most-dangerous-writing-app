@@ -17,7 +17,7 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { logger } from '@/lib/logger';
+import { logCompressor } from '@/lib/logger';
 import { CONFIG } from '@/config';
 import { generateId } from '@/lib/utils';
 
@@ -48,7 +48,7 @@ try {
     const mod = require('react-native-compressor') as { Video: VideoCompressorModule };
     VideoCompressor = mod.Video;
     isNativeModuleAvailable = true;
-    logger('info', 'Compressor', 'Native module loaded successfully');
+    logCompressor('info', 'Native module loaded successfully');
 } catch (err) {
     console.warn(
         '[Compressor] Native module not available (Expo Go mode) — compression will be skipped. Reason:',
@@ -134,11 +134,15 @@ export async function compressVideo(
     const originalSizeBytes = 'size' in originalInfo ? (originalInfo as { size: number }).size : 0;
 
     const preset = getPreset(presetId);
+    logCompressor(
+        'info',
+        `compressVideo called: input=${inputUri}, preset=${presetId}, originalSize=${(originalSizeBytes / 1024 / 1024).toFixed(1)} MB`,
+    );
 
     // Skip compression if preset is 'off', missing config, or native module unavailable
     if (preset.id === 'off' || preset.maxSize === 0 || !isNativeModuleAvailable) {
         if (!isNativeModuleAvailable && preset.id !== 'off') {
-            logger('info', 'Compressor', 'Skipping compression — native module not available (Expo Go)');
+            logCompressor('info', 'Skipping compression — native module not available (Expo Go)');
         }
         onProgress?.(1);
         return {
@@ -151,9 +155,8 @@ export async function compressVideo(
     }
 
     try {
-        logger(
+        logCompressor(
             'info',
-            'Compressor',
             `Starting compression: preset=${preset.id}, maxSize=${preset.maxSize}, bitrate=${preset.bitrate}`,
         );
 
@@ -166,9 +169,12 @@ export async function compressVideo(
                 bitrate: preset.bitrate,
             },
             (progress: number) => {
+                logCompressor('debug', `Progress ${(progress * 100).toFixed(0)}%`);
                 onProgress?.(progress);
             },
         );
+
+        logCompressor('info', `Native compression finished, temp file: ${compressedUri}`);
 
         // Get compressed file size
         const compressedInfo = await FileSystem.getInfoAsync(compressedUri);
@@ -176,12 +182,16 @@ export async function compressVideo(
 
         // If compression somehow made the file bigger, use the original
         if (compressedSizeBytes >= originalSizeBytes) {
-            logger('warn', 'Compressor', 'Compressed file is larger than original — keeping original');
+            logCompressor(
+                'warn',
+                `Compressed file is larger than original (${(compressedSizeBytes / 1024 / 1024).toFixed(1)} MB >= ${(originalSizeBytes / 1024 / 1024).toFixed(1)} MB) — keeping original`,
+            );
             // Clean up the compressed file
             try {
                 await FileSystem.deleteAsync(compressedUri, { idempotent: true });
+                logCompressor('info', 'Deleted oversized compressed temp file');
             } catch (err) {
-                logger('warn', 'Compressor', 'Failed to delete compressed file:', err);
+                logCompressor('warn', 'Failed to delete compressed file:', err);
             }
             onProgress?.(1);
             return {
@@ -196,7 +206,7 @@ export async function compressVideo(
         const savingsPercent = Math.round((1 - compressedSizeBytes / originalSizeBytes) * 100);
         const origMb = (originalSizeBytes / 1024 / 1024).toFixed(1);
         const compMb = (compressedSizeBytes / 1024 / 1024).toFixed(1);
-        logger('info', 'Compressor', `Done: ${origMb}MB → ${compMb}MB (${savingsPercent}% saved)`);
+        logCompressor('info', `Compression successful: ${origMb}MB → ${compMb}MB (${savingsPercent}% saved)`);
 
         /* ── iOS-safe file replacement strategy ───────────────────────────
          *  Instead of moveAsync to the original path (which fails on iOS
@@ -208,13 +218,16 @@ export async function compressVideo(
         const newFileName = `compressed_${generateId()}.mp4`;
         const permanentUri = `${vlogDir}${newFileName}`;
 
+        logCompressor('info', `Moving compressed file to permanent path: ${permanentUri}`);
         await FileSystem.moveAsync({ from: compressedUri, to: permanentUri });
 
         // Delete original only after compressed file is safely moved
         try {
+            logCompressor('info', `Deleting original file: ${inputUri}`);
             await FileSystem.deleteAsync(inputUri, { idempotent: true });
+            logCompressor('info', 'Original file deleted successfully');
         } catch (err) {
-            logger('warn', 'Compressor', 'Failed to delete original file:', err);
+            logCompressor('warn', 'Failed to delete original file:', err);
         }
 
         onProgress?.(1);
@@ -226,7 +239,7 @@ export async function compressVideo(
             savingsPercent,
         };
     } catch (error) {
-        logger('error', 'Compressor', 'Compression failed, keeping original:', error);
+        logCompressor('error', 'Compression failed, keeping original:', error);
         onProgress?.(1);
         return {
             outputUri: inputUri,
