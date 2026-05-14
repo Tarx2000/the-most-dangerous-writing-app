@@ -178,8 +178,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             progress.value = 0;
             panX.value = 0;
             panY.value = 0;
-            // Animate in
-            progress.value = withSpring(1, { damping: 18, stiffness: 180 });
+            // Animate in — smooth easing, no spring bounce
+            progress.value = withTiming(1, { duration: 350, easing: (t: number) => t * (2 - t) }); // easeOutQuad
         } else {
             // Parent set visible=false — delegate to handleCloseInternal for consistent exit
             if (!isClosingRef.current) {
