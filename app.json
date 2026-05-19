@@ -1,54 +1,59 @@
 {
-  "expo": {
-    "name": "the-most-dangerous-writing-app",
-    "slug": "the-most-dangerous-writing-app",
-    "version": "1.5.7",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.themostdangerouswritingapp",
-      "versionCode": 16,
-      "permissions": [
-        "CAMERA",
-        "RECORD_AUDIO"
-      ],
-      "softwareKeyboardLayoutMode": "pan"
-    },
-    "plugins": [
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow the app to record video journals",
-          "microphonePermission": "Allow the app to record audio with your vlogs",
-          "recordAudioAndroid": true
+    "expo": {
+        "name": "the-most-dangerous-writing-app",
+        "slug": "the-most-dangerous-writing-app",
+        "version": "1.5.7",
+        "orientation": "portrait",
+        "icon": "./assets/icon.png",
+        "userInterfaceStyle": "dark",
+        "splash": {
+            "image": "./assets/splash-icon.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#ffffff"
+        },
+        "ios": {
+            "supportsTablet": true
+        },
+        "android": {
+            "adaptiveIcon": {
+                "backgroundColor": "#E6F4FE",
+                "foregroundImage": "./assets/android-icon-foreground.png",
+                "backgroundImage": "./assets/android-icon-background.png",
+                "monochromeImage": "./assets/android-icon-monochrome.png"
+            },
+            "predictiveBackGestureEnabled": false,
+            "package": "com.anonymous.themostdangerouswritingapp",
+            "versionCode": 16,
+            "permissions": ["CAMERA", "RECORD_AUDIO", "WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"],
+            "softwareKeyboardLayoutMode": "pan"
+        },
+        "plugins": [
+            [
+                "expo-camera",
+                {
+                    "cameraPermission": "Allow the app to record video journals",
+                    "microphonePermission": "Allow the app to record audio with your vlogs",
+                    "recordAudioAndroid": true
+                }
+            ],
+            "expo-video",
+            "react-native-compressor",
+            [
+                "expo-media-library",
+                {
+                    "photosPermission": "Allow the app to save videos to your gallery",
+                    "savePhotosPermission": "Allow the app to save videos to your gallery",
+                    "audioPermission": "Allow the app to save videos with audio to your gallery"
+                }
+            ]
+        ],
+        "web": {
+            "favicon": "./assets/favicon.png"
+        },
+        "extra": {
+            "eas": {
+                "projectId": "d1cd8e0a-2d05-48bb-a4d0-c640c5289e9e"
+            }
         }
-      ],
-      "expo-video",
-      "react-native-compressor"
-    ],
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "d1cd8e0a-2d05-48bb-a4d0-c640c5289e9e"
-      }
     }
-  }
 }

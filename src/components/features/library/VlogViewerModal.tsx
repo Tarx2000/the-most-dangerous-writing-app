@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, Modal, Pressable, TouchableWithoutFeedback } from 'react-native';
 
 import { vibrate } from '@/lib/haptics';
 import Animated, {
@@ -12,10 +12,14 @@ import Animated, {
     Extrapolation,
     Easing,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SavedVlog } from '@/types';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -126,6 +130,10 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const [isMuted, setIsMuted] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [currentTime, setCurrentTime] = useState(0);
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [confirmDownload, setConfirmDownload] = useState(false);
+    const [banner, setBanner] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     /** Internal player instance created by VlogPlayer when no shared player is provided */
@@ -259,6 +267,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         if (showControls) scheduleControlsHide();
         return () => {
             if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+            if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
         };
     }, [showControls, scheduleControlsHide]);
 
@@ -307,15 +316,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         [handleSwipeDismiss, panX, panY],
     );
 
-    // Backdrop tap — only closes when tapping outside the card
-    const backdropTapGesture = useMemo(
-        () =>
-            Gesture.Tap().onEnd(() => {
-                runOnJS(handleCloseInternal)();
-            }),
-        [handleCloseInternal],
-    );
-
     const swipeVlog = useCallback(
         (direction: number) => {
             const newIdx = expandedIndex + direction;
@@ -341,6 +341,106 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         await enqueueVlog(vlog.id, vlog.filePath, activeCompressionPreset);
         logVlog('info', `Vlog ${vlog.id} enqueued for compression`);
     };
+
+    /** Show a temporary banner message at the top of the modal */
+    const showBanner = useCallback((message: string, type: 'success' | 'error') => {
+        if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+        setBanner({ message, type });
+        bannerTimerRef.current = setTimeout(() => setBanner(null), 3000);
+    }, []);
+
+    /** Biometric gate: require fingerprint / face before any video leaves the app.
+     *  Returns true if the user passed authentication, false otherwise. */
+    const authenticateForDownload = useCallback(async (): Promise<boolean> => {
+        try {
+            const compatible = await LocalAuthentication.hasHardwareAsync();
+            const enrolled = await LocalAuthentication.isEnrolledAsync();
+
+            if (!compatible || !enrolled) {
+                // No biometrics available — allow download without auth
+                logVlog('info', 'Download auth skipped: no biometric hardware/enrollment');
+                return true;
+            }
+
+            const result = await LocalAuthentication.authenticateAsync({
+                promptMessage: 'Confirm identity to share video',
+                cancelLabel: 'Cancel',
+            });
+
+            if (result.success) {
+                vibrate(10);
+                return true;
+            }
+
+            logVlog('warn', 'Download cancelled: biometric auth failed');
+            return false;
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            logVlog('error', `Download auth error: ${msg}`);
+            return false;
+        }
+    }, []);
+
+    /** Save the current vlog to the device's photo gallery.
+     *  Falls back to the system share sheet when gallery access is unavailable
+     *  (e.g. in Expo Go, which lacks granular Android 14+ media permissions). */
+    const handleDownload = useCallback(async () => {
+        const vlog = vlogs[expandedIndex];
+        if (!vlog || isDownloading) return;
+
+        setIsDownloading(true);
+        logVlog('info', `Starting download for vlog ${vlog.id}`);
+
+        try {
+            // Attempt gallery save — works in dev/standalone builds; fails in Expo Go
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status === 'granted') {
+                const asset = await MediaLibrary.createAssetAsync(vlog.filePath);
+                logVlog('info', `Download complete for vlog ${vlog.id}, asset id: ${asset.id}`);
+                showBanner('Saved to gallery', 'success');
+                vibrate(10);
+                return;
+            }
+
+            // Permission denied — fall through to sharing
+            logVlog('warn', `Download: permission ${status}, falling back to share sheet`);
+        } catch (e) {
+            // Expo Go rejects AUDIO permission — fall back to share sheet
+            const msg = e instanceof Error ? e.message : String(e);
+            logVlog('info', `Download: gallery unavailable (${msg}), falling back to share sheet`);
+        }
+
+        // Fallback: open system share sheet so the user can save to gallery manually
+        try {
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(vlog.filePath, {
+                    mimeType: 'video/mp4',
+                    dialogTitle: 'Save video',
+                    UTI: 'public.mpeg-4',
+                });
+                showBanner('Shared — you can save from the share sheet', 'success');
+                vibrate(10);
+            } else {
+                showBanner('Sharing is not available on this device', 'error');
+            }
+        } catch (shareErr) {
+            const msg = shareErr instanceof Error ? shareErr.message : String(shareErr);
+            logVlog('error', `Download (share fallback) failed for vlog ${vlog.id}:`, msg);
+            showBanner(`Download failed: ${msg}`, 'error');
+        } finally {
+            setIsDownloading(false);
+        }
+    }, [expandedIndex, vlogs, isDownloading, showBanner]);
+
+    /** Called when user confirms the download dialog — runs biometric auth first,
+     *  then proceeds to the actual download/share flow. */
+    const handleConfirmDownload = useCallback(async () => {
+        setConfirmDownload(false);
+        const passed = await authenticateForDownload();
+        if (passed) {
+            handleDownload();
+        }
+    }, [authenticateForDownload, handleDownload]);
 
     /** Toggle play/pause on the active player.
      *  Uses pause() / play() — the correct methods on expo-video.
@@ -455,254 +555,285 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
 
     return (
         <Modal visible transparent animationType="none" onRequestClose={handleCloseInternal}>
-            {/* Backdrop — tap to close, separate from card gestures */}
-            <GestureDetector gesture={backdropTapGesture}>
-                <Animated.View style={[styles.expandedBackdrop, backdropAnimatedStyle]} />
-            </GestureDetector>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+                {/* Banner feedback — shows briefly after download actions */}
+                {banner && (
+                    <View style={[styles.banner, banner.type === 'error' && styles.bannerError]} pointerEvents="none">
+                        <MaterialCommunityIcons
+                            name={banner.type === 'success' ? 'check-circle-outline' : 'alert-circle-outline'}
+                            size={18}
+                            color={theme.colors.textPrimary}
+                            style={{ marginRight: 8 }}
+                        />
+                        <Text style={styles.bannerText}>{banner.message}</Text>
+                    </View>
+                )}
 
-            {/* Card — contains video, custom controls, info bar, swipe nav */}
-            <GestureDetector gesture={panGesture}>
-                <Animated.View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-                    <Animated.View style={[styles.expandedCard, cardAnimatedStyle]} pointerEvents="auto">
-                        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
-                        <View style={styles.expandedTint} />
+                {/* Backdrop — tap to close, separate from card gestures */}
+                <TouchableWithoutFeedback onPress={handleCloseInternal}>
+                    <Animated.View style={[styles.expandedBackdrop, backdropAnimatedStyle]} />
+                </TouchableWithoutFeedback>
 
-                        {/* Video Player Area with Custom Controls */}
-                        <View style={styles.expandedVideoContainer}>
-                            <VlogPlayer
-                                uri={currentVlog.filePath}
-                                sharedPlayer={sharedPlayer}
-                                onPlayerReady={handlePlayerReady}
-                            />
+                {/* Card — contains video, custom controls, info bar, swipe nav */}
+                <GestureDetector gesture={panGesture}>
+                    <Animated.View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+                        <Animated.View style={[styles.expandedCard, cardAnimatedStyle]} pointerEvents="auto">
+                            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+                            <View style={styles.expandedTint} />
 
-                            {/* Tap overlay to toggle controls visibility */}
-                            <Pressable
-                                style={StyleSheet.absoluteFillObject}
-                                onPress={() => {
-                                    setShowControls((prev) => {
-                                        const next = !prev;
-                                        if (next) scheduleControlsHide();
-                                        return next;
-                                    });
-                                }}
-                            />
+                            {/* Video Player Area with Custom Controls */}
+                            <View style={styles.expandedVideoContainer}>
+                                <VlogPlayer
+                                    uri={currentVlog.filePath}
+                                    sharedPlayer={sharedPlayer}
+                                    onPlayerReady={handlePlayerReady}
+                                />
 
-                            {/* Top-right mute button */}
-                            {showControls && (
-                                <View style={styles.muteBtnContainer} pointerEvents="box-none">
-                                    <AnimatedScaleButton style={styles.controlIconBtn} onPress={toggleMute}>
-                                        <MaterialCommunityIcons
-                                            name={isMuted ? 'volume-off' : 'volume-high'}
-                                            size={20}
-                                            color={theme.colors.textPrimary}
-                                        />
-                                    </AnimatedScaleButton>
-                                </View>
-                            )}
+                                {/* Tap overlay to toggle controls visibility */}
+                                <Pressable
+                                    style={StyleSheet.absoluteFillObject}
+                                    onPress={() => {
+                                        setShowControls((prev) => {
+                                            const next = !prev;
+                                            if (next) scheduleControlsHide();
+                                            return next;
+                                        });
+                                    }}
+                                />
 
-                            {/* Center play/pause + skip controls */}
-                            {showControls && (
-                                <View style={styles.centerControls} pointerEvents="box-none">
-                                    <AnimatedScaleButton
-                                        style={[styles.controlIconBtn, styles.skipBtn]}
-                                        onPress={() => skip(-10)}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="rewind-10"
-                                            size={28}
-                                            color={theme.colors.textPrimary}
-                                        />
-                                    </AnimatedScaleButton>
-
-                                    <AnimatedScaleButton
-                                        style={[styles.controlIconBtn, styles.playPauseBtn]}
-                                        onPress={togglePlayPause}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name={isPlaying ? 'pause' : 'play'}
-                                            size={36}
-                                            color={theme.colors.textPrimary}
-                                        />
-                                    </AnimatedScaleButton>
-
-                                    <AnimatedScaleButton
-                                        style={[styles.controlIconBtn, styles.skipBtn]}
-                                        onPress={() => skip(10)}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="fast-forward-10"
-                                            size={28}
-                                            color={theme.colors.textPrimary}
-                                        />
-                                    </AnimatedScaleButton>
-                                </View>
-                            )}
-
-                            {/* Live countdown badge — remaining time */}
-                            <View style={styles.durationBadge} pointerEvents="none">
-                                <Text style={styles.durationText}>
-                                    {formatDuration(Math.max(0, currentVlog.durationSec - currentTime))}
-                                </Text>
-                            </View>
-
-                            {/* Compression trigger / progress overlay */}
-                            {activeJob && (activeJob.status === 'processing' || activeJob.status === 'queued') && (
-                                <View style={styles.compressProgressOverlay} pointerEvents="box-none">
-                                    <View style={styles.compressProgressPill}>
-                                        <MaterialCommunityIcons
-                                            name={activeJob.status === 'processing' ? 'loading' : 'clock-outline'}
-                                            size={14}
-                                            color={theme.colors.textPrimary}
-                                            style={{ marginRight: 6 }}
-                                        />
-                                        <Text style={styles.compressProgressText}>
-                                            {activeJob.status === 'processing'
-                                                ? `Compressing… ${Math.round((activeJob.progress ?? 0) * 100)}%`
-                                                : 'Queued for compression'}
-                                        </Text>
-                                    </View>
-                                    {activeJob.status === 'processing' && (
-                                        <View style={styles.compressProgressBarTrack}>
-                                            <View
-                                                style={[
-                                                    styles.compressProgressBarFill,
-                                                    { width: `${Math.round((activeJob.progress ?? 0) * 100)}%` },
-                                                ]}
-                                            />
-                                        </View>
-                                    )}
-                                </View>
-                            )}
-
-                            {activeJob?.status === 'failed' && (
-                                <View style={styles.compressProgressOverlay} pointerEvents="box-none">
-                                    <View
-                                        style={[
-                                            styles.compressProgressPill,
-                                            { backgroundColor: theme.colors.dangerFill },
-                                        ]}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="alert-circle-outline"
-                                            size={14}
-                                            color={theme.colors.danger}
-                                            style={{ marginRight: 6 }}
-                                        />
-                                        <Text
-                                            style={[styles.compressProgressText, { color: theme.colors.danger }]}
-                                            numberOfLines={1}
-                                        >
-                                            Failed{activeJob.error ? `: ${activeJob.error}` : ''}
-                                        </Text>
-                                    </View>
-                                </View>
-                            )}
-
-                            {(currentVlog.compressionPreset === 'off' ||
-                                !currentVlog.compressionPreset ||
-                                currentVlog.compressionPending) &&
-                                !activeJob && (
-                                    <View style={styles.compressBtnContainer} pointerEvents="box-none">
-                                        <AnimatedScaleButton
-                                            style={[styles.compressBtn, { opacity: 1 }]}
-                                            onPress={handleManualCompress}
-                                        >
+                                {/* Top-right mute button */}
+                                {showControls && (
+                                    <View style={styles.muteBtnContainer} pointerEvents="box-none">
+                                        <AnimatedScaleButton style={styles.controlIconBtn} onPress={toggleMute}>
                                             <MaterialCommunityIcons
-                                                name="zip-box"
-                                                size={16}
+                                                name={isMuted ? 'volume-off' : 'volume-high'}
+                                                size={20}
                                                 color={theme.colors.textPrimary}
-                                                style={{ marginRight: 6 }}
                                             />
-                                            <Text style={styles.compressBtnText}>Compress Video</Text>
                                         </AnimatedScaleButton>
                                     </View>
                                 )}
 
-                            {/* Dev watermark overlay */}
-                            {devMode && (
-                                <View style={styles.devWatermark} pointerEvents="box-none">
-                                    <Text style={styles.devWatermarkText}>
-                                        DEV: {currentVlog.compressionPreset || 'Uncompressed'}{' '}
-                                        {currentVlog.originalFileSizeBytes
-                                            ? `(${Math.round(100 - (currentVlog.fileSizeBytes / currentVlog.originalFileSizeBytes) * 100)}% saved)`
-                                            : ''}
-                                        {currentVlog.compressionPending ? ' • PENDING' : ''}
+                                {/* Center play/pause + skip controls */}
+                                {showControls && (
+                                    <View style={styles.centerControls} pointerEvents="box-none">
+                                        <AnimatedScaleButton
+                                            style={[styles.controlIconBtn, styles.skipBtn]}
+                                            onPress={() => skip(-10)}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name="rewind-10"
+                                                size={28}
+                                                color={theme.colors.textPrimary}
+                                            />
+                                        </AnimatedScaleButton>
+
+                                        <AnimatedScaleButton
+                                            style={[styles.controlIconBtn, styles.playPauseBtn]}
+                                            onPress={togglePlayPause}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name={isPlaying ? 'pause' : 'play'}
+                                                size={36}
+                                                color={theme.colors.textPrimary}
+                                            />
+                                        </AnimatedScaleButton>
+
+                                        <AnimatedScaleButton
+                                            style={[styles.controlIconBtn, styles.skipBtn]}
+                                            onPress={() => skip(10)}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name="fast-forward-10"
+                                                size={28}
+                                                color={theme.colors.textPrimary}
+                                            />
+                                        </AnimatedScaleButton>
+                                    </View>
+                                )}
+
+                                {/* Live countdown badge — remaining time */}
+                                <View style={styles.durationBadge} pointerEvents="none">
+                                    <Text style={styles.durationText}>
+                                        {formatDuration(Math.max(0, currentVlog.durationSec - currentTime))}
                                     </Text>
                                 </View>
-                            )}
-                        </View>
 
-                        {/* Info bar */}
-                        <View style={styles.expandedInfo}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.expandedDate}>{currentVlog.dateStr}</Text>
-                                <Text style={styles.expandedMeta}>
-                                    {formatDuration(currentVlog.durationSec)} •{' '}
-                                    {(currentVlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
-                                </Text>
+                                {/* Compression trigger / progress overlay */}
+                                {activeJob && (activeJob.status === 'processing' || activeJob.status === 'queued') && (
+                                    <View style={styles.compressProgressOverlay} pointerEvents="box-none">
+                                        <View style={styles.compressProgressPill}>
+                                            <MaterialCommunityIcons
+                                                name={activeJob.status === 'processing' ? 'loading' : 'clock-outline'}
+                                                size={14}
+                                                color={theme.colors.textPrimary}
+                                                style={{ marginRight: 6 }}
+                                            />
+                                            <Text style={styles.compressProgressText}>
+                                                {activeJob.status === 'processing'
+                                                    ? `Compressing… ${Math.round((activeJob.progress ?? 0) * 100)}%`
+                                                    : 'Queued for compression'}
+                                            </Text>
+                                        </View>
+                                        {activeJob.status === 'processing' && (
+                                            <View style={styles.compressProgressBarTrack}>
+                                                <View
+                                                    style={[
+                                                        styles.compressProgressBarFill,
+                                                        { width: `${Math.round((activeJob.progress ?? 0) * 100)}%` },
+                                                    ]}
+                                                />
+                                            </View>
+                                        )}
+                                    </View>
+                                )}
+
+                                {activeJob?.status === 'failed' && (
+                                    <View style={styles.compressProgressOverlay} pointerEvents="box-none">
+                                        <View
+                                            style={[
+                                                styles.compressProgressPill,
+                                                { backgroundColor: theme.colors.dangerFill },
+                                            ]}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name="alert-circle-outline"
+                                                size={14}
+                                                color={theme.colors.danger}
+                                                style={{ marginRight: 6 }}
+                                            />
+                                            <Text
+                                                style={[styles.compressProgressText, { color: theme.colors.danger }]}
+                                                numberOfLines={1}
+                                            >
+                                                Failed{activeJob.error ? `: ${activeJob.error}` : ''}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                )}
+
+                                {(currentVlog.compressionPreset === 'off' ||
+                                    !currentVlog.compressionPreset ||
+                                    currentVlog.compressionPending) &&
+                                    !activeJob && (
+                                        <View style={styles.compressBtnContainer} pointerEvents="box-none">
+                                            <AnimatedScaleButton
+                                                style={[styles.compressBtn, { opacity: 1 }]}
+                                                onPress={handleManualCompress}
+                                            >
+                                                <MaterialCommunityIcons
+                                                    name="zip-box"
+                                                    size={16}
+                                                    color={theme.colors.textPrimary}
+                                                    style={{ marginRight: 6 }}
+                                                />
+                                                <Text style={styles.compressBtnText}>Compress Video</Text>
+                                            </AnimatedScaleButton>
+                                        </View>
+                                    )}
+
+                                {/* Dev watermark overlay */}
+                                {devMode && (
+                                    <View style={styles.devWatermark} pointerEvents="box-none">
+                                        <Text style={styles.devWatermarkText}>
+                                            DEV: {currentVlog.compressionPreset || 'Uncompressed'}{' '}
+                                            {currentVlog.originalFileSizeBytes
+                                                ? `(${Math.round(100 - (currentVlog.fileSizeBytes / currentVlog.originalFileSizeBytes) * 100)}% saved)`
+                                                : ''}
+                                            {currentVlog.compressionPending ? ' • PENDING' : ''}
+                                        </Text>
+                                    </View>
+                                )}
                             </View>
 
-                            {/* Close button (explicit, reliable escape hatch) */}
-                            <AnimatedScaleButton style={styles.closeBtn} onPress={handleCloseInternal}>
-                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
-                                <Text style={styles.closeBtnText}>Close</Text>
-                            </AnimatedScaleButton>
-
-                            {/* Swipe navigation */}
-                            {vlogs.length > 1 && (
-                                <View style={styles.swipeNav}>
-                                    <AnimatedScaleButton
-                                        onPress={() => swipeVlog(-1)}
-                                        disabled={expandedIndex === 0}
-                                        style={[styles.swipeBtn, expandedIndex === 0 && { opacity: 0.3 }]}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="chevron-left"
-                                            size={24}
-                                            color={theme.colors.textPrimary}
-                                        />
-                                    </AnimatedScaleButton>
-                                    <Text style={styles.swipeCounter}>
-                                        {expandedIndex + 1}/{vlogs.length}
+                            {/* Info bar */}
+                            <View style={styles.expandedInfo}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.expandedDate}>{currentVlog.dateStr}</Text>
+                                    <Text style={styles.expandedMeta}>
+                                        {formatDuration(currentVlog.durationSec)} •{' '}
+                                        {(currentVlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
                                     </Text>
-                                    <AnimatedScaleButton
-                                        onPress={() => swipeVlog(1)}
-                                        disabled={expandedIndex === vlogs.length - 1}
-                                        style={[
-                                            styles.swipeBtn,
-                                            expandedIndex === vlogs.length - 1 && { opacity: 0.3 },
-                                        ]}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="chevron-right"
-                                            size={24}
-                                            color={theme.colors.textPrimary}
-                                        />
-                                    </AnimatedScaleButton>
                                 </View>
-                            )}
-                        </View>
 
-                        {/* Actions */}
-                        {onRequestDelete && (
-                            <View style={styles.expandedActions}>
-                                <View style={{ flex: 1 }} />
+                                {/* Swipe navigation */}
+                                {vlogs.length > 1 && (
+                                    <View style={styles.swipeNav}>
+                                        <AnimatedScaleButton
+                                            onPress={() => swipeVlog(-1)}
+                                            disabled={expandedIndex === 0}
+                                            style={[styles.swipeBtn, expandedIndex === 0 && { opacity: 0.3 }]}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name="chevron-left"
+                                                size={24}
+                                                color={theme.colors.textPrimary}
+                                            />
+                                        </AnimatedScaleButton>
+                                        <Text style={styles.swipeCounter}>
+                                            {expandedIndex + 1}/{vlogs.length}
+                                        </Text>
+                                        <AnimatedScaleButton
+                                            onPress={() => swipeVlog(1)}
+                                            disabled={expandedIndex === vlogs.length - 1}
+                                            style={[
+                                                styles.swipeBtn,
+                                                expandedIndex === vlogs.length - 1 && { opacity: 0.3 },
+                                            ]}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name="chevron-right"
+                                                size={24}
+                                                color={theme.colors.textPrimary}
+                                            />
+                                        </AnimatedScaleButton>
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Bottom-right icon-only actions */}
+                            <View style={styles.actionsContainer} pointerEvents="box-none">
                                 <AnimatedScaleButton
-                                    style={styles.deleteBtn}
-                                    onPress={() => onRequestDelete(currentVlog.id)}
+                                    style={[styles.controlIconBtn, isDownloading && styles.actionBtnDisabled]}
+                                    onPress={() => setConfirmDownload(true)}
+                                    disabled={isDownloading}
                                 >
                                     <MaterialCommunityIcons
-                                        name="delete-outline"
-                                        size={18}
-                                        color={theme.colors.danger}
+                                        name={isDownloading ? 'loading' : 'share-variant-outline'}
+                                        size={20}
+                                        color={theme.colors.primaryAction}
                                     />
-                                    <Text style={styles.deleteBtnText}>Delete</Text>
                                 </AnimatedScaleButton>
+
+                                {onRequestDelete && (
+                                    <AnimatedScaleButton
+                                        style={styles.controlIconBtn}
+                                        onPress={() => onRequestDelete(currentVlog.id)}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name="delete-outline"
+                                            size={20}
+                                            color={theme.colors.danger}
+                                        />
+                                    </AnimatedScaleButton>
+                                )}
                             </View>
-                        )}
+                        </Animated.View>
                     </Animated.View>
-                </Animated.View>
-            </GestureDetector>
+                </GestureDetector>
+
+                {/* Download confirmation dialog — gates video export behind biometric auth */}
+                <ConfirmDialog
+                    visible={confirmDownload}
+                    title="Share Video?"
+                    message="This will allow the video to leave the app. Verify your identity to continue."
+                    confirmLabel="Continue"
+                    cancelLabel="Cancel"
+                    confirmIcon="share-variant-outline"
+                    onConfirm={handleConfirmDownload}
+                    onCancel={() => setConfirmDownload(false)}
+                />
+            </GestureHandlerRootView>
         </Modal>
     );
 };
@@ -921,44 +1052,43 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
 
-    /* ── Actions ──────────────────────────────────────────────────────── */
-    expandedActions: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingBottom: 16,
-        zIndex: 2,
-    },
-    deleteBtn: {
+    /* ── Banner ───────────────────────────────────────────────────────── */
+    banner: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
+        right: 20,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.colors.dangerLight,
-        paddingVertical: 10,
-        paddingHorizontal: 18,
-        borderRadius: 100,
+        justifyContent: 'center',
+        backgroundColor: theme.colors.successFill,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 12,
         borderWidth: 1,
-        borderColor: theme.colors.dangerFill,
-        gap: 6,
+        borderColor: theme.colors.success,
+        zIndex: 100,
     },
-    deleteBtnText: {
-        color: theme.colors.danger,
-        fontWeight: '600',
-        fontSize: 14,
+    bannerError: {
+        backgroundColor: theme.colors.dangerFill,
+        borderColor: theme.colors.danger,
     },
-    closeBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.colors.glassBorder,
-        paddingVertical: 8,
-        paddingHorizontal: 14,
-        borderRadius: 100,
-        borderWidth: 1,
-        borderColor: theme.colors.glassBorder,
-        gap: 6,
-    },
-    closeBtnText: {
+    bannerText: {
         color: theme.colors.textPrimary,
-        fontWeight: '600',
         fontSize: 14,
+        fontWeight: '600',
+    },
+
+    /* ── Actions (icon-only, bottom-right) ────────────────────────────── */
+    actionsContainer: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        zIndex: 10,
+        flexDirection: 'row',
+        gap: 8,
+    },
+    actionBtnDisabled: {
+        opacity: 0.4,
     },
 });

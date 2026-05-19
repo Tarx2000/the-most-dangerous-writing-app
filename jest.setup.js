@@ -123,6 +123,9 @@ jest.mock('react-native-gesture-handler', () => {
         GestureDetector: function GestureDetectorMock({ children }) {
             return children || null;
         },
+        GestureHandlerRootView: function GestureHandlerRootViewMock({ children }) {
+            return children || null;
+        },
         ScrollView: function ScrollViewMock({ children }) {
             return children || null;
         },

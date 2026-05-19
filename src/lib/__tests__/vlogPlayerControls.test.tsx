@@ -7,6 +7,22 @@ import type { SavedVlog } from '@/types';
 
 jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
 jest.mock('@/lib/haptics', () => ({ vibrate: jest.fn() }));
+jest.mock('expo-media-library', () => ({
+    requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'denied' }),
+    createAssetAsync: jest.fn().mockResolvedValue({ id: 'asset-1' }),
+}));
+jest.mock('expo-sharing', () => ({
+    isAvailableAsync: jest.fn().mockResolvedValue(true),
+    shareAsync: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('expo-local-authentication', () => ({
+    hasHardwareAsync: jest.fn().mockResolvedValue(true),
+    isEnrolledAsync: jest.fn().mockResolvedValue(true),
+    authenticateAsync: jest.fn().mockResolvedValue({ success: true }),
+}));
+jest.mock('@/components/ui/ConfirmDialog', () => ({
+    ConfirmDialog: 'ConfirmDialog',
+}));
 
 const mockVlog: SavedVlog = {
     id: 'v1',

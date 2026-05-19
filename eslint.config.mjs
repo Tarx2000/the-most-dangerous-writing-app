@@ -31,6 +31,9 @@ export default ts.config(
       'proxy-ollama.js',
       'balance.js',
       'fix-eslint.js',
+      // Ignore third-party dot-directories and leftover skill copies
+      '.*/',
+      'skills/',
     ],
   },
   {

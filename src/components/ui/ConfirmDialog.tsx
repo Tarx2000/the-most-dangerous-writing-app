@@ -20,20 +20,8 @@
  *   />
  */
 import React, { useEffect, useCallback } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Modal,
-    Pressable,
-    useWindowDimensions,
-} from 'react-native';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
+import { View, Text, StyleSheet, Modal, Pressable, useWindowDimensions } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 
@@ -56,6 +44,8 @@ interface ConfirmDialogProps {
     cancelIcon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     /** If true, confirm uses danger red */
     destructive?: boolean;
+    /** Optional icon name for the confirm button (overrides the destructive/default icon) */
+    confirmIcon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     /** Called when confirm is pressed */
     onConfirm: () => void;
     /** Called when cancel or backdrop is pressed */
@@ -64,114 +54,107 @@ interface ConfirmDialogProps {
 
 /* ── Component ────────────────────────────────────────────────────────── */
 
-export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(({
-    visible,
-    title,
-    message,
-    confirmLabel = 'Confirm',
-    cancelLabel = 'Cancel',
-    destructive = false,
-    onConfirm,
-    onCancel,
-}) => {
-    const { width: screenWidth } = useWindowDimensions();
+export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(
+    ({
+        visible,
+        title,
+        message,
+        confirmLabel = 'Confirm',
+        cancelLabel = 'Cancel',
+        destructive = false,
+        confirmIcon,
+        onConfirm,
+        onCancel,
+    }) => {
+        const { width: screenWidth } = useWindowDimensions();
 
-    /* ── Shared values ── */
-    const scrimOpacity = useSharedValue(0);
-    const cardScale = useSharedValue(0.9);
-    const cardOpacity = useSharedValue(0);
+        /* ── Shared values ── */
+        const scrimOpacity = useSharedValue(0);
+        const cardScale = useSharedValue(0.9);
+        const cardOpacity = useSharedValue(0);
 
-    /* ── Animate in / out ── */
-    useEffect(() => {
-        if (visible) {
-            scrimOpacity.value = withTiming(1, { duration: SCRIM_DURATION });
-            cardScale.value = withSpring(1, SPRING);
-            cardOpacity.value = withTiming(1, { duration: 200 });
-        } else {
-            scrimOpacity.value = withTiming(0, { duration: 180 });
-            cardScale.value = withTiming(0.9, { duration: 180 });
-            cardOpacity.value = withTiming(0, { duration: 180 });
-        }
-    }, [visible, scrimOpacity, cardScale, cardOpacity]);
+        /* ── Animate in / out ── */
+        useEffect(() => {
+            if (visible) {
+                scrimOpacity.value = withTiming(1, { duration: SCRIM_DURATION });
+                cardScale.value = withSpring(1, SPRING);
+                cardOpacity.value = withTiming(1, { duration: 200 });
+            } else {
+                scrimOpacity.value = withTiming(0, { duration: 180 });
+                cardScale.value = withTiming(0.9, { duration: 180 });
+                cardOpacity.value = withTiming(0, { duration: 180 });
+            }
+        }, [visible, scrimOpacity, cardScale, cardOpacity]);
 
-    /* ── Animated styles ── */
-    const scrimStyle = useAnimatedStyle(() => ({
-        opacity: scrimOpacity.value,
-    }));
+        /* ── Animated styles ── */
+        const scrimStyle = useAnimatedStyle(() => ({
+            opacity: scrimOpacity.value,
+        }));
 
-    const cardStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: cardScale.value }],
-        opacity: cardOpacity.value,
-    }));
+        const cardStyle = useAnimatedStyle(() => ({
+            transform: [{ scale: cardScale.value }],
+            opacity: cardOpacity.value,
+        }));
 
-    /* ── Handlers ── */
-    const handleConfirm = useCallback(() => onConfirm(), [onConfirm]);
-    const handleCancel = useCallback(() => onCancel(), [onCancel]);
+        /* ── Handlers ── */
+        const handleConfirm = useCallback(() => onConfirm(), [onConfirm]);
+        const handleCancel = useCallback(() => onCancel(), [onCancel]);
 
-    if (!visible) return null;
+        if (!visible) return null;
 
-    return (
-        <Modal visible transparent animationType="none" statusBarTranslucent>
-            {/* Scrim backdrop */}
-            <Animated.View style={[styles.scrim, scrimStyle]}>
-                {/* Backdrop tap to dismiss */}
-                <Pressable style={styles.scrimHitArea} onPress={handleCancel} />
+        return (
+            <Modal visible transparent animationType="none" statusBarTranslucent>
+                {/* Scrim backdrop */}
+                <Animated.View style={[styles.scrim, scrimStyle]}>
+                    {/* Backdrop tap to dismiss */}
+                    <Pressable style={styles.scrimHitArea} onPress={handleCancel} />
 
-                {/* Dialog card */}
-                <Animated.View
-                    style={[
-                        styles.card,
-                        cardStyle,
-                        { maxWidth: Math.min(380, screenWidth - 48) },
-                    ]}
-                >
-                    {/* Title */}
-                    <Text style={styles.title}>{title}</Text>
+                    {/* Dialog card */}
+                    <Animated.View style={[styles.card, cardStyle, { maxWidth: Math.min(380, screenWidth - 48) }]}>
+                        {/* Title */}
+                        <Text style={styles.title}>{title}</Text>
 
-                    {/* Message */}
-                    <Text style={styles.message}>{message}</Text>
+                        {/* Message */}
+                        <Text style={styles.message}>{message}</Text>
 
-                    {/* Button row */}
-                    <View style={styles.buttonRow}>
-                        {/* Cancel */}
-                        <Pressable
-                            style={({ pressed }) => [
-                                styles.buttonBase,
-                                styles.cancelBtn,
-                                pressed && styles.cancelBtnPressed,
-                            ]}
-                            onPress={handleCancel}
-                        >
-                            <MaterialCommunityIcons
-                                name="close"
-                                size={18}
-                                color={theme.colors.textPrimary}
-                            />
-                            <Text style={styles.btnText}>{cancelLabel}</Text>
-                        </Pressable>
+                        {/* Button row */}
+                        <View style={styles.buttonRow}>
+                            {/* Cancel */}
+                            <Pressable
+                                style={({ pressed }) => [
+                                    styles.buttonBase,
+                                    styles.cancelBtn,
+                                    pressed && styles.cancelBtnPressed,
+                                ]}
+                                onPress={handleCancel}
+                            >
+                                <MaterialCommunityIcons name="close" size={18} color={theme.colors.textPrimary} />
+                                <Text style={styles.btnText}>{cancelLabel}</Text>
+                            </Pressable>
 
-                        {/* Confirm */}
-                        <Pressable
-                            style={({ pressed }) => [
-                                styles.buttonBase,
-                                destructive ? styles.destructiveBtn : styles.confirmBtn,
-                                pressed && (destructive ? styles.destructiveBtnPressed : styles.confirmBtnPressed),
-                            ]}
-                            onPress={handleConfirm}
-                        >
-                            <MaterialCommunityIcons
-                                name={destructive ? 'trash-can-outline' : 'check'}
-                                size={18}
-                                color={theme.colors.textPrimary}
-                            />
-                            <Text style={styles.btnText}>{confirmLabel}</Text>
-                        </Pressable>
-                    </View>
+                            {/* Confirm */}
+                            <Pressable
+                                style={({ pressed }) => [
+                                    styles.buttonBase,
+                                    destructive ? styles.destructiveBtn : styles.confirmBtn,
+                                    pressed && (destructive ? styles.destructiveBtnPressed : styles.confirmBtnPressed),
+                                ]}
+                                onPress={handleConfirm}
+                            >
+                                <MaterialCommunityIcons
+                                    name={confirmIcon ?? (destructive ? 'trash-can-outline' : 'check')}
+                                    size={18}
+                                    color={theme.colors.textPrimary}
+                                />
+                                <Text style={styles.btnText}>{confirmLabel}</Text>
+                            </Pressable>
+                        </View>
+                    </Animated.View>
                 </Animated.View>
-            </Animated.View>
-        </Modal>
-    );
-});
+            </Modal>
+        );
+    },
+);
 
 /* ── Styles ───────────────────────────────────────────────────────────── */
 
