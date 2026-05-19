@@ -31,7 +31,6 @@ import { usePreferences } from './useStorage';
 
 /** Default inactivity auto-lock timeout — overridden by timeoutMins parameter */
 
-
 /** Grace period before locking when app goes to background.
  * Allows brief interruptions like responding to a message or switching
  * to the camera for a vlog without requiring re-authentication.
@@ -49,6 +48,13 @@ export function useSecurity(timeoutMins: number = 3) {
     const [isCirclesUnlocked, setIsCirclesUnlocked] = useState<boolean>(false);
     /** Feed access: controlled by the central unlock (Stage 2) */
     const [isFeedUnlocked, setIsFeedUnlocked] = useState<boolean>(false);
+
+    // Refs for Fresh-Read pattern to avoid registering/unregistering system listeners on every state change
+    const isNotesUnlockedRef = useRef<boolean>(isNotesUnlocked);
+    isNotesUnlockedRef.current = isNotesUnlocked;
+
+    const timeoutMinsRef = useRef<number>(timeoutMins);
+    timeoutMinsRef.current = timeoutMins;
 
     const { requestPin } = usePinContext();
 
@@ -84,33 +90,36 @@ export function useSecurity(timeoutMins: number = 3) {
      * Returns true if authentication succeeded, false otherwise.
      * Falls back gracefully if no biometric hardware is available.
      */
-    const authenticate = useCallback(async (promptMessage: string): Promise<boolean> => {
-        try {
-            // Check biometric hardware availability
-            let hasHardware = false;
-            let isEnrolled = false;
-            
-            if (Platform.OS !== 'web') {
-                hasHardware = await LocalAuthentication.hasHardwareAsync();
-                isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    const authenticate = useCallback(
+        async (promptMessage: string): Promise<boolean> => {
+            try {
+                // Check biometric hardware availability
+                let hasHardware = false;
+                let isEnrolled = false;
+
+                if (Platform.OS !== 'web') {
+                    hasHardware = await LocalAuthentication.hasHardwareAsync();
+                    isEnrolled = await LocalAuthentication.isEnrolledAsync();
+                }
+
+                // Fallback to 4-Digit PIN when biometrics not available, web, or manually preferred
+                if (preferPinAuth || !hasHardware || !isEnrolled || Platform.OS === 'web') {
+                    return await requestPin(promptMessage);
+                }
+
+                const result = await LocalAuthentication.authenticateAsync({
+                    promptMessage,
+                    cancelLabel: 'Cancel',
+                });
+
+                return result.success;
+            } catch (e) {
+                console.warn('Authentication error:', e);
+                return false;
             }
-
-            // Fallback to 4-Digit PIN when biometrics not available, web, or manually preferred
-            if (preferPinAuth || !hasHardware || !isEnrolled || Platform.OS === 'web') {
-                return await requestPin(promptMessage);
-            }
-
-            const result = await LocalAuthentication.authenticateAsync({
-                promptMessage,
-                cancelLabel: 'Cancel',
-            });
-
-            return result.success;
-        } catch (e) {
-            console.warn('Authentication error:', e);
-            return false;
-        }
-    }, [requestPin, preferPinAuth]);
+        },
+        [requestPin, preferPinAuth],
+    );
 
     /**
      * Stage 1: Unlock Circles tab only.
@@ -137,7 +146,7 @@ export function useSecurity(timeoutMins: number = 3) {
             setIsNotesUnlocked(true);
             setIsProfileUnlocked(true); // Stage 2 includes Stage 1.5
             setIsCirclesUnlocked(true); // Stage 2 includes Stage 1
-            setIsFeedUnlocked(true);    // Stage 2 includes Feed
+            setIsFeedUnlocked(true); // Stage 2 includes Feed
             resetLockTimeout();
             return true;
         }
@@ -164,7 +173,7 @@ export function useSecurity(timeoutMins: number = 3) {
     /* ── Cleanup & AppState ───────────────────────────────────────────── */
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('RESET_LOCK_TIMER', () => {
-            if (isNotesUnlocked) resetLockTimeout();
+            if (isNotesUnlockedRef.current) resetLockTimeout();
         });
 
         // Auto-lock with grace period when app goes to background.
@@ -175,7 +184,7 @@ export function useSecurity(timeoutMins: number = 3) {
             if (nextState === 'background') {
                 // Start grace period — lock only if user doesn't return quickly
                 if (backgroundGraceRef.current) clearTimeout(backgroundGraceRef.current);
-                if (timeoutMins === 0) {
+                if (timeoutMinsRef.current === 0) {
                     lockAll(); // Lock immediately on background
                 } else {
                     backgroundGraceRef.current = setTimeout(() => {
@@ -192,7 +201,7 @@ export function useSecurity(timeoutMins: number = 3) {
                     backgroundGraceRef.current = null;
                 }
                 // Resume inactivity timer if still unlocked
-                if (isNotesUnlocked) resetLockTimeout();
+                if (isNotesUnlockedRef.current) resetLockTimeout();
             }
         });
 
@@ -202,7 +211,7 @@ export function useSecurity(timeoutMins: number = 3) {
             sub.remove();
             appStateSub.remove();
         };
-    }, [isNotesUnlocked, resetLockTimeout, lockAll, timeoutMins]);
+    }, [resetLockTimeout, lockAll]);
 
     return {
         /** Stage 2: full access (read notes, delete) */
@@ -225,4 +234,3 @@ export function useSecurity(timeoutMins: number = 3) {
         keepAlive: resetLockTimeout,
     };
 }
-

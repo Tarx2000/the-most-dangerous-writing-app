@@ -160,7 +160,7 @@ async function migrate(db: SQLiteDatabase): Promise<void> {
    HELPERS
    ═══════════════════════════════════════════════════════════════════════════ */
 
-export type BindValue = string | number | null;
+export type BindValue = string | number | null | undefined | boolean;
 
 /**
  * Convert `null` bind params into **holes** in a sparse array.
@@ -178,7 +178,10 @@ function sanitizeBindParams(params: BindValue[] | undefined): (string | number |
     if (!params) return [];
     const out = [...params] as (string | number | boolean | undefined)[];
     for (let i = 0; i < out.length; i++) {
-        if (out[i] === null) {
+        // Use loose equality to match both null and undefined.
+        // This ensures undefined parameters passed in are safely stripped,
+        // avoiding NullArgumentException on Android.
+        if (out[i] == null) {
             // `delete` on a TypedArray index creates a sparse hole.
             // `reduce()` skips holes, so normalizeParams never emits this key.
             // This is an intentional workaround for the expo-sqlite v15 null/undefined bridge bug.
@@ -201,6 +204,6 @@ export async function getAll<T>(sql: string, params?: BindValue[]): Promise<T[]>
 
 export async function getFirst<T>(sql: string, params?: BindValue[]): Promise<T | undefined> {
     const db = await getDb();
-    const rows = await db.getAllAsync<T>(sql, sanitizeBindParams(params) as (string | number | null | boolean)[]);
-    return rows[0];
+    const row = await db.getFirstAsync<T>(sql, sanitizeBindParams(params) as (string | number | null | boolean)[]);
+    return row ?? undefined;
 }

@@ -201,8 +201,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
                 const progress = Math.min(elapsed / 150, 1);
 
                 // cubic-out
-                const easedT =
-                    progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                const easedT = 1 - Math.pow(1 - progress, 3);
 
                 const interpolated = lerpColor(startColor, endColor, easedT);
                 currentColorStr.current = interpolated;

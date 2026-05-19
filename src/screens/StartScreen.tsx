@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StatusBar, ScrollView, Platform, StyleSheet } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
 import { AnimatedSymmetricalRing } from '@/components/ui/AnimatedSymmetricalRing';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
@@ -145,7 +145,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
     const animatedGlowStyle = useAnimatedStyle(
         () => ({
             // Remove backgroundColor so the solid circle ring is gone
-            shadowColor: withTiming(details.color, { duration: 150 }),
+            shadowColor: withTiming(details.color, { duration: 150, easing: Easing.out(Easing.cubic) }),
             opacity: withTiming(sessionMode === 'checkin' ? 1 : 0, { duration: 400 }),
         }),
         [details.color, sessionMode],
@@ -153,7 +153,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
 
     const animatedTextStyle = useAnimatedStyle(
         () => ({
-            color: withTiming(details.color, { duration: 150 }),
+            color: withTiming(details.color, { duration: 150, easing: Easing.out(Easing.cubic) }),
         }),
         [details.color],
     );

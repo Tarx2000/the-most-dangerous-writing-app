@@ -11,6 +11,11 @@ Synchronize all local changes (feature flags, feed updates, writing screen enhan
   - Feed/writing screen updates (`FeedCard.tsx`, `FeedScreen.tsx`, `WritingScreen.tsx`, etc.)
   - Full migration artifacts (new `.agents/` directory, deleted `.kilo/` directory, updated `AGENTS.md`)
 
+## Pending Tasks
+- [x] Fix check-in library icon rendering (display emoji instead of MDI icon name)
+- [x] Fix Notes Library top blur leak (make gradient fade monotonic)
+- [/] Fix color synchronization between LiquidMorphIcon and AnimatedSymmetricalRing on StartScreen.tsx
+
 ## Resolution Steps
 
 | Step | Action | Status |

@@ -1,11 +1,5 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import {
-    View,
-    Pressable,
-    StyleSheet,
-    useWindowDimensions,
-    Platform,
-} from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnUI } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -69,7 +63,7 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
     const { width: SCREEN_WIDTH } = useWindowDimensions();
     const PILL_WIDTH = React.useMemo(() => SCREEN_WIDTH * PILL_WIDTH_RATIO, [SCREEN_WIDTH]);
 
-    const activeIndex = items.findIndex(i => i.id === activeId);
+    const activeIndex = items.findIndex((i) => i.id === activeId);
     const tabWidth = React.useMemo(() => PILL_WIDTH / items.length, [PILL_WIDTH, items.length]);
 
     /** Animated position for the sliding indicator */
@@ -96,7 +90,7 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
             'worklet';
             indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
         })();
-    }, [activeIndex, tabWidth]);
+    }, [activeIndex, tabWidth, indicatorX]);
 
     /** Indicator padding from edges */
     const INDICATOR_PADDING = 7;
@@ -109,28 +103,24 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
         <View style={styles.wrapper}>
             <View style={[styles.pill, { width: PILL_WIDTH }]}>
                 {/* Layer 1: Frosted glass blur */}
-                <BlurView
-                    intensity={60}
-                    tint="dark"
-                    style={StyleSheet.absoluteFillObject}
-                />
+                <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFillObject} />
 
                 {/* Layer 2: Dense dark tint for depth */}
                 <View style={styles.tintOverlay} />
 
                 {/* Layer 3: Specular highlight — top-edge gradient simulating glass refraction */}
                 <LinearGradient
-                    colors={[theme.colors.navSpecularHighlightStart, theme.colors.navSpecularHighlightMid, 'transparent']}
+                    colors={[
+                        theme.colors.navSpecularHighlightStart,
+                        theme.colors.navSpecularHighlightMid,
+                        'transparent',
+                    ]}
                     style={styles.specularHighlight}
                 />
 
                 {/* Sliding active indicator — vertically centered */}
                 <Animated.View
-                    style={[
-                        styles.indicator,
-                        { width: tabWidth - (INDICATOR_PADDING * 2) },
-                        indicatorStyle
-                    ]}
+                    style={[styles.indicator, { width: tabWidth - INDICATOR_PADDING * 2 }, indicatorStyle]}
                 />
 
                 {/* Tab items — icon only, no labels */}
@@ -144,9 +134,7 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
                                 onPress={() => onSelect(item.id)}
                             >
                                 <View style={styles.iconContainer}>
-                                    {item.urgent && (
-                                        <View style={styles.urgentDot} />
-                                    )}
+                                    {item.urgent && <View style={styles.urgentDot} />}
                                     <MaterialCommunityIcons
                                         name={item.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
                                         size={ICON_SIZE}
@@ -260,4 +248,3 @@ const styles = StyleSheet.create({
         zIndex: 3,
     },
 });
-

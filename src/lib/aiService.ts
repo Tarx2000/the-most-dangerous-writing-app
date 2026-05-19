@@ -342,16 +342,13 @@ async function ollamaChat(
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
-            // Only attach the streaming callback on the last attempt.
-            const isLastAttempt = attempt === maxAttempts - 1;
-            const chunkCb = isLastAttempt ? onChunk : undefined;
-
+            // Stream progress on all attempts. If a retry occurs, we clear the buffer.
             const result = await ollamaChatSingle(
                 systemPrompt,
                 userMessage,
                 config,
                 optionsOverwrite,
-                chunkCb,
+                onChunk,
                 cancelToken,
             );
             return result;
@@ -367,6 +364,16 @@ async function ollamaChat(
             // If we have retries left, wait with exponential backoff
             const retriesLeft = maxAttempts - attempt - 1;
             if (retriesLeft > 0) {
+                // If a transient error occurs and we are about to retry, clear the consumer's UI buffer
+                // so that partial streaming from the failed attempt doesn't corrupt the output.
+                if (onChunk) {
+                    try {
+                        onChunk('');
+                    } catch (cbErr) {
+                        console.warn('[AI] Error in onChunk retry reset callback:', cbErr);
+                    }
+                }
+
                 const delayMs = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s, ...
                 console.warn(
                     `[AI] Transient error (attempt ${attempt + 1}/${maxAttempts}), ` +
@@ -623,7 +630,10 @@ export async function processNote(
         logAi('info', 'generateSummary DONE', { bulletCount: summary.length });
 
         if (!title || title.trim().length === 0 || summary.length === 0) {
-            logAi('warn', 'processNote FAILED — empty results', { titleEmpty: !title || title.trim().length === 0, summaryEmpty: summary.length === 0 });
+            logAi('warn', 'processNote FAILED — empty results', {
+                titleEmpty: !title || title.trim().length === 0,
+                summaryEmpty: summary.length === 0,
+            });
             return { title: title || '', summary, failed: true };
         }
 

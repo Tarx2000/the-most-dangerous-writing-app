@@ -21,6 +21,7 @@ describe('db', () => {
             execAsync: jest.fn().mockResolvedValue(undefined),
             runAsync: jest.fn().mockResolvedValue(undefined),
             getAllAsync: jest.fn().mockResolvedValue([]),
+            getFirstAsync: jest.fn().mockResolvedValue(null),
             closeAsync: jest.fn().mockResolvedValue(undefined),
         } as unknown as SQLiteDatabase & { [K: string]: jest.Mock };
     }
@@ -150,6 +151,20 @@ describe('db', () => {
         expect(passedParams[2]).toBe(42);
     });
 
+    it('sanitizeBindParams converts undefined params to sparse holes', async () => {
+        const mockDb = createMockDb();
+        (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
+        (storage.getItem as jest.Mock).mockResolvedValue('2');
+
+        await run('SELECT ?, ?, ?', ['hello', undefined, 42]);
+
+        const passedParams = (mockDb.runAsync as jest.Mock).mock.calls[0][1];
+        expect(passedParams[0]).toBe('hello');
+        expect(passedParams[1]).toBeUndefined();
+        expect(1 in passedParams).toBe(false); // sparse hole
+        expect(passedParams[2]).toBe(42);
+    });
+
     it('sanitizeBindParams handles undefined input', async () => {
         const mockDb = createMockDb();
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
@@ -184,19 +199,19 @@ describe('db', () => {
 
     it('getFirst delegates to mocked db with sanitized params and returns first row', async () => {
         const mockDb = createMockDb();
-        (mockDb.getAllAsync as jest.Mock).mockResolvedValue([{ id: '1' }]);
+        (mockDb.getFirstAsync as jest.Mock).mockResolvedValue({ id: '1' });
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
         (storage.getItem as jest.Mock).mockResolvedValue('2');
 
         const row = await getFirst('SELECT * FROM notes WHERE id = ?', ['id1']);
 
-        expect(mockDb.getAllAsync).toHaveBeenCalledWith('SELECT * FROM notes WHERE id = ?', ['id1']);
+        expect(mockDb.getFirstAsync).toHaveBeenCalledWith('SELECT * FROM notes WHERE id = ?', ['id1']);
         expect(row).toEqual({ id: '1' });
     });
 
     it('getFirst returns undefined for empty results', async () => {
         const mockDb = createMockDb();
-        (mockDb.getAllAsync as jest.Mock).mockResolvedValue([]);
+        (mockDb.getFirstAsync as jest.Mock).mockResolvedValue(null);
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
         (storage.getItem as jest.Mock).mockResolvedValue('2');
 

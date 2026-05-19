@@ -278,16 +278,21 @@ class AiQueueManager {
     private async recoverFromStall(): Promise<void> {
         const currentJob = this.jobs.find((j) => j.status === 'processing');
         if (currentJob) {
+            // Reset status to queued and clear retries so it gets processed again.
+            // We do NOT call startProcessing() or reset this.processing here.
+            // The abort() call triggers the reject path of the active XHR promise (Flow A),
+            // which flows into the catch block of processNext(). That catch block will
+            // handle the cleanup, state persist/emission, and sequence resumption via scheduleNext().
+            currentJob.status = 'queued';
+            currentJob.startedAt = undefined;
+            currentJob.error = 'Recovered from stall — queue processor was stuck';
+            currentJob.retryCount = 0;
+
             // Cancel any in-flight request
             if (this.currentCancelToken) {
                 this.currentCancelToken.abort();
                 this.currentCancelToken = null;
             }
-
-            currentJob.status = 'queued';
-            currentJob.startedAt = undefined;
-            currentJob.error = 'Recovered from stall — queue processor was stuck';
-            currentJob.retryCount = 0;
 
             await logAi({
                 action: 'stall_recovery',
@@ -305,11 +310,8 @@ class AiQueueManager {
             });
         }
 
-        this.processing = false;
-        this.currentJobStartTime = 0;
         await this.persistQueue();
         this.emitState();
-        this.startProcessing();
     }
 
     /**
@@ -510,6 +512,15 @@ class AiQueueManager {
     /** Cancel all pending batch jobs. The current job finishes normally. */
     async cancelBatch(): Promise<void> {
         this.cancelRequested = true;
+
+        // Mark the active job as failed/cancelled
+        // This ensures the aborted promise catch block (Flow A) skips the retry path.
+        const activeJob = this.jobs.find((j) => j.status === 'processing');
+        if (activeJob) {
+            activeJob.status = 'failed';
+            activeJob.error = 'Cancelled by user';
+            activeJob.completedAt = Date.now();
+        }
 
         // Remove all queued jobs
         const cancelledJobs = this.jobs.filter((j) => j.status === 'queued');

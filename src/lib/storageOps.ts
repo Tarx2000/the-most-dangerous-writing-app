@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Storage Operations â€” CRUD functions backed by SQLite (expo-sqlite).
  *
  * Each function accepts refs and setters for immediate optimistic UI updates,
@@ -40,7 +40,7 @@ import {
     updateVlog as repoUpdateVlog,
     deleteAllVlogs,
 } from '@/lib/repositories/vlogsRepository';
-import { setSetting } from '@/lib/repositories/settingsRepository';
+import { setSetting, deleteAllSettings } from '@/lib/repositories/settingsRepository';
 import type { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
 
 export type Ref<T> = { current: T };
@@ -841,7 +841,7 @@ export function createCrossCuttingOps(
         await deleteAllNotes();
         await deleteAllPersons();
         await deleteAllVlogs();
-        await (await import('@/lib/repositories/settingsRepository')).deleteAllSettings();
+        await deleteAllSettings();
 
         // Also clean local files
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
