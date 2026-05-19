@@ -283,17 +283,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         panY.value = withTiming(0, { duration: 250 });
     }, [onClose, panX, panY, progress]);
 
-    /** Swipe-down close: slide card down while fading backdrop via dragOpacity. */
-    const handleSwipeDismiss = useCallback(() => {
-        if (isClosingRef.current) return;
-        isClosingRef.current = true;
-        panX.value = withTiming(0, { duration: 300 });
-        panY.value = withTiming(SCREEN_HEIGHT, { duration: 300 }, () => {
-            runOnJS(setIsRendered)(false);
-            runOnJS(onClose)();
-        });
-    }, [onClose, panX, panY, SCREEN_HEIGHT]);
-
     // Handle swipe to dismiss (only on the card, not the backdrop)
     const panGesture = useMemo(
         () =>
@@ -307,13 +296,16 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                 .onEnd((e) => {
                     const distance = Math.sqrt(e.translationX ** 2 + e.translationY ** 2);
                     if (distance > 80 || Math.abs(e.velocityY) > 800) {
-                        runOnJS(handleSwipeDismiss)();
+                        // Trigger the same shared-element close animation as
+                        // backdrop-tap / back-gesture so the card morphs back
+                        // to the thumbnail in the calendar grid.
+                        runOnJS(handleCloseInternal)();
                     } else {
                         panX.value = withSpring(0, { damping: 20, stiffness: 200 });
                         panY.value = withSpring(0, { damping: 20, stiffness: 200 });
                     }
                 }),
-        [handleSwipeDismiss, panX, panY],
+        [handleCloseInternal, panX, panY],
     );
 
     const swipeVlog = useCallback(
