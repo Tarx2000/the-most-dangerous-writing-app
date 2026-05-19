@@ -1,7 +1,17 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import Animated, { useAnimatedStyle, withTiming, Easing, useSharedValue } from 'react-native-reanimated';
+
+// Customizable layout widths (in pixels) for characters in the morphing Lock/Unlock animation.
+// UPPERCASE_L is calibrated to 7.2px to ensure perfect visual spacing (kerning) with the following text.
+const ANIM_WIDTHS = {
+    UN_PREFIX: 17.5,
+    LOWERCASE_L: 4.5,
+    UPPERCASE_L: 7.2,
+};
+import { AnimatedLockIcon } from '@/components/ui/AnimatedLockIcon';
 import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ActionSheet } from '@/components/ui/ActionSheet';
@@ -74,6 +84,65 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     const { persons, deletePerson, updatePerson } = usePersons();
     const { savedVlogs, deleteVlog } = useVlogs();
     const security = useSecurity(lockTimeoutMins);
+
+    // Dynamic styles for the morphing lock/unlock button in the header
+    const lockButtonAnimatedStyle = useAnimatedStyle(() => {
+        const isUnlocked = security.isNotesUnlocked;
+        return {
+            backgroundColor: withTiming(isUnlocked ? theme.colors.glassBackground : theme.colors.primaryAction, {
+                duration: 250,
+                easing: Easing.out(Easing.cubic),
+            }),
+            borderColor: withTiming(isUnlocked ? theme.colors.glassBorder : theme.colors.primaryAction, {
+                duration: 250,
+                easing: Easing.out(Easing.cubic),
+            }),
+        };
+    }, [security.isNotesUnlocked]);
+
+    const lockTextAnimatedStyle = useAnimatedStyle(() => {
+        const isUnlocked = security.isNotesUnlocked;
+        return {
+            color: withTiming(isUnlocked ? theme.colors.textPrimary : theme.colors.primaryActionText, {
+                duration: 250,
+                easing: Easing.out(Easing.cubic),
+            }),
+        };
+    }, [security.isNotesUnlocked]);
+
+    // Shared value for smooth transition of the 'Un' prefix in 'Unlock' to 'Lock'
+    const prefixAnim = useSharedValue(security.isNotesUnlocked ? 0 : 1);
+
+    useEffect(() => {
+        prefixAnim.value = withTiming(security.isNotesUnlocked ? 0 : 1, {
+            duration: 250,
+            easing: Easing.out(Easing.cubic),
+        });
+    }, [security.isNotesUnlocked, prefixAnim]);
+
+    // Animated style to collapse the width and fade the opacity of the 'Un' text prefix
+    const unTextWrapperStyle = useAnimatedStyle(() => {
+        return {
+            width: prefixAnim.value * ANIM_WIDTHS.UN_PREFIX,
+            opacity: prefixAnim.value,
+        };
+    });
+
+    // Animated style for lowercase 'l' (visible when prefixAnim is 1, collapsed when 0)
+    const lowercaseLStyle = useAnimatedStyle(() => {
+        return {
+            width: prefixAnim.value * ANIM_WIDTHS.LOWERCASE_L,
+            opacity: prefixAnim.value,
+        };
+    });
+
+    // Animated style for uppercase 'L' (collapsed when prefixAnim is 1, visible when 0)
+    const uppercaseLStyle = useAnimatedStyle(() => {
+        return {
+            width: (1 - prefixAnim.value) * ANIM_WIDTHS.UPPERCASE_L,
+            opacity: 1 - prefixAnim.value,
+        };
+    });
 
     /** Central AI Queue — single instance via AiQueueProvider */
     const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueueContext();
@@ -219,56 +288,72 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                         {savedNotes.length} Entries • {persons.length} Circles
                     </Text>
                 </View>
-                {!security.isNotesUnlocked ? (
-                    <AnimatedScaleButton
-                        style={[
-                            commonStyles.iconButton,
-                            {
-                                paddingHorizontal: 15,
-                                paddingVertical: 10,
-                                backgroundColor: theme.colors.primaryAction,
-                                borderColor: theme.colors.primaryAction,
-                            },
-                        ]}
-                        onPress={async () => {
+                <AnimatedScaleButton
+                    style={[
+                        commonStyles.iconButton,
+                        {
+                            paddingHorizontal: 15,
+                            paddingVertical: 10,
+                        },
+                        lockButtonAnimatedStyle,
+                    ]}
+                    onPress={async () => {
+                        if (security.isNotesUnlocked) {
+                            security.lockAll();
+                        } else {
                             const success = await security.unlockNotes();
                             if (success) vibrate(50);
-                        }}
-                    >
-                        <MaterialCommunityIcons
-                            name="lock-open-variant"
-                            size={16}
-                            color={theme.colors.primaryActionText}
-                            style={styles.iconMarginRight}
-                        />
-                        <Text style={[commonStyles.iconButtonText, { color: theme.colors.primaryActionText }]}>
-                            Unlock
-                        </Text>
-                    </AnimatedScaleButton>
-                ) : (
-                    <AnimatedScaleButton
-                        style={[
-                            commonStyles.iconButton,
-                            {
-                                paddingHorizontal: 15,
-                                paddingVertical: 10,
-                                backgroundColor: theme.colors.glassBackground,
-                                borderColor: theme.colors.glassBorder,
-                            },
-                        ]}
-                        onPress={() => {
-                            security.lockAll();
-                        }}
-                    >
-                        <MaterialCommunityIcons
-                            name="lock"
-                            size={16}
-                            color={theme.colors.textPrimary}
-                            style={styles.iconMarginRight}
-                        />
-                        <Text style={[commonStyles.iconButtonText, { color: theme.colors.textPrimary }]}>Lock</Text>
-                    </AnimatedScaleButton>
-                )}
+                        }
+                    }}
+                >
+                    <AnimatedLockIcon isUnlocked={security.isNotesUnlocked} style={{ marginRight: 6 }} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {/* 'Un' prefix wrapper */}
+                        <Animated.View style={[unTextWrapperStyle, { overflow: 'hidden', height: 20 }]}>
+                            <Animated.Text
+                                style={[
+                                    commonStyles.iconButtonText,
+                                    lockTextAnimatedStyle,
+                                    { position: 'absolute', left: 0, width: 30 },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                Un
+                            </Animated.Text>
+                        </Animated.View>
+
+                        {/* Lowercase 'l' wrapper */}
+                        <Animated.View style={[lowercaseLStyle, { overflow: 'hidden', height: 20 }]}>
+                            <Animated.Text
+                                style={[
+                                    commonStyles.iconButtonText,
+                                    lockTextAnimatedStyle,
+                                    { position: 'absolute', left: 0, width: 10 },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                l
+                            </Animated.Text>
+                        </Animated.View>
+
+                        {/* Uppercase 'L' wrapper */}
+                        <Animated.View style={[uppercaseLStyle, { overflow: 'hidden', height: 20 }]}>
+                            <Animated.Text
+                                style={[
+                                    commonStyles.iconButtonText,
+                                    lockTextAnimatedStyle,
+                                    { position: 'absolute', left: 0, width: 15 },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                L
+                            </Animated.Text>
+                        </Animated.View>
+
+                        {/* 'ock' suffix */}
+                        <Animated.Text style={[commonStyles.iconButtonText, lockTextAnimatedStyle]}>ock</Animated.Text>
+                    </View>
+                </AnimatedScaleButton>
             </View>
 
             {/* Filter Toggle Action Button (Hidden for Circles/Vlogs view) */}

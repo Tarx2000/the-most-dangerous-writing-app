@@ -12,3 +12,4 @@ export { SettingsCard } from './SettingsCard';
 export { ShimmerLine } from './ShimmerLine';
 
 export { TickDial } from './TickDial';
+export { AnimatedLockIcon } from './AnimatedLockIcon';
