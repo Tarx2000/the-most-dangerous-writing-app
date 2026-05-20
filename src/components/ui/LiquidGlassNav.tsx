@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { View, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnUI } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -85,11 +85,7 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
         prevActiveIndexRef.current = activeIndex;
 
         const targetX = activeIndex * tabWidth;
-        // UI-thread spring: avoids being queued behind JS work
-        runOnUI(() => {
-            'worklet';
-            indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
-        })();
+        indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
     }, [activeIndex, tabWidth, indicatorX]);
 
     /** Indicator padding from edges */
@@ -101,51 +97,60 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
 
     return (
         <View style={styles.wrapper}>
-            <View style={[styles.pill, { width: PILL_WIDTH }]}>
-                {/* Layer 1: Frosted glass blur */}
-                <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFillObject} />
+            <LinearGradient
+                colors={[theme.colors.specularBorderStart, theme.colors.specularBorderEnd]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={[styles.pillContainer, { width: PILL_WIDTH, padding: 1 }]}
+            >
+                <View style={styles.pill}>
+                    {/* Layer 1: Frosted glass blur */}
+                    <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
 
-                {/* Layer 2: Dense dark tint for depth */}
-                <View style={styles.tintOverlay} />
+                    {/* Layer 2: Dense dark tint for depth */}
+                    <View style={styles.tintOverlay} />
 
-                {/* Layer 3: Specular highlight — top-edge gradient simulating glass refraction */}
-                <LinearGradient
-                    colors={[
-                        theme.colors.navSpecularHighlightStart,
-                        theme.colors.navSpecularHighlightMid,
-                        'transparent',
-                    ]}
-                    style={styles.specularHighlight}
-                />
+                    {/* Layer 3: Specular highlight — top-edge gradient simulating glass refraction */}
+                    <LinearGradient
+                        colors={[
+                            theme.colors.navSpecularHighlightStart,
+                            theme.colors.navSpecularHighlightMid,
+                            'transparent',
+                        ]}
+                        style={styles.specularHighlight}
+                    />
 
-                {/* Sliding active indicator — vertically centered */}
-                <Animated.View
-                    style={[styles.indicator, { width: tabWidth - INDICATOR_PADDING * 2 }, indicatorStyle]}
-                />
+                    {/* Sliding active indicator — vertically centered */}
+                    <Animated.View
+                        style={[styles.indicator, { width: tabWidth - INDICATOR_PADDING * 2 }, indicatorStyle]}
+                    />
 
-                {/* Tab items — icon only, no labels */}
-                <View style={styles.tabRow}>
-                    {items.map((item) => {
-                        const isActive = item.id === activeId;
-                        return (
-                            <Pressable
-                                key={item.id}
-                                style={[styles.tab, { width: tabWidth }]}
-                                onPress={() => onSelect(item.id)}
-                            >
-                                <View style={styles.iconContainer}>
-                                    {item.urgent && <View style={styles.urgentDot} />}
-                                    <MaterialCommunityIcons
-                                        name={item.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
-                                        size={ICON_SIZE}
-                                        color={isActive ? theme.colors.navIconActive : theme.colors.navIconInactive}
-                                    />
-                                </View>
-                            </Pressable>
-                        );
-                    })}
+                    {/* Tab items — icon only, no labels */}
+                    <View style={styles.tabRow}>
+                        {items.map((item) => {
+                            const isActive = item.id === activeId;
+                            return (
+                                <Pressable
+                                    key={item.id}
+                                    style={[styles.tab, { width: tabWidth }]}
+                                    onPress={() => onSelect(item.id)}
+                                >
+                                    <View style={styles.iconContainer}>
+                                        {item.urgent && <View style={styles.urgentDot} />}
+                                        <MaterialCommunityIcons
+                                            name={
+                                                item.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']
+                                            }
+                                            size={ICON_SIZE}
+                                            color={isActive ? theme.colors.navIconActive : theme.colors.navIconInactive}
+                                        />
+                                    </View>
+                                </Pressable>
+                            );
+                        })}
+                    </View>
                 </View>
-            </View>
+            </LinearGradient>
         </View>
     );
 };
@@ -168,20 +173,22 @@ const styles = StyleSheet.create({
         zIndex: 999,
     },
 
-    /** The glass pill — taller, more opaque, stronger border glow */
-    pill: {
+    /** Outer gradient container with shadow for floating depth */
+    pillContainer: {
         height: PILL_HEIGHT,
         borderRadius: PILL_HEIGHT / 2,
-        overflow: 'hidden',
-        // Liquid glass border — slightly brighter for more definition
-        borderWidth: 1,
-        borderColor: theme.colors.navPillBorder,
-        // Stronger glow shadow for floating effect
         shadowColor: theme.colors.navPillShadow,
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.7,
         shadowRadius: 24,
         elevation: 24,
+    },
+
+    /** The glass pill inner container */
+    pill: {
+        flex: 1,
+        borderRadius: PILL_HEIGHT / 2 - 1,
+        overflow: 'hidden',
     },
 
     /**

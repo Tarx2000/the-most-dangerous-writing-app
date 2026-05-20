@@ -26,6 +26,7 @@ This includes: `#FFF`, `#fff`, `#000`, `rgba(...)` values — ALL must be theme 
 | `rgba(255,255,255,0.15)` | `theme.colors.glassHighlight` |
 | `rgba(0,0,0,0.6)` | `theme.colors.modalBackground` |
 | `rgba(0,0,0,0.85)` | `theme.colors.overlayMedium` |
+| `rgba(10,10,10,0.88)` | `theme.colors.overlayLockAndroid` |
 | `#FF2A2A` | `theme.colors.danger` |
 | `#4ADE80` | `theme.colors.green` |
 | `#FF6B35` | `theme.colors.orange` |

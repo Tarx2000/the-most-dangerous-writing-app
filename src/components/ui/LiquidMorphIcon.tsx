@@ -8,10 +8,6 @@ import { logger } from '@/lib/logger';
 
 /* ── CONFIGURATION ─────────────────────────────────────────────────────────── */
 
-/** Total duration of the animation (morph + bounce) in milliseconds */
-// Tuned to 420ms to perfectly match Reanimated's springify settling time
-const MORPH_DURATION_MS = 420;
-
 /**
  * Number of pre-computed interpolation frames.
  * All flubber math + sanitization runs ONCE in a burst before animation starts,
@@ -83,6 +79,8 @@ interface Props {
     color?: string;
     /** Additional styles for the outer container */
     style?: StyleProp<ViewStyle>;
+    /** Whether the morph animation should run (false to skip animation instantly) */
+    animated?: boolean;
 }
 
 /**
@@ -130,6 +128,53 @@ function sanitizePath(pathStr: string): string {
     return pathStr;
 }
 
+/** Cache for pre-computed shape transitions between clean states (e.g. "journal_to_circles") */
+const MORPH_CACHE = new Map<string, string[]>();
+
+/** Compile-time pre-computed scale bounce factors matching the 24 animation frames */
+const BOUNCE_SCALES = (() => {
+    const scales = new Array(FRAME_COUNT + 1);
+    for (let i = 0; i <= FRAME_COUNT; i++) {
+        const progress = i / FRAME_COUNT;
+        let scale = 1.0;
+        if (progress > 0.4 && progress < 1) {
+            const x = (progress - 0.4) / 0.6; // x runs 0->1 over the last 60% of morph
+            const bounceAmt = Math.sin(x * Math.PI * 2.2) * Math.pow(1 - x, 1.2) * 0.15;
+            scale = 1.0 + bounceAmt;
+        }
+        scales[i] = scale;
+    }
+    return scales;
+})();
+
+/** Precompute all 12 static transitions at startup so there is 0ms delay at runtime */
+setTimeout(() => {
+    const modes = Object.keys(PATHS) as Mode[];
+    for (const fromMode of modes) {
+        for (const toMode of modes) {
+            if (fromMode === toMode) continue;
+            const cacheKey = `${fromMode}_to_${toMode}`;
+            if (!MORPH_CACHE.has(cacheKey)) {
+                try {
+                    const startPath = PATHS[fromMode];
+                    const endPath = PATHS[toMode];
+                    const morphFn = interpolate(startPath, endPath, { maxSegmentLength: MAX_SEGMENT_LENGTH });
+                    const frames = new Array(FRAME_COUNT + 1);
+                    for (let i = 0; i <= FRAME_COUNT; i++) {
+                        const linearT = i / FRAME_COUNT;
+                        const easedT =
+                            linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
+                        frames[i] = sanitizePath(morphFn(easedT));
+                    }
+                    MORPH_CACHE.set(cacheKey, frames);
+                } catch {
+                    // Ignore silently
+                }
+            }
+        }
+    }
+}, 100);
+
 /**
  * LiquidMorphIcon — Smoothly morphs between SVG icon shapes.
  *
@@ -160,6 +205,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
     size = 42,
     color = theme.colors.primaryAction,
     style,
+    animated = true,
 }: Props) {
     /** Tracks the current mode — updated instantly to prevent re-triggering */
     const currentModeRef = useRef<Mode>(mode);
@@ -191,9 +237,18 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
         if (color !== targetColorStr.current) {
             if (colorRafIdRef.current) cancelAnimationFrame(colorRafIdRef.current);
 
+            targetColorStr.current = color;
+
+            if (!animated) {
+                currentColorStr.current = color;
+                if (pathRef.current) {
+                    pathRef.current.setNativeProps({ fill: color });
+                }
+                return;
+            }
+
             const startColor = currentColorStr.current;
             const endColor = color;
-            targetColorStr.current = color;
             const startTime = performance.now();
 
             const animateColor = () => {
@@ -226,7 +281,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
                 colorRafIdRef.current = null;
             }
         };
-    }, [color]);
+    }, [color, animated]);
 
     useEffect(() => {
         if (mode !== currentModeRef.current) {
@@ -234,6 +289,8 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
             // Restored per user request: holds place on current state and remorphs perfectly.
             const startPath = pathStringRef.current;
             const endPath = PATHS[mode];
+
+            const prevMode = currentModeRef.current;
 
             // Update refs immediately — prevents race conditions on fast switching
             currentModeRef.current = mode;
@@ -245,79 +302,82 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
                 rafIdRef.current = null;
             }
 
+            if (!animated) {
+                // Instant swap — bypass animations entirely
+                pathStringRef.current = endPath;
+                if (pathRef.current) {
+                    pathRef.current.setNativeProps({ d: endPath });
+                }
+                if (viewRef.current) {
+                    viewRef.current.setNativeProps({ transform: [{ scale: 1.0 }] });
+                }
+                return;
+            }
+
             // Snap to clean start path
             pathStringRef.current = startPath;
             if (pathRef.current) {
                 pathRef.current.setNativeProps({ d: startPath });
             }
 
-            /**
-             * ═══════════════════════════════════════════════════════════════
-             * PHASE 1: PRE-COMPUTE ALL FRAMES (~5-15ms one-time burst)
-             *
-             * Compute every interpolation frame + sanitize in a single burst.
-             * This is the heavy work — but it only runs ONCE, not per-frame.
-             * On a Snapdragon 8 Gen3, this takes <5ms for 24 frames.
-             * ═══════════════════════════════════════════════════════════════
-             */
+            const cacheKey = `${prevMode}_to_${mode}`;
+            const isCleanStart = startPath === PATHS[prevMode];
             let frames: string[];
-            try {
-                const morphFn = interpolate(startPath, endPath, { maxSegmentLength: MAX_SEGMENT_LENGTH });
-                frames = new Array(FRAME_COUNT + 1);
-                for (let i = 0; i <= FRAME_COUNT; i++) {
-                    // Easing: cubic ease-in-out for premium feel
-                    const linearT = i / FRAME_COUNT;
-                    const easedT =
-                        linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
-                    frames[i] = sanitizePath(morphFn(easedT));
-                }
-            } catch (err: unknown) {
-                logger('warn', 'LiquidMorphIcon', 'Flubber morph failed, falling back to instant swap:', err);
 
-                // Graceful fallback: instant swap if flubber fails
-                pathStringRef.current = endPath;
-                if (pathRef.current) {
-                    pathRef.current.setNativeProps({ d: endPath });
+            const cachedFrames = MORPH_CACHE.get(cacheKey);
+            if (isCleanStart && cachedFrames) {
+                frames = cachedFrames;
+            } else {
+                try {
+                    const morphFn = interpolate(startPath, endPath, { maxSegmentLength: MAX_SEGMENT_LENGTH });
+                    frames = new Array(FRAME_COUNT + 1);
+                    for (let i = 0; i <= FRAME_COUNT; i++) {
+                        // Easing: cubic ease-in-out for premium feel
+                        const linearT = i / FRAME_COUNT;
+                        const easedT =
+                            linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
+                        frames[i] = sanitizePath(morphFn(easedT));
+                    }
+                    if (isCleanStart) {
+                        MORPH_CACHE.set(cacheKey, frames);
+                    }
+                } catch (err: unknown) {
+                    logger('warn', 'LiquidMorphIcon', 'Flubber morph failed, falling back to instant swap:', err);
+
+                    // Graceful fallback: instant swap if flubber fails
+                    pathStringRef.current = endPath;
+                    if (pathRef.current) {
+                        pathRef.current.setNativeProps({ d: endPath });
+                    }
+                    return;
                 }
-                return;
             }
 
             /**
              * ═══════════════════════════════════════════════════════════════
              * PHASE 2: PLAYBACK (near-zero JS cost per frame)
              *
-             * requestAnimationFrame loop that indexes into the pre-computed
-             * array. Each frame cost: 1 array lookup + 1 setNativeProps call
-             * ≈ 0.1ms. The GPU handles timing via vsync.
+             * Frame-tick index based loop that advancement on every tick.
+             * Eliminates performance.now(), float divisions, and rounding.
              * ═══════════════════════════════════════════════════════════════
              */
-            const startTime = performance.now();
+            let frameIndex = 0;
             const animate = () => {
-                const elapsed = performance.now() - startTime;
-
-                // Morph Progress runs 0-1
-                const progress = Math.min(elapsed / MORPH_DURATION_MS, 1);
-                const frameIndex = Math.round(progress * FRAME_COUNT);
                 const framePath = frames[frameIndex];
-
-                pathStringRef.current = framePath;
-                if (pathRef.current) {
-                    pathRef.current.setNativeProps({ d: framePath });
+                if (framePath) {
+                    pathStringRef.current = framePath;
+                    if (pathRef.current) {
+                        pathRef.current.setNativeProps({ d: framePath });
+                    }
                 }
 
-                // Bounce perfectly synchronizes to the second half of the morph
-                let scale = 1.0;
-                if (progress > 0.4 && progress < 1) {
-                    const x = (progress - 0.4) / 0.6; // x runs 0->1 over the last 60% of morph
-                    const bounceAmt = Math.sin(x * Math.PI * 2.2) * Math.pow(1 - x, 1.2) * 0.15;
-                    scale = 1.0 + bounceAmt;
-                }
-
+                const scale = BOUNCE_SCALES[frameIndex] ?? 1.0;
                 if (viewRef.current) {
                     viewRef.current.setNativeProps({ transform: [{ scale }] });
                 }
 
-                if (progress < 1) {
+                frameIndex++;
+                if (frameIndex <= FRAME_COUNT) {
                     rafIdRef.current = requestAnimationFrame(animate);
                 } else {
                     rafIdRef.current = null;
@@ -344,7 +404,7 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
                 cancelAnimationFrame(colorRafIdRef.current);
             }
         };
-    }, [mode]);
+    }, [mode, animated]);
 
     /* ── Render ────────────────────────────────────────────────────────────── */
 

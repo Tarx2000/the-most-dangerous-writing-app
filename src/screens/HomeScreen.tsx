@@ -111,32 +111,36 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * sessionMode transition via enqueue. This gives the spring a full
      * 1–2 frame head start, eliminating the sense of JS blocking the animation.
      */
-    const handleModeChange = useCallback((mode: string) => {
-        // Immediate nav update — triggers LiquidGlassNav indicator spring
-        setActiveTabId(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
+    const handleModeChange = useCallback(
+        (mode: string) => {
+            // Immediate nav update — triggers LiquidGlassNav indicator spring
+            setActiveTabId(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
 
-        // Defer heavier screen content re-renders so the spring starts first
-        startTransition(() => {
-            setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
-        });
-    }, [startTransition]);
+            // Defer heavier screen content re-renders so the spring starts first
+            startTransition(() => {
+                setSessionMode(mode as 'journal' | 'circles' | 'checkin' | 'vlog');
+            });
+        },
+        [startTransition],
+    );
 
     /**
      * Track horizontal scroll to determine current page.
      * Used to conditionally show check-in urgent dot
      * and to restrict Feed pull-down to Start page only.
      */
-    const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const offsetX = e.nativeEvent.contentOffset.x;
-        const page = Math.round(offsetX / screenWidth);
-        setCurrentPage(page);
-    }, [screenWidth]);
+    const handleScroll = useCallback(
+        (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            const offsetX = e.nativeEvent.contentOffset.x;
+            const page = Math.round(offsetX / screenWidth);
+            setCurrentPage(page);
+        },
+        [screenWidth],
+    );
 
     /** Check-in urgency: show dot when overdue (>CONFIG.CHECKIN_URGENT_DAYS days) AND only on homescreen */
-    const isCheckinUrgent = currentPage === 0 && (
-        !lastReflectionDate ||
-        (Date.now() - lastReflectionDate > CONFIG.CHECKIN_URGENT_MS)
-    );
+    const isCheckinUrgent =
+        currentPage === 0 && (!lastReflectionDate || Date.now() - lastReflectionDate > CONFIG.CHECKIN_URGENT_MS);
 
     /**
      * Memoize nav items to prevent LiquidGlassNav re-renders.
@@ -144,12 +148,15 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * IMPORTANT: The array is frozen object literals with stable keys,
      * so the only dep that changes is isCheckinUrgent.
      */
-    const navItems = useMemo(() => [
-        { id: 'journal', icon: 'notebook-edit', label: 'Journal' },
-        { id: 'circles', icon: 'account-group', label: 'Circles' },
-        { id: 'vlog', icon: 'video-outline', label: 'Vlog' },
-        { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
-    ], [isCheckinUrgent]);
+    const navItems = useMemo(
+        () => [
+            { id: 'journal', icon: 'notebook-edit', label: 'Journal' },
+            { id: 'circles', icon: 'account-group', label: 'Circles' },
+            { id: 'vlog', icon: 'video-outline', label: 'Vlog' },
+            { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
+        ],
+        [isCheckinUrgent],
+    );
 
     /**
      * Keep a stable reference to navItems so that any downstream
@@ -179,14 +186,22 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         listScrollY,
     } = useHomeGestures(currentPage);
 
-    const handleRegenerateAi = useCallback((note: SavedNote, category: AiJobCategory) => {
-        enqueueNote(note.id, category);
-    }, [enqueueNote]);
+    const handleRegenerateAi = useCallback(
+        (note: SavedNote, category: AiJobCategory) => {
+            enqueueNote(note.id, category);
+        },
+        [enqueueNote],
+    );
 
     return (
         <View style={styles.container}>
             {/* Feed Page — positioned below viewport, slides up when revealed */}
-            <Animated.View style={useMemo(() => [styles.feedLayer, feedAnimStyle, { height: screenHeight }], [feedAnimStyle, screenHeight])}>
+            <Animated.View
+                style={useMemo(
+                    () => [styles.feedLayer, feedAnimStyle, { height: screenHeight }],
+                    [feedAnimStyle, screenHeight],
+                )}
+            >
                 <FeedScreen
                     isUnlocked={security.isFeedUnlocked}
                     onUnlock={security.unlockNotes}
@@ -244,6 +259,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                                 setHomeScrollEnabled={setScrollEnabled}
                                 sessionMode={sessionMode}
                                 _setSessionMode={setSessionMode}
+                                isActive={currentPage === 0}
                             />
                         </View>
 
@@ -262,11 +278,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
             {/* Persistent Liquid Glass Navigation — fades out and slides down when feed opens */}
             <Animated.View style={navAnimStyle}>
-                <LiquidGlassNav
-                    items={navItems}
-                    activeId={activeTabId}
-                    onSelect={handleModeChange}
-                />
+                <LiquidGlassNav items={navItems} activeId={activeTabId} onSelect={handleModeChange} />
             </Animated.View>
         </View>
     );

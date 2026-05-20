@@ -10,16 +10,7 @@ import { useCompressionQueueContext } from '@/lib/hooks/useCompressionQueueProvi
 import { clearAiLog, getAiLog } from '@/lib/aiLogger';
 import { theme } from '@/styles/theme';
 import { useSecurity } from '@/lib/hooks/useSecurity';
-import {
-    useNotes,
-    usePersons,
-    useStreak,
-    usePreferences,
-    useAiConfig,
-    useFeedData,
-    useVlogs,
-    useStorageActions,
-} from '@/lib/hooks/useStorage';
+import { usePersons, useStreak, usePreferences } from '@/lib/hooks/useStorage';
 import { TickDial } from '@/components/ui/TickDial';
 import { StreakPopup } from '@/components/features/writing/StreakPopup';
 import { CalendarView } from '@/components/features/library/CalendarView';
@@ -51,9 +42,17 @@ type Props = {
     sessionMode: 'journal' | 'circles' | 'checkin' | 'vlog';
     /** Update shared session mode */
     _setSessionMode: (mode: 'journal' | 'circles' | 'checkin' | 'vlog') => void;
+    /** Whether this screen is currently active/visible in horizontal pagination */
+    isActive?: boolean;
 };
 
-const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEnabled, sessionMode }) => {
+const StartScreenInner: React.FC<Props> = ({
+    navigation,
+    route,
+    setHomeScrollEnabled,
+    sessionMode,
+    isActive = true,
+}) => {
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
@@ -85,14 +84,9 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
     const [aiLogEntries, setAiLogEntries] = useState<AiLogEntry[]>([]);
     const [showAiLog, setShowAiLog] = useState(false);
 
-    const notes = useNotes();
     const personsHook = usePersons();
     const streak = useStreak();
     const preferences = usePreferences();
-    const aiConfig = useAiConfig();
-    const feedData = useFeedData();
-    const vlogs = useVlogs();
-    const storageActions = useStorageActions();
 
     const security = useSecurity(preferences.lockTimeoutMins);
 
@@ -157,9 +151,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
         }),
         [details.color],
     );
-
-    const activeFont = CONFIG.FONTS[preferences.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
-    const activeSize = CONFIG.SIZES[preferences.sizeIndex]?.value || 18;
 
     /** Load AI log entries for the Dev Tools panel */
     const loadAiLog = async () => {
@@ -343,6 +334,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                             mode={sessionMode}
                             size={sessionMode === 'checkin' ? 40 : 42}
                             color={sessionMode === 'checkin' ? details.color : theme.colors.primaryAction}
+                            animated={isActive}
                         />
                     </View>
 
@@ -600,14 +592,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                 visible={showSettings}
                 onClose={() => setShowSettings(false)}
                 setHomeScrollEnabled={setHomeScrollEnabled}
-                preferences={preferences}
-                feedData={feedData}
-                vlogs={vlogs}
-                notes={notes}
-                aiConfig={aiConfig}
-                personsHook={personsHook}
-                streak={streak}
-                storageActions={storageActions}
                 queueState={queueState}
                 startBatch={startBatch}
                 cancelBatch={cancelBatch}
@@ -642,8 +626,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, route, setHomeScrollEna
                 onCancelCompression={cancelJob}
                 onRetryCompression={retryJob}
                 onClearPendingCompressions={clearPending}
-                activeFont={activeFont}
-                activeSize={activeSize}
             />
 
             {/* Select Circle — Extracted into CirclePickerSheet component */}

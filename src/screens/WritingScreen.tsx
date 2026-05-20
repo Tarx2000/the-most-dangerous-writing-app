@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import {
     View,
     Text,
@@ -23,11 +23,17 @@ import { DangerOverlay } from '@/components/features/writing/DangerOverlay';
 import { DeathOverlay } from '@/components/features/writing/DeathOverlay';
 import { theme } from '@/styles/theme';
 import { generateId, formatSessionDate } from '@/lib/utils';
+import { VaporizingText } from '@/components/features/writing/VaporizingText';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Writing'>;
 
 /** Derive the status label and style based on session state */
-function getStatusDisplay(hasLost: boolean, isQuickNote: boolean | undefined, isTweet: boolean | undefined, timeRemaining: number) {
+function getStatusDisplay(
+    hasLost: boolean,
+    isQuickNote: boolean | undefined,
+    isTweet: boolean | undefined,
+    timeRemaining: number,
+) {
     if (hasLost) return { text: 'YOU DIED', style: commonStyles.lossText };
     if (isTweet) return { text: 'TWEET', style: styles.tweetLabel };
     if (isQuickNote) return { text: 'QUICK NOTE', style: styles.quickNoteLabel };
@@ -44,6 +50,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const inputRef = useRef<TextInput>(null);
     const lastTimerResetRef = useRef(0);
+    const [isIdle, setIsIdle] = useState(false);
 
     const {
         textRef,
@@ -60,7 +67,9 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         resumeWritingFreely,
         clearTimers,
         skipTimer,
-    } = useSession(timeIndex, diffIndex, inputRef);
+    } = useSession(timeIndex, diffIndex, inputRef, (idle) => {
+        setIsIdle(idle);
+    });
 
     const { saveNote } = useNotes();
     const { fontIndex, sizeIndex, devMode } = usePreferences();
@@ -139,8 +148,6 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
 
-
-
     const animatedShakeStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: shakeAnimation.value }],
     }));
@@ -186,11 +193,21 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                 <Animated.View style={[commonStyles.writingContainer, animatedShakeStyle, { zIndex: 3 }]}>
                     <View style={commonStyles.header}>
-                        <Text style={[commonStyles.wordCount, isTweetMode && wordCount > TWEET_THRESHOLD - 10 && { color: theme.colors.danger }]}>
+                        <Text
+                            style={[
+                                commonStyles.wordCount,
+                                isTweetMode && wordCount > TWEET_THRESHOLD - 10 && { color: theme.colors.danger },
+                            ]}
+                        >
                             {isTweetMode ? `${wordCount} / ${TWEET_THRESHOLD} Words` : `${wordCount} Words`}
                         </Text>
                         {(() => {
-                            const { text, style } = getStatusDisplay(hasLost, isQuickNote, isTweet, sessionTimeRemaining);
+                            const { text, style } = getStatusDisplay(
+                                hasLost,
+                                isQuickNote,
+                                isTweet,
+                                sessionTimeRemaining,
+                            );
                             return <Text style={style}>{text}</Text>;
                         })()}
                         {/* [DEV MODE] Skip Timer Button — instantly completes the countdown */}
@@ -219,7 +236,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                         fontFamily: currentFont,
                                         fontWeight: 'normal',
                                         textAlignVertical: 'top',
+                                        paddingTop: Platform.OS === 'ios' ? 8 : 10,
+                                        paddingHorizontal: Platform.OS === 'ios' ? 4 : 6,
                                         paddingBottom: 200, // Ensures text doesn't stay hidden under keyboard
+                                        color: isIdle ? 'transparent' : theme.colors.textPrimary,
                                     },
                                 ]}
                                 scrollEnabled={false}
@@ -232,19 +252,61 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 selectionColor={theme.colors.danger}
                                 editable={!hasLost}
                             />
+                            {isIdle && (
+                                <View
+                                    style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
+                                    pointerEvents="none"
+                                >
+                                    <VaporizingText
+                                        text={textRef.current}
+                                        idleTimeMsShared={idleTimeMsShared}
+                                        difficultyLimit={difficultyLimit}
+                                        style={[
+                                            commonStyles.textInput,
+                                            {
+                                                flex: 1,
+                                                fontSize: currentSize,
+                                                lineHeight: currentLineHeight,
+                                                fontFamily: currentFont,
+                                                fontWeight: 'normal',
+                                                textAlignVertical: 'top',
+                                                paddingTop: Platform.OS === 'ios' ? 8 : 10,
+                                                paddingHorizontal: Platform.OS === 'ios' ? 4 : 6,
+                                                paddingBottom: 200,
+                                                color: theme.colors.textPrimary,
+                                            },
+                                        ]}
+                                    />
+                                </View>
+                            )}
                         </ScrollView>
                     </View>
 
                     {isTweetMode && !hasLost && (
                         <View style={styles.tweetProgressContainer}>
                             <View style={styles.tweetProgressTrack}>
-                                <View style={[styles.tweetProgressFill, {
-                                    width: `${Math.min(100, (wordCount / TWEET_THRESHOLD) * 100)}%`,
-                                    backgroundColor: wordCount >= TWEET_THRESHOLD ? theme.colors.danger : theme.colors.primaryAction,
-                                }]} />
+                                <View
+                                    style={[
+                                        styles.tweetProgressFill,
+                                        {
+                                            width: `${Math.min(100, (wordCount / TWEET_THRESHOLD) * 100)}%`,
+                                            backgroundColor:
+                                                wordCount >= TWEET_THRESHOLD
+                                                    ? theme.colors.danger
+                                                    : theme.colors.primaryAction,
+                                        },
+                                    ]}
+                                />
                             </View>
-                            <Text style={[styles.tweetProgressText, wordCount >= TWEET_THRESHOLD && { color: theme.colors.danger }]}>
-                                {wordCount >= TWEET_THRESHOLD ? 'Maximum length reached' : `${TWEET_THRESHOLD - wordCount} words left`}
+                            <Text
+                                style={[
+                                    styles.tweetProgressText,
+                                    wordCount >= TWEET_THRESHOLD && { color: theme.colors.danger },
+                                ]}
+                            >
+                                {wordCount >= TWEET_THRESHOLD
+                                    ? 'Maximum length reached'
+                                    : `${TWEET_THRESHOLD - wordCount} words left`}
                             </Text>
                         </View>
                     )}

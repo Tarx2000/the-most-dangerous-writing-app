@@ -33,20 +33,32 @@ import { CONFIG } from '@/config';
  *   caution → warning → urgent → critical
  * Adjust thresholds via the constants below — do not hardcode values in comments.
  */
-const HAPTIC_CAUTION_THRESHOLD = 0.70;   // Gentle nudge
-const HAPTIC_WARNING_THRESHOLD = 0.80;   // Double-tap warning
-const HAPTIC_URGENT_THRESHOLD = 0.90;    // Urgent triple-tap
-const HAPTIC_CRITICAL_THRESHOLD = 0.95;  // Escalating rapid buzz
+const HAPTIC_CAUTION_THRESHOLD = 0.7; // Gentle nudge
+const HAPTIC_WARNING_THRESHOLD = 0.8; // Double-tap warning
+const HAPTIC_URGENT_THRESHOLD = 0.9; // Urgent triple-tap
+const HAPTIC_CRITICAL_THRESHOLD = 0.95; // Escalating rapid buzz
 
 /** Track last haptic threshold fired to prevent repeated vibrations */
 type HapticLevel = 'none' | 'caution' | 'warning' | 'urgent' | 'critical';
 
-export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: React.RefObject<{ clear: () => void } | null>) {
+export function useSession(
+    timeIndex: number,
+    diffIndex: number,
+    inputRefRef?: React.RefObject<{ clear: () => void } | null>,
+    onIdleChange?: (isIdle: boolean) => void,
+) {
+    const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
     const [sessionTimeSelected, setSessionTimeSelected] = useState<number>(0);
     const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number>(0);
     const textRef = useRef<string>('');
     const [hasLost, setHasLost] = useState<boolean>(false);
     const [isContinuingAfterLoss, setIsContinuingAfterLoss] = useState<boolean>(false);
+
+    /** Keep reference to latest onIdleChange callback to avoid stale closures in interval */
+    const onIdleChangeRef = useRef(onIdleChange);
+    useEffect(() => {
+        onIdleChangeRef.current = onIdleChange;
+    }, [onIdleChange]);
 
     /* ── Incremental Word Count ───────────────────────────────────────── */
     const [wordCount, setWordCount] = useState(0);
@@ -90,12 +102,12 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
             withTiming(15, { duration: 50 }),
             withTiming(-15, { duration: 50 }),
             withTiming(15, { duration: 50 }),
-            withTiming(0, { duration: 50 })
+            withTiming(0, { duration: 50 }),
         );
 
         lossOverlayOpacity.value = withTiming(1, {
             duration: 300,
-            easing: Easing.out(Easing.ease)
+            easing: Easing.out(Easing.ease),
         });
 
         deathTimeoutRef.current = setTimeout(() => {
@@ -110,7 +122,10 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
      * Full O(n) word count — used as fallback for complex edits and on session start.
      */
     const recountWords = useCallback((text: string) => {
-        const newCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        const newCount = text
+            .trim()
+            .split(/\s+/)
+            .filter((w) => w.length > 0).length;
         if (newCount !== wordCountRef.current) {
             wordCountRef.current = newCount;
             setWordCount(newCount);
@@ -118,139 +133,179 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         lastCountedTextRef.current = text;
     }, []);
 
-    const startSession = useCallback((isQuickNote?: boolean) => {
-        const minutes = CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
-        const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
+    const startSession = useCallback(
+        (isQuickNote?: boolean) => {
+            const minutes = CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
+            const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
 
-        const seconds = minutes * 60;
-        setSessionTimeSelected(isQuickNote ? 0 : seconds);
-        setSessionTimeRemaining(isQuickNote ? 0 : seconds);
-        idleTimeMsShared.value = 0;
-        textRef.current = '';
-        lastCountedTextRef.current = '';
-        wordCountRef.current = 0;
-        setWordCount(0);
-        if (inputRefRef && inputRefRef.current) {
-            inputRefRef.current.clear();
-        }
-        setHasLost(false);
-        setIsContinuingAfterLoss(false);
-
-        lossOverlayOpacity.value = 0;
-        shakeAnimation.value = 0;
-        clearTimers();
-
-        // Quick Notes have no timers at all - no countdown, no idle death
-        // Reset haptic tracking on new session
-        lastHapticLevelRef.current = 'none';
-        if (isQuickNote) return;
-
-        // Session countdown timer (ticks every second)
-        sessionIntervalRef.current = setInterval(() => {
-            setSessionTimeRemaining((prev) => {
-                if (prev <= 1) {
-                    clearTimers();
-                    idleTimeMsShared.value = 0;
-                    return 0;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-
-        // Idle death timer — updates SharedValue only, NO React state update
-        idleIntervalRef.current = setInterval(() => {
-            const newIdleTime = idleTimeMsShared.value + CONFIG.TICK_RATE_MS;
-            if (newIdleTime >= difficultyLimit) {
-                triggerDeathState();
-                idleTimeMsShared.value = difficultyLimit;
-            } else {
-                idleTimeMsShared.value = newIdleTime;
-
-                // Progressive haptic feedback — only fires when crossing thresholds
-                const ratio = newIdleTime / difficultyLimit;
-                if (ratio >= HAPTIC_CRITICAL_THRESHOLD && lastHapticLevelRef.current !== 'critical') {
-                    // Escalating rapid buzz — panic-inducing, nearly dead
-                    lastHapticLevelRef.current = 'critical';
-                    vibrate([0, 50, 25, 50, 25, 50, 25, 80]);
-                } else if (ratio >= HAPTIC_URGENT_THRESHOLD && lastHapticLevelRef.current === 'warning') {
-                    // Urgent triple rapid pulse
-                    lastHapticLevelRef.current = 'urgent';
-                    vibrate([0, 40, 25, 40]);
-                } else if (ratio >= HAPTIC_WARNING_THRESHOLD && lastHapticLevelRef.current === 'caution') {
-                    // Double-tap — clear warning, danger is building
-                    lastHapticLevelRef.current = 'warning';
-                    vibrate([0, 30, 50, 30]);
-                } else if (ratio >= HAPTIC_CAUTION_THRESHOLD && lastHapticLevelRef.current === 'none') {
-                    // Single short pulse — gentle nudge to keep going
-                    lastHapticLevelRef.current = 'caution';
-                    vibrate(20);
-                }
+            const seconds = minutes * 60;
+            setSessionTimeSelected(isQuickNote ? 0 : seconds);
+            setSessionTimeRemaining(isQuickNote ? 0 : seconds);
+            idleTimeMsShared.value = 0;
+            textRef.current = '';
+            lastCountedTextRef.current = '';
+            wordCountRef.current = 0;
+            setWordCount(0);
+            if (inputRefRef && inputRefRef.current) {
+                inputRefRef.current.clear();
             }
-        }, CONFIG.TICK_RATE_MS);
-    }, [timeIndex, diffIndex, clearTimers, triggerDeathState, lossOverlayOpacity, shakeAnimation, idleTimeMsShared, inputRefRef]);
+            setHasLost(false);
+            setIsContinuingAfterLoss(false);
+
+            lossOverlayOpacity.value = 0;
+            shakeAnimation.value = 0;
+            clearTimers();
+
+            // On session start, ensure we are not marked as idle
+            onIdleChangeRef.current?.(false);
+
+            // Quick Notes have no timers at all - no countdown, no idle death
+            // Reset haptic tracking on new session
+            lastHapticLevelRef.current = 'none';
+            if (isQuickNote) return;
+
+            // Session countdown timer (ticks every second)
+            sessionIntervalRef.current = setInterval(() => {
+                setSessionTimeRemaining((prev) => {
+                    if (prev <= 1) {
+                        clearTimers();
+                        idleTimeMsShared.value = 0;
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            // Idle death timer — updates SharedValue only, NO React state update
+            idleIntervalRef.current = setInterval(() => {
+                const newIdleTime = idleTimeMsShared.value + CONFIG.TICK_RATE_MS;
+                if (newIdleTime >= difficultyLimit) {
+                    triggerDeathState();
+                    idleTimeMsShared.value = difficultyLimit;
+                } else {
+                    idleTimeMsShared.value = newIdleTime;
+
+                    // When we start idling, trigger the idle callback after a safe threshold
+                    // (e.g. 1.5 seconds or 20% of the difficulty limit) to avoid active typing flickering.
+                    const idleStartThreshold = Math.min(1500, difficultyLimit * 0.2);
+                    if (newIdleTime >= idleStartThreshold && newIdleTime - CONFIG.TICK_RATE_MS < idleStartThreshold) {
+                        onIdleChangeRef.current?.(true);
+                    }
+
+                    // Progressive haptic feedback — only fires when crossing thresholds
+                    const ratio = newIdleTime / difficultyLimit;
+                    if (ratio >= HAPTIC_CRITICAL_THRESHOLD && lastHapticLevelRef.current !== 'critical') {
+                        // Escalating rapid buzz — panic-inducing, nearly dead
+                        lastHapticLevelRef.current = 'critical';
+                        vibrate([0, 50, 25, 50, 25, 50, 25, 80]);
+                    } else if (ratio >= HAPTIC_URGENT_THRESHOLD && lastHapticLevelRef.current === 'warning') {
+                        // Urgent triple rapid pulse
+                        lastHapticLevelRef.current = 'urgent';
+                        vibrate([0, 40, 25, 40]);
+                    } else if (ratio >= HAPTIC_WARNING_THRESHOLD && lastHapticLevelRef.current === 'caution') {
+                        // Double-tap — clear warning, danger is building
+                        lastHapticLevelRef.current = 'warning';
+                        vibrate([0, 30, 50, 30]);
+                    } else if (ratio >= HAPTIC_CAUTION_THRESHOLD && lastHapticLevelRef.current === 'none') {
+                        // Single short pulse — gentle nudge to keep going
+                        lastHapticLevelRef.current = 'caution';
+                        vibrate(20);
+                    }
+                }
+            }, CONFIG.TICK_RATE_MS);
+        },
+        [
+            timeIndex,
+            diffIndex,
+            clearTimers,
+            triggerDeathState,
+            lossOverlayOpacity,
+            shakeAnimation,
+            idleTimeMsShared,
+            inputRefRef,
+        ],
+    );
 
     /**
      * Incremental word count: tries O(1) append-only path first,
      * falls back to debounced O(n) full recount for complex edits.
      */
-    const handleTextChange = useCallback((newText: string) => {
-        textRef.current = newText;
+    const handleTextChange = useCallback(
+        (newText: string) => {
+            textRef.current = newText;
 
-        // Reset idle timer on any typing (works for both timed sessions and quick notes)
-        if (!hasLostRef.current && !isContinuingAfterLossRef.current) {
-            idleTimeMsShared.value = 0;
-            // Reset haptic level so thresholds fire again if user idles again
-            lastHapticLevelRef.current = 'none';
-        }
+            // Reset idle timer on any typing (works for both timed sessions and quick notes)
+            if (!hasLostRef.current && !isContinuingAfterLossRef.current) {
+                // If we were previously idle, trigger callback to restore visibility
+                const idleStartThreshold = Math.min(1500, difficultyLimit * 0.2);
+                if (idleTimeMsShared.value >= idleStartThreshold) {
+                    onIdleChangeRef.current?.(false);
+                }
+                idleTimeMsShared.value = 0;
+                // Reset haptic level so thresholds fire again if user idles again
+                lastHapticLevelRef.current = 'none';
+            }
 
-        const oldText = lastCountedTextRef.current;
+            const oldText = lastCountedTextRef.current;
 
-        // Fast path: simple append at end (most common during typing)
-        if (newText.startsWith(oldText)) {
-            const added = newText.slice(oldText.length);
-            if (!added.trim()) {
-                // Only whitespace added — word count unchanged
+            // Fast path: simple append at end (most common during typing)
+            if (newText.startsWith(oldText)) {
+                const added = newText.slice(oldText.length);
+                if (!added.trim()) {
+                    // Only whitespace added — word count unchanged
+                    lastCountedTextRef.current = newText;
+                    return;
+                }
+
+                // Count new words in the appended slice
+                const addedWords = added
+                    .trim()
+                    .split(/\s+/)
+                    .filter((w) => w.length > 0);
+
+                // If the old text didn't end with whitespace, the first "new" word
+                // is actually a continuation of the last old word — don't double-count.
+                const oldEndsWithWord = oldText.length > 0 && /\S/.test(oldText[oldText.length - 1]);
+                const delta = oldEndsWithWord && addedWords.length > 0 ? addedWords.length - 1 : addedWords.length;
+
+                const newCount = wordCountRef.current + delta;
+                wordCountRef.current = newCount;
+                setWordCount(newCount);
                 lastCountedTextRef.current = newText;
                 return;
             }
 
-            // Count new words in the appended slice
-            const addedWords = added.trim().split(/\s+/).filter(w => w.length > 0);
+            // Slow path: deletion or insertion in the middle — debounce a full recount
+            if (wordCountDebounceRef.current) clearTimeout(wordCountDebounceRef.current);
+            wordCountDebounceRef.current = setTimeout(() => {
+                recountWords(newText);
+            }, 400);
+        },
+        [idleTimeMsShared, recountWords],
+    );
 
-            // If the old text didn't end with whitespace, the first "new" word
-            // is actually a continuation of the last old word — don't double-count.
-            const oldEndsWithWord = oldText.length > 0 && /\S/.test(oldText[oldText.length - 1]);
-            const delta = oldEndsWithWord && addedWords.length > 0 ? addedWords.length - 1 : addedWords.length;
+    const resumeWritingFreely = useCallback(
+        (onResumed?: unknown) => {
+            setIsContinuingAfterLoss(true);
 
-            const newCount = wordCountRef.current + delta;
-            wordCountRef.current = newCount;
-            setWordCount(newCount);
-            lastCountedTextRef.current = newText;
-            return;
-        }
+            const finishResume = () => {
+                setHasLost(false);
+                if (typeof onResumed === 'function') {
+                    onResumed();
+                }
+            };
 
-        // Slow path: deletion or insertion in the middle — debounce a full recount
-        if (wordCountDebounceRef.current) clearTimeout(wordCountDebounceRef.current);
-        wordCountDebounceRef.current = setTimeout(() => {
-            recountWords(newText);
-        }, 400);
-    }, [idleTimeMsShared, recountWords]);
+            lossOverlayOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
+                if (finished) {
+                    runOnJS(finishResume)();
+                }
+            });
 
-    const resumeWritingFreely = useCallback((onResumed?: () => void) => {
-        setIsContinuingAfterLoss(true);
-
-        const finishResume = () => {
-            setHasLost(false);
-            if (onResumed) onResumed();
-        };
-
-        lossOverlayOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
-            if (finished) {
-                runOnJS(finishResume)();
-            }
-        });
-        idleTimeMsShared.value = 0;
-    }, [lossOverlayOpacity, idleTimeMsShared]);
+            onIdleChangeRef.current?.(false);
+            idleTimeMsShared.value = 0;
+        },
+        [lossOverlayOpacity, idleTimeMsShared],
+    );
 
     /** [DEV MODE] Instantly skip the session timer to 0, simulating a completed session */
     const skipTimer = useCallback(() => {
@@ -278,6 +333,6 @@ export function useSession(timeIndex: number, diffIndex: number, inputRefRef?: R
         handleTextChange,
         resumeWritingFreely,
         clearTimers,
-        skipTimer
+        skipTimer,
     };
 }

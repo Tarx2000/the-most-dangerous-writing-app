@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, Image, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { vibrate } from '@/lib/haptics';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SavedVlog } from '@/types';
@@ -158,10 +159,171 @@ export const VlogCalendarGallery: React.FC<Props> = ({ vlogs, isLocked, onUnlock
     const isToday = (day: number) =>
         day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
 
-    /* ── Biometric lock overlay ────────────────────────────────────────── */
-    if (isLocked) {
-        return (
-            <View style={styles.lockOverlay}>
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
+    const unlockProgress = useSharedValue(isLocked ? 0 : 1);
+
+    // Sync SharedValue to state changes (runs on UI thread)
+    useEffect(() => {
+        unlockProgress.value = withSpring(isLocked ? 0 : 1, {
+            damping: 22,
+            stiffness: 150,
+            mass: 0.8,
+        });
+    }, [isLocked, unlockProgress]);
+
+    // Content container starts at 0.95 scale and opacity 0, fades + scales to 1
+    const contentAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            flex: 1,
+            opacity: unlockProgress.value,
+            transform: [{ scale: 0.95 + 0.05 * unlockProgress.value }],
+        };
+    });
+
+    // Lock card starts centered, slides up off screen and fades out
+    const lockOverlayAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            ...StyleSheet.absoluteFillObject,
+            opacity: 1 - unlockProgress.value,
+            transform: [{ translateY: -SCREEN_HEIGHT * unlockProgress.value }],
+            justifyContent: 'center',
+            alignItems: 'center',
+        };
+    });
+
+    /* ── Render ─────────────────────────────────────────────────────────── */
+    return (
+        <View style={{ flex: 1 }}>
+            <Animated.View style={contentAnimatedStyle}>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+                    {/* Month navigation header */}
+                    <View style={styles.monthHeader}>
+                        <AnimatedScaleButton onPress={() => goToMonth(-1)} style={styles.monthArrow}>
+                            <MaterialCommunityIcons name="chevron-left" size={24} color={theme.colors.textSecondary} />
+                        </AnimatedScaleButton>
+                        <Text style={styles.monthLabel}>{monthLabel}</Text>
+                        <AnimatedScaleButton onPress={() => goToMonth(1)} style={styles.monthArrow}>
+                            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textSecondary} />
+                        </AnimatedScaleButton>
+                    </View>
+
+                    {/* Weekday header row */}
+                    <View style={styles.weekdayRow}>
+                        {WEEKDAYS.map((day) => (
+                            <View key={day} style={[styles.weekdayCell, { width: cellSize }]}>
+                                <Text style={styles.weekdayText}>{day}</Text>
+                            </View>
+                        ))}
+                    </View>
+
+                    {/* Calendar grid */}
+                    <View style={styles.calendarGrid}>
+                        {calendarDays.map((cell, idx) => {
+                            const dayVlogs = cell.dateKey ? vlogsByDate[cell.dateKey] : undefined;
+                            const hasVlogs = dayVlogs && dayVlogs.length > 0;
+                            const multiVlogs = dayVlogs && dayVlogs.length > 1;
+
+                            return (
+                                <AnimatedScaleButton
+                                    key={idx}
+                                    style={[styles.dayCell, { width: cellSize, height: thumbHeight + 10 }]}
+                                    onPress={() => (hasVlogs ? openDay(cell.dateKey) : null)}
+                                    activeOpacity={hasVlogs ? 0.7 : 1}
+                                    disabled={!hasVlogs}
+                                >
+                                    {cell.day !== null && (
+                                        <>
+                                            {hasVlogs ? (
+                                                /* Day with vlog — gradient or thumbnail */
+                                                <View
+                                                    ref={(el) => {
+                                                        if (cell.dateKey) cellRefs.current[cell.dateKey] = el;
+                                                    }}
+                                                    collapsable={false}
+                                                    style={[
+                                                        styles.vlogThumb,
+                                                        { width: cellSize - 6, height: thumbHeight },
+                                                        isToday(cell.day) && styles.vlogThumbToday,
+                                                    ]}
+                                                >
+                                                    {/* Image Thumbnail or Gradient background as placeholder */}
+                                                    {dayVlogs?.[0].thumbnailPath ? (
+                                                        <Image
+                                                            source={{ uri: dayVlogs[0].thumbnailPath }}
+                                                            style={styles.vlogThumbGradient}
+                                                        />
+                                                    ) : (
+                                                        <View style={styles.vlogThumbGradient}>
+                                                            <MaterialCommunityIcons
+                                                                name="play-circle-outline"
+                                                                size={20}
+                                                                color={theme.colors.textBodyDim}
+                                                            />
+                                                        </View>
+                                                    )}
+
+                                                    {/* Overlay trigger for missing thumbnail */}
+                                                    {!dayVlogs?.[0].thumbnailPath && (
+                                                        <ThumbnailFetcher vlog={dayVlogs[0]} />
+                                                    )}
+
+                                                    {/* Day number */}
+                                                    <Text style={styles.vlogThumbDay}>{cell.day}</Text>
+
+                                                    {/* Duration badge */}
+                                                    <Text style={styles.vlogThumbDuration}>
+                                                        {formatDuration(dayVlogs?.[0].durationSec ?? 0)}
+                                                    </Text>
+
+                                                    {/* Stacked indicator for multiple vlogs */}
+                                                    {multiVlogs && (
+                                                        <View style={styles.stackIndicator}>
+                                                            <Text style={styles.stackText}>
+                                                                {dayVlogs?.length ?? 0}
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ) : (
+                                                /* Empty day — just the number */
+                                                <View
+                                                    style={[styles.emptyDay, isToday(cell.day) && styles.todayCircle]}
+                                                >
+                                                    <Text
+                                                        style={[styles.dayText, isToday(cell.day) && styles.todayText]}
+                                                    >
+                                                        {cell.day}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </>
+                                    )}
+                                </AnimatedScaleButton>
+                            );
+                        })}
+                    </View>
+
+                    {/* Stats row */}
+                    {vlogs.length > 0 && (
+                        <View style={styles.statsRow}>
+                            <View style={styles.statItem}>
+                                <Text style={styles.statValue}>{vlogs.length}</Text>
+                                <Text style={styles.statLabel}>Total Vlogs</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statItem}>
+                                <Text style={styles.statValue}>
+                                    {Math.round(vlogs.reduce((s, v) => s + v.durationSec, 0) / 60)}m
+                                </Text>
+                                <Text style={styles.statLabel}>Recorded</Text>
+                            </View>
+                        </View>
+                    )}
+                </ScrollView>
+            </Animated.View>
+
+            {/* Overlapping animated lock overlay */}
+            <Animated.View style={lockOverlayAnimatedStyle} pointerEvents={isLocked ? 'auto' : 'none'}>
                 <View style={styles.lockCard}>
                     <MaterialCommunityIcons
                         name="lock-outline"
@@ -187,132 +349,7 @@ export const VlogCalendarGallery: React.FC<Props> = ({ vlogs, isLocked, onUnlock
                         <Text style={styles.unlockBtnText}>Unlock Vlogs</Text>
                     </AnimatedScaleButton>
                 </View>
-            </View>
-        );
-    }
-
-    /* ── Render ─────────────────────────────────────────────────────────── */
-    return (
-        <View style={{ flex: 1 }}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-                {/* Month navigation header */}
-                <View style={styles.monthHeader}>
-                    <AnimatedScaleButton onPress={() => goToMonth(-1)} style={styles.monthArrow}>
-                        <MaterialCommunityIcons name="chevron-left" size={24} color={theme.colors.textSecondary} />
-                    </AnimatedScaleButton>
-                    <Text style={styles.monthLabel}>{monthLabel}</Text>
-                    <AnimatedScaleButton onPress={() => goToMonth(1)} style={styles.monthArrow}>
-                        <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textSecondary} />
-                    </AnimatedScaleButton>
-                </View>
-
-                {/* Weekday header row */}
-                <View style={styles.weekdayRow}>
-                    {WEEKDAYS.map((day) => (
-                        <View key={day} style={[styles.weekdayCell, { width: cellSize }]}>
-                            <Text style={styles.weekdayText}>{day}</Text>
-                        </View>
-                    ))}
-                </View>
-
-                {/* Calendar grid */}
-                <View style={styles.calendarGrid}>
-                    {calendarDays.map((cell, idx) => {
-                        const dayVlogs = cell.dateKey ? vlogsByDate[cell.dateKey] : undefined;
-                        const hasVlogs = dayVlogs && dayVlogs.length > 0;
-                        const multiVlogs = dayVlogs && dayVlogs.length > 1;
-
-                        return (
-                            <AnimatedScaleButton
-                                key={idx}
-                                style={[styles.dayCell, { width: cellSize, height: thumbHeight + 10 }]}
-                                onPress={() => (hasVlogs ? openDay(cell.dateKey) : null)}
-                                activeOpacity={hasVlogs ? 0.7 : 1}
-                                disabled={!hasVlogs}
-                            >
-                                {cell.day !== null && (
-                                    <>
-                                        {hasVlogs ? (
-                                            /* Day with vlog — gradient or thumbnail */
-                                            <View
-                                                ref={(el) => {
-                                                    if (cell.dateKey) cellRefs.current[cell.dateKey] = el;
-                                                }}
-                                                collapsable={false}
-                                                style={[
-                                                    styles.vlogThumb,
-                                                    { width: cellSize - 6, height: thumbHeight },
-                                                    isToday(cell.day) && styles.vlogThumbToday,
-                                                ]}
-                                            >
-                                                {/* Image Thumbnail or Gradient background as placeholder */}
-                                                {dayVlogs?.[0].thumbnailPath ? (
-                                                    <Image
-                                                        source={{ uri: dayVlogs[0].thumbnailPath }}
-                                                        style={styles.vlogThumbGradient}
-                                                    />
-                                                ) : (
-                                                    <View style={styles.vlogThumbGradient}>
-                                                        <MaterialCommunityIcons
-                                                            name="play-circle-outline"
-                                                            size={20}
-                                                            color={theme.colors.textBodyDim}
-                                                        />
-                                                    </View>
-                                                )}
-
-                                                {/* Overlay trigger for missing thumbnail */}
-                                                {!dayVlogs?.[0].thumbnailPath && (
-                                                    <ThumbnailFetcher vlog={dayVlogs[0]} />
-                                                )}
-
-                                                {/* Day number */}
-                                                <Text style={styles.vlogThumbDay}>{cell.day}</Text>
-
-                                                {/* Duration badge */}
-                                                <Text style={styles.vlogThumbDuration}>
-                                                    {formatDuration(dayVlogs?.[0].durationSec ?? 0)}
-                                                </Text>
-
-                                                {/* Stacked indicator for multiple vlogs */}
-                                                {multiVlogs && (
-                                                    <View style={styles.stackIndicator}>
-                                                        <Text style={styles.stackText}>{dayVlogs?.length ?? 0}</Text>
-                                                    </View>
-                                                )}
-                                            </View>
-                                        ) : (
-                                            /* Empty day — just the number */
-                                            <View style={[styles.emptyDay, isToday(cell.day) && styles.todayCircle]}>
-                                                <Text style={[styles.dayText, isToday(cell.day) && styles.todayText]}>
-                                                    {cell.day}
-                                                </Text>
-                                            </View>
-                                        )}
-                                    </>
-                                )}
-                            </AnimatedScaleButton>
-                        );
-                    })}
-                </View>
-
-                {/* Stats row */}
-                {vlogs.length > 0 && (
-                    <View style={styles.statsRow}>
-                        <View style={styles.statItem}>
-                            <Text style={styles.statValue}>{vlogs.length}</Text>
-                            <Text style={styles.statLabel}>Total Vlogs</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Text style={styles.statValue}>
-                                {Math.round(vlogs.reduce((s, v) => s + v.durationSec, 0) / 60)}m
-                            </Text>
-                            <Text style={styles.statLabel}>Recorded</Text>
-                        </View>
-                    </View>
-                )}
-            </ScrollView>
+            </Animated.View>
 
             {/* Expanded Vlog Playback Modal */}
             <VlogViewerModal

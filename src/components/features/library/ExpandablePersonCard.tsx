@@ -1,11 +1,6 @@
-import React, { useEffect, useMemo } from 'react';
-import {
-    View,
-    Text,
-    ScrollView,
-    StyleSheet,
-} from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SavedNote } from '@/types';
 import { NoteCard } from '@/components/features/library/NoteCard';
@@ -42,124 +37,123 @@ interface Props {
     isNoteQueued?: (id: string) => boolean;
 }
 
-export const ExpandablePersonCard: React.FC<Props> = React.memo(({
-    person,
-    notes,
-    isExpanded,
-    isLocked,
-    onToggle,
-    onNotePress,
-    onProfilePress,
-    isNoteActive,
-    isNoteQueued,
-}) => {
-    const expandHeight = useSharedValue(isExpanded ? EXPANDED_MAX_HEIGHT : 0);
+export const ExpandablePersonCard: React.FC<Props> = React.memo(
+    ({ person, notes, isExpanded, isLocked, onToggle, onNotePress, onProfilePress, isNoteActive, isNoteQueued }) => {
+        const [shouldRenderContent, setShouldRenderContent] = useState(isExpanded);
+        const expandHeight = useSharedValue(isExpanded ? EXPANDED_MAX_HEIGHT : 0);
 
-    useEffect(() => {
-        expandHeight.value = withSpring(isExpanded ? EXPANDED_MAX_HEIGHT : 0, {
-            damping: 18,
-            stiffness: 180,
-            mass: 0.8,
+        useEffect(() => {
+            if (isExpanded) {
+                setShouldRenderContent(true);
+            }
+            expandHeight.value = withSpring(
+                isExpanded ? EXPANDED_MAX_HEIGHT : 0,
+                {
+                    damping: 18,
+                    stiffness: 180,
+                    mass: 0.8,
+                },
+                (finished) => {
+                    if (finished && !isExpanded) {
+                        runOnJS(setShouldRenderContent)(false);
+                    }
+                },
+            );
+        }, [isExpanded, expandHeight]);
+
+        const animatedStyle = useAnimatedStyle(() => {
+            return {
+                maxHeight: expandHeight.value,
+            };
         });
-    }, [isExpanded, expandHeight]);
 
-    const animatedStyle = useAnimatedStyle(() => {
-        return {
-            maxHeight: expandHeight.value,
-        };
-    });
+        /** Total word count across all notes for this person */
+        const totalWords = useMemo(() => {
+            return notes.reduce((sum, n) => {
+                return sum + (n.text || '').split(/\s+/).filter(Boolean).length;
+            }, 0);
+        }, [notes]);
 
-    /** Total word count across all notes for this person */
-    const totalWords = notes.reduce((sum, n) => {
-        return sum + (n.text || '').split(/\s+/).filter(Boolean).length;
-    }, 0);
+        // Sort notes by newest first
+        const sortedNotes = useMemo(() => {
+            return [...notes].sort((a, b) => b.timestamp - a.timestamp);
+        }, [notes]);
 
-    // Sort notes by newest first
-    const sortedNotes = useMemo(() => {
-        return [...notes].sort((a, b) => b.timestamp - a.timestamp);
-    }, [notes]);
+        return (
+            <View style={styles.cardContainer}>
+                {/* Subtle gradient overlay for depth */}
+                <LinearGradient
+                    colors={[theme.colors.glassSurfaceMinimal, 'transparent']}
+                    style={StyleSheet.absoluteFillObject}
+                />
 
-    return (
-        <View style={styles.cardContainer}>
-            {/* Subtle gradient overlay for depth */}
-            <LinearGradient
-                colors={[theme.colors.glassSurfaceMinimal, 'transparent']}
-                style={StyleSheet.absoluteFillObject}
-            />
+                {/* Header row — tap to expand/collapse */}
+                <AnimatedScaleButton style={styles.headerRow} onPress={onToggle}>
+                    {/* Avatar — tap to open profile (separate touchable to prevent toggle) */}
+                    <AnimatedScaleButton
+                        style={commonStyles.personAvatar}
+                        onPress={(e) => {
+                            e?.stopPropagation?.();
+                            onProfilePress();
+                        }}
+                    >
+                        <Text style={commonStyles.personAvatarText}>{person.name.charAt(0)}</Text>
+                    </AnimatedScaleButton>
 
-            {/* Header row — tap to expand/collapse */}
-            <AnimatedScaleButton
-                style={styles.headerRow}
-                onPress={onToggle}
-            >
-                {/* Avatar — tap to open profile (separate touchable to prevent toggle) */}
-                <AnimatedScaleButton
-                    style={commonStyles.personAvatar}
-                    onPress={(e) => { e?.stopPropagation?.(); onProfilePress(); }}
-                >
-                    <Text style={commonStyles.personAvatarText}>
-                        {person.name.charAt(0)}
-                    </Text>
-                </AnimatedScaleButton>
+                    {/* Name + meta info */}
+                    <View style={styles.headerInfo}>
+                        <View style={styles.nameRow}>
+                            <Text style={commonStyles.personCardName} numberOfLines={1}>
+                                {person.nickname || person.name}
+                            </Text>
+                            {/* Note count badge — visual indicator of how much you've written */}
+                            <View style={styles.countBadge}>
+                                <Text style={styles.countBadgeText}>{notes.length}</Text>
+                            </View>
+                        </View>
 
-                {/* Name + meta info */}
-                <View style={styles.headerInfo}>
-                    <View style={styles.nameRow}>
-                        <Text style={commonStyles.personCardName} numberOfLines={1}>
-                            {person.nickname || person.name}
-                        </Text>
-                        {/* Note count badge — visual indicator of how much you've written */}
-                        <View style={styles.countBadge}>
-                            <Text style={styles.countBadgeText}>{notes.length}</Text>
+                        {/* Meta row: relationship tag + word count */}
+                        <View style={styles.metaRow}>
+                            {person.relationship && <Text style={styles.relationshipTag}>{person.relationship}</Text>}
+                            {totalWords > 0 && (
+                                <Text style={styles.wordCountText}>{totalWords.toLocaleString()} words</Text>
+                            )}
                         </View>
                     </View>
+                </AnimatedScaleButton>
 
-                    {/* Meta row: relationship tag + word count */}
-                    <View style={styles.metaRow}>
-                        {person.relationship && (
-                            <Text style={styles.relationshipTag}>{person.relationship}</Text>
-                        )}
-                        {totalWords > 0 && (
-                            <Text style={styles.wordCountText}>
-                                {totalWords.toLocaleString()} words
-                            </Text>
-                        )}
-                    </View>
-                </View>
-
-
-            </AnimatedScaleButton>
-
-            {/* Expandable notes area — animated height */}
-            <Animated.View style={[styles.expandArea, animatedStyle]}>
-                {notes.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        <Text style={styles.emptyText}>No notes yet</Text>
-                    </View>
-                ) : (
-                    <ScrollView
-                        style={styles.notesScroll}
-                        nestedScrollEnabled
-                        showsVerticalScrollIndicator={false}
-                    >
-                        {sortedNotes.map((note: SavedNote) => (
-                            <NoteCard
-                                key={note.id}
-                                note={note}
-                                onPress={onNotePress}
-                                isLocked={isLocked}
-                                isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
-                                isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
-                            />
+                {/* Expandable notes area — animated height */}
+                <Animated.View style={[styles.expandArea, animatedStyle]}>
+                    {shouldRenderContent &&
+                        (notes.length === 0 ? (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyText}>No notes yet</Text>
+                            </View>
+                        ) : (
+                            <ScrollView
+                                style={styles.notesScroll}
+                                nestedScrollEnabled
+                                showsVerticalScrollIndicator={false}
+                            >
+                                {sortedNotes.map((note: SavedNote) => (
+                                    <NoteCard
+                                        key={note.id}
+                                        note={note}
+                                        onPress={onNotePress}
+                                        isLocked={isLocked}
+                                        isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
+                                        isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
+                                    />
+                                ))}
+                                {/* Bottom padding to avoid last card being cut off */}
+                                <View style={{ height: 10 }} />
+                            </ScrollView>
                         ))}
-                        {/* Bottom padding to avoid last card being cut off */}
-                        <View style={{ height: 10 }} />
-                    </ScrollView>
-                )}
-            </Animated.View>
-        </View>
-    );
-});
+                </Animated.View>
+            </View>
+        );
+    },
+);
 
 const styles = StyleSheet.create({
     /** Card wrapper — glassmorphism container */
@@ -223,7 +217,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '500',
     },
-
 
     /** The collapsible area below the header */
     expandArea: {

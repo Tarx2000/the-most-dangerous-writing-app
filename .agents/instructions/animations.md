@@ -34,6 +34,10 @@ Always wrap components that use Reanimated or SVG in `React.memo`:
 - Pre-compute all interpolation frames before playback
 - Target 60fps by limiting frame count
 - Use `useSharedValue` for the path morph progress, not React state
+- **Cache pre-computed frame arrays** dynamically for clean transitions (e.g. `journal_to_circles`) to reduce flubber runtime overhead to 0ms on subsequent morphs.
+
+## Reanimated Thread Safety & runOnUI
+- **Avoid wrapping simple shared value writes in `runOnUI`**: Direct setting of `sharedValue.value = withSpring(...)` or `sharedValue.value = withTiming(...)` is automatically optimized by Reanimated to run on the UI thread. Using `runOnUI` adds unnecessary bridge crossing latency and queues updates behind busy JS cycles. Only use `runOnUI` when executing custom worklet functions that must run strictly on the UI thread.
 
 ## Gesture Handler Patterns
 - Extract gesture handlers into `useMemo` to prevent recreation on parent re-renders
@@ -53,3 +57,8 @@ The feed reveal/dismiss uses `feedProgress` SharedValue (0→1) driving three an
 
 ## Video Auto-Play (Viewport-Driven)
 `FeedVideoCard`: `autoPlay` prop (viewport-driven) → `userPausedRef` (manual override) → `playingChange` listener (force-resume). **CRITICAL: `VideoView` has `pointerEvents: 'none'`**, use `Pressable` overlay with `zIndex` for taps.
+
+## Performance & Layout Sizing Rules
+- **Conditional Mounting**: Defer mounting expensive children inside expandable elements (like accordions or slide-outs) using a local React state (e.g., `shouldRenderContent`). Only mount when expanding, and unmount when collapsing completes via Reanimated's animation finished callback (using `runOnJS`).
+- **Android Software Blur Avoidance**: Never use `<BlurView>` inside lists or animating elements on Android, as Android runs software-based blurs on the CPU which causes layout lag. Use a translucent solid background color instead (e.g., `theme.colors.overlayLockAndroid`).
+- **FlashList Dynamic Heights**: For lists with expanding/collapsing items, do NOT provide a fixed `getItemLayout` prop to `FlashList` or `FlatList`. A fixed `getItemLayout` causes layout conflicts and thrashing when items resize.

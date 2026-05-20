@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import React, { useState, useMemo, useCallback, useEffect, Activity } from 'react';
+import { View, Text, StyleSheet, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import Animated, { useAnimatedStyle, withTiming, Easing, useSharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, withTiming, Easing, useSharedValue, withSpring } from 'react-native-reanimated';
 
 // Customizable layout widths (in pixels) for characters in the morphing Lock/Unlock animation.
 // UPPERCASE_L is calibrated to 7.2px to ensure perfect visual spacing (kerning) with the following text.
@@ -52,6 +52,396 @@ const SORT_OPTIONS_DATA = [
     { id: 'longest-text' as SortOption, label: 'Most Words', icon: 'text-long' as const },
 ] as const;
 
+const LibraryNotesTab = React.memo(
+    ({
+        visible,
+        sortBy,
+        isUnlocked,
+        activeFont,
+        onPressNote,
+        onGoToStart,
+    }: {
+        visible: boolean;
+        sortBy: SortOption;
+        isUnlocked: boolean;
+        activeFont: string;
+        onPressNote: (note: SavedNote) => void;
+        onGoToStart: () => void;
+    }) => {
+        const { savedNotes } = useNotes();
+        const { persons } = usePersons();
+        const { queueState, isNoteActive, isNoteQueued } = useAiQueueContext();
+
+        const personMap = useMemo(() => {
+            const map = new Map<string, string>();
+            for (const p of persons) map.set(p.id, p.name);
+            return map;
+        }, [persons]);
+
+        const { groupedNotes } = useLibraryNotes(savedNotes, 'notes', sortBy, null);
+        const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
+
+        return (
+            <Activity mode={visible ? 'visible' : 'hidden'}>
+                <View style={{ flex: 1, display: visible ? 'flex' : 'none' }}>
+                    <LibraryNotesList
+                        groupedNotes={groupedNotes}
+                        libraryTab="notes"
+                        personMap={personMap}
+                        isUnlocked={isUnlocked}
+                        activeNoteIds={activeNoteIds}
+                        isProcessing={queueState.isProcessing}
+                        isNoteActive={isNoteActive}
+                        isNoteQueued={isNoteQueued}
+                        activeFont={activeFont}
+                        onPressNote={onPressNote}
+                        onGoToStart={onGoToStart}
+                    />
+                </View>
+            </Activity>
+        );
+    },
+);
+
+const CheckinsTab = React.memo(
+    ({
+        visible,
+        sortBy,
+        isUnlocked,
+        activeFont,
+        onPressNote,
+        onGoToStart,
+    }: {
+        visible: boolean;
+        sortBy: SortOption;
+        isUnlocked: boolean;
+        activeFont: string;
+        onPressNote: (note: SavedNote) => void;
+        onGoToStart: () => void;
+    }) => {
+        const { savedNotes } = useNotes();
+        const { persons } = usePersons();
+        const { queueState, isNoteActive, isNoteQueued } = useAiQueueContext();
+
+        const personMap = useMemo(() => {
+            const map = new Map<string, string>();
+            for (const p of persons) map.set(p.id, p.name);
+            return map;
+        }, [persons]);
+
+        const { groupedNotes } = useLibraryNotes(savedNotes, 'checkins', sortBy, null);
+        const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
+
+        return (
+            <Activity mode={visible ? 'visible' : 'hidden'}>
+                <View style={{ flex: 1, display: visible ? 'flex' : 'none' }}>
+                    <LibraryNotesList
+                        groupedNotes={groupedNotes}
+                        libraryTab="checkins"
+                        personMap={personMap}
+                        isUnlocked={isUnlocked}
+                        activeNoteIds={activeNoteIds}
+                        isProcessing={queueState.isProcessing}
+                        isNoteActive={isNoteActive}
+                        isNoteQueued={isNoteQueued}
+                        activeFont={activeFont}
+                        onPressNote={onPressNote}
+                        onGoToStart={onGoToStart}
+                    />
+                </View>
+            </Activity>
+        );
+    },
+);
+
+const CirclesTab = React.memo(
+    ({
+        visible,
+        onGoToStart,
+        isCirclesUnlocked,
+        isNotesUnlocked,
+        unlockCircles,
+        unlockProfile,
+        isProfileUnlocked,
+        selectedCircleId,
+        onToggleCircle,
+        onNotePress,
+    }: {
+        visible: boolean;
+        onGoToStart: () => void;
+        isCirclesUnlocked: boolean;
+        isNotesUnlocked: boolean;
+        unlockCircles: () => Promise<boolean>;
+        unlockProfile: () => Promise<boolean>;
+        isProfileUnlocked: boolean;
+        selectedCircleId: string | null;
+        onToggleCircle: (id: string | null) => void;
+        onNotePress: (note: SavedNote) => void;
+    }) => {
+        const { persons, deletePerson, updatePerson } = usePersons();
+        const { savedNotes } = useNotes();
+        const { isNoteActive, isNoteQueued } = useAiQueueContext();
+
+        const [profilePerson, setProfilePerson] = useState<Person | null>(null);
+        const [personToDelete, setPersonToDelete] = useState<string | null>(null);
+
+        const circlesListContentStyle = useMemo(
+            () => ({ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }),
+            [],
+        );
+
+        const circlesExtraData = useMemo(
+            () => ({
+                selectedCircleId,
+                notesLength: savedNotes.length,
+                isUnlocked: isNotesUnlocked,
+            }),
+            [selectedCircleId, savedNotes.length, isNotesUnlocked],
+        );
+
+        const notesByPerson = useMemo(() => {
+            const map = new Map<string, typeof savedNotes>();
+            for (const n of savedNotes) {
+                if (n.personId) {
+                    const arr = map.get(n.personId) || [];
+                    arr.push(n);
+                    map.set(n.personId, arr);
+                }
+            }
+            return map;
+        }, [savedNotes]);
+
+        const sortedPersons = useMemo(() => {
+            return [...persons].sort((a, b) => {
+                const aCount = notesByPerson.get(a.id)?.length || 0;
+                const bCount = notesByPerson.get(b.id)?.length || 0;
+                return bCount - aCount;
+            });
+        }, [persons, notesByPerson]);
+
+        const renderPersonItem = useCallback(
+            ({ item: p }: { item: Person }) => (
+                <View style={styles.personItemWrapper}>
+                    <ExpandablePersonCard
+                        person={p}
+                        notes={notesByPerson.get(p.id) || []}
+                        isExpanded={selectedCircleId === p.id}
+                        isLocked={!isNotesUnlocked}
+                        onToggle={() => onToggleCircle(selectedCircleId === p.id ? null : p.id)}
+                        onNotePress={onNotePress}
+                        onProfilePress={() => setProfilePerson(p)}
+                        isNoteActive={isNoteActive}
+                        isNoteQueued={isNoteQueued}
+                    />
+                </View>
+            ),
+            [selectedCircleId, isNotesUnlocked, isNoteActive, isNoteQueued, notesByPerson, onToggleCircle, onNotePress],
+        );
+
+        const handleDeleteFromProfile = useCallback((id: string) => {
+            setProfilePerson(null);
+            setPersonToDelete(id);
+        }, []);
+
+        const handleConfirmDeletePerson = useCallback(() => {
+            setPersonToDelete((prev) => {
+                if (prev) {
+                    deletePerson(prev);
+                    onToggleCircle(null);
+                }
+                return null;
+            });
+        }, [deletePerson, onToggleCircle]);
+
+        // Track active locked/unlocked state
+        const isLocked = !isCirclesUnlocked && !isNotesUnlocked;
+        const { height: SCREEN_HEIGHT } = useWindowDimensions();
+        const unlockProgress = useSharedValue(isLocked ? 0 : 1);
+
+        // Sync SharedValue to state changes (runs on UI thread)
+        useEffect(() => {
+            unlockProgress.value = withSpring(isLocked ? 0 : 1, {
+                damping: 22,
+                stiffness: 150,
+                mass: 0.8,
+            });
+        }, [isLocked, unlockProgress]);
+
+        // Content container starts at 0.95 scale and opacity 0, fades + scales to 1
+        const contentAnimatedStyle = useAnimatedStyle(() => {
+            return {
+                flex: 1,
+                opacity: unlockProgress.value,
+                transform: [{ scale: 0.95 + 0.05 * unlockProgress.value }],
+            };
+        });
+
+        // Lock card starts centered, slides up off screen and fades out
+        const lockOverlayAnimatedStyle = useAnimatedStyle(() => {
+            return {
+                ...StyleSheet.absoluteFillObject,
+                opacity: 1 - unlockProgress.value,
+                transform: [{ translateY: -SCREEN_HEIGHT * unlockProgress.value }],
+                justifyContent: 'center',
+                alignItems: 'center',
+            };
+        });
+
+        return (
+            <Activity mode={visible ? 'visible' : 'hidden'}>
+                <View style={{ flex: 1, display: visible ? 'flex' : 'none' }}>
+                    <Animated.View style={contentAnimatedStyle}>
+                        {persons.length === 0 ? (
+                            <EmptyLibraryState
+                                icon="account-group-outline"
+                                title="No circles yet"
+                                description="Create circles to organize your writing sessions by the people who matter most."
+                                actionLabel="Start Writing"
+                                onAction={onGoToStart}
+                            />
+                        ) : (
+                            <View style={styles.fullFlexWidth}>
+                                <FlashList
+                                    style={{ marginHorizontal: -20 }}
+                                    data={sortedPersons}
+                                    keyExtractor={(p) => p.id}
+                                    estimatedItemSize={80}
+                                    extraData={circlesExtraData}
+                                    renderItem={renderPersonItem}
+                                    showsVerticalScrollIndicator={false}
+                                    contentContainerStyle={circlesListContentStyle}
+                                />
+                            </View>
+                        )}
+                    </Animated.View>
+
+                    {/* Overlapping animated lock overlay */}
+                    <Animated.View style={lockOverlayAnimatedStyle} pointerEvents={isLocked ? 'auto' : 'none'}>
+                        <View style={styles.circlesLockCard}>
+                            <MaterialCommunityIcons
+                                name="lock-outline"
+                                size={48}
+                                color={theme.colors.primaryAction}
+                                style={styles.iconMarginBottom16}
+                            />
+                            <Text style={styles.circlesLockTitle}>Circles Protected</Text>
+                            <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
+                            <AnimatedScaleButton
+                                style={styles.circlesUnlockBtn}
+                                onPress={async () => {
+                                    const success = await unlockCircles();
+                                    if (success) vibrate(50);
+                                }}
+                            >
+                                <MaterialCommunityIcons
+                                    name="fingerprint"
+                                    size={22}
+                                    color={theme.colors.textPrimary}
+                                    style={styles.iconMarginRight10}
+                                />
+                                <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
+                            </AnimatedScaleButton>
+                        </View>
+                    </Animated.View>
+
+                    {/* Person Profile Modal */}
+                    <ErrorBoundary>
+                        <PersonProfileModal
+                            visible={!!profilePerson}
+                            onClose={() => setProfilePerson(null)}
+                            person={profilePerson}
+                            notes={profilePerson ? savedNotes.filter((n) => n.personId === profilePerson.id) : []}
+                            isUnlocked={isProfileUnlocked || isNotesUnlocked}
+                            onUnlock={unlockProfile}
+                            onUpdatePerson={updatePerson}
+                            onDeletePerson={handleDeleteFromProfile}
+                            onNotePress={onNotePress}
+                            isNotesUnlocked={isNotesUnlocked}
+                            isNoteActive={isNoteActive}
+                            isNoteQueued={isNoteQueued}
+                        />
+                    </ErrorBoundary>
+
+                    {/* Delete Person Confirmation — unified ConfirmDialog */}
+                    <ErrorBoundary>
+                        <ConfirmDialog
+                            visible={!!personToDelete}
+                            title="Delete Circle?"
+                            message="Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!"
+                            confirmLabel="Delete All"
+                            cancelLabel="Cancel"
+                            icon="delete-alert-outline"
+                            cancelIcon="close"
+                            destructive
+                            onConfirm={handleConfirmDeletePerson}
+                            onCancel={() => setPersonToDelete(null)}
+                        />
+                    </ErrorBoundary>
+                </View>
+            </Activity>
+        );
+    },
+);
+
+const VlogsTab = React.memo(
+    ({
+        visible,
+        isUnlocked,
+        unlockCircles,
+    }: {
+        visible: boolean;
+        isUnlocked: boolean;
+        unlockCircles: () => Promise<boolean>;
+    }) => {
+        const { savedVlogs, deleteVlog } = useVlogs();
+        const [vlogToDelete, setVlogToDelete] = useState<string | null>(null);
+
+        const handleRequestDeleteVlog = useCallback((id: string) => {
+            logger('info', 'LibraryScreen', `Vlog delete requested: ${id}`);
+            setVlogToDelete(id);
+        }, []);
+
+        const handleConfirmDeleteVlog = useCallback(() => {
+            setVlogToDelete((prev) => {
+                if (prev) {
+                    logger('info', 'LibraryScreen', `Confirming vlog delete: ${prev}`);
+                    deleteVlog(prev);
+                }
+                return null;
+            });
+        }, [deleteVlog]);
+
+        return (
+            <Activity mode={visible ? 'visible' : 'hidden'}>
+                <View style={{ flex: 1, display: visible ? 'flex' : 'none' }}>
+                    <VlogCalendarGallery
+                        vlogs={savedVlogs}
+                        isLocked={!isUnlocked}
+                        onUnlock={unlockCircles}
+                        onRequestDeleteVlog={handleRequestDeleteVlog}
+                    />
+
+                    {/* Delete Vlog Confirmation — unified ConfirmDialog */}
+                    <ErrorBoundary>
+                        <ConfirmDialog
+                            visible={!!vlogToDelete}
+                            title="Delete Vlog?"
+                            message="This will permanently delete this video. This cannot be undone."
+                            confirmLabel="Delete"
+                            cancelLabel="Cancel"
+                            icon="delete-outline"
+                            cancelIcon="close"
+                            destructive
+                            onConfirm={handleConfirmDeleteVlog}
+                            onCancel={() => setVlogToDelete(null)}
+                        />
+                    </ErrorBoundary>
+                </View>
+            </Activity>
+        );
+    },
+);
+
 const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     /**
      * Map shared sessionMode to library tab.
@@ -74,15 +464,10 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
 
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
-    const [personToDelete, setPersonToDelete] = useState<string | null>(null);
-    const [vlogToDelete, setVlogToDelete] = useState<string | null>(null);
     const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
-    /** Person whose profile modal is currently open */
-    const [profilePerson, setProfilePerson] = useState<Person | null>(null);
 
     const { savedNotes, deleteNote } = useNotes();
-    const { persons, deletePerson, updatePerson } = usePersons();
-    const { savedVlogs, deleteVlog } = useVlogs();
+    const { persons } = usePersons();
     const security = useSecurity(lockTimeoutMins);
 
     // Dynamic styles for the morphing lock/unlock button in the header
@@ -145,75 +530,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     });
 
     /** Central AI Queue — single instance via AiQueueProvider */
-    const { queueState, isNoteActive, isNoteQueued, enqueueNote } = useAiQueueContext();
-
-    /* ── Memoized FlashList props to prevent re-create on every render ─ */
-    const circlesListContentStyle = useMemo(() => ({ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }), []);
-
-    const circlesExtraData = useMemo(
-        () => ({
-            selectedCircleId,
-            notesLength: savedNotes.length,
-            isUnlocked: security.isNotesUnlocked,
-        }),
-        [selectedCircleId, savedNotes.length, security.isNotesUnlocked],
-    );
-
-    /**
-     * Precompute notes grouped by person for O(1) lookups.
-     * Avoids O(n*m) filtering inside renderPersonItem.
-     */
-    const notesByPerson = useMemo(() => {
-        const map = new Map<string, typeof savedNotes>();
-        for (const n of savedNotes) {
-            if (n.personId) {
-                const arr = map.get(n.personId) || [];
-                arr.push(n);
-                map.set(n.personId, arr);
-            }
-        }
-        return map;
-    }, [savedNotes]);
-
-    /**
-     * O(1) person name lookup map.
-     * Previously, every NoteCard did `persons.find(p => p.id === note.personId)`.
-     * That was O(persons.length) per visible row — with many circles, this adds up.
-     */
-    const personMap = useMemo(() => {
-        const map = new Map<string, string>();
-        for (const p of persons) map.set(p.id, p.name);
-        return map;
-    }, [persons]);
-
-    const sortedPersons = useMemo(() => {
-        return [...persons].sort((a, b) => {
-            const aCount = notesByPerson.get(a.id)?.length || 0;
-            const bCount = notesByPerson.get(b.id)?.length || 0;
-            return bCount - aCount;
-        });
-    }, [persons, notesByPerson]);
-
-    const renderPersonItem = useCallback(
-        ({ item: p }: { item: Person }) => (
-            <View style={styles.personItemWrapper}>
-                <ExpandablePersonCard
-                    person={p}
-                    notes={notesByPerson.get(p.id) || []}
-                    isExpanded={selectedCircleId === p.id}
-                    isLocked={!security.isNotesUnlocked}
-                    onToggle={() => setSelectedCircleId(selectedCircleId === p.id ? null : p.id)}
-                    onNotePress={setViewNoteModal}
-                    onProfilePress={() => setProfilePerson(p)}
-                    isNoteActive={isNoteActive}
-                    isNoteQueued={isNoteQueued}
-                />
-            </View>
-        ),
-        [selectedCircleId, security.isNotesUnlocked, isNoteActive, isNoteQueued, notesByPerson],
-    );
-
-    const { groupedNotes } = useLibraryNotes(savedNotes, libraryTab, sortBy, selectedCircleId);
+    const { queueState, isNoteActive, enqueueNote } = useAiQueueContext();
 
     const handleRegenerateAi = useCallback(
         async (note: SavedNote) => {
@@ -230,40 +547,12 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
         setViewNoteModal(null);
         setNoteToDelete(id);
     }, []);
-    const handleDeleteFromProfile = useCallback((id: string) => {
-        setProfilePerson(null);
-        setPersonToDelete(id);
-    }, []);
     const handleConfirmDeleteNote = useCallback(() => {
         setNoteToDelete((prev) => {
             if (prev) deleteNote(prev);
             return null;
         });
     }, [deleteNote]);
-    const handleConfirmDeletePerson = useCallback(() => {
-        setPersonToDelete((prev) => {
-            if (prev) {
-                deletePerson(prev);
-                setSelectedCircleId((current) => (current === prev ? null : current));
-            }
-            return null;
-        });
-    }, [deletePerson]);
-    const handleRequestDeleteVlog = useCallback((id: string) => {
-        logger('info', 'LibraryScreen', `Vlog delete requested: ${id}`);
-        setVlogToDelete(id);
-    }, []);
-    const handleConfirmDeleteVlog = useCallback(() => {
-        setVlogToDelete((prev) => {
-            if (prev) {
-                logger('info', 'LibraryScreen', `Confirming vlog delete: ${prev}`);
-                deleteVlog(prev);
-            }
-            return null;
-        });
-    }, [deleteVlog]);
-
-    const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
 
     return (
         <View style={commonStyles.libraryContainer}>
@@ -384,102 +673,39 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
 
             {/* Scrollable Content Area */}
             <View style={{ flex: 1 }}>
-                {/* Tab content — Notes & Check-ins */}
-                {(libraryTab === 'notes' || libraryTab === 'checkins') && (
-                    <LibraryNotesList
-                        groupedNotes={groupedNotes}
-                        libraryTab={libraryTab}
-                        personMap={personMap}
-                        isUnlocked={security.isNotesUnlocked}
-                        activeNoteIds={activeNoteIds}
-                        isProcessing={queueState.isProcessing}
-                        isNoteActive={isNoteActive}
-                        isNoteQueued={isNoteQueued}
-                        activeFont={activeFont}
-                        onPressNote={setViewNoteModal}
-                        onGoToStart={onGoToStart}
-                    />
-                )}
-
-                {/* Tab content — Circles */}
-                {libraryTab === 'circles' && (
-                    <>
-                        {!security.isCirclesUnlocked && !security.isNotesUnlocked ? (
-                            <View style={styles.circlesLockOverlay}>
-                                <View style={styles.circlesLockCard}>
-                                    <MaterialCommunityIcons
-                                        name="lock-outline"
-                                        size={48}
-                                        color={theme.colors.primaryAction}
-                                        style={styles.iconMarginBottom16}
-                                    />
-                                    <Text style={styles.circlesLockTitle}>Circles Protected</Text>
-                                    <Text style={styles.circlesLockSubtitle}>
-                                        Verify your identity to view your circles
-                                    </Text>
-                                    <AnimatedScaleButton
-                                        style={styles.circlesUnlockBtn}
-                                        onPress={async () => {
-                                            const success = await security.unlockCircles();
-                                            if (success) vibrate(50);
-                                        }}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="fingerprint"
-                                            size={22}
-                                            color={theme.colors.textPrimary}
-                                            style={styles.iconMarginRight10}
-                                        />
-                                        <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
-                                    </AnimatedScaleButton>
-                                </View>
-                            </View>
-                        ) : (
-                            <>
-                                {persons.length === 0 ? (
-                                    <EmptyLibraryState
-                                        icon="account-group-outline"
-                                        title="No circles yet"
-                                        description="Create circles to organize your writing sessions by the people who matter most."
-                                        actionLabel="Start Writing"
-                                        onAction={onGoToStart}
-                                    />
-                                ) : (
-                                    <View style={styles.fullFlexWidth}>
-                                        <FlashList
-                                            style={{ marginHorizontal: -20 }}
-                                            data={sortedPersons}
-                                            keyExtractor={(p) => p.id}
-                                            estimatedItemSize={80}
-                                            getItemLayout={(
-                                                _: ArrayLike<Person> | null | undefined,
-                                                index: number,
-                                            ) => ({
-                                                length: 80,
-                                                offset: 80 * index,
-                                                index,
-                                            })}
-                                            extraData={circlesExtraData}
-                                            renderItem={renderPersonItem}
-                                            showsVerticalScrollIndicator={false}
-                                            contentContainerStyle={circlesListContentStyle}
-                                        />
-                                    </View>
-                                )}
-                            </>
-                        )}
-                    </>
-                )}
-
-                {/* Tab content — Vlogs Calendar Gallery */}
-                {libraryTab === 'vlogs' && (
-                    <VlogCalendarGallery
-                        vlogs={savedVlogs}
-                        isLocked={!security.isCirclesUnlocked && !security.isNotesUnlocked}
-                        onUnlock={security.unlockCircles}
-                        onRequestDeleteVlog={handleRequestDeleteVlog}
-                    />
-                )}
+                <LibraryNotesTab
+                    visible={libraryTab === 'notes'}
+                    sortBy={sortBy}
+                    isUnlocked={security.isNotesUnlocked}
+                    activeFont={activeFont}
+                    onPressNote={setViewNoteModal}
+                    onGoToStart={onGoToStart}
+                />
+                <CheckinsTab
+                    visible={libraryTab === 'checkins'}
+                    sortBy={sortBy}
+                    isUnlocked={security.isNotesUnlocked}
+                    activeFont={activeFont}
+                    onPressNote={setViewNoteModal}
+                    onGoToStart={onGoToStart}
+                />
+                <CirclesTab
+                    visible={libraryTab === 'circles'}
+                    onGoToStart={onGoToStart}
+                    isCirclesUnlocked={security.isCirclesUnlocked}
+                    isNotesUnlocked={security.isNotesUnlocked}
+                    unlockCircles={security.unlockCircles}
+                    unlockProfile={security.unlockProfile}
+                    isProfileUnlocked={security.isProfileUnlocked}
+                    selectedCircleId={selectedCircleId}
+                    onToggleCircle={setSelectedCircleId}
+                    onNotePress={setViewNoteModal}
+                />
+                <VlogsTab
+                    visible={libraryTab === 'vlogs'}
+                    isUnlocked={security.isCirclesUnlocked || security.isNotesUnlocked}
+                    unlockCircles={security.unlockCircles}
+                />
             </View>
 
             {/* Sort Action Sheet — unified ActionSheet component */}
@@ -520,56 +746,6 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                     destructive
                     onConfirm={handleConfirmDeleteNote}
                     onCancel={() => setNoteToDelete(null)}
-                />
-            </ErrorBoundary>
-
-            {/* Delete Person Confirmation — unified ConfirmDialog */}
-            <ErrorBoundary>
-                <ConfirmDialog
-                    visible={!!personToDelete}
-                    title="Delete Circle?"
-                    message="Are you sure you want to delete this Person? This will also permanently delete ALL writing sessions written for them!"
-                    confirmLabel="Delete All"
-                    cancelLabel="Cancel"
-                    icon="delete-alert-outline"
-                    cancelIcon="close"
-                    destructive
-                    onConfirm={handleConfirmDeletePerson}
-                    onCancel={() => setPersonToDelete(null)}
-                />
-            </ErrorBoundary>
-
-            {/* Delete Vlog Confirmation — unified ConfirmDialog */}
-            <ErrorBoundary>
-                <ConfirmDialog
-                    visible={!!vlogToDelete}
-                    title="Delete Vlog?"
-                    message="This will permanently delete this video. This cannot be undone."
-                    confirmLabel="Delete"
-                    cancelLabel="Cancel"
-                    icon="delete-outline"
-                    cancelIcon="close"
-                    destructive
-                    onConfirm={handleConfirmDeleteVlog}
-                    onCancel={() => setVlogToDelete(null)}
-                />
-            </ErrorBoundary>
-
-            {/* Person Profile Modal */}
-            <ErrorBoundary>
-                <PersonProfileModal
-                    visible={!!profilePerson}
-                    onClose={() => setProfilePerson(null)}
-                    person={profilePerson}
-                    notes={profilePerson ? savedNotes.filter((n) => n.personId === profilePerson.id) : []}
-                    isUnlocked={security.isProfileUnlocked || security.isNotesUnlocked}
-                    onUnlock={security.unlockProfile}
-                    onUpdatePerson={updatePerson}
-                    onDeletePerson={handleDeleteFromProfile}
-                    onNotePress={setViewNoteModal}
-                    isNotesUnlocked={security.isNotesUnlocked}
-                    isNoteActive={isNoteActive}
-                    isNoteQueued={isNoteQueued}
                 />
             </ErrorBoundary>
         </View>

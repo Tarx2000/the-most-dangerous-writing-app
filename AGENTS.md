@@ -3,7 +3,7 @@
 React Native (Expo SDK 55) journaling app where stopping typing destroys your text. Extends the core mechanic with social circles, vlog recording, vision boards, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud.
 
 ## Tech Stack
-- React 19.2 + React Native 0.83.4 (Expo managed, **Expo Go only**)
+- React 19.2 + React Native 0.83.6 (Expo managed, custom native builds)
 - React Navigation v7 (Native Stack)
 - Reanimated v4 + Gesture Handler + Flubber
 - SQLite (expo-sqlite v15) + AsyncStorage + expo-file-system
@@ -12,20 +12,20 @@ React Native (Expo SDK 55) journaling app where stopping typing destroys your te
 
 ## Project Structure
 ```
-App.tsx                    — Entry point (StorageProvider → AiQueueProvider → NavigationContainer)
+App.tsx                    — Entry point (providers and Root Stack Navigator)
 src/
-  config/                  — App config (difficulties, timers, fonts, vlog settings) + ai.ts
-  types/                   — All TypeScript interfaces + navigation.types.ts + flubber.d.ts
-  lib/                     — Core logic: aiService, aiQueue, compressionQueue, storage, hooks
-  screens/                 — 8 screens (Home, Start, Writing, PostWriting, Library, Feed, VisionBoard, Alignment, VlogRecording)
-  components/ui/           — Reusable primitives (LiquidGlassNav, SwipeableModal, TickDial)
-  components/features/     — Domain components: writing/, library/, feed/, circles/, settings/, alignment/
-  styles/                  — theme.ts (AMOLED tokens), commonStyles.ts
+  config/                  — App configurations (timers, difficulties, fonts, AI config)
+  types/                   — TypeScript type definitions and interfaces
+  lib/                     — Core utilities, hooks, SQLite database access (db.ts), and AI logic
+  screens/                 — Navigation screens (HomeScreen, StartScreen, WritingScreen, LibraryScreen, FeedScreen, VlogRecordingScreen, VisionBoardScreen, AlignmentWritingScreen, SandboxScreen, etc.)
+  components/ui/           — Reusable visual components (LiquidGlassNav, BaseModal, TickDial, PinPadModal, etc.)
+  components/features/     — Domain-specific components (writing/, library/, feed/, circles/, settings/, alignment/)
+  styles/                  — theme.ts (AMOLED tokens and styling utilities)
 ```
 
 ## Key Constraints
 - **Path alias**: `@/` maps to `src/` (tsconfig + babel)
-- **Expo Go only**: No custom native builds (MMKV, Nitro Modules will crash)
+- **Build Setup**: Expo Go is used for rapid iterative testing. However, the app is built as a custom native build (e.g., local Android release APK) for distribution/production. Standard Expo Go compatibility must be maintained during testing, but custom native code/builds are supported for the final export.
 - **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
 - **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly.
 - **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
@@ -70,15 +70,16 @@ If a task can be broken into multiple independent pieces (e.g., researching diff
 
 ## Project Documentation Maintenance (Critical)
 
-**AGENTS.md is the single source of truth.** Whenever you make architectural or logic changes that affect rules, patterns, or conventions described there, update AGENTS.md and related instruction files immediately as part of the same task cycle. Do not defer.
+**AGENTS.md is the single source of truth.** You must proactively maintain it and reference the correct skill instructions when making changes:
 
-- **Deprecate a pattern** → remove or mark **DEPRECATED** in AGENTS.md + `.agents/instructions/*.md`
-- **Introduce a pattern** → add to AGENTS.md or the correct domain instruction file
-- **Change a package version** → update the Version Pinning table
-- **Change AI integration** → update AGENTS.md + `.agents/instructions/ai-integration.md`
-- **Change state management** → update AGENTS.md + `.agents/instructions/state-management.md`
+- **Look for Fitting Skills First:** Before starting any task or writing code, scan the `.agents/skills/` directory or run skill searches to check if there is an existing skill that guides that implementation. Always follow the guidelines defined in active skills.
+- **Incremental Updates:** Whenever you make architectural or logic changes that affect rules, patterns, or conventions, update `AGENTS.md` and related instruction files immediately in the same step. Do not defer documentation updates.
+- **Common Triggers:**
+  - Deprecate a pattern → remove or mark **DEPRECATED** in `AGENTS.md` + `.agents/instructions/*.md`
+  - Introduce a pattern → add to `AGENTS.md` or the correct domain instruction file
+  - Change a package version → update the Version Pinning table (if applicable)
+  - Change AI integration → update `AGENTS.md` + `.agents/instructions/ai-integration.md`
+  - Change state management → update `AGENTS.md` + `.agents/instructions/state-management.md`
 
 **Verification before finishing any task:**
-- Scan AGENTS.md for any mention of the area you just changed
-- Check `.agents/instructions/*.md` for related rules
-- Fix stale, misleading, or contradictory instructions before declaring the task complete
+- **Final Documentation Check:** After all changes are completed, perform a final review check to verify if any of the modifications necessitate updates to `AGENTS.md` or `.agents/instructions/*.md`. Fix any stale, misleading, or contradictory instructions before declaring the task complete.

@@ -40,30 +40,7 @@ export const NoteCard: React.FC<Props> = React.memo(
         const { fontIndex } = usePreferences();
         const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
 
-        // Determine number of lines based on actual content lengths to prevent card overflow
-        const textLen = note.text ? note.text.length : 0;
-        const titleLen = note.aiTitle ? note.aiTitle.length : 0;
-
-        let showTitleSkeleton = false;
-        let titleSkeletonLines = 0;
-        let bodySkeletonLines = 0;
-
-        if (isProcessing) {
-            bodySkeletonLines = 1;
-        } else if (hasAi) {
-            showTitleSkeleton = true;
-            titleSkeletonLines = titleLen > 30 ? 2 : 1;
-            bodySkeletonLines = textLen > 0 ? 1 : 0;
-        } else {
-            // No AI: preview text can be up to 3 lines
-            if (textLen < 25) {
-                bodySkeletonLines = 1;
-            } else if (textLen < 70) {
-                bodySkeletonLines = 2;
-            } else {
-                bodySkeletonLines = 3;
-            }
-        }
+        // Skeleton calculations removed per user request (overlay covers whole card)
 
         /* ━━ Pulsing Glow Animation ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
         const pulse = useSharedValue(0);
@@ -116,11 +93,6 @@ export const NoteCard: React.FC<Props> = React.memo(
         const contentStyle = useAnimatedStyle(() => ({
             opacity: 1 - lockProgress.value,
             transform: [{ scale: 0.96 + (1 - lockProgress.value) * 0.04 }],
-        }));
-
-        const placeholderStyle = useAnimatedStyle(() => ({
-            opacity: lockProgress.value,
-            transform: [{ scale: 0.98 + (1 - lockProgress.value) * 0.02 }],
         }));
 
         return (
@@ -226,31 +198,29 @@ export const NoteCard: React.FC<Props> = React.memo(
                             </Text>
                         )}
                     </Animated.View>
-
-                    {/* Redacted Skeleton Blocks (fades in when locked) */}
-                    <Animated.View style={[StyleSheet.absoluteFillObject, placeholderStyle]} pointerEvents="none">
-                        {showTitleSkeleton && (
-                            <>
-                                <View style={styles.skeletonTitle} />
-                                {titleSkeletonLines > 1 && <View style={[styles.skeletonTitle, { width: '40%' }]} />}
-                            </>
-                        )}
-                        {bodySkeletonLines > 0 && <View style={styles.skeletonLine} />}
-                        {bodySkeletonLines > 1 && <View style={styles.skeletonLine} />}
-                        {bodySkeletonLines > 2 && <View style={[styles.skeletonLine, { width: '70%' }]} />}
-                    </Animated.View>
                 </View>
 
                 {/* Glass Blur Dissolve Overlay covering the entire card */}
-                <Animated.View
-                    pointerEvents={isLocked ? 'auto' : 'none'}
-                    style={[StyleSheet.absoluteFillObject, styles.blurOverlay, blurOverlayStyle]}
-                >
-                    <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
-                    <View style={styles.lockIconContainer}>
-                        <AnimatedLockIcon isUnlocked={false} color={theme.colors.textDim} size={24} />
-                    </View>
-                </Animated.View>
+                {isLocked && (
+                    <Animated.View
+                        pointerEvents={isLocked ? 'auto' : 'none'}
+                        style={[StyleSheet.absoluteFillObject, styles.blurOverlay, blurOverlayStyle]}
+                    >
+                        {Platform.OS === 'ios' ? (
+                            <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
+                        ) : (
+                            <View
+                                style={[
+                                    StyleSheet.absoluteFillObject,
+                                    { backgroundColor: theme.colors.overlayLockAndroid },
+                                ]}
+                            />
+                        )}
+                        <View style={styles.lockIconContainer}>
+                            <AnimatedLockIcon isUnlocked={false} color={theme.colors.textDim} size={24} />
+                        </View>
+                    </Animated.View>
+                )}
             </AnimatedPressable>
         );
     },
@@ -283,25 +253,5 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: theme.colors.overlayDark,
-    },
-    skeletonTitle: {
-        height: 12,
-        width: '60%',
-        backgroundColor: theme.colors.glassSurfaceMedium,
-        borderRadius: 4,
-        marginBottom: 6,
-    },
-    skeletonLine: {
-        height: 8,
-        width: '90%',
-        backgroundColor: theme.colors.glassSurface,
-        borderRadius: 4,
-        marginBottom: 6,
-    },
-    skeletonLineShort: {
-        height: 8,
-        width: '70%',
-        backgroundColor: theme.colors.glassSurface,
-        borderRadius: 4,
     },
 });

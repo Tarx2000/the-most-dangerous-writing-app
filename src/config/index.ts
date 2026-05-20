@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 /** Re-export tweet threshold for convenience (zero native deps, safe in Jest) */
 export { TWEET_THRESHOLD, isTweet } from './tweet';
 
-export const APP_VERSION = '1.5.7';
+export const APP_VERSION = '1.5.8';
 export const CONFIG = {
     DIFFICULTIES: [
         { label: 'EASY', value: 12000, desc: '12s Idle Limit' },

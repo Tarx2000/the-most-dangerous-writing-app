@@ -53,27 +53,32 @@ npm test
 
 ---
 
-## Step 3 — Commit and Push to Remote
+## Step 3 — Commit and Push to Main/Master Branch and Remote
 
-**All changes must be committed and pushed to the remote repository before building.** This ensures the APK is built from code that is safely backed up and versioned.
+**All changes must be committed, merged to the primary branch (`master` or `main`), and pushed to the remote repository before building.** This ensures the APK is built from clean, versioned, and merged code.
 
-1. Stage all modified files:
+1. Stage all modified files on your current branch:
    ```bash
    git add -A
    ```
 
-2. Create a conventional commit (the agent should analyze the diff and generate an appropriate `<type>(<scope>): <description>` message):
+2. Create a conventional commit (analyze the diff and generate an appropriate `<type>(<scope>): <description>` message):
    ```bash
    git commit -m "type(scope): description"
    ```
 
-3. **Push to remote origin:**
-   ```bash
-   git push origin $(git branch --show-current)
-   ```
+3. **Merge and Push to the Primary Branch (`master` / `main`):**
+   * If you are already on the primary branch (`master`), push directly:
+     ```bash
+     git push origin master
+     ```
+   * If you are on a feature branch, merge it into the primary branch (`master`) and push:
+     ```bash
+     git checkout master && git merge - --no-edit && git push origin master
+     ```
 
 > [!NOTE]
-> If there are no changes to commit (working tree clean), skip straight to Step 4.
+> If there are no changes to commit (working tree clean), push the current branch/master branch to ensure remote is up to date, then skip straight to Step 4.
 > Never commit files that likely contain secrets (`.env`, `credentials.json`, etc.).
 
 ---

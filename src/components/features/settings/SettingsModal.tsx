@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, Platform } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { BaseModal } from '@/components/ui/BaseModal';
 import { ActionSheet } from '@/components/ui/ActionSheet';
@@ -15,7 +15,7 @@ import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { isCompressionAvailable } from '@/lib/videoCompressor';
 import type { AiLogEntry, AiQueueState, CompressionQueueState } from '@/types';
-import type {
+import {
     usePreferences,
     useFeedData,
     useVlogs,
@@ -58,30 +58,10 @@ export type DevTools = {
     clearAiLog: () => Promise<void>;
 };
 
-/** Domain-specific hook return types */
-type Preferences = ReturnType<typeof usePreferences>;
-type FeedData = ReturnType<typeof useFeedData>;
-type Vlogs = ReturnType<typeof useVlogs>;
-type Notes = ReturnType<typeof useNotes>;
-type AiConfig = ReturnType<typeof useAiConfig>;
-type PersonsHook = ReturnType<typeof usePersons>;
-type Streak = ReturnType<typeof useStreak>;
-type StorageActions = ReturnType<typeof useStorageActions>;
-
 interface SettingsModalProps {
     visible: boolean;
     onClose: () => void;
     setHomeScrollEnabled?: (enabled: boolean) => void;
-
-    /** Hook data */
-    preferences: Preferences;
-    feedData: FeedData;
-    vlogs: Vlogs;
-    notes: Notes;
-    aiConfig: AiConfig;
-    personsHook: PersonsHook;
-    streak: Streak;
-    storageActions: StorageActions;
 
     /** Compression queue */
     compressionState: CompressionQueueState;
@@ -97,37 +77,33 @@ interface SettingsModalProps {
     batchState: BatchState;
     logState: LogState;
     devTools: DevTools;
-
-    /** Derived values */
-    activeFont: string;
-    activeSize: number;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function SettingsModal({
-    visible,
+const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = React.memo(function SettingsModalContent({
     onClose,
     setHomeScrollEnabled,
-    preferences,
-    feedData,
-    vlogs,
-    notes,
-    aiConfig,
-    personsHook,
-    streak,
-    storageActions,
     queueState,
     startBatch,
     cancelBatch,
     batchState,
     logState,
     devTools,
-    activeFont,
-    activeSize,
     compressionState,
     onCancelCompression,
     onRetryCompression,
     onClearPendingCompressions,
 }) {
+    const preferences = usePreferences();
+    const feedData = useFeedData();
+    const vlogs = useVlogs();
+    const notes = useNotes();
+    const aiConfig = useAiConfig();
+    const personsHook = usePersons();
+    const streak = useStreak();
+    const storageActions = useStorageActions();
+
+    const activeFont = CONFIG.FONTS[preferences.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+    const activeSize = CONFIG.SIZES[preferences.sizeIndex]?.value || 18;
     // --- Internal ActionSheet modal state (co-located with their modals) ---
     const [showLockTimeoutModal, setShowLockTimeoutModal] = useState(false);
     const [showVlogQualityModal, setShowVlogQualityModal] = useState(false);
@@ -219,7 +195,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
 
     return (
         <>
-            <BaseModal visible={visible} onClose={onClose} title="Settings" setHomeScrollEnabled={setHomeScrollEnabled}>
+            <BaseModal visible={true} onClose={onClose} title="Settings" setHomeScrollEnabled={setHomeScrollEnabled}>
                 <ScrollView
                     contentContainerStyle={{ paddingBottom: 150 }}
                     showsVerticalScrollIndicator={false}
@@ -872,4 +848,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function S
             />
         </>
     );
+});
+
+export const SettingsModal: React.FC<SettingsModalProps> = React.memo(function SettingsModal(props) {
+    if (!props.visible) return null;
+    return <SettingsModalContent {...props} />;
 });

@@ -47,5 +47,11 @@ try {
 
 ## Compression Queue Provider
 `CompressionQueueProvider` (`src/lib/hooks/useCompressionQueueProvider.tsx`) is a standalone context provider (not part of useStorage). It wraps `compressionQueue` singleton and auto-initializes with the latest `updateVlog` callback from `useVlogs()`. Use `useCompressionQueueContext()` to access state and actions.
-## Storage Adapter
-`src/lib/storage.ts` wraps `@react-native-async-storage/async-storage`. If switching to MMKV in a future dev build, only this file changes.
+## De-coupling Context Subscriptions
+To avoid mass context re-renders:
+- **DO NOT** subscribe to high-frequency or multi-domain storage hooks in root screen containers purely to forward props to modals.
+- **ALWAYS** split modals into a lightweight wrapper (that does not subscribe to hooks) and a content component (that reads hooks directly). Keep the content component conditionally rendered or lazy.
+
+## React 19 `<Activity>` Tab Caching
+- **ALWAYS** cache navigation views and tabs that require heavy database fetching or layout calculations using React 19's `<Activity>` component.
+- Wrap each tab in a standalone, memoized component and use `<Activity mode={visible ? 'visible' : 'hidden'}>` to freeze state and layout of hidden tabs, paired with `{ display: visible ? 'flex' : 'none' }` on the container view to hide layout.

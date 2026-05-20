@@ -161,11 +161,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
      *  when InternalVlogPlayer unmounts; keeping the JS wrapper in state
      *  causes "shared object already released" on second open. */
     useEffect(() => {
-        if (!visible) {
+        if (!visible && internalPlayer !== null) {
             logVlog('info', 'Modal closing — releasing internalPlayer reference');
             setInternalPlayer(null);
         }
-    }, [visible]);
+    }, [visible, internalPlayer]);
 
     useEffect(() => {
         if (visible) {
