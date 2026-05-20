@@ -34,6 +34,14 @@ import { isApiKeyConfigured } from '@/config/ai';
 
 // Initialize global haptics middleware
 
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+
+// Disable the strict mode warning for reading/writing shared values during render
+configureReanimatedLogger({
+    level: ReanimatedLogLevel.warn,
+    strict: false,
+});
+
 // Mark app entry for perf tracking (dev-mode only, gated inside perf module)
 perfMark('app.entry');
 

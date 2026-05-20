@@ -62,3 +62,9 @@ The feed reveal/dismiss uses `feedProgress` SharedValue (0→1) driving three an
 - **Conditional Mounting**: Defer mounting expensive children inside expandable elements (like accordions or slide-outs) using a local React state (e.g., `shouldRenderContent`). Only mount when expanding, and unmount when collapsing completes via Reanimated's animation finished callback (using `runOnJS`).
 - **Android Software Blur Avoidance**: Never use `<BlurView>` inside lists or animating elements on Android, as Android runs software-based blurs on the CPU which causes layout lag. Use a translucent solid background color instead (e.g., `theme.colors.overlayLockAndroid`).
 - **FlashList Dynamic Heights**: For lists with expanding/collapsing items, do NOT provide a fixed `getItemLayout` prop to `FlashList` or `FlatList`. A fixed `getItemLayout` causes layout conflicts and thrashing when items resize.
+
+## Aesthetics & Spring Parameters (Decent, Clean, Professional)
+- **Avoid Excessive/Playful Bounciness**: Animations must look clean, elegant, and professional rather than bouncy or hyperactive.
+- **Damping Over Stiffness**: When configuring spring presets, use higher damping values (e.g., `damping: 26` to `35`) to prevent overshooting, oscillation, or excessive bounce.
+- **Timing Transitions**: For micro-interactions (like tab switching, input fade-ins, and button presses), prefer clean timing transitions (`withTiming`) or highly-damped, non-oscillating springs (`withSpring` with high damping).
+- **Scale Factor**: Keep scaling factors subtle (e.g. `1.03` to `1.05` instead of `1.15`). Let the size shift remain modest.

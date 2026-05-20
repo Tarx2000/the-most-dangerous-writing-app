@@ -6,16 +6,23 @@ import {
     useWindowDimensions,
     ScrollView,
     NativeSyntheticEvent,
-    NativeScrollEvent
+    NativeScrollEvent,
 } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withSequence,
+    withTiming,
+} from 'react-native-reanimated';
 import { vibrate } from '@/lib/haptics';
 import { theme } from '@/styles/theme';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * CONFIGURABLE: Dial layout
  * ──────────────────────────────────────────────────────────────────────────── */
-const SNAP = 80;           // px between major ticks (data points)
-const MINORS = 4;           // minor ticks drawn between each major
+const SNAP = 80; // px between major ticks (data points)
+const MINORS = 4; // minor ticks drawn between each major
 const GAP = SNAP / (MINORS + 1); // px between any two neighbouring ticks
 const MAJ_H = 28;
 const MIN_H = 12;
@@ -52,6 +59,15 @@ export const TickDial = React.memo(function TickDial({
     setHomeScrollEnabled,
 }: TickDialProps) {
     const { width: SCREEN_W } = useWindowDimensions();
+    const scaleAnim = useSharedValue(1);
+
+    const animatedValueStyle = useAnimatedStyle(() => {
+        const baseScale = 0.95 + (data.length > 1 ? (selectedIndex / (data.length - 1)) * 0.15 : 0);
+        return {
+            transform: [{ scale: baseScale * scaleAnim.value }],
+        };
+    }, [selectedIndex, data.length]);
+
     const scrollRef = useRef<ScrollView>(null);
     const [ready, setReady] = useState(false);
     /** Prevents vibration / scroll-sync on initial mount */
@@ -80,8 +96,9 @@ export const TickDial = React.memo(function TickDial({
 
     /* ── Sync scroll position to selectedIndex (suppressed during drag) ─ */
     useEffect(() => {
-        if (isDraggingRef.current) return;              // bar follows finger during drag
-        if (justSnappedRef.current) {                   // our own snap animation is in flight
+        if (isDraggingRef.current) return; // bar follows finger during drag
+        if (justSnappedRef.current) {
+            // our own snap animation is in flight
             justSnappedRef.current = false;
             return;
         }
@@ -96,12 +113,17 @@ export const TickDial = React.memo(function TickDial({
     /**
      * Vibrate exactly once per number change. With live `onSelect` from
      * `onScroll`, this fires as the user crosses each tick threshold.
+     * Also triggers a subtle spring scale animation on the active number text.
      */
     useEffect(() => {
         if (hasMounted.current) {
             vibrate(10);
+            scaleAnim.value = withSequence(
+                withTiming(1.03, { duration: 90 }),
+                withSpring(1.0, { damping: 24, stiffness: 140 }),
+            );
         }
-    }, [selectedIndex]);
+    }, [selectedIndex, scaleAnim]);
 
     /* ── Read index from scroll offset ─────────────────────────────────── */
     const indexFromOffset = useCallback(
@@ -131,7 +153,11 @@ export const TickDial = React.memo(function TickDial({
         (e: NativeSyntheticEvent<NativeScrollEvent>) => {
             const x = e.nativeEvent.contentOffset.x;
             currentOffsetRef.current = x;
-            if (!hasSnappedRef.current) {
+
+            // If the user is actively dragging the dial, or we aren't currently
+            // animating a snap, update the selection immediately to prevent the
+            // active value from going out of sync with the dial's physical scroll position.
+            if (isDraggingRef.current || !hasSnappedRef.current) {
                 onSelect(indexFromOffset(x));
             }
         },
@@ -144,16 +170,19 @@ export const TickDial = React.memo(function TickDial({
         setHomeScrollEnabled?.(false);
     }, [setHomeScrollEnabled]);
 
-    const handleScrollEndDrag = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const v = e.nativeEvent.velocity;
-        if (!v || Math.abs(v.x) < 0.2) {
-            // Low velocity — no momentum scroll will follow, snap now
-            isDraggingRef.current = false;
-            snapToNearest();
-        }
-        // If high velocity, keep isDraggingRef true until momentum ends
-        setHomeScrollEnabled?.(true);
-    }, [setHomeScrollEnabled, snapToNearest]);
+    const handleScrollEndDrag = useCallback(
+        (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            const v = e.nativeEvent.velocity;
+            if (!v || Math.abs(v.x) < 0.2) {
+                // Low velocity — no momentum scroll will follow, snap now
+                isDraggingRef.current = false;
+                snapToNearest();
+            }
+            // If high velocity, keep isDraggingRef true until momentum ends
+            setHomeScrollEnabled?.(true);
+        },
+        [setHomeScrollEnabled, snapToNearest],
+    );
 
     const handleMomentumScrollEnd = useCallback(() => {
         isDraggingRef.current = false;
@@ -161,13 +190,18 @@ export const TickDial = React.memo(function TickDial({
         setHomeScrollEnabled?.(true);
     }, [setHomeScrollEnabled, snapToNearest]);
 
+    /** Reset snap flag when programmatic scrolling animation completes */
+    const handleScrollAnimationEnd = useCallback(() => {
+        hasSnappedRef.current = false;
+    }, []);
+
     return (
         <View style={styles.root}>
             {/* Big number */}
-            <Text style={styles.value}>
+            <Animated.Text style={[styles.value, animatedValueStyle]}>
                 {data[selectedIndex]}
                 <Text style={styles.unit}> {unit}</Text>
-            </Text>
+            </Animated.Text>
 
             {/* Ruler */}
             <View style={styles.ruler}>
@@ -185,6 +219,7 @@ export const TickDial = React.memo(function TickDial({
                     onScrollBeginDrag={handleScrollBeginDrag}
                     onScrollEndDrag={handleScrollEndDrag}
                     onMomentumScrollEnd={handleMomentumScrollEnd}
+                    onScrollAnimationEnd={handleScrollAnimationEnd}
                     contentContainerStyle={{ paddingLeft: pad, paddingRight: pad }}
                     style={ready ? undefined : styles.hidden}
                 >

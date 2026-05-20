@@ -196,10 +196,10 @@ export const theme = {
         weightBlack: '900' as const,
     },
     animation: {
-        springDefault: { damping: 22, stiffness: 220, mass: 0.8 },
-        springSnappy: { damping: 30, stiffness: 300, mass: 0.8 },
-        springGentle: { damping: 18, stiffness: 180, mass: 0.8 },
-        springLight: { damping: 20, stiffness: 200, mass: 0.5 },
-        springFeed: { damping: 28, stiffness: 180, mass: 0.9 },
+        springDefault: { damping: 30, stiffness: 200, mass: 0.8 },
+        springSnappy: { damping: 35, stiffness: 250, mass: 0.8 },
+        springGentle: { damping: 26, stiffness: 120, mass: 0.8 },
+        springLight: { damping: 28, stiffness: 150, mass: 0.5 },
+        springFeed: { damping: 32, stiffness: 160, mass: 0.9 },
     },
 };

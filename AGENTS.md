@@ -68,6 +68,9 @@ If a task can be broken into multiple independent pieces (e.g., researching diff
 - Split by domain or file when there's no cross-dependency.
 - Always give sub-agents complete context (they don't see your conversation history by default).
 
+### 7. Clean and Professional Animation Style (Mandatory)
+Animations must always look clean, elegant, and professional rather than hyperactive or overly bouncy. Prefer timing-based transitions or highly-damped springs (using high damping-to-stiffness ratios) with modest scaling factors (e.g. 1.03x to 1.05x max). Avoid excessive playfulness or overshooting.
+
 ## Project Documentation Maintenance (Critical)
 
 **AGENTS.md is the single source of truth.** You must proactively maintain it and reference the correct skill instructions when making changes:

@@ -1,5 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TextInput, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withTiming,
+    interpolateColor,
+    FadeInDown,
+} from 'react-native-reanimated';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -13,12 +20,47 @@ type Props = NativeStackScreenProps<RootStackParamList, 'VisionBoard'>;
 
 type TabKey = keyof VisionBoard;
 
-const TABS: { key: TabKey, label: string }[] = [
+const TABS: { key: TabKey; label: string }[] = [
     { key: 'health', label: 'Health' },
     { key: 'career', label: 'Career & Learning' },
     { key: 'relationships', label: 'Relationships' },
     { key: 'mindset', label: 'Mindset' },
 ];
+
+/** TabPill component for smooth active/inactive color transition */
+const TabPill: React.FC<{
+    label: string;
+    isActive: boolean;
+    onPress: () => void;
+}> = React.memo(({ label, isActive, onPress }) => {
+    const progress = useSharedValue(isActive ? 1 : 0);
+
+    useEffect(() => {
+        progress.value = withTiming(isActive ? 1 : 0, { duration: 250 });
+    }, [isActive]);
+
+    const animatedStyle = useAnimatedStyle(() => {
+        const backgroundColor = interpolateColor(
+            progress.value,
+            [0, 1],
+            [theme.colors.cardBackground, theme.colors.primaryAction],
+        );
+        return { backgroundColor };
+    });
+
+    const animatedTextStyle = useAnimatedStyle(() => {
+        const color = interpolateColor(progress.value, [0, 1], [theme.colors.textMuted, theme.colors.background]);
+        return { color };
+    });
+
+    return (
+        <AnimatedScaleButton onPress={onPress}>
+            <Animated.View style={[styles.tab, animatedStyle]}>
+                <Animated.Text style={[styles.tabText, animatedTextStyle]}>{label}</Animated.Text>
+            </Animated.View>
+        </AnimatedScaleButton>
+    );
+});
 
 export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
     const { visionBoard, saveVisionBoard, fontIndex, sizeIndex } = usePreferences();
@@ -33,7 +75,7 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
         health: '',
         career: '',
         relationships: '',
-        mindset: ''
+        mindset: '',
     });
     const [, forceRender] = useState({});
 
@@ -67,53 +109,66 @@ export const VisionBoardScreen: React.FC<Props> = ({ navigation }) => {
 
     return (
         <View style={styles.container}>
-            <KeyboardAvoidingView style={commonStyles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <View style={styles.header}>
+            <KeyboardAvoidingView
+                style={commonStyles.safeArea}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+                <Animated.View
+                    style={styles.header}
+                    entering={FadeInDown.delay(100).springify().damping(28).stiffness(150)}
+                >
                     <Text style={styles.title}>Your Best Self</Text>
                     <AnimatedScaleButton onPress={handleSaveAndExit} style={styles.doneBtn}>
                         <Text style={styles.doneBtnText}>Done</Text>
                     </AnimatedScaleButton>
-                </View>
+                </Animated.View>
 
                 {/* Tabs */}
-                <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false} 
-                    contentContainerStyle={styles.tabsContainer}
-                    style={{ maxHeight: 60 }}
-                >
-                    {TABS.map(tab => (
-                        <AnimatedScaleButton
-                            key={tab.key}
-                            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-                            onPress={() => setActiveTab(tab.key)}
-                        >
-                            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
-                                {tab.label}
-                            </Text>
-                        </AnimatedScaleButton>
-                    ))}
-                </ScrollView>
+                <Animated.View entering={FadeInDown.delay(180).springify().damping(28).stiffness(150)}>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.tabsContainer}
+                        style={{ maxHeight: 60 }}
+                    >
+                        {TABS.map((tab) => (
+                            <TabPill
+                                key={tab.key}
+                                label={tab.label}
+                                isActive={activeTab === tab.key}
+                                onPress={() => setActiveTab(tab.key)}
+                            />
+                        ))}
+                    </ScrollView>
+                </Animated.View>
 
                 {/* Content */}
-                <ScrollView 
-                    contentContainerStyle={styles.contentContainer}
-                    keyboardShouldPersistTaps="handled"
-                >
-                    <Text style={[styles.promptText, { fontFamily: activeFont }]}>
-                        Describe your ideal state for {TABS.find(t => t.key === activeTab)?.label?.toLowerCase()}. Who do you want to become?
-                    </Text>
-                    <TextInput
-                        key={activeTab + (visionBoard ? '_loaded' : '_init')}
-                        style={[styles.textInput, { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight }]}
-                        multiline
-                        autoFocus
-                        defaultValue={localStateRef.current[activeTab]}
-                        onChangeText={handleTextChange}
-                        placeholder="My vision is..."
-                        placeholderTextColor={theme.colors.placeholder}
-                        selectionColor={theme.colors.primaryAction}
-                    />
+                <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+                    <Animated.View entering={FadeInDown.delay(260).springify().damping(28).stiffness(150)}>
+                        <Text style={[styles.promptText, { fontFamily: activeFont }]}>
+                            Describe your ideal state for {TABS.find((t) => t.key === activeTab)?.label?.toLowerCase()}.
+                            Who do you want to become?
+                        </Text>
+                    </Animated.View>
+                    <Animated.View
+                        style={{ flex: 1 }}
+                        entering={FadeInDown.delay(340).springify().damping(28).stiffness(150)}
+                    >
+                        <TextInput
+                            key={activeTab + (visionBoard ? '_loaded' : '_init')}
+                            style={[
+                                styles.textInput,
+                                { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
+                            ]}
+                            multiline
+                            autoFocus
+                            defaultValue={localStateRef.current[activeTab]}
+                            onChangeText={handleTextChange}
+                            placeholder="My vision is..."
+                            placeholderTextColor={theme.colors.placeholder}
+                            selectionColor={theme.colors.primaryAction}
+                        />
+                    </Animated.View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </View>
@@ -164,16 +219,10 @@ const styles = StyleSheet.create({
         marginRight: 10,
         backgroundColor: theme.colors.cardBackground,
     },
-    activeTab: {
-        backgroundColor: theme.colors.primaryAction,
-    },
     tabText: {
         color: theme.colors.textMuted,
         fontSize: 15,
         fontWeight: '600',
-    },
-    activeTabText: {
-        color: theme.colors.background,
     },
     contentContainer: {
         padding: 20,
@@ -193,5 +242,5 @@ const styles = StyleSheet.create({
         lineHeight: 28,
         minHeight: 300,
         textAlignVertical: 'top',
-    }
+    },
 });

@@ -40,17 +40,22 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
     useEffect(() => {
         if (visible) {
             const initial: Record<string, BenchmarkResult> = {};
-            MODELS.forEach(m => {
+            MODELS.forEach((m) => {
                 initial[m] = {
                     model: m,
-                    title: null, titleTimeMs: 0,
-                    summary: null, summaryRaw: null, summaryTimeMs: 0,
-                    grammarFixes: 0, grammarRaw: null, grammarTimeMs: 0,
-                    status: 'pending'
+                    title: null,
+                    titleTimeMs: 0,
+                    summary: null,
+                    summaryRaw: null,
+                    summaryTimeMs: 0,
+                    grammarFixes: 0,
+                    grammarRaw: null,
+                    grammarTimeMs: 0,
+                    status: 'pending',
                 };
             });
             setResults(initial);
-            
+
             if (savedNotes.length > 0) {
                 let max = savedNotes[0];
                 for (const n of savedNotes) {
@@ -58,7 +63,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                 }
                 setTestInput(max.text);
             } else {
-                setTestInput("This is a placeholder journal entry to test the AI. I didn't have much to say, but I really enjoyed the coffee in the morning and I think the spelling is mostly fine but we will se.");
+                setTestInput(
+                    "This is a placeholder journal entry to test the AI. I didn't have much to say, but I really enjoyed the coffee in the morning and I think the spelling is mostly fine but we will se.",
+                );
             }
         }
     }, [visible, savedNotes]);
@@ -74,97 +81,126 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
 
         // Reset all models to running
         const initialStates: Record<string, BenchmarkResult> = {};
-        MODELS.forEach(m => {
+        MODELS.forEach((m) => {
             initialStates[m] = {
                 model: m,
-                title: null, titleTimeMs: 0,
-                summary: null, summaryRaw: null, summaryTimeMs: 0,
-                grammarFixes: 0, grammarRaw: null, grammarTimeMs: 0,
-                status: 'running'
+                title: null,
+                titleTimeMs: 0,
+                summary: null,
+                summaryRaw: null,
+                summaryTimeMs: 0,
+                grammarFixes: 0,
+                grammarRaw: null,
+                grammarTimeMs: 0,
+                status: 'running',
             };
         });
         setResults(initialStates);
 
         // Phase 1: Titles
         setCurrentPhase('title');
-        await Promise.allSettled(MODELS.map(async (model) => {
-            try {
-                const config = { ...aiConfigBase, model };
-                const startTitle = Date.now();
-                const title = await generateTitle(testInput, config, chunk => {
-                    setResults(prev => ({ ...prev, [model]: { ...prev[model], title: chunk } }));
-                });
-                const titleTime = Date.now() - startTitle;
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], title, titleTimeMs: titleTime } }));
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : 'Failed';
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
-            }
-        }));
+        await Promise.allSettled(
+            MODELS.map(async (model) => {
+                try {
+                    const config = { ...aiConfigBase, model };
+                    const startTitle = Date.now();
+                    const title = await generateTitle(testInput, config, (chunk) => {
+                        setResults((prev) => ({ ...prev, [model]: { ...prev[model], title: chunk } }));
+                    });
+                    const titleTime = Date.now() - startTitle;
+                    setResults((prev) => ({ ...prev, [model]: { ...prev[model], title, titleTimeMs: titleTime } }));
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Failed';
+                    setResults((prev) => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
+                }
+            }),
+        );
 
         // Phase 2: Summaries
         setCurrentPhase('summary');
-        await Promise.allSettled(MODELS.map(async (model) => {
-            try {
-                // Skip if it already errored
-                if (results[model]?.status === 'error') return;
-                
-                const config = { ...aiConfigBase, model };
-                const startSum = Date.now();
-                const summary = await generateSummary(testInput, config, chunk => {
-                    setResults(prev => ({ ...prev, [model]: { ...prev[model], summaryRaw: chunk } }));
-                });
-                const sumTime = Date.now() - startSum;
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], summary, summaryTimeMs: sumTime } }));
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : 'Failed';
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
-            }
-        }));
+        await Promise.allSettled(
+            MODELS.map(async (model) => {
+                try {
+                    // Skip if it already errored
+                    if (results[model]?.status === 'error') return;
+
+                    const config = { ...aiConfigBase, model };
+                    const startSum = Date.now();
+                    const summary = await generateSummary(testInput, config, (chunk) => {
+                        setResults((prev) => ({ ...prev, [model]: { ...prev[model], summaryRaw: chunk } }));
+                    });
+                    const sumTime = Date.now() - startSum;
+                    setResults((prev) => ({ ...prev, [model]: { ...prev[model], summary, summaryTimeMs: sumTime } }));
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Failed';
+                    setResults((prev) => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
+                }
+            }),
+        );
 
         // Phase 3: Grammar
         setCurrentPhase('grammar');
-        await Promise.allSettled(MODELS.map(async (model) => {
-            try {
-                if (results[model]?.status === 'error') return;
+        await Promise.allSettled(
+            MODELS.map(async (model) => {
+                try {
+                    if (results[model]?.status === 'error') return;
 
-                const config = { ...aiConfigBase, model };
-                const startGrammar = Date.now();
-                const grammarRes = await checkGrammar(testInput, config, chunk => {
-                    setResults(prev => ({ ...prev, [model]: { ...prev[model], grammarRaw: chunk } }));
-                });
-                const gramTime = Date.now() - startGrammar;
-                setResults(prev => ({ 
-                    ...prev, 
-                    [model]: { ...prev[model], grammarFixes: grammarRes.length, grammarTimeMs: gramTime, status: 'done' } 
-                }));
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : 'Failed';
-                setResults(prev => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
-            }
-        }));
+                    const config = { ...aiConfigBase, model };
+                    const startGrammar = Date.now();
+                    const grammarRes = await checkGrammar(testInput, config, (chunk) => {
+                        setResults((prev) => ({ ...prev, [model]: { ...prev[model], grammarRaw: chunk } }));
+                    });
+                    const gramTime = Date.now() - startGrammar;
+                    setResults((prev) => ({
+                        ...prev,
+                        [model]: {
+                            ...prev[model],
+                            grammarFixes: grammarRes.length,
+                            grammarTimeMs: gramTime,
+                            status: 'done',
+                        },
+                    }));
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Failed';
+                    setResults((prev) => ({ ...prev, [model]: { ...prev[model], status: 'error', error: msg } }));
+                }
+            }),
+        );
 
         setCurrentPhase('done');
         setRunning(false);
     };
 
     const { titleWinner, summaryWinner, grammarWinner } = React.useMemo(() => {
-        let titleW = '', sumW = '', gramW = '';
-        let tBest = Infinity, sBest = Infinity, gBest = Infinity;
-        
+        let titleW = '',
+            sumW = '',
+            gramW = '';
+        let tBest = Infinity,
+            sBest = Infinity,
+            gBest = Infinity;
+
         // Only evaluate winners if the phase is fully completed across all non-error models
-        MODELS.forEach(m => {
+        MODELS.forEach((m) => {
             const r = results[m];
             if (!r || r.status === 'error') return;
-            if (r.titleTimeMs > 0 && r.titleTimeMs < tBest) { tBest = r.titleTimeMs; titleW = m; }
-            if (r.summaryTimeMs > 0 && r.summaryTimeMs < sBest) { sBest = r.summaryTimeMs; sumW = m; }
-            if (r.grammarTimeMs > 0 && r.grammarTimeMs < gBest) { gBest = r.grammarTimeMs; gramW = m; }
+            if (r.titleTimeMs > 0 && r.titleTimeMs < tBest) {
+                tBest = r.titleTimeMs;
+                titleW = m;
+            }
+            if (r.summaryTimeMs > 0 && r.summaryTimeMs < sBest) {
+                sBest = r.summaryTimeMs;
+                sumW = m;
+            }
+            if (r.grammarTimeMs > 0 && r.grammarTimeMs < gBest) {
+                gBest = r.grammarTimeMs;
+                gramW = m;
+            }
         });
-        
+
         return {
             titleWinner: currentPhase !== 'title' && currentPhase !== 'idle' ? titleW : null,
             summaryWinner: currentPhase === 'grammar' || currentPhase === 'done' ? sumW : null,
-            grammarWinner: currentPhase === 'done' ? gramW : null
+            grammarWinner: currentPhase === 'done' ? gramW : null,
         };
     }, [results, currentPhase]);
 
@@ -177,18 +213,21 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                         <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
                     </AnimatedScaleButton>
                 </View>
-                
+
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     <Text style={styles.infoText}>
-                        This tests title, summary, and grammar generation across ALL models IN PARALLEL using your longest journal entry ({testInput.length} chars).
+                        This tests title, summary, and grammar generation across ALL models IN PARALLEL using your
+                        longest journal entry ({testInput.length} chars).
                     </Text>
 
-                    <AnimatedScaleButton 
-                        style={[styles.runBtn, running && { opacity: 0.5 }]} 
+                    <AnimatedScaleButton
+                        style={[styles.runBtn, running && { opacity: 0.5 }]}
                         onPress={runBenchmark}
                         disabled={running}
                     >
-                        {running ? <ActivityIndicator color={theme.colors.textPrimary} /> : (
+                        {running ? (
+                            <ActivityIndicator color={theme.colors.textPrimary} />
+                        ) : (
                             <Text style={styles.runBtnText}>Run Benchmark Race</Text>
                         )}
                     </AnimatedScaleButton>
@@ -199,20 +238,32 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                             <Text style={styles.phaseTitle}>1. Title Generation</Text>
                             {currentPhase === 'title' && <ActivityIndicator color={theme.colors.gold} size="small" />}
                         </View>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
-                            {MODELS.map(model => {
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.phaseScroll}
+                        >
+                            {MODELS.map((model) => {
                                 const res = results[model];
                                 if (!res) return null;
                                 const isWinner = model === titleWinner;
-                                
+
                                 return (
                                     <View key={model} style={[styles.phaseCard, isWinner && styles.winnerCard]}>
                                         <View style={styles.cardHeader}>
-                                            <Text style={styles.modelName} numberOfLines={1}>{model.split(':')[0]}</Text>
+                                            <Text style={styles.modelName} numberOfLines={1}>
+                                                {model.split(':')[0]}
+                                            </Text>
                                             {isWinner && <Text style={styles.winnerText}>🏆 {res.titleTimeMs}ms</Text>}
-                                            {res.status === 'error' && <MaterialCommunityIcons name="alert-circle" size={16} color={theme.colors.danger} />}
+                                            {res.status === 'error' && (
+                                                <MaterialCommunityIcons
+                                                    name="alert-circle"
+                                                    size={16}
+                                                    color={theme.colors.danger}
+                                                />
+                                            )}
                                         </View>
-                                        
+
                                         {res.status === 'error' ? (
                                             <Text style={styles.errorText}>Failed</Text>
                                         ) : (
@@ -220,7 +271,9 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                                                 {res.title || (currentPhase === 'title' ? '...' : '')}
                                             </Text>
                                         )}
-                                        {!isWinner && res.titleTimeMs > 0 && <Text style={styles.timeValue}>{res.titleTimeMs}ms</Text>}
+                                        {!isWinner && res.titleTimeMs > 0 && (
+                                            <Text style={styles.timeValue}>{res.titleTimeMs}ms</Text>
+                                        )}
                                     </View>
                                 );
                             })}
@@ -233,27 +286,52 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                             <Text style={styles.phaseTitle}>2. Summary Generation</Text>
                             {currentPhase === 'summary' && <ActivityIndicator color={theme.colors.gold} size="small" />}
                         </View>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
-                            {MODELS.map(model => {
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.phaseScroll}
+                        >
+                            {MODELS.map((model) => {
                                 const res = results[model];
                                 if (!res) return null;
                                 const isWinner = model === summaryWinner;
-                                
+
                                 return (
                                     <View key={model} style={[styles.phaseCard, isWinner && styles.winnerCard]}>
                                         <View style={styles.cardHeader}>
-                                            <Text style={styles.modelName} numberOfLines={1}>{model.split(':')[0]}</Text>
-                                            {isWinner && <Text style={styles.winnerText}>🏆 {res.summaryTimeMs}ms</Text>}
+                                            <Text style={styles.modelName} numberOfLines={1}>
+                                                {model.split(':')[0]}
+                                            </Text>
+                                            {isWinner && (
+                                                <Text style={styles.winnerText}>🏆 {res.summaryTimeMs}ms</Text>
+                                            )}
                                         </View>
-                                        
+
                                         <ScrollView style={{ maxHeight: 120 }}>
                                             {res.summary ? (
-                                                res.summary.map((b, i) => <Text key={i} style={styles.bulletText}>• {b}</Text>)
+                                                res.summary.map((b, i) => (
+                                                    <Text key={i} style={styles.bulletText}>
+                                                        • {b}
+                                                    </Text>
+                                                ))
                                             ) : res.summaryRaw ? (
-                                                <Text style={[styles.statValue, { fontStyle: 'italic', color: theme.colors.textSecondary }]}>{res.summaryRaw}</Text>
-                                            ) : <Text style={styles.statValue}>{currentPhase === 'summary' ? '...' : ''}</Text>}
+                                                <Text
+                                                    style={[
+                                                        styles.statValue,
+                                                        { fontStyle: 'italic', color: theme.colors.textSecondary },
+                                                    ]}
+                                                >
+                                                    {res.summaryRaw}
+                                                </Text>
+                                            ) : (
+                                                <Text style={styles.statValue}>
+                                                    {currentPhase === 'summary' ? '...' : ''}
+                                                </Text>
+                                            )}
                                         </ScrollView>
-                                        {!isWinner && res.summaryTimeMs > 0 && <Text style={styles.timeValue}>{res.summaryTimeMs}ms</Text>}
+                                        {!isWinner && res.summaryTimeMs > 0 && (
+                                            <Text style={styles.timeValue}>{res.summaryTimeMs}ms</Text>
+                                        )}
                                     </View>
                                 );
                             })}
@@ -266,33 +344,61 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
                             <Text style={styles.phaseTitle}>3. Grammar Evaluation</Text>
                             {currentPhase === 'grammar' && <ActivityIndicator color={theme.colors.gold} size="small" />}
                         </View>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
-                            {MODELS.map(model => {
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.phaseScroll}
+                        >
+                            {MODELS.map((model) => {
                                 const res = results[model];
                                 if (!res) return null;
                                 const isWinner = model === grammarWinner;
-                                
+
                                 return (
                                     <View key={model} style={[styles.phaseCard, isWinner && styles.winnerCard]}>
                                         <View style={styles.cardHeader}>
-                                            <Text style={styles.modelName} numberOfLines={1}>{model.split(':')[0]}</Text>
-                                            {isWinner && <Text style={styles.winnerText}>🏆 {res.grammarTimeMs}ms</Text>}
+                                            <Text style={styles.modelName} numberOfLines={1}>
+                                                {model.split(':')[0]}
+                                            </Text>
+                                            {isWinner && (
+                                                <Text style={styles.winnerText}>🏆 {res.grammarTimeMs}ms</Text>
+                                            )}
                                         </View>
-                                        
+
                                         <ScrollView style={{ maxHeight: 120 }}>
                                             {res.grammarTimeMs > 0 ? (
-                                                <Text style={[styles.statValue, { fontWeight: 'bold', color: theme.colors.success }]}>{res.grammarFixes} suggestions found.</Text>
+                                                <Text
+                                                    style={[
+                                                        styles.statValue,
+                                                        { fontWeight: 'bold', color: theme.colors.success },
+                                                    ]}
+                                                >
+                                                    {res.grammarFixes} suggestions found.
+                                                </Text>
                                             ) : res.grammarRaw ? (
-                                                <Text style={[styles.statValue, { fontSize: 10, fontFamily: 'monospace', opacity: 0.5 }]} numberOfLines={5}>{res.grammarRaw}</Text>
-                                            ) : <Text style={styles.statValue}>{currentPhase === 'grammar' ? '...' : ''}</Text>}
+                                                <Text
+                                                    style={[
+                                                        styles.statValue,
+                                                        { fontSize: 10, fontFamily: 'monospace', opacity: 0.5 },
+                                                    ]}
+                                                    numberOfLines={5}
+                                                >
+                                                    {res.grammarRaw}
+                                                </Text>
+                                            ) : (
+                                                <Text style={styles.statValue}>
+                                                    {currentPhase === 'grammar' ? '...' : ''}
+                                                </Text>
+                                            )}
                                         </ScrollView>
-                                        {!isWinner && res.grammarTimeMs > 0 && <Text style={styles.timeValue}>{res.grammarTimeMs}ms</Text>}
+                                        {!isWinner && res.grammarTimeMs > 0 && (
+                                            <Text style={styles.timeValue}>{res.grammarTimeMs}ms</Text>
+                                        )}
                                     </View>
                                 );
                             })}
                         </ScrollView>
                     </View>
-
                 </ScrollView>
             </View>
         </Modal>
@@ -311,7 +417,7 @@ const styles = StyleSheet.create({
         padding: 24,
         paddingTop: 40,
         borderBottomWidth: 1,
-        borderBottomColor: 'theme.colors.glassBorderFaint',
+        borderBottomColor: theme.colors.glassBorderFaint,
     },
     headerTitle: {
         color: theme.colors.textPrimary,
@@ -319,9 +425,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     closeBtn: {
-        width: 40, height: 40,
-        justifyContent: 'center', alignItems: 'center',
-        backgroundColor: 'theme.colors.glassBorderFaint',
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.glassBorderFaint,
         borderRadius: 20,
     },
     scrollContent: {
@@ -367,9 +475,9 @@ const styles = StyleSheet.create({
         gap: 16,
     },
     phaseCard: {
-        backgroundColor: 'theme.colors.glassSurfaceMinimal',
+        backgroundColor: theme.colors.glassSurfaceMinimal,
         borderWidth: 1,
-        borderColor: 'theme.colors.glassBorder',
+        borderColor: theme.colors.glassBorder,
         borderRadius: 12,
         padding: 16,
         width: 260,
@@ -377,8 +485,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     winnerCard: {
-        borderColor: 'theme.colors.goldBorder',
-        backgroundColor: 'theme.colors.goldBackground',
+        borderColor: theme.colors.goldBorder,
+        backgroundColor: theme.colors.goldBackground,
         borderWidth: 2,
     },
     cardHeader: {
@@ -387,7 +495,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 12,
         borderBottomWidth: 1,
-        borderBottomColor: 'theme.colors.glassBorderFaint',
+        borderBottomColor: theme.colors.glassBorderFaint,
         paddingBottom: 8,
     },
     modelName: {
@@ -422,7 +530,5 @@ const styles = StyleSheet.create({
         color: theme.colors.danger,
         fontSize: 13,
         fontWeight: 'bold',
-    }
+    },
 });
-
-

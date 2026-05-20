@@ -1,8 +1,15 @@
-import React, { useState, useMemo, useCallback, useEffect, Activity } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, Activity, useRef } from 'react';
 import { View, Text, StyleSheet, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import Animated, { useAnimatedStyle, withTiming, Easing, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+    useAnimatedStyle,
+    withTiming,
+    Easing,
+    useSharedValue,
+    withSpring,
+    runOnJS,
+} from 'react-native-reanimated';
 
 // Customizable layout widths (in pixels) for characters in the morphing Lock/Unlock animation.
 // UPPERCASE_L is calibrated to 7.2px to ensure perfect visual spacing (kerning) with the following text.
@@ -258,17 +265,84 @@ const CirclesTab = React.memo(
         const { height: SCREEN_HEIGHT } = useWindowDimensions();
         const unlockProgress = useSharedValue(isLocked ? 0 : 1);
 
-        // Sync SharedValue to state changes (runs on UI thread)
+        const [isAnimatingUnlock, setIsAnimatingUnlock] = useState(false);
+        const [isAnimatingLock, setIsAnimatingLock] = useState(false);
+
+        const prevVisibleRef = useRef(visible);
+        const prevIsLockedRef = useRef(isLocked);
+
+        // Render-phase state sync: if the lock status changes, determine if we need to animate.
+        // If it was locked/unlocked while the tab was hidden/frozen, we do not animate and set flags false.
+        const prevIsLocked = prevIsLockedRef.current;
+        if (isLocked !== prevIsLocked) {
+            prevIsLockedRef.current = isLocked;
+            if (isLocked) {
+                setIsAnimatingUnlock(false);
+                // Only trigger the slide-in lock animation if the user locked it while actively viewing the tab.
+                if (visible && prevVisibleRef.current) {
+                    setIsAnimatingLock(true);
+                } else {
+                    setIsAnimatingLock(false);
+                }
+            } else {
+                setIsAnimatingLock(false);
+                // Only trigger the fade-out/slide-up animation if the user unlocked it while actively viewing the tab.
+                if (visible && prevVisibleRef.current) {
+                    setIsAnimatingUnlock(true);
+                } else {
+                    setIsAnimatingUnlock(false);
+                }
+            }
+        }
+
+        // Sync SharedValue to lock state changes and manage the unmounting of the lock overlay.
         useEffect(() => {
-            unlockProgress.value = withSpring(isLocked ? 0 : 1, {
-                damping: 22,
-                stiffness: 150,
-                mass: 0.8,
-            });
-        }, [isLocked, unlockProgress]);
+            if (isAnimatingLock) {
+                unlockProgress.value = withSpring(
+                    0,
+                    {
+                        damping: 30,
+                        stiffness: 150,
+                        mass: 0.8,
+                    },
+                    (finished) => {
+                        if (finished) {
+                            runOnJS(setIsAnimatingLock)(false);
+                        }
+                    },
+                );
+            } else if (isAnimatingUnlock) {
+                unlockProgress.value = withSpring(
+                    1,
+                    {
+                        damping: 30,
+                        stiffness: 150,
+                        mass: 0.8,
+                    },
+                    (finished) => {
+                        if (finished) {
+                            runOnJS(setIsAnimatingUnlock)(false);
+                        }
+                    },
+                );
+            } else {
+                unlockProgress.value = isLocked ? 0 : 1;
+            }
+
+            prevVisibleRef.current = visible;
+        }, [isLocked, isAnimatingUnlock, isAnimatingLock, visible, unlockProgress]);
+
+        const isAnimating = isAnimatingLock || isAnimatingUnlock;
 
         // Content container starts at 0.95 scale and opacity 0, fades + scales to 1
         const contentAnimatedStyle = useAnimatedStyle(() => {
+            if (!isAnimating) {
+                return {
+                    flex: 1,
+                    opacity: isLocked ? 0 : 1,
+                    transform: [{ scale: isLocked ? 0.95 : 1.0 }],
+                };
+            }
             return {
                 flex: 1,
                 opacity: unlockProgress.value,
@@ -278,6 +352,15 @@ const CirclesTab = React.memo(
 
         // Lock card starts centered, slides up off screen and fades out
         const lockOverlayAnimatedStyle = useAnimatedStyle(() => {
+            if (!isAnimating) {
+                return {
+                    ...StyleSheet.absoluteFillObject,
+                    opacity: isLocked ? 1 : 0,
+                    transform: [{ translateY: isLocked ? 0 : -SCREEN_HEIGHT }],
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                };
+            }
             return {
                 ...StyleSheet.absoluteFillObject,
                 opacity: 1 - unlockProgress.value,
@@ -290,59 +373,65 @@ const CirclesTab = React.memo(
         return (
             <Activity mode={visible ? 'visible' : 'hidden'}>
                 <View style={{ flex: 1, display: visible ? 'flex' : 'none' }}>
-                    <Animated.View style={contentAnimatedStyle}>
-                        {persons.length === 0 ? (
-                            <EmptyLibraryState
-                                icon="account-group-outline"
-                                title="No circles yet"
-                                description="Create circles to organize your writing sessions by the people who matter most."
-                                actionLabel="Start Writing"
-                                onAction={onGoToStart}
-                            />
-                        ) : (
-                            <View style={styles.fullFlexWidth}>
-                                <FlashList
-                                    style={{ marginHorizontal: -20 }}
-                                    data={sortedPersons}
-                                    keyExtractor={(p) => p.id}
-                                    estimatedItemSize={80}
-                                    extraData={circlesExtraData}
-                                    renderItem={renderPersonItem}
-                                    showsVerticalScrollIndicator={false}
-                                    contentContainerStyle={circlesListContentStyle}
+                    {(!isLocked || isAnimatingUnlock || isAnimatingLock) && (
+                        <Animated.View style={contentAnimatedStyle}>
+                            {persons.length === 0 ? (
+                                <EmptyLibraryState
+                                    icon="account-group-outline"
+                                    title="No circles yet"
+                                    description="Create circles to organize your writing sessions by the people who matter most."
+                                    actionLabel="Start Writing"
+                                    onAction={onGoToStart}
                                 />
-                            </View>
-                        )}
-                    </Animated.View>
+                            ) : (
+                                <View style={styles.fullFlexWidth}>
+                                    <FlashList
+                                        style={{ marginHorizontal: -20 }}
+                                        data={sortedPersons}
+                                        keyExtractor={(p) => p.id}
+                                        estimatedItemSize={80}
+                                        extraData={circlesExtraData}
+                                        renderItem={renderPersonItem}
+                                        showsVerticalScrollIndicator={false}
+                                        contentContainerStyle={circlesListContentStyle}
+                                    />
+                                </View>
+                            )}
+                        </Animated.View>
+                    )}
 
                     {/* Overlapping animated lock overlay */}
-                    <Animated.View style={lockOverlayAnimatedStyle} pointerEvents={isLocked ? 'auto' : 'none'}>
-                        <View style={styles.circlesLockCard}>
-                            <MaterialCommunityIcons
-                                name="lock-outline"
-                                size={48}
-                                color={theme.colors.primaryAction}
-                                style={styles.iconMarginBottom16}
-                            />
-                            <Text style={styles.circlesLockTitle}>Circles Protected</Text>
-                            <Text style={styles.circlesLockSubtitle}>Verify your identity to view your circles</Text>
-                            <AnimatedScaleButton
-                                style={styles.circlesUnlockBtn}
-                                onPress={async () => {
-                                    const success = await unlockCircles();
-                                    if (success) vibrate(50);
-                                }}
-                            >
+                    {(isLocked || isAnimatingUnlock || isAnimatingLock) && (
+                        <Animated.View style={lockOverlayAnimatedStyle} pointerEvents={isLocked ? 'auto' : 'none'}>
+                            <View style={styles.circlesLockCard}>
                                 <MaterialCommunityIcons
-                                    name="fingerprint"
-                                    size={22}
-                                    color={theme.colors.textPrimary}
-                                    style={styles.iconMarginRight10}
+                                    name="lock-outline"
+                                    size={48}
+                                    color={theme.colors.primaryAction}
+                                    style={styles.iconMarginBottom16}
                                 />
-                                <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
-                            </AnimatedScaleButton>
-                        </View>
-                    </Animated.View>
+                                <Text style={styles.circlesLockTitle}>Circles Protected</Text>
+                                <Text style={styles.circlesLockSubtitle}>
+                                    Verify your identity to view your circles
+                                </Text>
+                                <AnimatedScaleButton
+                                    style={styles.circlesUnlockBtn}
+                                    onPress={async () => {
+                                        const success = await unlockCircles();
+                                        if (success) vibrate(50);
+                                    }}
+                                >
+                                    <MaterialCommunityIcons
+                                        name="fingerprint"
+                                        size={22}
+                                        color={theme.colors.textPrimary}
+                                        style={styles.iconMarginRight10}
+                                    />
+                                    <Text style={styles.circlesUnlockBtnText}>Unlock Circles</Text>
+                                </AnimatedScaleButton>
+                            </View>
+                        </Animated.View>
+                    )}
 
                     {/* Person Profile Modal */}
                     <ErrorBoundary>
@@ -415,6 +504,7 @@ const VlogsTab = React.memo(
             <Activity mode={visible ? 'visible' : 'hidden'}>
                 <View style={{ flex: 1, display: visible ? 'flex' : 'none' }}>
                     <VlogCalendarGallery
+                        visible={visible}
                         vlogs={savedVlogs}
                         isLocked={!isUnlocked}
                         onUnlock={unlockCircles}

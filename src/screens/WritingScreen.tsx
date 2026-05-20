@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { commonStyles } from '@/styles/commonStyles';
@@ -152,6 +152,24 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         transform: [{ translateX: shakeAnimation.value }],
     }));
 
+    const vaporizeFade = useSharedValue(0);
+
+    useEffect(() => {
+        if (isIdle) {
+            vaporizeFade.value = withTiming(1, { duration: 350 });
+        } else {
+            vaporizeFade.value = withTiming(0, { duration: 80 });
+        }
+    }, [isIdle, vaporizeFade]);
+
+    const textInputStyle = useAnimatedStyle(() => ({
+        opacity: 1 - vaporizeFade.value,
+    }));
+
+    const vaporizingStyle = useAnimatedStyle(() => ({
+        opacity: vaporizeFade.value,
+    }));
+
     const currentFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const currentSize = CONFIG.SIZES[sizeIndex]?.value || 18;
     const currentLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
@@ -225,36 +243,38 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                             showsVerticalScrollIndicator={false}
                             keyboardDismissMode="interactive"
                         >
-                            <TextInput
-                                ref={inputRef}
-                                style={[
-                                    commonStyles.textInput,
-                                    {
-                                        flex: 1,
-                                        fontSize: currentSize,
-                                        lineHeight: currentLineHeight,
-                                        fontFamily: currentFont,
-                                        fontWeight: 'normal',
-                                        textAlignVertical: 'top',
-                                        paddingTop: Platform.OS === 'ios' ? 8 : 10,
-                                        paddingHorizontal: Platform.OS === 'ios' ? 4 : 6,
-                                        paddingBottom: 200, // Ensures text doesn't stay hidden under keyboard
-                                        color: isIdle ? 'transparent' : theme.colors.textPrimary,
-                                    },
-                                ]}
-                                scrollEnabled={false}
-                                multiline
-                                autoFocus
-                                defaultValue=""
-                                onChangeText={handleTextChangeLocal}
-                                placeholder="Keep typing..."
-                                placeholderTextColor={theme.colors.placeholder}
-                                selectionColor={theme.colors.danger}
-                                editable={!hasLost}
-                            />
+                            <Animated.View style={[{ flex: 1 }, textInputStyle]}>
+                                <TextInput
+                                    ref={inputRef}
+                                    style={[
+                                        commonStyles.textInput,
+                                        {
+                                            flex: 1,
+                                            fontSize: currentSize,
+                                            lineHeight: currentLineHeight,
+                                            fontFamily: currentFont,
+                                            fontWeight: 'normal',
+                                            textAlignVertical: 'top',
+                                            paddingTop: Platform.OS === 'ios' ? 8 : 10,
+                                            paddingHorizontal: Platform.OS === 'ios' ? 4 : 6,
+                                            paddingBottom: 200, // Ensures text doesn't stay hidden under keyboard
+                                            color: theme.colors.textPrimary,
+                                        },
+                                    ]}
+                                    scrollEnabled={false}
+                                    multiline
+                                    autoFocus
+                                    defaultValue=""
+                                    onChangeText={handleTextChangeLocal}
+                                    placeholder="Keep typing..."
+                                    placeholderTextColor={theme.colors.placeholder}
+                                    selectionColor={theme.colors.danger}
+                                    editable={!hasLost}
+                                />
+                            </Animated.View>
                             {isIdle && (
-                                <View
-                                    style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
+                                <Animated.View
+                                    style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }, vaporizingStyle]}
                                     pointerEvents="none"
                                 >
                                     <VaporizingText
@@ -277,7 +297,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                             },
                                         ]}
                                     />
-                                </View>
+                                </Animated.View>
                             )}
                         </ScrollView>
                     </View>

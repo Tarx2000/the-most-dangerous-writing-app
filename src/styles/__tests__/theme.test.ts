@@ -35,8 +35,14 @@ describe('Theme tokens', () => {
 
         it('should have all glass tokens', () => {
             const glassTokens = [
-                'glassBackground', 'glassSurface', 'glassSurfaceMedium', 'glassSurfaceSubtle',
-                'glassBorder', 'glassBorderSubtle', 'glassBorderMedium', 'glassHighlight',
+                'glassBackground',
+                'glassSurface',
+                'glassSurfaceMedium',
+                'glassSurfaceSubtle',
+                'glassBorder',
+                'glassBorderSubtle',
+                'glassBorderMedium',
+                'glassHighlight',
             ];
             for (const token of glassTokens) {
                 expect(theme.colors[token as keyof typeof theme.colors]).toBeDefined();
@@ -46,9 +52,18 @@ describe('Theme tokens', () => {
 
         it('should have all danger tokens', () => {
             const dangerTokens = [
-                'danger', 'dangerSubtle', 'dangerLight', 'dangerTint',
-                'dangerFill', 'dangerBorder', 'dangerBorderStrong', 'dangerOverlayLight',
-                'dangerAccent', 'dangerBorderMedium', 'dangerBorderLight', 'dangerFillStrong',
+                'danger',
+                'dangerSubtle',
+                'dangerLight',
+                'dangerTint',
+                'dangerFill',
+                'dangerBorder',
+                'dangerBorderStrong',
+                'dangerOverlayLight',
+                'dangerAccent',
+                'dangerBorderMedium',
+                'dangerBorderLight',
+                'dangerFillStrong',
             ];
             for (const token of dangerTokens) {
                 expect(theme.colors[token as keyof typeof theme.colors]).toBeDefined();
@@ -80,10 +95,22 @@ describe('Theme tokens', () => {
 
         it('should have rgba format for all glass/surface/overlay tokens', () => {
             const rgbaTokens = [
-                'glassBackground', 'glassSurface', 'glassSurfaceMedium', 'glassSurfaceSubtle',
-                'glassBorder', 'glassBorderSubtle', 'glassBorderMedium', 'glassHighlight',
-                'dangerSubtle', 'dangerLight', 'dangerTint', 'dangerFill', 'dangerOverlayLight',
-                'overlayDark', 'overlayMedium', 'overlayPopup',
+                'glassBackground',
+                'glassSurface',
+                'glassSurfaceMedium',
+                'glassSurfaceSubtle',
+                'glassBorder',
+                'glassBorderSubtle',
+                'glassBorderMedium',
+                'glassHighlight',
+                'dangerSubtle',
+                'dangerLight',
+                'dangerTint',
+                'dangerFill',
+                'dangerOverlayLight',
+                'overlayDark',
+                'overlayMedium',
+                'overlayPopup',
             ];
             for (const token of rgbaTokens) {
                 expect(theme.colors[token as keyof typeof theme.colors]).toMatch(/^rgba\(/);
@@ -92,8 +119,15 @@ describe('Theme tokens', () => {
 
         it('should have hex format for solid color tokens', () => {
             const hexTokens = [
-                'background', 'textPrimary', 'danger', 'gold', 'green', 'orange',
-                'surfaceDark', 'surfaceLight', 'surfaceMedium',
+                'background',
+                'textPrimary',
+                'danger',
+                'gold',
+                'green',
+                'orange',
+                'surfaceDark',
+                'surfaceLight',
+                'surfaceMedium',
             ];
             for (const token of hexTokens) {
                 expect(theme.colors[token as keyof typeof theme.colors]).toMatch(/^#[0-9a-fA-F]{3,6}$/);
@@ -103,12 +137,18 @@ describe('Theme tokens', () => {
         it('danger opacity ladder should be monotonically non-decreasing', () => {
             // Extract opacity values from danger tokens to verify ordering
             const dangerOrder = [
-                'dangerSubtle', 'dangerLight', 'dangerTint',
-                'dangerBorderLight', 'dangerAccent', 'dangerBorder',
-                'dangerBorderMedium', 'dangerBorderStrong', 'dangerFillStrong',
+                'dangerSubtle',
+                'dangerLight',
+                'dangerTint',
+                'dangerBorderLight',
+                'dangerAccent',
+                'dangerBorder',
+                'dangerBorderMedium',
+                'dangerBorderStrong',
+                'dangerFillStrong',
                 'dangerOverlayLight',
             ];
-            const opacities = dangerOrder.map(token => {
+            const opacities = dangerOrder.map((token) => {
                 const val = theme.colors[token as keyof typeof theme.colors] as string;
                 const match = val.match(/rgba\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)\)/);
                 return match ? parseFloat(match[1]) : 0;
@@ -120,10 +160,15 @@ describe('Theme tokens', () => {
 
         it('glass opacity ladder should be monotonically non-decreasing', () => {
             const glassOrder = [
-                'glassSurfaceSubtle', 'glassBackground', 'glassSurface',
-                'glassSurfaceMedium', 'glassBorder', 'glassBorderMedium', 'glassHighlight',
+                'glassSurfaceSubtle',
+                'glassBackground',
+                'glassSurface',
+                'glassSurfaceMedium',
+                'glassBorder',
+                'glassBorderMedium',
+                'glassHighlight',
             ];
-            const opacities = glassOrder.map(token => {
+            const opacities = glassOrder.map((token) => {
                 const val = theme.colors[token as keyof typeof theme.colors] as string;
                 const match = val.match(/rgba\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)\)/);
                 return match ? parseFloat(match[1]) : 0;
@@ -145,8 +190,8 @@ describe('Theme tokens', () => {
     describe('animation springs', () => {
         it('should have all spring presets', () => {
             expect(theme.animation.springDefault).toBeDefined();
-            expect(theme.animation.springDefault.damping).toBe(22);
-            expect(theme.animation.springDefault.stiffness).toBe(220);
+            expect(theme.animation.springDefault.damping).toBe(30);
+            expect(theme.animation.springDefault.stiffness).toBe(200);
 
             expect(theme.animation.springSnappy).toBeDefined();
             expect(theme.animation.springGentle).toBeDefined();
@@ -184,12 +229,7 @@ describe('Hardcoded color detection', () => {
     const srcDir = path.resolve(__dirname, '../../');
 
     // Files that ARE allowed to contain hardcoded colors
-    const allowlistedFiles = [
-        'theme.ts',
-        'alignmentScores.ts',
-        'index.ts',
-        'LibraryScreen.tsx',
-    ];
+    const allowlistedFiles = ['theme.ts', 'alignmentScores.ts', 'index.ts'];
 
     // Directories to skip entirely
     const skipDirs = ['__tests__'];
@@ -263,7 +303,7 @@ describe('Hardcoded color detection', () => {
         const MAX_ALLOWED = 0;
         if (violations.length > MAX_ALLOWED) {
             console.warn(`\nFound ${violations.length} hardcoded color violations (max allowed: ${MAX_ALLOWED}):\n`);
-            violations.slice(0, 20).forEach(v => {
+            violations.slice(0, 20).forEach((v) => {
                 console.warn(`  ${v}`);
             });
             if (violations.length > 20) {
@@ -271,7 +311,9 @@ describe('Hardcoded color detection', () => {
             }
             throw new Error(`Too many hardcoded colors: ${violations.length} > ${MAX_ALLOWED}`);
         } else if (violations.length > 0) {
-            console.warn(`\nFound ${violations.length} hardcoded color violations (threshold: ${MAX_ALLOWED}). Fix these to reach 0.`);
+            console.warn(
+                `\nFound ${violations.length} hardcoded color violations (threshold: ${MAX_ALLOWED}). Fix these to reach 0.`,
+            );
         }
     });
 });
