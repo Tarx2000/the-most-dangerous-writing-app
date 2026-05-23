@@ -41,7 +41,7 @@ This includes: `#FFF`, `#fff`, `#000`, `rgba(...)` values — ALL must be theme 
 - **Danger scale**: `dangerSubtle` (0.06) → `dangerLight` (0.08) → `dangerTint` (0.1) → `dangerFill` (0.15) → `dangerBorderStrong` (0.3) → `dangerFillStrong` (0.3) → `dangerOverlayLight` (0.45)
 - **Blood vignette scale**: `bloodDark` (#4A0000) → `bloodMedium` (#7A0000) → `bloodGlow` (rgba(74, 0, 0, 0.6))
 - **Glass scale**: `glassBackground` → `glassSurface` → `glassSurfaceMedium` → `glassBorder` → `glassBorderSubtle` → `glassBorderMedium` → `glassHighlight`
-- **Surface scale**: `background` (#000) → `surfaceDark` (#0A0A0A) → `surfaceRaised` (#1A1A1A) → `surfaceMedium` (#111) → `surfaceLight` (#222)
+- **Surface scale**: `background` (#000) → `surfaceDark` (#0A0A0A) → `surfaceRaised` (#1A1A1A) → `surfaceMedium` (#111) → `surfaceLight` (#222) → `surfaceCard` (#161616)
 - **Animation springs**: `theme.animation.springDefault` / `springSnappy` / `springGentle` / `springLight`
 
 ## Liquid Glass UI
