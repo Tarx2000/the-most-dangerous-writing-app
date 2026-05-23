@@ -8,6 +8,7 @@ export type RootStackParamList = {
         personId: string | null;
         isQuickNote?: boolean;
         isTweet?: boolean;
+        buttonLayout?: { x: number; y: number; width: number; height: number };
     };
     Library: undefined;
     VisionBoard: undefined;
@@ -15,11 +16,13 @@ export type RootStackParamList = {
     AlignmentWriting: {
         alignmentScore: number;
         timeIndex: number;
+        buttonLayout?: { x: number; y: number; width: number; height: number };
     };
     /** Vlog recording screen — receives timeIndex for timer duration */
     VlogRecording: {
         timeIndex: number;
         isQuickVideo?: boolean;
+        buttonLayout?: { x: number; y: number; width: number; height: number };
     };
     /** Post-writing AI review screen — enriches a saved note with AI title, summary, grammar */
     PostWriting: {

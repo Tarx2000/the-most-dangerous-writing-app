@@ -11,13 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    withTiming,
-    runOnJS,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
 
 const DISMISS_THRESHOLD = 80;
@@ -58,94 +52,128 @@ export interface BaseModalProps {
  * Content (children) is rendered below the drag handle. Each feature modal
  * only provides its own content — never re-implements the shell.
  */
-export const BaseModal: React.FC<BaseModalProps> = React.memo(({
-    visible,
-    onClose,
-    children,
-    title,
-    height,
-    showHandle = true,
-    showScrim = true,
-    setHomeScrollEnabled,
-    keyboardAvoiding = true,
-}) => {
-    const { height: SCREEN_HEIGHT } = useWindowDimensions();
-    const insets = useSafeAreaInsets();
-    const resolvedHeight = height ?? SCREEN_HEIGHT * 0.88;
+export const BaseModal: React.FC<BaseModalProps> = React.memo(
+    ({
+        visible,
+        onClose,
+        children,
+        title,
+        height,
+        showHandle = true,
+        showScrim = true,
+        setHomeScrollEnabled,
+        keyboardAvoiding = true,
+    }) => {
+        const { height: SCREEN_HEIGHT } = useWindowDimensions();
+        const insets = useSafeAreaInsets();
+        const resolvedHeight = height ?? SCREEN_HEIGHT * 0.88;
 
-    const translateY = useSharedValue(SCREEN_HEIGHT);
-    const overlayOpacity = useSharedValue(0);
+        const translateY = useSharedValue(SCREEN_HEIGHT);
+        const overlayOpacity = useSharedValue(0);
 
-    /* ── Exit animation: slide down, then notify parent ── */
-    const handleClose = useCallback(() => {
-        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
-        overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
-            runOnJS(onClose)();
-            if (setHomeScrollEnabled) runOnJS(setHomeScrollEnabled)(true);
-        });
-    }, [onClose, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
-
-    /* ── Entry animation ── */
-    useEffect(() => {
-        if (visible) {
-            setHomeScrollEnabled?.(false);
-            translateY.value = SCREEN_HEIGHT;
-            overlayOpacity.value = 0;
-
-            translateY.value = withSpring(0, {
-                damping: 22,
-                stiffness: 220,
-                mass: 0.8,
+        /* ── Exit animation: slide down, then notify parent ── */
+        const handleClose = useCallback(() => {
+            translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+            overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
+                runOnJS(onClose)();
+                if (setHomeScrollEnabled) runOnJS(setHomeScrollEnabled)(true);
             });
-            overlayOpacity.value = withTiming(1, { duration: 300 });
-        }
-    }, [visible, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
+        }, [onClose, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
-    /* ── Pan gesture: only activates on downward pull > 20px ── */
-    const panGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 20])
-        .onUpdate((e) => {
-            if (e.translationY > 0) {
-                translateY.value = e.translationY;
-                const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
-                overlayOpacity.value = 1 - progress;
+        /* ── Entry animation ── */
+        useEffect(() => {
+            if (visible) {
+                setHomeScrollEnabled?.(false);
+                translateY.value = SCREEN_HEIGHT;
+                overlayOpacity.value = 0;
+
+                translateY.value = withSpring(0, {
+                    damping: 22,
+                    stiffness: 220,
+                    mass: 0.8,
+                });
+                overlayOpacity.value = withTiming(1, { duration: 300 });
             }
-        })
-        .onEnd((e) => {
-            if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
-                runOnJS(handleClose)();
-            } else {
-                translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
-                overlayOpacity.value = withTiming(1, { duration: 150 });
-            }
-        }), [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
+        }, [visible, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-        height: resolvedHeight,
-    }));
+        /* ── Pan gesture: only activates on downward pull > 20px ── */
+        const panGesture = useMemo(
+            () =>
+                Gesture.Pan()
+                    .activeOffsetY([-10000, 20])
+                    .onUpdate((e) => {
+                        if (e.translationY > 0) {
+                            translateY.value = e.translationY;
+                            const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
+                            overlayOpacity.value = 1 - progress;
+                        }
+                    })
+                    .onEnd((e) => {
+                        if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
+                            runOnJS(handleClose)();
+                        } else {
+                            translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
+                            overlayOpacity.value = withTiming(1, { duration: 150 });
+                        }
+                    }),
+            [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT],
+        );
 
-    const overlayStyle = useAnimatedStyle(() => ({
-        opacity: overlayOpacity.value,
-    }));
+        const animatedStyle = useAnimatedStyle(() => ({
+            transform: [{ translateY: translateY.value }],
+            height: resolvedHeight,
+        }));
 
-    if (!visible) return null;
+        const overlayStyle = useAnimatedStyle(() => ({
+            opacity: overlayOpacity.value,
+        }));
 
-    return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                {showScrim && (
-                    <TouchableWithoutFeedback onPress={handleClose}>
-                        <Animated.View style={[styles.scrim, overlayStyle]} />
-                    </TouchableWithoutFeedback>
-                )}
+        if (!visible) return null;
 
-                {keyboardAvoiding ? (
-                    <KeyboardAvoidingView
-                        style={StyleSheet.absoluteFill}
-                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                        pointerEvents="box-none"
-                    >
+        return (
+            <Modal
+                visible={visible}
+                transparent
+                animationType="none"
+                onRequestClose={handleClose}
+                statusBarTranslucent
+                navigationBarTranslucent
+            >
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                    {showScrim && (
+                        <TouchableWithoutFeedback onPress={handleClose}>
+                            <Animated.View style={[styles.scrim, overlayStyle]} />
+                        </TouchableWithoutFeedback>
+                    )}
+
+                    {keyboardAvoiding ? (
+                        <KeyboardAvoidingView
+                            style={StyleSheet.absoluteFill}
+                            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                            pointerEvents="box-none"
+                        >
+                            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                                <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
+                                    {showHandle && (
+                                        <GestureDetector gesture={panGesture}>
+                                            <View style={styles.dragZone}>
+                                                <View style={styles.handlePill} />
+                                                {title && <Text style={styles.sheetTitle}>{title}</Text>}
+                                            </View>
+                                        </GestureDetector>
+                                    )}
+
+                                    {/*
+                                  Added +20 padding to compensate for the bottom: -20 offset of styles.sheetAbsolute,
+                                  which hides the bottom border off-screen. insets.bottom handles safe area above the translucent nav bar.
+                                */}
+                                    <View style={[styles.contentArea, { paddingBottom: insets.bottom + 20 + 10 }]}>
+                                        {children}
+                                    </View>
+                                </Animated.View>
+                            </View>
+                        </KeyboardAvoidingView>
+                    ) : (
                         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
                             <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
                                 {showHandle && (
@@ -157,34 +185,21 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(({
                                     </GestureDetector>
                                 )}
 
-                                <View style={[styles.contentArea, { paddingBottom: insets.bottom + 10 }]}>
+                                {/*
+                              Added +20 padding to compensate for the bottom: -20 offset of styles.sheetAbsolute,
+                              which hides the bottom border off-screen.
+                            */}
+                                <View style={[styles.contentArea, { paddingBottom: insets.bottom + 20 + 10 }]}>
                                     {children}
                                 </View>
                             </Animated.View>
                         </View>
-                    </KeyboardAvoidingView>
-                ) : (
-                    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-                        <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
-                            {showHandle && (
-                                <GestureDetector gesture={panGesture}>
-                                    <View style={styles.dragZone}>
-                                        <View style={styles.handlePill} />
-                                        {title && <Text style={styles.sheetTitle}>{title}</Text>}
-                                    </View>
-                                </GestureDetector>
-                            )}
-
-                            <View style={[styles.contentArea, { paddingBottom: insets.bottom + 10 }]}>
-                                {children}
-                            </View>
-                        </Animated.View>
-                    </View>
-                )}
-            </GestureHandlerRootView>
-        </Modal>
-    );
-});
+                    )}
+                </GestureHandlerRootView>
+            </Modal>
+        );
+    },
+);
 
 /* ── Styles ──────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({
@@ -196,8 +211,10 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.surfaceDark,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: theme.colors.glassBorderMedium,
+        // Using a full border rather than borderTopWidth to fix Android border corner rendering issues.
+        // The side and bottom borders are hidden off-screen using the offsets in sheetAbsolute.
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorderMedium,
         overflow: 'hidden',
     },
     dragZone: {
@@ -222,9 +239,10 @@ const styles = StyleSheet.create({
     },
     sheetAbsolute: {
         position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
+        // Positioned 20px below screen bottom and 1px off-screen on left/right to hide borders.
+        bottom: -20,
+        left: -1,
+        right: -1,
     },
     contentArea: {
         flex: 1,

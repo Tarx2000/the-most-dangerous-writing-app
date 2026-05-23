@@ -67,8 +67,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      */
     const [currentPage, setCurrentPage] = useState(0);
 
-    const { lastReflectionDate, lockTimeoutMins } = usePreferences();
-    const security = useSecurity(lockTimeoutMins);
+    const { lastReflectionDate } = usePreferences();
+    const security = useSecurity();
     const { enqueueNote, isNoteActive } = useAiQueueContext();
 
     const {

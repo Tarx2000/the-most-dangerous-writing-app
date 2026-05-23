@@ -60,6 +60,11 @@ export const theme = {
         dangerGradientEnd: 'rgba(255, 42, 42, 0.45)',
         dangerPressed: 'rgba(255, 42, 42, 0.7)',
 
+        // Organic blood vignette colors
+        bloodDark: '#4A0000',
+        bloodMedium: '#7A0000',
+        bloodGlow: 'rgba(74, 0, 0, 0.6)',
+
         // Deep Glassmorphism Containers
         glassBackground: 'rgba(255, 255, 255, 0.05)',
         glassBorder: 'rgba(255, 255, 255, 0.1)',
@@ -78,6 +83,8 @@ export const theme = {
         surfaceMedium: '#111',
         surfaceLight: '#222',
         surfaceRaised: '#1A1A1A',
+        // Dark grey opaque background used for note card saves
+        surfaceCard: '#161616',
 
         // Card & Modal containers
         cardBackground: 'rgba(255, 255, 255, 0.06)',

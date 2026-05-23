@@ -31,18 +31,12 @@ import {
     Text,
     useWindowDimensions,
     TouchableWithoutFeedback,
-    ScrollView
+    ScrollView,
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    withTiming,
-    runOnJS,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { theme } from '@/styles/theme';
@@ -85,164 +79,182 @@ interface ActionSheetProps {
     onToggleFavorite?: (id: string) => void;
 }
 
-export const ActionSheet: React.FC<ActionSheetProps> = React.memo(({
-    visible,
-    title,
-    options,
-    activeId,
-    onSelect,
-    onClose,
-    onToggleFavorite,
-}) => {
-    const { height: SCREEN_HEIGHT } = useWindowDimensions();
-    const insets = useSafeAreaInsets();
-    const translateY = useSharedValue(SCREEN_HEIGHT);
-    const overlayOpacity = useSharedValue(0);
+export const ActionSheet: React.FC<ActionSheetProps> = React.memo(
+    ({ visible, title, options, activeId, onSelect, onClose, onToggleFavorite }) => {
+        const { height: SCREEN_HEIGHT } = useWindowDimensions();
+        const insets = useSafeAreaInsets();
+        const translateY = useSharedValue(SCREEN_HEIGHT);
+        const overlayOpacity = useSharedValue(0);
 
-    /* ── Close animation ── */
-    const handleClose = useCallback(() => {
-        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
-        overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
-            runOnJS(onClose)();
-        });
-    }, [onClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
-
-    /* ── Open animation ── */
-    useEffect(() => {
-        if (visible) {
-            translateY.value = SCREEN_HEIGHT;
-            overlayOpacity.value = 0;
-
-            translateY.value = withSpring(0, {
-                damping: 22,
-                stiffness: 220,
-                mass: 0.8,
+        /* ── Close animation ── */
+        const handleClose = useCallback(() => {
+            translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+            overlayOpacity.value = withTiming(0, { duration: 300 }, () => {
+                runOnJS(onClose)();
             });
-            overlayOpacity.value = withTiming(1, { duration: 300 });
-        }
-    }, [visible, translateY, overlayOpacity, SCREEN_HEIGHT]);
+        }, [onClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
-    /* ── Swipe-to-dismiss gesture on the handle zone ── */
-    const panGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-10000, 15])
-        .onUpdate((e) => {
-            if (e.translationY > 0) {
-                translateY.value = e.translationY;
-                const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
-                overlayOpacity.value = 1 - progress;
+        /* ── Open animation ── */
+        useEffect(() => {
+            if (visible) {
+                translateY.value = SCREEN_HEIGHT;
+                overlayOpacity.value = 0;
+
+                translateY.value = withSpring(0, {
+                    damping: 22,
+                    stiffness: 220,
+                    mass: 0.8,
+                });
+                overlayOpacity.value = withTiming(1, { duration: 300 });
             }
-        })
-        .onEnd((e) => {
-            if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
-                runOnJS(handleClose)();
-            } else {
-                translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
-                overlayOpacity.value = withTiming(1, { duration: 150 });
-            }
-        }), [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT]);
+        }, [visible, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-    }));
+        /* ── Swipe-to-dismiss gesture on the handle zone ── */
+        const panGesture = useMemo(
+            () =>
+                Gesture.Pan()
+                    .activeOffsetY([-10000, 15])
+                    .onUpdate((e) => {
+                        if (e.translationY > 0) {
+                            translateY.value = e.translationY;
+                            const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
+                            overlayOpacity.value = 1 - progress;
+                        }
+                    })
+                    .onEnd((e) => {
+                        if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
+                            runOnJS(handleClose)();
+                        } else {
+                            translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
+                            overlayOpacity.value = withTiming(1, { duration: 150 });
+                        }
+                    }),
+            [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT],
+        );
 
-    const overlayStyle = useAnimatedStyle(() => ({
-        opacity: overlayOpacity.value,
-    }));
+        const animatedStyle = useAnimatedStyle(() => ({
+            transform: [{ translateY: translateY.value }],
+        }));
 
-    /* ── Option press handler with haptic ── */
-    const handleOptionPress = useCallback((id: string) => {
-        vibrate(10);
-        onSelect(id);
-    }, [onSelect]);
+        const overlayStyle = useAnimatedStyle(() => ({
+            opacity: overlayOpacity.value,
+        }));
 
-    if (!visible) return null;
+        /* ── Option press handler with haptic ── */
+        const handleOptionPress = useCallback(
+            (id: string) => {
+                vibrate(10);
+                onSelect(id);
+            },
+            [onSelect],
+        );
 
-    return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                {/* Backdrop scrim */}
-                <TouchableWithoutFeedback onPress={handleClose}>
-                    <Animated.View style={[styles.scrim, overlayStyle]} />
-                </TouchableWithoutFeedback>
+        if (!visible) return null;
 
-                <View style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]} pointerEvents="box-none">
-                    <Animated.View style={[styles.sheet, animatedStyle]}>
-                        {/* Drag handle zone */}
-                        <GestureDetector gesture={panGesture}>
-                            <View style={styles.dragZone}>
-                                <View style={styles.handlePill} />
-                                <Text style={styles.sheetTitle}>{title}</Text>
-                            </View>
-                        </GestureDetector>
+        return (
+            <Modal
+                visible={visible}
+                transparent
+                animationType="none"
+                onRequestClose={handleClose}
+                statusBarTranslucent
+                navigationBarTranslucent
+            >
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                    {/* Backdrop scrim */}
+                    <TouchableWithoutFeedback onPress={handleClose}>
+                        <Animated.View style={[styles.scrim, overlayStyle]} />
+                    </TouchableWithoutFeedback>
 
-                        {/* Options list */}
-                        <ScrollView
-                            style={styles.optionsList}
-                            contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-                            showsVerticalScrollIndicator={false}
-                            bounces={false}
-                        >
-                            {options.map((opt) => {
-                                const isActive = opt.id === activeId;
-                                return (
-                                    <View key={opt.id} style={styles.optionRowWrapper}>
-                                        {onToggleFavorite && (
-                                            <Pressable
-                                                style={styles.starBtn}
-                                                onPress={() => {
-                                                    vibrate(5);
-                                                    onToggleFavorite(opt.id);
-                                                }}
-                                            >
-                                                <MaterialCommunityIcons
-                                                    name={opt.isFavorite ? 'star' : 'star-outline'}
-                                                    size={20}
-                                                    color={opt.isFavorite ? theme.colors.primaryAction : theme.colors.glassHighlight}
-                                                />
-                                            </Pressable>
-                                        )}
-                                        <View style={styles.optionRowFlex}>
-                                            <AnimatedScaleButton
-                                                style={[
-                                                    styles.optionRow,
-                                                    isActive && styles.optionRowActive,
-                                                    onToggleFavorite && styles.optionRowWithStar,
-                                                ]}
-                                                onPress={() => handleOptionPress(opt.id)}
-                                            >
-                                                {opt.icon && (
+                    <View style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]} pointerEvents="box-none">
+                        <Animated.View style={[styles.sheet, animatedStyle]}>
+                            {/* Drag handle zone */}
+                            <GestureDetector gesture={panGesture}>
+                                <View style={styles.dragZone}>
+                                    <View style={styles.handlePill} />
+                                    <Text style={styles.sheetTitle}>{title}</Text>
+                                </View>
+                            </GestureDetector>
+
+                            {/* Options list */}
+                            <ScrollView
+                                style={styles.optionsList}
+                                contentContainerStyle={{ paddingBottom: insets.bottom + 20 + 16 }}
+                                showsVerticalScrollIndicator={false}
+                                bounces={false}
+                            >
+                                {options.map((opt) => {
+                                    const isActive = opt.id === activeId;
+                                    return (
+                                        <View key={opt.id} style={styles.optionRowWrapper}>
+                                            {onToggleFavorite && (
+                                                <Pressable
+                                                    style={styles.starBtn}
+                                                    onPress={() => {
+                                                        vibrate(5);
+                                                        onToggleFavorite(opt.id);
+                                                    }}
+                                                >
                                                     <MaterialCommunityIcons
-                                                        name={opt.icon}
-                                                        size={22}
-                                                        color={isActive ? theme.colors.primaryAction : theme.colors.textSecondary}
-                                                    />
-                                                )}
-                                                <Text style={[
-                                                    styles.optionLabel,
-                                                    isActive && styles.optionLabelActive,
-                                                ]}>
-                                                    {opt.label}
-                                                </Text>
-                                                {isActive && (
-                                                    <MaterialCommunityIcons
-                                                        name="check"
+                                                        name={opt.isFavorite ? 'star' : 'star-outline'}
                                                         size={20}
-                                                        color={theme.colors.primaryAction}
-                                                        style={styles.checkIcon}
+                                                        color={
+                                                            opt.isFavorite
+                                                                ? theme.colors.primaryAction
+                                                                : theme.colors.glassHighlight
+                                                        }
                                                     />
-                                                )}
-                                            </AnimatedScaleButton>
+                                                </Pressable>
+                                            )}
+                                            <View style={styles.optionRowFlex}>
+                                                <AnimatedScaleButton
+                                                    style={[
+                                                        styles.optionRow,
+                                                        isActive && styles.optionRowActive,
+                                                        onToggleFavorite && styles.optionRowWithStar,
+                                                    ]}
+                                                    onPress={() => handleOptionPress(opt.id)}
+                                                >
+                                                    {opt.icon && (
+                                                        <MaterialCommunityIcons
+                                                            name={opt.icon}
+                                                            size={22}
+                                                            color={
+                                                                isActive
+                                                                    ? theme.colors.primaryAction
+                                                                    : theme.colors.textSecondary
+                                                            }
+                                                        />
+                                                    )}
+                                                    <Text
+                                                        style={[
+                                                            styles.optionLabel,
+                                                            isActive && styles.optionLabelActive,
+                                                        ]}
+                                                    >
+                                                        {opt.label}
+                                                    </Text>
+                                                    {isActive && (
+                                                        <MaterialCommunityIcons
+                                                            name="check"
+                                                            size={20}
+                                                            color={theme.colors.primaryAction}
+                                                            style={styles.checkIcon}
+                                                        />
+                                                    )}
+                                                </AnimatedScaleButton>
+                                            </View>
                                         </View>
-                                    </View>
-                                );
-                            })}
-                        </ScrollView>
-                    </Animated.View>
-                </View>
-            </GestureHandlerRootView>
-        </Modal>
-    );
-});
+                                    );
+                                })}
+                            </ScrollView>
+                        </Animated.View>
+                    </View>
+                </GestureHandlerRootView>
+            </Modal>
+        );
+    },
+);
 
 /* ── Styles ────────────────────────────────────────────────────────────── */
 
@@ -257,10 +269,17 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.surfaceDark,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: theme.colors.glassBorderMedium,
+        // Using a full border rather than borderTopWidth to fix Android border corner rendering issues.
+        // The side and bottom borders are hidden off-screen using the offsets below.
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorderMedium,
         overflow: 'hidden',
         maxHeight: '75%',
+        position: 'absolute',
+        // Positioned 20px below screen bottom and 1px off-screen on left/right to hide borders.
+        bottom: -20,
+        left: -1,
+        right: -1,
     },
     /** Swipeable handle zone at the top */
     dragZone: {
@@ -340,4 +359,3 @@ const styles = StyleSheet.create({
         marginLeft: 'auto',
     },
 });
-

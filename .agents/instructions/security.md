@@ -1,7 +1,11 @@
 # Domain Instruction: Security & Biometric Authentication
 
 ## Scope
-`src/hooks/useSecurity.ts`, any lock/unlock screen, or sensitive data access.
+`src/lib/hooks/useSecurity.ts`, `SecurityProvider` wrapping the app root, any lock/unlock screen, or sensitive data access.
+
+## Architecture
+- `SecurityProvider` (Context Provider): Manages the global biometric & PIN state, inactivity timers, and background grace period. Located at the root of the app.
+- `useSecurity` (Hook): Context consumer hook used by screens (Start, Library, Feed, etc.) to share the unified unlock state.
 
 ## 3-Tier Biometric Lock
 The app uses a graduated security model:

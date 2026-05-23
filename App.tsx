@@ -11,10 +11,12 @@ import { VlogRecordingScreen } from './src/screens/VlogRecordingScreen';
 import { SandboxScreen } from './src/screens/SandboxScreen';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StorageProvider, useAiConfig } from '@/lib/hooks/useStorage';
 import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
 import { CompressionQueueProvider } from '@/lib/hooks/useCompressionQueueProvider';
 import { PinProvider } from '@/lib/hooks/usePinProvider';
+import { SecurityProvider } from '@/lib/hooks/useSecurity';
 import { PinPadModal } from '@/components/ui/PinPadModal';
 import { ApiKeySetupModal } from '@/components/features/settings/ApiKeySetupModal';
 import { ErrorBoundary, withErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -100,13 +102,37 @@ function AiConfigGate() {
                         contentStyle: { backgroundColor: theme.colors.background },
                     }}
                 >
-                    <Stack.Screen name="Home" component={withErrorBoundary(HomeScreen)} />
-                    <Stack.Screen name="Writing" component={withErrorBoundary(WritingScreen)} />
-                    <Stack.Screen name="PostWriting" component={withErrorBoundary(PostWritingScreen)} />
-                    <Stack.Screen name="VisionBoard" component={withErrorBoundary(VisionBoardScreen)} />
-                    <Stack.Screen name="AlignmentWriting" component={withErrorBoundary(AlignmentWritingScreen)} />
-                    <Stack.Screen name="VlogRecording" component={withErrorBoundary(VlogRecordingScreen)} />
-                    <Stack.Screen name="Sandbox" component={withErrorBoundary(SandboxScreen)} />
+                    <Stack.Screen name="Home" component={WrappedHomeScreen} />
+                    <Stack.Screen
+                        name="Writing"
+                        component={WrappedWritingScreen}
+                        options={{
+                            animation: 'none',
+                            presentation: 'transparentModal',
+                            contentStyle: { backgroundColor: 'transparent' },
+                        }}
+                    />
+                    <Stack.Screen
+                        name="PostWriting"
+                        component={WrappedPostWritingScreen}
+                        options={{
+                            animation: 'none',
+                            presentation: 'transparentModal',
+                            contentStyle: { backgroundColor: 'transparent' },
+                        }}
+                    />
+                    <Stack.Screen name="VisionBoard" component={WrappedVisionBoardScreen} />
+                    <Stack.Screen
+                        name="AlignmentWriting"
+                        component={WrappedAlignmentWritingScreen}
+                        options={{
+                            animation: 'none',
+                            presentation: 'transparentModal',
+                            contentStyle: { backgroundColor: 'transparent' },
+                        }}
+                    />
+                    <Stack.Screen name="VlogRecording" component={WrappedVlogRecordingScreen} />
+                    <Stack.Screen name="Sandbox" component={WrappedSandboxScreen} />
                 </Stack.Navigator>
             </NavigationContainer>
             <PinPadModal />
@@ -127,6 +153,14 @@ function AiConfigGate() {
 }
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const WrappedHomeScreen = withErrorBoundary(HomeScreen);
+const WrappedWritingScreen = withErrorBoundary(WritingScreen);
+const WrappedPostWritingScreen = withErrorBoundary(PostWritingScreen);
+const WrappedVisionBoardScreen = withErrorBoundary(VisionBoardScreen);
+const WrappedAlignmentWritingScreen = withErrorBoundary(AlignmentWritingScreen);
+const WrappedVlogRecordingScreen = withErrorBoundary(VlogRecordingScreen);
+const WrappedSandboxScreen = withErrorBoundary(SandboxScreen);
 
 function AppContent() {
     const [fontsLoaded] = useFonts({
@@ -161,15 +195,19 @@ function AppContent() {
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
-            <StorageProvider>
-                <PinProvider>
-                    <AiQueueProvider>
-                        <CompressionQueueProvider>
-                            <AiConfigGate />
-                        </CompressionQueueProvider>
-                    </AiQueueProvider>
-                </PinProvider>
-            </StorageProvider>
+            <SafeAreaProvider>
+                <StorageProvider>
+                    <PinProvider>
+                        <SecurityProvider>
+                            <AiQueueProvider>
+                                <CompressionQueueProvider>
+                                    <AiConfigGate />
+                                </CompressionQueueProvider>
+                            </AiQueueProvider>
+                        </SecurityProvider>
+                    </PinProvider>
+                </StorageProvider>
+            </SafeAreaProvider>
         </GestureHandlerRootView>
     );
 }

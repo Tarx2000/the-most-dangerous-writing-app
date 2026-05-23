@@ -549,7 +549,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     const [sortBy, setSortBy] = useState<SortOption>('newest');
     const [showSortModal, setShowSortModal] = useState(false);
 
-    const { fontIndex, lockTimeoutMins } = usePreferences();
+    const { fontIndex } = usePreferences();
     const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
 
     const [viewNoteModal, setViewNoteModal] = useState<SavedNote | null>(null);
@@ -558,7 +558,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
 
     const { savedNotes, deleteNote } = useNotes();
     const { persons } = usePersons();
-    const security = useSecurity(lockTimeoutMins);
+    const security = useSecurity();
 
     // Dynamic styles for the morphing lock/unlock button in the header
     const lockButtonAnimatedStyle = useAnimatedStyle(() => {

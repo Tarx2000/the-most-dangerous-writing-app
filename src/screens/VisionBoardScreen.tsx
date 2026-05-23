@@ -37,7 +37,7 @@ const TabPill: React.FC<{
 
     useEffect(() => {
         progress.value = withTiming(isActive ? 1 : 0, { duration: 250 });
-    }, [isActive]);
+    }, [isActive, progress]);
 
     const animatedStyle = useAnimatedStyle(() => {
         const backgroundColor = interpolateColor(

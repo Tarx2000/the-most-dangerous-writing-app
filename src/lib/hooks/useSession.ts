@@ -281,7 +281,7 @@ export function useSession(
                 recountWords(newText);
             }, 400);
         },
-        [idleTimeMsShared, recountWords],
+        [idleTimeMsShared, recountWords, difficultyLimit],
     );
 
     const resumeWritingFreely = useCallback(

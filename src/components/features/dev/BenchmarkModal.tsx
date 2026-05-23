@@ -205,7 +205,14 @@ export const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ visible, onClose
     }, [results, currentPhase]);
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <Modal
+            visible={visible}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={onClose}
+            statusBarTranslucent
+            navigationBarTranslucent
+        >
             <View style={styles.container}>
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>Parallel AI Benchmark</Text>

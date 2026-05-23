@@ -13,6 +13,7 @@ import {
 import { vibrate } from '@/lib/haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -34,6 +35,7 @@ interface Props {
 
 export const NoteViewerModal: React.FC<Props> = React.memo(
     ({ note, visible, onClose, onDelete, isNoteActive, onRegenerateAi }) => {
+        const insets = useSafeAreaInsets();
         const { height: SCREEN_HEIGHT } = useWindowDimensions();
         const { fontIndex, sizeIndex } = usePreferences();
         const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
@@ -117,12 +119,23 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
 
         return (
             <>
-                <Modal visible={visible} animationType="none" transparent={true} onRequestClose={handleClose}>
+                <Modal
+                    visible={visible}
+                    animationType="none"
+                    transparent={true}
+                    onRequestClose={handleClose}
+                    statusBarTranslucent
+                    navigationBarTranslucent
+                >
                     <GestureHandlerRootView style={{ flex: 1 }}>
                         <Animated.View style={[styles.cardPopupBackdrop, backdropAnimatedStyle]}>
                             <Pressable style={StyleSheet.absoluteFillObject} onPress={handleClose} />
                             <Animated.View
-                                style={[styles.cardPopupContainer, { height: SCREEN_HEIGHT * 0.88 }, animatedCardStyle]}
+                                style={[
+                                    styles.cardPopupContainer,
+                                    { height: SCREEN_HEIGHT * 0.88 + 20 },
+                                    animatedCardStyle,
+                                ]}
                             >
                                 <View style={styles.cardPopupTint} />
 
@@ -230,7 +243,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                 </ScrollView>
 
                                 {/* Footer */}
-                                <View style={styles.premiumNoteFooter}>
+                                <View style={[styles.premiumNoteFooter, { paddingBottom: insets.bottom + 20 + 16 }]}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                                         <AnimatedScaleButton
                                             style={styles.premiumNoteDeleteBtn}
@@ -296,9 +309,16 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     cardPopupContainer: {
-        width: '100%',
+        position: 'absolute',
+        // Positioned 20px below screen bottom and 1px off-screen on left/right to hide borders.
+        bottom: -20,
+        left: -1,
+        right: -1,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
+        // Using a full border rather than borderTopWidth to fix Android border corner rendering issues.
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorderMedium,
         overflow: 'hidden',
     },
     cardPopupTint: {

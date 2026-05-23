@@ -14,10 +14,29 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { StyleSheet, Platform, ActivityIndicator, View, Text, ScrollView, TextInput } from 'react-native';
+import {
+    StyleSheet,
+    Platform,
+    ActivityIndicator,
+    View,
+    Text,
+    ScrollView,
+    TextInput,
+    useWindowDimensions,
+    DeviceEventEmitter,
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withTiming,
+    withSequence,
+    Easing,
+    runOnJS,
+} from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
+import { StackActions } from '@react-navigation/native';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
@@ -165,6 +184,77 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         vibrate(20);
     }, []);
 
+    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+
+    // ── Save Fly-Away Animation Shared Values ──
+    const saveTranslateX = useSharedValue(0);
+    const saveScale = useSharedValue(1);
+    const saveOpacity = useSharedValue(1);
+    const saveBorderRadius = useSharedValue(0);
+    const saveBorderWidth = useSharedValue(0);
+    const saveBgColor = useSharedValue('transparent');
+    const saveWidth = useSharedValue(screenWidth);
+    const saveHeight = useSharedValue(screenHeight);
+    const footerOpacity = useSharedValue(1);
+
+    /** Plays the fly-away card animation when leaving the post writing screen */
+    const performSaveFlyAway = useCallback(
+        (onComplete: () => void) => {
+            footerOpacity.value = withTiming(0, { duration: 100 });
+
+            saveBorderRadius.value = withTiming(theme.borderRadius.md, { duration: 250 });
+            saveBorderWidth.value = withTiming(1, { duration: 250 });
+            saveBgColor.value = withTiming(theme.colors.surfaceCard, { duration: 250 }); // solid opaque background
+
+            // Shrink dimensions directly to target 320 x 180 card size
+            saveWidth.value = withTiming(320, {
+                duration: 350,
+                easing: Easing.bezier(0.25, 1, 0.5, 1),
+            });
+            saveHeight.value = withTiming(180, {
+                duration: 350,
+                easing: Easing.bezier(0.25, 1, 0.5, 1),
+            });
+
+            // Scale stays at 1 since we shrink layout dimensions directly
+            saveScale.value = withTiming(1, {
+                duration: 350,
+                easing: Easing.bezier(0.25, 1, 0.5, 1),
+            });
+
+            saveTranslateX.value = withSequence(
+                withTiming(0, { duration: 200 }),
+                withTiming(
+                    screenWidth * 1.3,
+                    {
+                        duration: 400,
+                        easing: Easing.bezier(0.3, 0, 0.8, 0.15),
+                    },
+                    (finished) => {
+                        if (finished) {
+                            runOnJS(onComplete)();
+                        }
+                    },
+                ),
+            );
+
+            saveOpacity.value = withSequence(withTiming(1, { duration: 350 }), withTiming(0, { duration: 250 }));
+        },
+        [
+            screenWidth,
+            screenHeight,
+            footerOpacity,
+            saveBorderRadius,
+            saveBorderWidth,
+            saveBgColor,
+            saveScale,
+            saveTranslateX,
+            saveOpacity,
+            saveWidth,
+            saveHeight,
+        ],
+    );
+
     const handleSaveAndClose = useCallback(async () => {
         if (noteSavedRef.current) return;
         noteSavedRef.current = true;
@@ -172,18 +262,33 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         // Save any text edits (AI results are saved directly by the queue)
         await updateNote(noteId, { text: editableTextRef.current });
 
-        navigation.reset({
-            index: 0,
-            routes: [
-                {
-                    name: 'Home',
-                    params: route.params.streakIncreased
-                        ? { streakIncreased: true, newStreak: route.params.newStreak }
-                        : undefined,
-                },
-            ],
+        performSaveFlyAway(() => {
+            // Emit streak data via event so Home screen picks it up without re-rendering from param changes
+            if (route.params.streakIncreased) {
+                DeviceEventEmitter.emit('streakIncreased', { newStreak: route.params.newStreak });
+            }
+            navigation.dispatch(StackActions.popToTop());
         });
-    }, [noteId, navigation, route.params, updateNote]);
+    }, [noteId, navigation, route.params, updateNote, performSaveFlyAway]);
+
+    const saveAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            width: saveWidth.value,
+            height: saveHeight.value,
+            alignSelf: 'center',
+            transform: [{ translateX: saveTranslateX.value }, { scale: saveScale.value }],
+            opacity: saveOpacity.value,
+            borderRadius: saveBorderRadius.value,
+            borderWidth: saveBorderWidth.value,
+            backgroundColor: saveBgColor.value,
+            borderColor: theme.colors.glassBorder,
+            overflow: 'hidden',
+        };
+    });
+
+    const animatedFooterStyle = useAnimatedStyle(() => ({
+        opacity: footerOpacity.value,
+    }));
 
     /* ── Render ──────────────────────────────────────────────────────── */
 
@@ -196,220 +301,237 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return (
         <View style={styles.container}>
-            <LinearGradient
-                colors={[theme.colors.surfaceDark, theme.colors.background]}
-                style={StyleSheet.absoluteFillObject}
-            />
+            <Animated.View style={[StyleSheet.absoluteFillObject, animatedFooterStyle]}>
+                <LinearGradient
+                    colors={[theme.colors.surfaceDark, theme.colors.background]}
+                    style={StyleSheet.absoluteFillObject}
+                />
+            </Animated.View>
 
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
-                {/* ── Header ──────────────────────────────────────── */}
-                <View style={styles.header}>
-                    <View style={styles.headerBadge}>
-                        <MaterialCommunityIcons name="creation" size={16} color={theme.colors.primaryAction} />
-                        <Text style={styles.headerBadgeText}>AI Enhanced</Text>
+            <Animated.View style={saveAnimatedStyle}>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {/* ── Header ──────────────────────────────────────── */}
+                    <View style={styles.header}>
+                        <View style={styles.headerBadge}>
+                            <MaterialCommunityIcons name="creation" size={16} color={theme.colors.primaryAction} />
+                            <Text style={styles.headerBadgeText}>AI Enhanced</Text>
+                        </View>
+                        <Text style={styles.headerTitle}>Session Complete</Text>
+                        <Text style={styles.headerMeta}>
+                            {wordCount} words • {note?.dateStr || 'Just now'}
+                        </Text>
                     </View>
-                    <Text style={styles.headerTitle}>Session Complete</Text>
-                    <Text style={styles.headerMeta}>
-                        {wordCount} words • {note?.dateStr || 'Just now'}
-                    </Text>
-                </View>
 
-                {/* ── AI Title ────────────────────────────────────── */}
-                <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionLabel}>
-                        <MaterialCommunityIcons name="format-title" size={14} color={theme.colors.textMuted} /> AI TITLE
-                    </Text>
-                    {!hasAiTitle ? (
-                        queueState.serverOnline === false ? (
-                            <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>
-                                AI Server Unreachable
+                    {/* ── AI Title ────────────────────────────────────── */}
+                    <View style={styles.sectionContainer}>
+                        <Text style={styles.sectionLabel}>
+                            <MaterialCommunityIcons name="format-title" size={14} color={theme.colors.textMuted} /> AI
+                            TITLE
+                        </Text>
+                        {!hasAiTitle ? (
+                            queueState.serverOnline === false ? (
+                                <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>
+                                    AI Server Unreachable
+                                </Text>
+                            ) : isTooShortForAi ? (
+                                <Text
+                                    style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
+                                >
+                                    Short entry — AI title not available
+                                </Text>
+                            ) : !aiProcessing ? (
+                                <AnimatedScaleButton onPress={handleManualGenerate} style={{ paddingVertical: 10 }}>
+                                    <Text style={{ color: theme.colors.primaryAction, fontWeight: '700' }}>
+                                        Enable AI Processing for this entry
+                                    </Text>
+                                </AnimatedScaleButton>
+                            ) : (
+                                <View style={styles.shimmerContainer}>
+                                    <ShimmerLine width="75%" height={24} />
+                                </View>
+                            )
+                        ) : (
+                            <RichText style={styles.aiTitleText} text={note?.aiTitle || 'Untitled Entry'} />
+                        )}
+                    </View>
+
+                    {/* ── AI Summary ──────────────────────────────────── */}
+                    <View style={styles.summaryCard}>
+                        <View style={styles.summaryHeader}>
+                            <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
+                            <Text style={styles.summaryHeaderText}>AI Summary</Text>
+                            {aiProcessing && (
+                                <ActivityIndicator
+                                    size="small"
+                                    color={theme.colors.primaryAction}
+                                    style={{ marginLeft: 'auto' }}
+                                />
+                            )}
+                        </View>
+                        {!hasAiSummary ? (
+                            queueState.serverOnline === false ? (
+                                <Text
+                                    style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
+                                >
+                                    Summary unavailable.
+                                </Text>
+                            ) : isTooShortForAi ? (
+                                <Text
+                                    style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
+                                >
+                                    Short entry — AI summary not available
+                                </Text>
+                            ) : !aiProcessing ? (
+                                <Text
+                                    style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
+                                >
+                                    Tap 'Enable AI Processing' above to generate summary.
+                                </Text>
+                            ) : (
+                                <View style={styles.shimmerContainer}>
+                                    <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
+                                    <ShimmerLine width="80%" style={{ marginBottom: 10 }} />
+                                    <ShimmerLine width="85%" />
+                                </View>
+                            )
+                        ) : (
+                            <View style={styles.bulletsContainer}>
+                                {(note?.aiSummary || []).map((bullet, i) => (
+                                    <View key={i} style={styles.bulletRow}>
+                                        <Text style={styles.bulletDot}>•</Text>
+                                        <RichText style={styles.bulletText} text={bullet} />
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+                    </View>
+
+                    {/* ── Editable Text ───────────────────────────────── */}
+                    <View style={styles.sectionContainer}>
+                        <View style={styles.editHeader}>
+                            <Text style={styles.sectionLabel}>
+                                <MaterialCommunityIcons
+                                    name="pencil-outline"
+                                    size={14}
+                                    color={theme.colors.textMuted}
+                                />{' '}
+                                YOUR ENTRY
                             </Text>
-                        ) : isTooShortForAi ? (
-                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
-                                Short entry — AI title not available
-                            </Text>
-                        ) : !aiProcessing ? (
-                            <AnimatedScaleButton onPress={handleManualGenerate} style={{ paddingVertical: 10 }}>
-                                <Text style={{ color: theme.colors.primaryAction, fontWeight: '700' }}>
-                                    Enable AI Processing for this entry
+                            <AnimatedScaleButton style={styles.editToggle} onPress={() => setIsEditing(!isEditing)}>
+                                <MaterialCommunityIcons
+                                    name={isEditing ? 'check' : 'pencil'}
+                                    size={14}
+                                    color={isEditing ? theme.colors.green : theme.colors.textMuted}
+                                />
+                                <Text style={[styles.editToggleText, isEditing && { color: theme.colors.green }]}>
+                                    {isEditing ? 'Done' : 'Edit'}
+                                </Text>
+                            </AnimatedScaleButton>
+                        </View>
+
+                        {isEditing ? (
+                            <TextInput
+                                key={renderKey}
+                                style={[
+                                    styles.editableTextInput,
+                                    { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
+                                ]}
+                                defaultValue={editableTextRef.current}
+                                onChangeText={(val) => (editableTextRef.current = val)}
+                                multiline
+                                autoFocus
+                                selectionColor={theme.colors.primaryAction}
+                            />
+                        ) : (
+                            <View style={styles.readOnlyTextContainer}>
+                                <RichText
+                                    style={[
+                                        styles.readOnlyText,
+                                        { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
+                                    ]}
+                                    text={editableTextRef.current}
+                                />
+                            </View>
+                        )}
+                    </View>
+
+                    {/* ── Grammar Check (user-triggered only) ─────────── */}
+                    <View style={styles.grammarSection}>
+                        {!grammarChecked ? (
+                            <AnimatedScaleButton
+                                style={[styles.grammarBtn, grammarLoading && styles.grammarBtnLoading]}
+                                onPress={handleGrammarCheck}
+                                disabled={grammarLoading}
+                            >
+                                {grammarLoading ? (
+                                    <ActivityIndicator size="small" color={theme.colors.primaryAction} />
+                                ) : (
+                                    <MaterialCommunityIcons
+                                        name="spellcheck"
+                                        size={20}
+                                        color={theme.colors.primaryAction}
+                                    />
+                                )}
+                                <Text style={styles.grammarBtnText}>
+                                    {grammarLoading ? 'Checking...' : 'Check Grammar & Spelling'}
                                 </Text>
                             </AnimatedScaleButton>
                         ) : (
-                            <View style={styles.shimmerContainer}>
-                                <ShimmerLine width="75%" height={24} />
-                            </View>
-                        )
-                    ) : (
-                        <RichText style={styles.aiTitleText} text={note?.aiTitle || 'Untitled Entry'} />
-                    )}
-                </View>
+                            <View>
+                                <View style={styles.grammarResultHeader}>
+                                    <MaterialCommunityIcons name="spellcheck" size={16} color={theme.colors.green} />
+                                    <Text style={styles.grammarResultTitle}>
+                                        {grammarSuggestions.length === 0
+                                            ? 'No issues found! ✨'
+                                            : `${grammarSuggestions.length} suggestion${grammarSuggestions.length > 1 ? 's' : ''}`}
+                                    </Text>
+                                </View>
 
-                {/* ── AI Summary ──────────────────────────────────── */}
-                <View style={styles.summaryCard}>
-                    <View style={styles.summaryHeader}>
-                        <MaterialCommunityIcons name="brain" size={18} color={theme.colors.primaryAction} />
-                        <Text style={styles.summaryHeaderText}>AI Summary</Text>
-                        {aiProcessing && (
-                            <ActivityIndicator
-                                size="small"
-                                color={theme.colors.primaryAction}
-                                style={{ marginLeft: 'auto' }}
-                            />
+                                {grammarSuggestions.map((s, i) => (
+                                    <AnimatedScaleButton
+                                        key={i}
+                                        style={styles.suggestionCard}
+                                        onPress={() => applySuggestion(s)}
+                                        activeOpacity={0.6}
+                                    >
+                                        <View style={styles.suggestionContent}>
+                                            <View style={styles.suggestionTexts}>
+                                                <Text style={styles.suggestionOriginal}>{s.original}</Text>
+                                                <MaterialCommunityIcons
+                                                    name="arrow-right"
+                                                    size={14}
+                                                    color={theme.colors.textMuted}
+                                                />
+                                                <Text style={styles.suggestionFixed}>{s.suggestion}</Text>
+                                            </View>
+                                            <Text style={styles.suggestionExplanation}>{s.explanation}</Text>
+                                        </View>
+                                        <View style={styles.suggestionApplyBtn}>
+                                            <MaterialCommunityIcons name="check" size={16} color={theme.colors.green} />
+                                        </View>
+                                    </AnimatedScaleButton>
+                                ))}
+                            </View>
                         )}
                     </View>
-                    {!hasAiSummary ? (
-                        queueState.serverOnline === false ? (
-                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
-                                Summary unavailable.
-                            </Text>
-                        ) : isTooShortForAi ? (
-                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
-                                Short entry — AI summary not available
-                            </Text>
-                        ) : !aiProcessing ? (
-                            <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}>
-                                Tap 'Enable AI Processing' above to generate summary.
-                            </Text>
-                        ) : (
-                            <View style={styles.shimmerContainer}>
-                                <ShimmerLine width="90%" style={{ marginBottom: 10 }} />
-                                <ShimmerLine width="80%" style={{ marginBottom: 10 }} />
-                                <ShimmerLine width="85%" />
-                            </View>
-                        )
-                    ) : (
-                        <View style={styles.bulletsContainer}>
-                            {(note?.aiSummary || []).map((bullet, i) => (
-                                <View key={i} style={styles.bulletRow}>
-                                    <Text style={styles.bulletDot}>•</Text>
-                                    <RichText style={styles.bulletText} text={bullet} />
-                                </View>
-                            ))}
-                        </View>
-                    )}
-                </View>
 
-                {/* ── Editable Text ───────────────────────────────── */}
-                <View style={styles.sectionContainer}>
-                    <View style={styles.editHeader}>
-                        <Text style={styles.sectionLabel}>
-                            <MaterialCommunityIcons name="pencil-outline" size={14} color={theme.colors.textMuted} />{' '}
-                            YOUR ENTRY
-                        </Text>
-                        <AnimatedScaleButton style={styles.editToggle} onPress={() => setIsEditing(!isEditing)}>
-                            <MaterialCommunityIcons
-                                name={isEditing ? 'check' : 'pencil'}
-                                size={14}
-                                color={isEditing ? theme.colors.green : theme.colors.textMuted}
-                            />
-                            <Text style={[styles.editToggleText, isEditing && { color: theme.colors.green }]}>
-                                {isEditing ? 'Done' : 'Edit'}
-                            </Text>
-                        </AnimatedScaleButton>
-                    </View>
-
-                    {isEditing ? (
-                        <TextInput
-                            key={renderKey}
-                            style={[
-                                styles.editableTextInput,
-                                { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
-                            ]}
-                            defaultValue={editableTextRef.current}
-                            onChangeText={(val) => (editableTextRef.current = val)}
-                            multiline
-                            autoFocus
-                            selectionColor={theme.colors.primaryAction}
-                        />
-                    ) : (
-                        <View style={styles.readOnlyTextContainer}>
-                            <RichText
-                                style={[
-                                    styles.readOnlyText,
-                                    { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
-                                ]}
-                                text={editableTextRef.current}
-                            />
-                        </View>
-                    )}
-                </View>
-
-                {/* ── Grammar Check (user-triggered only) ─────────── */}
-                <View style={styles.grammarSection}>
-                    {!grammarChecked ? (
-                        <AnimatedScaleButton
-                            style={[styles.grammarBtn, grammarLoading && styles.grammarBtnLoading]}
-                            onPress={handleGrammarCheck}
-                            disabled={grammarLoading}
-                        >
-                            {grammarLoading ? (
-                                <ActivityIndicator size="small" color={theme.colors.primaryAction} />
-                            ) : (
-                                <MaterialCommunityIcons
-                                    name="spellcheck"
-                                    size={20}
-                                    color={theme.colors.primaryAction}
-                                />
-                            )}
-                            <Text style={styles.grammarBtnText}>
-                                {grammarLoading ? 'Checking...' : 'Check Grammar & Spelling'}
-                            </Text>
-                        </AnimatedScaleButton>
-                    ) : (
-                        <View>
-                            <View style={styles.grammarResultHeader}>
-                                <MaterialCommunityIcons name="spellcheck" size={16} color={theme.colors.green} />
-                                <Text style={styles.grammarResultTitle}>
-                                    {grammarSuggestions.length === 0
-                                        ? 'No issues found! ✨'
-                                        : `${grammarSuggestions.length} suggestion${grammarSuggestions.length > 1 ? 's' : ''}`}
-                                </Text>
-                            </View>
-
-                            {grammarSuggestions.map((s, i) => (
-                                <AnimatedScaleButton
-                                    key={i}
-                                    style={styles.suggestionCard}
-                                    onPress={() => applySuggestion(s)}
-                                    activeOpacity={0.6}
-                                >
-                                    <View style={styles.suggestionContent}>
-                                        <View style={styles.suggestionTexts}>
-                                            <Text style={styles.suggestionOriginal}>{s.original}</Text>
-                                            <MaterialCommunityIcons
-                                                name="arrow-right"
-                                                size={14}
-                                                color={theme.colors.textMuted}
-                                            />
-                                            <Text style={styles.suggestionFixed}>{s.suggestion}</Text>
-                                        </View>
-                                        <Text style={styles.suggestionExplanation}>{s.explanation}</Text>
-                                    </View>
-                                    <View style={styles.suggestionApplyBtn}>
-                                        <MaterialCommunityIcons name="check" size={16} color={theme.colors.green} />
-                                    </View>
-                                </AnimatedScaleButton>
-                            ))}
-                        </View>
-                    )}
-                </View>
-
-                {/* Bottom padding */}
-                <View style={{ height: 120 }} />
-            </ScrollView>
+                    {/* Bottom padding */}
+                    <View style={{ height: 120 }} />
+                </ScrollView>
+            </Animated.View>
 
             {/* ── Floating Save Button ────────────────────────────── */}
-            <View style={styles.floatingFooter}>
+            <Animated.View style={[styles.floatingFooter, animatedFooterStyle]}>
                 <AnimatedScaleButton style={styles.saveBtn} onPress={handleSaveAndClose}>
                     <MaterialCommunityIcons name="content-save-check" size={20} color={theme.colors.background} />
                     <Text style={styles.saveBtnText}>Save & Close</Text>
                 </AnimatedScaleButton>
-            </View>
+            </Animated.View>
         </View>
     );
 };
@@ -419,7 +541,9 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background,
+        backgroundColor: 'transparent',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     scrollView: {
         flex: 1,

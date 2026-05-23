@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Pressable,
-    Modal,
-    TouchableWithoutFeedback,
-    useWindowDimensions,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, TouchableWithoutFeedback, useWindowDimensions } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import Animated, {
     useSharedValue,
@@ -18,6 +10,7 @@ import Animated, {
     runOnJS,
 } from 'react-native-reanimated';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { usePinContext, type PinMode } from '@/lib/hooks/usePinProvider';
 import { theme } from '@/styles/theme';
@@ -28,15 +21,20 @@ const DISMISS_THRESHOLD = 80;
 const DISMISS_VELOCITY = 600;
 
 /* ── PIN Rate Limiting Constants ─────────────────────────────────────── */
-const {
-    SECURITY_PIN_KEY,
-    PIN_ATTEMPT_COUNT_KEY,
-    PIN_LOCKOUT_UNTIL_KEY,
-    PIN_MAX_ATTEMPTS,
-    PIN_LOCKOUT_DURATION_MS,
-} = CONFIG;
+const { SECURITY_PIN_KEY, PIN_ATTEMPT_COUNT_KEY, PIN_LOCKOUT_UNTIL_KEY, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_DURATION_MS } =
+    CONFIG;
 
-const DialButton = ({ num, onPress, icon, disabled }: { num?: number; onPress: () => void; icon?: string; disabled?: boolean }) => {
+const DialButton = ({
+    num,
+    onPress,
+    icon,
+    disabled,
+}: {
+    num?: number;
+    onPress: () => void;
+    icon?: string;
+    disabled?: boolean;
+}) => {
     return (
         <Pressable
             onPress={() => {
@@ -48,11 +46,15 @@ const DialButton = ({ num, onPress, icon, disabled }: { num?: number; onPress: (
             style={({ pressed }) => [
                 styles.dialButton,
                 disabled && styles.dialButtonDisabled,
-                pressed && !disabled && { backgroundColor: theme.colors.glassHighlight }
+                pressed && !disabled && { backgroundColor: theme.colors.glassHighlight },
             ]}
         >
             {icon ? (
-                <MaterialCommunityIcons name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']} size={28} color={disabled ? theme.colors.textMuted : theme.colors.textPrimary} />
+                <MaterialCommunityIcons
+                    name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
+                    size={28}
+                    color={disabled ? theme.colors.textMuted : theme.colors.textPrimary}
+                />
             ) : (
                 <Text style={[styles.dialText, disabled && styles.dialTextDisabled]}>{num}</Text>
             )}
@@ -62,6 +64,7 @@ const DialButton = ({ num, onPress, icon, disabled }: { num?: number; onPress: (
 
 export const PinPadModal: React.FC = () => {
     const { isVisible, mode, promptText, onSuccess, onCancel } = usePinContext();
+    const insets = useSafeAreaInsets();
 
     const [enteredPin, setEnteredPin] = useState('');
     const [tempPin, setTempPin] = useState('');
@@ -131,27 +134,31 @@ export const PinPadModal: React.FC = () => {
     }, [isVisible, mode, promptText, translateY, overlayOpacity, SCREEN_HEIGHT, checkLockout]);
 
     /** Memoize gesture to avoid recreating on every render */
-    const panGesture = useMemo(() => Gesture.Pan()
-        // Only activate if pulled DOWN > 20px (prevents swallowing button taps)
-        .activeOffsetY([-10000, 20])
-        .onUpdate((e) => {
-            if (e.translationY > 0) {
-                translateY.value = e.translationY;
-                const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
-                overlayOpacity.value = 1 - progress;
-            }
-        })
-        .onEnd((e) => {
-            if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
-                runOnJS(handleDismiss)();
-            } else {
-                translateY.value = withSpring(0, {
-                    damping: 22,
-                    stiffness: 220,
-                });
-                overlayOpacity.value = withTiming(1, { duration: 150 });
-            }
-        }), [handleDismiss, translateY, overlayOpacity, SCREEN_HEIGHT]);
+    const panGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                // Only activate if pulled DOWN > 20px (prevents swallowing button taps)
+                .activeOffsetY([-10000, 20])
+                .onUpdate((e) => {
+                    if (e.translationY > 0) {
+                        translateY.value = e.translationY;
+                        const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
+                        overlayOpacity.value = 1 - progress;
+                    }
+                })
+                .onEnd((e) => {
+                    if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
+                        runOnJS(handleDismiss)();
+                    } else {
+                        translateY.value = withSpring(0, {
+                            damping: 22,
+                            stiffness: 220,
+                        });
+                        overlayOpacity.value = withTiming(1, { duration: 150 });
+                    }
+                }),
+        [handleDismiss, translateY, overlayOpacity, SCREEN_HEIGHT],
+    );
 
     const triggerShake = useCallback(() => {
         vibrate([0, 50, 50, 50]); // Error vibration pattern
@@ -160,7 +167,7 @@ export const PinPadModal: React.FC = () => {
             withTiming(10, { duration: 50 }),
             withTiming(-10, { duration: 50 }),
             withTiming(10, { duration: 50 }),
-            withTiming(0, { duration: 50 })
+            withTiming(0, { duration: 50 }),
         );
     }, [shakeSV]);
 
@@ -200,81 +207,94 @@ export const PinPadModal: React.FC = () => {
         }
     }, []);
 
-    const handlePinComplete = useCallback(async (pin: string) => {
-        // Re-check lockout before processing (defense in depth)
-        await checkLockout();
-        if (isLockedOut) return;
+    const handlePinComplete = useCallback(
+        async (pin: string) => {
+            // Re-check lockout before processing (defense in depth)
+            await checkLockout();
+            if (isLockedOut) return;
 
-        if (localMode === 'setup_1') {
-            setTempPin(pin);
-            setEnteredPin('');
-            setLocalMode('setup_2');
-            setLocalPrompt('Confirm PIN');
-        } else if (localMode === 'setup_2') {
-            if (pin === tempPin) {
-                await storage.setItem(SECURITY_PIN_KEY, pin);
-                await clearAttempts();
-                onSuccess();
-            } else {
-                triggerShake();
+            if (localMode === 'setup_1') {
+                setTempPin(pin);
                 setEnteredPin('');
-                setLocalPrompt('PINs do not match. Try again.');
-                setLocalMode('setup_1');
+                setLocalMode('setup_2');
+                setLocalPrompt('Confirm PIN');
+            } else if (localMode === 'setup_2') {
+                if (pin === tempPin) {
+                    await storage.setItem(SECURITY_PIN_KEY, pin);
+                    await clearAttempts();
+                    onSuccess();
+                } else {
+                    triggerShake();
+                    setEnteredPin('');
+                    setLocalPrompt('PINs do not match. Try again.');
+                    setLocalMode('setup_1');
+                }
+            } else if (localMode === 'verify') {
+                const savedPin = await storage.getItem(SECURITY_PIN_KEY);
+                if (pin === savedPin) {
+                    await clearAttempts();
+                    onSuccess();
+                } else {
+                    await recordFailedAttempt();
+                    triggerShake();
+                    setEnteredPin('');
+                }
             }
-        } else if (localMode === 'verify') {
-            const savedPin = await storage.getItem(SECURITY_PIN_KEY);
-            if (pin === savedPin) {
-                await clearAttempts();
-                onSuccess();
-            } else {
-                await recordFailedAttempt();
-                triggerShake();
-                setEnteredPin('');
-            }
-        }
-    }, [localMode, tempPin, onSuccess, triggerShake, isLockedOut, checkLockout, recordFailedAttempt, clearAttempts]);
+        },
+        [localMode, tempPin, onSuccess, triggerShake, isLockedOut, checkLockout, recordFailedAttempt, clearAttempts],
+    );
 
-    const handlePress = useCallback(async (num: number) => {
-        // Re-check lockout on every digit press (no background timer)
-        await checkLockout();
-        if (isLockedOut) return;
+    const handlePress = useCallback(
+        async (num: number) => {
+            // Re-check lockout on every digit press (no background timer)
+            await checkLockout();
+            if (isLockedOut) return;
 
-        if (enteredPin.length < 4) {
-            const newPin = enteredPin + num;
-            setEnteredPin(newPin);
-            if (newPin.length === 4) {
-                // Short delay to allow the 4th dot to render before processing
-                setTimeout(() => {
-                    handlePinComplete(newPin);
-                }, CONFIG.PIN_DOT_DELAY_MS);
+            if (enteredPin.length < 4) {
+                const newPin = enteredPin + num;
+                setEnteredPin(newPin);
+                if (newPin.length === 4) {
+                    // Short delay to allow the 4th dot to render before processing
+                    setTimeout(() => {
+                        handlePinComplete(newPin);
+                    }, CONFIG.PIN_DOT_DELAY_MS);
+                }
             }
-        }
-    }, [enteredPin, handlePinComplete, isLockedOut, checkLockout]);
+        },
+        [enteredPin, handlePinComplete, isLockedOut, checkLockout],
+    );
 
     const handleDelete = useCallback(async () => {
         await checkLockout();
         if (isLockedOut) return;
         if (enteredPin.length > 0) {
-            setEnteredPin(prev => prev.slice(0, -1));
+            setEnteredPin((prev) => prev.slice(0, -1));
         }
     }, [enteredPin, isLockedOut, checkLockout]);
 
     const overlayStyle = useAnimatedStyle(() => ({
-        opacity: overlayOpacity.value
+        opacity: overlayOpacity.value,
     }));
 
     const sheetStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }]
+        transform: [{ translateY: translateY.value }],
     }));
 
     const shakeStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: shakeSV.value }]
+        transform: [{ translateX: shakeSV.value }],
     }));
 
     if (!isVisible) return null;
 
     return (
-        <Modal visible={isVisible} transparent animationType="none" onRequestClose={handleDismiss}>
+        <Modal
+            visible={isVisible}
+            transparent
+            animationType="none"
+            onRequestClose={handleDismiss}
+            statusBarTranslucent
+            navigationBarTranslucent
+        >
             <GestureHandlerRootView style={{ flex: 1 }}>
                 <TouchableWithoutFeedback onPress={handleDismiss}>
                     <Animated.View style={[styles.scrim, overlayStyle]} />
@@ -287,7 +307,8 @@ export const PinPadModal: React.FC = () => {
                         </View>
                     </GestureDetector>
 
-                    <View style={styles.content}>
+                    {/* Adjusted paddingBottom inline to support translucency safely */}
+                    <View style={[styles.content, { paddingBottom: insets.bottom + 20 + 28 }]}>
                         <Text style={styles.prompt}>{localPrompt}</Text>
 
                         {/* Lockout Banner */}
@@ -301,14 +322,8 @@ export const PinPadModal: React.FC = () => {
                         )}
 
                         <Animated.View style={[styles.dotsContainer, shakeStyle]}>
-                            {[0, 1, 2, 3].map(i => (
-                                <View
-                                    key={i}
-                                    style={[
-                                        styles.dot,
-                                        enteredPin.length > i && styles.dotFilled
-                                    ]}
-                                />
+                            {[0, 1, 2, 3].map((i) => (
+                                <View key={i} style={[styles.dot, enteredPin.length > i && styles.dotFilled]} />
                             ))}
                         </Animated.View>
 
@@ -350,13 +365,15 @@ const styles = StyleSheet.create({
     },
     sheet: {
         position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
+        // Positioned 20px below screen bottom and 1px off-screen on left/right to hide borders.
+        bottom: -20,
+        left: -1,
+        right: -1,
         backgroundColor: theme.colors.surfaceDark,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
-        borderTopWidth: 1,
+        // Using a full border rather than borderTopWidth to fix Android border corner rendering issues.
+        borderWidth: 1,
         borderColor: theme.colors.glassBorder,
         alignItems: 'center',
     },
@@ -460,5 +477,5 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: theme.colors.textDim,
         fontWeight: '500',
-    }
+    },
 });

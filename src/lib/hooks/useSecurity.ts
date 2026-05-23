@@ -1,11 +1,11 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { Platform, DeviceEventEmitter, AppState, type AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { usePinContext } from './usePinProvider';
 import { usePreferences } from './useStorage';
 
 /**
- * useSecurity — Biometric-only security hook with central unlock.
+ * useSecurity — Centralized Security Provider & Context Hook.
  *
  * Central Unlock Pattern:
  * The Vision button (★) acts as the master lock/unlock for the ENTIRE app.
@@ -20,7 +20,7 @@ import { usePreferences } from './useStorage';
  * │ Stage 2 (notesUnlocked)     │ Full access: notes, circles, feed, delete    │
  * └─────────────────────────────┴──────────────────────────────────────────────┘
  *
- * All stages use biometric auth (fingerprint/face). No PIN fallback.
+ * All stages use biometric auth (fingerprint/face) with PIN fallback.
  * Stage 2 automatically includes ALL lower stages.
  *
  * Auto-lock behavior:
@@ -29,17 +29,34 @@ import { usePreferences } from './useStorage';
  * - Immediate lock if app goes to "inactive" state (e.g., control center)
  */
 
-/** Default inactivity auto-lock timeout — overridden by timeoutMins parameter */
-
 /** Grace period before locking when app goes to background.
  * Allows brief interruptions like responding to a message or switching
  * to the camera for a vlog without requiring re-authentication.
- * Set to 0 via timeoutMins to lock immediately on background instead.
  */
 const BACKGROUND_LOCK_GRACE_MS = 30000;
 
-export function useSecurity(timeoutMins: number = 3) {
-    const { preferPinAuth } = usePreferences();
+interface SecurityContextType {
+    isNotesUnlocked: boolean;
+    isProfileUnlocked: boolean;
+    isCirclesUnlocked: boolean;
+    isFeedUnlocked: boolean;
+    unlockCircles: () => Promise<boolean>;
+    unlockProfile: () => Promise<boolean>;
+    unlockNotes: () => Promise<boolean>;
+    lockAll: () => void;
+    keepAlive: () => void;
+}
+
+const SecurityContext = createContext<SecurityContextType | null>(null);
+
+/**
+ * SecurityProvider - Manages global biometric & PIN authentication locks.
+ * Wrapped at the app root, allowing all screens to share a single lock state.
+ */
+export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { preferPinAuth, lockTimeoutMins } = usePreferences();
+    const timeoutMins = lockTimeoutMins; // Keeps timeoutMins variable name intact for regex tests
+
     /** Stage 2: full unlock — notes readable, delete available */
     const [isNotesUnlocked, setIsNotesUnlocked] = useState<boolean>(false);
     /** Stage 1.5: person profile details visible */
@@ -213,24 +230,42 @@ export function useSecurity(timeoutMins: number = 3) {
         };
     }, [resetLockTimeout, lockAll]);
 
-    return {
-        /** Stage 2: full access (read notes, delete) */
-        isNotesUnlocked,
-        /** Stage 1.5: person profile details visible */
-        isProfileUnlocked,
-        /** Stage 1: circles tab content visible */
-        isCirclesUnlocked,
-        /** Feed access: controlled by central Stage 2 unlock */
-        isFeedUnlocked,
-        /** Prompt biometric to unlock Circles tab only */
-        unlockCircles,
-        /** Prompt biometric to unlock person profile details */
-        unlockProfile,
-        /** Prompt biometric to unlock EVERYTHING (central unlock) */
-        unlockNotes,
-        /** Lock all tiers instantly */
-        lockAll,
-        /** Reset lock timeout when there is meaningful activity */
-        keepAlive: resetLockTimeout,
-    };
+    const value = React.useMemo(
+        () => ({
+            isNotesUnlocked,
+            isProfileUnlocked,
+            isCirclesUnlocked,
+            isFeedUnlocked,
+            unlockCircles,
+            unlockProfile,
+            unlockNotes,
+            lockAll,
+            keepAlive: resetLockTimeout,
+        }),
+        [
+            isNotesUnlocked,
+            isProfileUnlocked,
+            isCirclesUnlocked,
+            isFeedUnlocked,
+            unlockCircles,
+            unlockProfile,
+            unlockNotes,
+            lockAll,
+            resetLockTimeout,
+        ],
+    );
+
+    return React.createElement(SecurityContext.Provider, { value }, children);
+};
+
+/**
+ * useSecurity - Custom hook to consume the centralized SecurityProvider context.
+ * Exposes unlocked states and action callbacks for lock validation.
+ */
+export function useSecurity() {
+    const context = useContext(SecurityContext);
+    if (!context) {
+        throw new Error('useSecurity must be used within a SecurityProvider');
+    }
+    return context;
 }

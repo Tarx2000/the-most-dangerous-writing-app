@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Modal,
-} from 'react-native';
+import { View, Text, StyleSheet, Modal } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -97,25 +92,24 @@ export const StreakPopup = React.memo(({ visible, streakHistory = [], onClose }:
     const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayFade.value }));
     const iconStyle = useAnimatedStyle(() => ({
         opacity: iconFade.value,
-        transform: [{ scale: iconScale.value }]
+        transform: [{ scale: iconScale.value }],
     }));
     const textStyle = useAnimatedStyle(() => ({
         opacity: textFade.value,
-        transform: [{ translateY: textSlide.value }]
+        transform: [{ translateY: textSlide.value }],
     }));
     const weekStyle = useAnimatedStyle(() => ({ opacity: weekFade.value }));
     const buttonStyle = useAnimatedStyle(() => ({
         opacity: buttonFade.value,
-        transform: [{ translateY: buttonSlide.value }]
+        transform: [{ translateY: buttonSlide.value }],
     }));
 
     if (!visible) return null;
 
     return (
-        <Modal transparent visible={visible} animationType="none" statusBarTranslucent>
+        <Modal transparent visible={visible} animationType="none" statusBarTranslucent navigationBarTranslucent>
             <Animated.View style={[styles.overlay, overlayStyle]}>
                 <View style={styles.content}>
-
                     {/* ── Checkmark Icon ── */}
                     <Animated.View style={[styles.iconContainer, iconStyle]}>
                         <View style={styles.iconRing}>

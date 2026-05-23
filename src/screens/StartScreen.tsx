@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StatusBar, ScrollView, Platform, StyleSheet } from 'react-native';
+import { View, Text, StatusBar, ScrollView, Platform, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { LiquidMorphIcon } from '@/components/ui/LiquidMorphIcon';
 import { AnimatedSymmetricalRing } from '@/components/ui/AnimatedSymmetricalRing';
+import { VisionLockButton } from '@/components/ui/VisionLockButton';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { useCompressionQueueContext } from '@/lib/hooks/useCompressionQueueProvider';
 import { clearAiLog, getAiLog } from '@/lib/aiLogger';
@@ -46,13 +47,11 @@ type Props = {
     isActive?: boolean;
 };
 
-const StartScreenInner: React.FC<Props> = ({
-    navigation,
-    route,
-    setHomeScrollEnabled,
-    sessionMode,
-    isActive = true,
-}) => {
+const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, sessionMode, isActive = true }) => {
+    // ── Button Morph Measurement Refs ──
+    const containerRef = useRef<View>(null); // Ref on root container to serve as coordinate frame
+    const buttonRef = useRef<View>(null); // Ref on button container to measure layout bounds
+
     const [timeIndex, setTimeIndex] = useState(1);
     const [diffIndex, setDiffIndex] = useState(1);
 
@@ -88,7 +87,7 @@ const StartScreenInner: React.FC<Props> = ({
     const streak = useStreak();
     const preferences = usePreferences();
 
-    const security = useSecurity(preferences.lockTimeoutMins);
+    const security = useSecurity();
 
     /** Central AI Queue — single instance via AiQueueProvider */
     const { queueState, startBatch, cancelBatch } = useAiQueueContext();
@@ -100,36 +99,64 @@ const StartScreenInner: React.FC<Props> = ({
     const isModalOpenRef = useRef(isModalOpen);
     isModalOpenRef.current = isModalOpen;
 
+    // Listen for streak increase events emitted by writing screens
+    // Uses DeviceEventEmitter instead of route params to avoid triggering
+    // a re-render/reload of the Home screen when modals are popped
     useEffect(() => {
-        if (route.params?.streakIncreased) {
-            setNewStreakParam(route.params.newStreak || streak.currentStreak + 1);
+        const subscription = DeviceEventEmitter.addListener('streakIncreased', ({ newStreak }) => {
+            setNewStreakParam(newStreak || streak.currentStreak + 1);
             setShowStreakPopup(true);
-            navigation.setParams({ streakIncreased: undefined, newStreak: undefined });
-        }
-    }, [route.params?.streakIncreased, route.params?.newStreak, streak.currentStreak, navigation]);
-
-    const handleStart = () => {
-        if (sessionMode === 'vlog') {
-            navigation.navigate('VlogRecording', {
-                timeIndex: timeIndex,
-            });
-            return;
-        }
-
-        if (sessionMode === 'checkin') {
-            navigation.navigate('AlignmentWriting', {
-                alignmentScore: score,
-                timeIndex: timeIndex,
-            });
-            return;
-        }
-
-        navigation.navigate('Writing', {
-            timeIndex,
-            diffIndex,
-            mode: sessionMode,
-            personId: selectedPersonId,
         });
+        return () => subscription.remove();
+    }, [streak.currentStreak]);
+
+    /**
+     * handleStart
+     * Measures the button's layout relative to the container and navigates instantly,
+     * passing the coordinates as 'buttonLayout' to the target screen.
+     */
+    const handleStart = () => {
+        const navigateToScreen = (buttonLayout?: { x: number; y: number; width: number; height: number }) => {
+            if (sessionMode === 'vlog') {
+                navigation.navigate('VlogRecording', {
+                    timeIndex: timeIndex,
+                    buttonLayout,
+                });
+                return;
+            }
+
+            if (sessionMode === 'checkin') {
+                navigation.navigate('AlignmentWriting', {
+                    alignmentScore: score,
+                    timeIndex: timeIndex,
+                    buttonLayout,
+                });
+                return;
+            }
+
+            navigation.navigate('Writing', {
+                timeIndex,
+                diffIndex,
+                mode: sessionMode,
+                personId: selectedPersonId,
+                buttonLayout,
+            });
+        };
+
+        if (buttonRef.current && containerRef.current) {
+            buttonRef.current.measureLayout(
+                containerRef.current,
+                (left, top, width, height) => {
+                    navigateToScreen({ x: left, y: top, width, height });
+                },
+                () => {
+                    // Fallback to navigation without morph coordinates if measurement fails
+                    navigateToScreen();
+                },
+            );
+        } else {
+            navigateToScreen();
+        }
     };
 
     const getScoreDetails = getAlignmentScoreDetails;
@@ -159,7 +186,7 @@ const StartScreenInner: React.FC<Props> = ({
     };
 
     return (
-        <View style={commonStyles.startContainer}>
+        <View ref={containerRef} style={commonStyles.startContainer} collapsable={false}>
             <StatusBar barStyle="light-content" backgroundColor={theme.colors.background} />
 
             {/* Dev Mode Toast Notification */}
@@ -195,42 +222,23 @@ const StartScreenInner: React.FC<Props> = ({
                 </AnimatedScaleButton>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                     {/* Vision Board button — moved here from footer */}
-                    <AnimatedScaleButton
-                        style={commonStyles.iconButton}
-                        onPress={() => {
+                    <VisionLockButton
+                        isUnlocked={security.isNotesUnlocked}
+                        onPress={async () => {
                             if (security.isNotesUnlocked) {
                                 navigation.navigate('VisionBoard');
-                            } else {
-                                vibrate([0, 50, 100, 50]);
-                            }
-                        }}
-                        onLongPress={async () => {
-                            if (security.isNotesUnlocked) {
-                                security.lockAll();
-                                vibrate(50);
                             } else {
                                 const success = await security.unlockNotes();
                                 if (success) vibrate(50);
                             }
                         }}
-                    >
-                        <MaterialCommunityIcons
-                            name={!security.isNotesUnlocked ? 'star-off-outline' : 'star-four-points'}
-                            size={16}
-                            color={
-                                !security.isNotesUnlocked ? theme.colors.dangerIconOverlay : theme.colors.textPrimary
+                        onLongPress={() => {
+                            if (security.isNotesUnlocked) {
+                                security.lockAll();
+                                vibrate(50);
                             }
-                            style={{ marginRight: 4 }}
-                        />
-                        <Text
-                            style={[
-                                commonStyles.iconButtonText,
-                                !security.isNotesUnlocked && { color: theme.colors.dangerIconOverlay },
-                            ]}
-                        >
-                            {!security.isNotesUnlocked ? '🔒' : 'Vision'}
-                        </Text>
-                    </AnimatedScaleButton>
+                        }}
+                    />
                     <View style={{ position: 'relative' }}>
                         <AnimatedScaleButton
                             onPress={() => setShowSettings(true)}
@@ -532,11 +540,13 @@ const StartScreenInner: React.FC<Props> = ({
 
             {/* Start Writing Button — now standalone pill above the nav area */}
             <View style={styles.startBtnContainer}>
-                <AnimatedScaleButton style={styles.massiveStartBtn} onPress={handleStart}>
-                    <Text style={styles.massiveStartBtnText}>
-                        {sessionMode === 'vlog' ? 'Start Recording' : 'Start Writing'}
-                    </Text>
-                </AnimatedScaleButton>
+                <View ref={buttonRef} collapsable={false}>
+                    <AnimatedScaleButton style={styles.massiveStartBtn} onPress={handleStart}>
+                        <Text style={styles.massiveStartBtnText}>
+                            {sessionMode === 'vlog' ? 'Start Recording' : 'Start Writing'}
+                        </Text>
+                    </AnimatedScaleButton>
+                </View>
                 <AnimatedScaleButton style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
                     <Text style={{ color: theme.colors.grey, fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
                 </AnimatedScaleButton>

@@ -27,9 +27,18 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 // Vector icons mock
 jest.mock('@expo/vector-icons', () => ({
-    MaterialCommunityIcons: function MaterialCommunityIconsMock() {
-        return null;
-    },
+    MaterialCommunityIcons: Object.assign(
+        function MaterialCommunityIconsMock() {
+            return null;
+        },
+        { font: { 'material-community': 1 } },
+    ),
+    Feather: Object.assign(
+        function FeatherMock() {
+            return null;
+        },
+        { font: { feather: 1 } },
+    ),
 }));
 
 // AnimatedScaleButton mock
@@ -64,6 +73,11 @@ jest.mock('react-native-reanimated', () => {
         Text: 'Text',
         Image: 'Image',
         ScrollView: 'ScrollView',
+        configureReanimatedLogger: jest.fn(),
+        ReanimatedLogLevel: {
+            warn: 'warn',
+            error: 'error',
+        },
         useSharedValue: jest.fn((val) => ({ value: val })),
         useAnimatedStyle: jest.fn(() => ({})),
         useDerivedValue: jest.fn((fn) => ({ value: fn() })),
@@ -88,6 +102,7 @@ jest.mock('react-native-reanimated', () => {
             Text: 'Text',
             Image: 'Image',
             ScrollView: 'ScrollView',
+            createAnimatedComponent: jest.fn((comp) => comp),
         },
     };
 });
@@ -228,3 +243,48 @@ jest.mock('expo-video', () => {
         VideoView: jest.fn(() => null),
     };
 });
+
+// Mock expo-sqlite globally to support integration tests loading repositories
+jest.mock('expo-sqlite', () => ({
+    openDatabaseAsync: jest.fn(() =>
+        Promise.resolve({
+            withTransactionAsync: jest.fn(async (fn) => await fn()),
+            execAsync: jest.fn().mockResolvedValue(undefined),
+            runAsync: jest.fn().mockResolvedValue(undefined),
+            getAllAsync: jest.fn().mockResolvedValue([]),
+            getFirstAsync: jest.fn().mockResolvedValue(null),
+            closeAsync: jest.fn().mockResolvedValue(undefined),
+        }),
+    ),
+}));
+
+// Mock expo-camera
+jest.mock('expo-camera', () => ({
+    CameraView: () => null,
+    useCameraPermissions: jest.fn(() => [{ granted: true, canAskAgain: true }, jest.fn()]),
+}));
+
+// Mock expo-local-authentication
+jest.mock('expo-local-authentication', () => ({
+    hasHardwareAsync: jest.fn().mockResolvedValue(true),
+    isEnrolledAsync: jest.fn().mockResolvedValue(true),
+    authenticateAsync: jest.fn().mockResolvedValue({ success: true }),
+}));
+
+// Mock expo-sharing
+jest.mock('expo-sharing', () => ({
+    isAvailableAsync: jest.fn().mockResolvedValue(true),
+    shareAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Mock expo-video-thumbnails
+jest.mock('expo-video-thumbnails', () => ({
+    getThumbnailAsync: jest.fn().mockResolvedValue({ uri: 'file:///thumbnail.jpg' }),
+}));
+
+// Mock expo-keep-awake
+jest.mock('expo-keep-awake', () => ({
+    useKeepAwake: jest.fn(),
+    activateKeepAwakeAsync: jest.fn(),
+    deactivateKeepAwake: jest.fn(),
+}));

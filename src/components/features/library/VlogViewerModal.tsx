@@ -546,7 +546,14 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const currentVlog = vlogs[expandedIndex];
 
     return (
-        <Modal visible transparent animationType="none" onRequestClose={handleCloseInternal}>
+        <Modal
+            visible
+            transparent
+            animationType="none"
+            onRequestClose={handleCloseInternal}
+            statusBarTranslucent
+            navigationBarTranslucent
+        >
             <GestureHandlerRootView style={{ flex: 1 }}>
                 {/* Banner feedback — shows briefly after download actions */}
                 {banner && (
