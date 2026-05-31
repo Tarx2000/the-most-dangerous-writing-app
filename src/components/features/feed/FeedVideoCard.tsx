@@ -1,12 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-    View,
-    Text,
-    Image,
-    StyleSheet,
-    Pressable,
-    DeviceEventEmitter,
-} from 'react-native';
+import { View, Text, Image, StyleSheet, Pressable, DeviceEventEmitter } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import type { VideoPlayer } from 'expo-video';
@@ -59,223 +52,227 @@ const formatDuration = (seconds: number): string => {
 /**
  * FeedVideoCardInner — Contains all hooks. Never conditionally short-circuits.
  */
-const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = React.memo(({
-    item,
-    vlog,
-    isBookmarked,
-    autoPlay,
-    onToggleBookmark,
-    onOpenVlog,
-}) => {
-    const [isPlaying, setIsPlaying] = useState(autoPlay);
-    const [isMuted, setIsMuted] = useState(true);
-    const accentColor = theme.colors.orange; // Orange for video clips
-    const { devMode } = usePreferences();
+const FeedVideoCardInner: React.FC<FeedVideoCardProps & { vlog: SavedVlog }> = React.memo(
+    ({ item, vlog, isBookmarked, autoPlay, onToggleBookmark, onOpenVlog }) => {
+        const [isPlaying, setIsPlaying] = useState(autoPlay);
+        const [isMuted, setIsMuted] = useState(true);
+        const accentColor = theme.colors.orange; // Orange for video clips
+        const { devMode } = usePreferences();
 
-    const flashOpacity = useSharedValue(0);
-    const [flashIcon, setFlashIcon] = useState<'volume-off' | 'volume-high'>('volume-off');
-    const [videoViewKey, setVideoViewKey] = useState(0);
-    const videoRef = React.useRef<View>(null);
+        const flashOpacity = useSharedValue(0);
+        const [flashIcon, setFlashIcon] = useState<'volume-off' | 'volume-high'>('volume-off');
+        const [videoViewKey, setVideoViewKey] = useState(0);
+        const videoRef = React.useRef<View>(null);
 
-    /** Create video player (muted by default) */
-    const player = useVideoPlayer(vlog.filePath, (p) => {
-        p.loop = true;
-        p.volume = 0; // Starts muted
-        if (autoPlay) p.play();
-    });
-
-    /** Viewport-driven playback control.
-     *  When autoPlay changes (feed hidden/shown or video scrolled in/out),
-     *  directly control the player. This is the source of truth. */
-    useEffect(() => {
-        try {
-            if (autoPlay) {
-                player.play();
-            } else {
-                player.pause();
-            }
-        } catch (err) {
-            logger('error', 'FeedVideoCard', 'Failed to control player playback:', err instanceof Error ? err.message : String(err));
-        }
-        setIsPlaying(autoPlay);
-    }, [autoPlay, player]);
-
-    /** Pause the player on unmount to prevent background decoding.
-     *  Silently catches "shared object already released" — this is expected
-     *  when expo-video deallocates the native player before our cleanup runs. */
-    useEffect(() => {
-        return () => {
-            try { player.pause(); } catch {
-                // Native player already released — no-op, expected during unmount
-            }
-        };
-    }, [player]);
-
-    /** Tap anywhere on video to toggle mute.
-     *  Play/pause is fully viewport-driven (autoPlay prop) — no manual toggle needed.
-     *  The flash icon shows the new mute state for visual feedback. */
-    const handleToggleMute = useCallback(() => {
-        const nextMuted = !isMuted;
-        setIsMuted(nextMuted);
-        setFlashIcon(nextMuted ? 'volume-off' : 'volume-high');
-        flashOpacity.value = withSequence(
-            withTiming(0.8, { duration: 50 }),
-            withTiming(0, { duration: 600 })
-        );
-        vibrate(10);
-    }, [isMuted, flashOpacity]);
-
-    const handleExpandMedia = useCallback(() => {
-        if (videoRef.current) {
-            videoRef.current.measureInWindow((x, y, w, h) => {
-                onOpenVlog(vlog, { x, y, width: w, height: h }, player);
-            });
-        } else {
-            onOpenVlog(vlog, undefined, player);
-        }
-        vibrate(10);
-    }, [vlog, onOpenVlog, player]);
-
-    const { updateVlog } = useVlogs();
-    const { getThumbnail } = useThumbnails(updateVlog);
-
-    useEffect(() => {
-        player.volume = isMuted ? 0 : 1;
-    }, [isMuted, player]);
-
-    /** Extract thumbnail if we don't have one */
-    useEffect(() => {
-        if (!vlog.thumbnailPath && !isPlaying) {
-            getThumbnail(vlog);
-        }
-    }, [vlog.thumbnailPath, isPlaying, getThumbnail, vlog]);
-
-    /** Force-remount VideoView when the shared player returns from the modal.
-     *  expo-video can only attach a player to one VideoView at a time.
-     *  When the modal steals it, the feed's VideoView becomes a zombie.
-     *  Changing the key creates a fresh native view that re-attaches. */
-    useEffect(() => {
-        let resumeTimer: ReturnType<typeof setTimeout> | null = null;
-        const subscription = DeviceEventEmitter.addListener('VLOG_MODAL_CLOSED', (event: { vlogId: string }) => {
-            if (event.vlogId === vlog.id && autoPlay) {
-                setIsPlaying(true);
-                setVideoViewKey(k => k + 1);
-                resumeTimer = setTimeout(() => {
-                    try { player.play(); } catch { /* ignore */ }
-                }, 250);
-            }
+        /** Create video player (muted by default) */
+        const player = useVideoPlayer(vlog.filePath, (p) => {
+            p.loop = true;
+            p.volume = 0; // Starts muted
+            if (autoPlay) p.play();
         });
-        return () => {
-            subscription.remove();
-            if (resumeTimer) clearTimeout(resumeTimer);
-        };
-    }, [autoPlay, vlog.id, player]);
 
-    return (
-        <View style={styles.card}>
-            <View style={styles.leftColumn}>
-                <View style={[styles.avatar, { borderColor: accentColor }]}>
-                    <MaterialCommunityIcons name="video" size={16} color={accentColor} />
+        /** Viewport-driven playback control.
+         *  When autoPlay changes (feed hidden/shown or video scrolled in/out),
+         *  directly control the player. This is the source of truth. */
+        useEffect(() => {
+            try {
+                if (autoPlay) {
+                    player.play();
+                } else {
+                    player.pause();
+                }
+            } catch (err) {
+                logger(
+                    'error',
+                    'FeedVideoCard',
+                    'Failed to control player playback:',
+                    err instanceof Error ? err.message : String(err),
+                );
+            }
+            setIsPlaying(autoPlay);
+        }, [autoPlay, player]);
+
+        /** Pause the player on unmount to prevent background decoding.
+         *  Silently catches "shared object already released" — this is expected
+         *  when expo-video deallocates the native player before our cleanup runs. */
+        useEffect(() => {
+            return () => {
+                try {
+                    player.pause();
+                } catch {
+                    // Native player already released — no-op, expected during unmount
+                }
+            };
+        }, [player]);
+
+        /** Tap anywhere on video to toggle mute.
+         *  Play/pause is fully viewport-driven (autoPlay prop) — no manual toggle needed.
+         *  The flash icon shows the new mute state for visual feedback. */
+        const handleToggleMute = useCallback(() => {
+            const nextMuted = !isMuted;
+            setIsMuted(nextMuted);
+            setFlashIcon(nextMuted ? 'volume-off' : 'volume-high');
+            flashOpacity.value = withSequence(withTiming(0.8, { duration: 50 }), withTiming(0, { duration: 600 }));
+            vibrate(10);
+        }, [isMuted, flashOpacity]);
+
+        const handleExpandMedia = useCallback(() => {
+            if (videoRef.current) {
+                videoRef.current.measureInWindow((x, y, w, h) => {
+                    onOpenVlog(vlog, { x, y, width: w, height: h }, player);
+                });
+            } else {
+                onOpenVlog(vlog, undefined, player);
+            }
+            vibrate(10);
+        }, [vlog, onOpenVlog, player]);
+
+        const { updateVlog } = useVlogs();
+        const { getThumbnail } = useThumbnails(updateVlog);
+
+        useEffect(() => {
+            player.volume = isMuted ? 0 : 1;
+        }, [isMuted, player]);
+
+        /** Extract thumbnail if we don't have one */
+        useEffect(() => {
+            if (!vlog.thumbnailPath && !isPlaying) {
+                getThumbnail(vlog);
+            }
+        }, [vlog.thumbnailPath, isPlaying, getThumbnail, vlog]);
+
+        /** Force-remount VideoView when the shared player returns from the modal.
+         *  expo-video can only attach a player to one VideoView at a time.
+         *  When the modal steals it, the feed's VideoView becomes a zombie.
+         *  Changing the key creates a fresh native view that re-attaches. */
+        useEffect(() => {
+            let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+            const subscription = DeviceEventEmitter.addListener('VLOG_MODAL_CLOSED', (event: { vlogId: string }) => {
+                if (event.vlogId === vlog.id && autoPlay) {
+                    setIsPlaying(true);
+                    setVideoViewKey((k) => k + 1);
+                    resumeTimer = setTimeout(() => {
+                        try {
+                            player.play();
+                        } catch {
+                            /* ignore */
+                        }
+                    }, 250);
+                }
+            });
+            return () => {
+                subscription.remove();
+                if (resumeTimer) clearTimeout(resumeTimer);
+            };
+        }, [autoPlay, vlog.id, player]);
+
+        return (
+            <View style={styles.card}>
+                <View style={styles.leftColumn}>
+                    <View style={[styles.avatar, { borderColor: accentColor }]}>
+                        <MaterialCommunityIcons name="video" size={16} color={accentColor} />
+                    </View>
                 </View>
-            </View>
 
-            <View style={styles.rightColumn}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={[styles.categoryBadge, { color: accentColor }]}>VIDEO CLIP</Text>
-                    <Text style={styles.timeAgo}>{formatRelativeTime(item.timestamp)}</Text>
-                </View>
-
-                {/* Video Player Area */}
-                <View ref={videoRef} collapsable={false} style={styles.videoContainer}>
-                    {/* Video / Thumbnail layer — renders below the Pressable */}
-                    {!isPlaying && vlog.thumbnailPath ? (
-                        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-                            <Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} />
-                        </View>
-                    ) : (
-                        <VideoView
-                            key={videoViewKey}
-                            style={[styles.videoPlayer, { position: 'absolute' as const, pointerEvents: 'none' as const }]}
-                            player={player}
-                            nativeControls={false}
-                        />
-                    )}
-
-                    {/* Full-area tap target for mute/unmute — on top of video with zIndex */}
-                    <Pressable
-                        style={[StyleSheet.absoluteFillObject, { zIndex: 5 }]}
-                        onPress={handleToggleMute}
-                    />
-
-                    {/* Flashing Mute/Unmute Icon Overlay — visual feedback on tap */}
-                    <Animated.View style={[
-                        styles.flashIconContainer,
-                        useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
-                        { pointerEvents: 'none', zIndex: 10 }
-                    ]}>
-                        <View style={styles.flashIconBg}>
-                            <MaterialCommunityIcons name={flashIcon} size={48} color={theme.colors.textPrimary} />
-                        </View>
-                    </Animated.View>
-
-                    {/* Mute indicator — visual only */}
-                    <View style={styles.muteIndicator} pointerEvents="none">
-                        <View style={styles.muteIndicatorBg}>
-                            <MaterialCommunityIcons name={isMuted ? "volume-off" : "volume-high"} size={16} color={theme.colors.textPrimary} />
-                        </View>
+                <View style={styles.rightColumn}>
+                    {/* Header */}
+                    <View style={styles.header}>
+                        {/* Simplified category label to 'VIDEO' for consistent feed structure */}
+                        <Text style={[styles.categoryBadge, { color: accentColor }]}>VIDEO</Text>
+                        <Text style={styles.timeAgo}>{formatRelativeTime(item.timestamp)}</Text>
                     </View>
 
-                    {/* Duration badge */}
-                    <View style={styles.durationBadge} pointerEvents="none">
-                        <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
-                    </View>
-
-                    {/* Dev watermark overlay */}
-                    {devMode && (
-                        <View style={styles.devWatermark} pointerEvents="none">
-                            <Text style={styles.devWatermarkText}>
-                                DEV: {vlog.compressionPreset || 'Uncompressed'}{' '}
-                                {vlog.originalFileSizeBytes ?
-                                    `(${Math.round(100 - (vlog.fileSizeBytes / vlog.originalFileSizeBytes) * 100)}% saved)`
-                                    : ''
-                                }
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Footer — actions */}
-                <View style={styles.footer}>
-                    <Text style={styles.metaText}>
-                        {(vlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
-                    </Text>
-                    <View style={styles.actionRow}>
-                        <AnimatedScaleButton
-                            onPress={() => {
-                                onToggleBookmark(vlog.id);
-                                vibrate(10);
-                            }}
-                            style={styles.actionBtn}
-                        >
-                            <MaterialCommunityIcons
-                                name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-                                size={18}
-                                color={isBookmarked ? theme.colors.primaryAction : theme.colors.textMuted}
+                    {/* Video Player Area */}
+                    <View ref={videoRef} collapsable={false} style={styles.videoContainer}>
+                        {/* Video / Thumbnail layer — renders below the Pressable */}
+                        {!isPlaying && vlog.thumbnailPath ? (
+                            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                                <Image source={{ uri: vlog.thumbnailPath }} style={styles.thumbnail} />
+                            </View>
+                        ) : (
+                            <VideoView
+                                key={videoViewKey}
+                                style={[
+                                    styles.videoPlayer,
+                                    { position: 'absolute' as const, pointerEvents: 'none' as const },
+                                ]}
+                                player={player}
+                                nativeControls={false}
                             />
-                        </AnimatedScaleButton>
-                        <AnimatedScaleButton
-                            onPress={handleExpandMedia}
-                            style={[styles.actionBtn, { zIndex: 10 }]}
+                        )}
+
+                        {/* Full-area tap target for mute/unmute — on top of video with zIndex */}
+                        <Pressable style={[StyleSheet.absoluteFillObject, { zIndex: 5 }]} onPress={handleToggleMute} />
+
+                        {/* Flashing Mute/Unmute Icon Overlay — visual feedback on tap */}
+                        <Animated.View
+                            style={[
+                                styles.flashIconContainer,
+                                useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
+                                { pointerEvents: 'none', zIndex: 10 },
+                            ]}
                         >
-                            <MaterialCommunityIcons name="arrow-expand" size={16} color={theme.colors.textMuted} />
-                        </AnimatedScaleButton>
+                            <View style={styles.flashIconBg}>
+                                <MaterialCommunityIcons name={flashIcon} size={48} color={theme.colors.textPrimary} />
+                            </View>
+                        </Animated.View>
+
+                        {/* Mute indicator — visual only */}
+                        <View style={styles.muteIndicator} pointerEvents="none">
+                            <View style={styles.muteIndicatorBg}>
+                                <MaterialCommunityIcons
+                                    name={isMuted ? 'volume-off' : 'volume-high'}
+                                    size={16}
+                                    color={theme.colors.textPrimary}
+                                />
+                            </View>
+                        </View>
+
+                        {/* Duration badge */}
+                        <View style={styles.durationBadge} pointerEvents="none">
+                            <Text style={styles.durationText}>{formatDuration(vlog.durationSec)}</Text>
+                        </View>
+
+                        {/* Dev watermark overlay */}
+                        {devMode && (
+                            <View style={styles.devWatermark} pointerEvents="none">
+                                <Text style={styles.devWatermarkText}>
+                                    DEV: {vlog.compressionPreset || 'Uncompressed'}{' '}
+                                    {vlog.originalFileSizeBytes
+                                        ? `(${Math.round(100 - (vlog.fileSizeBytes / vlog.originalFileSizeBytes) * 100)}% saved)`
+                                        : ''}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Footer — actions */}
+                    <View style={styles.footer}>
+                        <Text style={styles.metaText}>{(vlog.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB</Text>
+                        <View style={styles.actionRow}>
+                            <AnimatedScaleButton
+                                onPress={() => {
+                                    onToggleBookmark(vlog.id);
+                                    vibrate(10);
+                                }}
+                                style={styles.actionBtn}
+                            >
+                                <MaterialCommunityIcons
+                                    name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                                    size={18}
+                                    color={isBookmarked ? theme.colors.primaryAction : theme.colors.textMuted}
+                                />
+                            </AnimatedScaleButton>
+                            <AnimatedScaleButton onPress={handleExpandMedia} style={[styles.actionBtn, { zIndex: 10 }]}>
+                                <MaterialCommunityIcons name="arrow-expand" size={16} color={theme.colors.textMuted} />
+                            </AnimatedScaleButton>
+                        </View>
                     </View>
                 </View>
             </View>
-        </View>
-    );
-});
+        );
+    },
+);
 
 /* ── WRAPPER COMPONENT ────────────────────────────────────────────────────── */
 

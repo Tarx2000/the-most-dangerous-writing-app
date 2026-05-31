@@ -1,5 +1,14 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, StatusBar, useWindowDimensions, DeviceEventEmitter } from 'react-native';
+import {
+    View,
+    Text,
+    StyleSheet,
+    Platform,
+    StatusBar,
+    useWindowDimensions,
+    DeviceEventEmitter,
+    ScrollView,
+} from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -76,30 +85,91 @@ interface FeedHeaderProps {
     onClose: () => void;
 }
 
-const FeedHeader = React.memo(({ entryCount, filterBookmarked, onToggleFilter, showJournals, showTweets, showVlogs, showCheckins, onToggleType, onClose }: FeedHeaderProps) => (
-    <Animated.View style={styles.headerContainer}>
-        {/* Title row */}
-        <View style={styles.titleRow}>
-            <View>
-                <Text style={styles.feedTitle}>Feed</Text>
-                <Text style={styles.feedSubtitle}>
-                    {entryCount} {entryCount === 1 ? 'entry' : 'entries'}
-                </Text>
+const FeedHeader = React.memo(
+    ({
+        entryCount,
+        filterBookmarked,
+        onToggleFilter,
+        showJournals,
+        showTweets,
+        showVlogs,
+        showCheckins,
+        onToggleType,
+        onClose,
+    }: FeedHeaderProps) => (
+        <Animated.View style={styles.headerContainer}>
+            {/* Title row */}
+            <View style={styles.titleRow}>
+                <View>
+                    <Text style={styles.feedTitle}>Feed</Text>
+                    <Text style={styles.feedSubtitle}>
+                        {entryCount} {entryCount === 1 ? 'entry' : 'entries'}
+                    </Text>
+                </View>
+                <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
+                    <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
+                </AnimatedScaleButton>
             </View>
-            <AnimatedScaleButton style={styles.closeBtn} onPress={onClose}>
-                <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.textSecondary} />
-            </AnimatedScaleButton>
-        </View>
 
-        {/* Type filter checkboxes */}
-        <View style={styles.checkboxRow}>
-            {
-                ([
-                    { key: 'journals' as const, label: 'Journals', active: showJournals, icon: 'notebook-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
-                    { key: 'tweets' as const, label: 'Tweets', active: showTweets, icon: 'chat-processing-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
-                    { key: 'vlogs' as const, label: 'Vlogs', active: showVlogs, icon: 'video-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
-                    { key: 'checkins' as const, label: 'Check-ins', active: showCheckins, icon: 'compass-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'] },
-                ]).map((item) => (
+            {/* Horizontal scrollable segmented filter track to save vertical space */}
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterScrollContainer}
+                style={styles.filterScrollView}
+            >
+                {/* Status toggle: All / Bookmarked */}
+                <AnimatedScaleButton
+                    style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
+                    onPress={() => onToggleFilter(false)}
+                >
+                    <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
+                </AnimatedScaleButton>
+                <AnimatedScaleButton
+                    style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
+                    onPress={() => onToggleFilter(true)}
+                >
+                    <MaterialCommunityIcons
+                        name="bookmark"
+                        size={14}
+                        color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
+                        style={{ marginRight: 4 }}
+                    />
+                    <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>
+                        Bookmarked
+                    </Text>
+                </AnimatedScaleButton>
+
+                {/* Visual separator divider */}
+                <View style={styles.filterDivider} />
+
+                {/* Type toggles */}
+                {[
+                    {
+                        key: 'journals' as const,
+                        label: 'Journals',
+                        active: showJournals,
+                        icon: 'notebook-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'],
+                    },
+                    {
+                        key: 'tweets' as const,
+                        label: 'Tweets',
+                        active: showTweets,
+                        icon: 'chat-processing-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'],
+                    },
+                    {
+                        key: 'vlogs' as const,
+                        label: 'Vlogs',
+                        active: showVlogs,
+                        icon: 'video-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'],
+                    },
+                    {
+                        key: 'checkins' as const,
+                        label: 'Check-ins',
+                        active: showCheckins,
+                        icon: 'compass-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'],
+                    },
+                ].map((item) => (
                     <AnimatedScaleButton
                         key={item.key}
                         style={[styles.checkboxBtn, item.active && styles.checkboxBtnActive]}
@@ -111,41 +181,21 @@ const FeedHeader = React.memo(({ entryCount, filterBookmarked, onToggleFilter, s
                             color={item.active ? theme.colors.textPrimary : theme.colors.textMuted}
                             style={{ marginRight: 4 }}
                         />
-                        <Text style={[styles.checkboxText, item.active && styles.checkboxTextActive]}>{item.label}</Text>
+                        <Text style={[styles.checkboxText, item.active && styles.checkboxTextActive]}>
+                            {item.label}
+                        </Text>
                     </AnimatedScaleButton>
-                ))
-            }
-        </View>
+                ))}
+            </ScrollView>
 
-        {/* Filter toggle: All / Bookmarked */}
-        <View style={styles.filterRow}>
-            <AnimatedScaleButton
-                style={[styles.filterBtn, !filterBookmarked && styles.filterBtnActive]}
-                onPress={() => onToggleFilter(false)}
-            >
-                <Text style={[styles.filterBtnText, !filterBookmarked && styles.filterBtnTextActive]}>All</Text>
-            </AnimatedScaleButton>
-            <AnimatedScaleButton
-                style={[styles.filterBtn, filterBookmarked && styles.filterBtnActive]}
-                onPress={() => onToggleFilter(true)}
-            >
-                <MaterialCommunityIcons
-                    name="bookmark"
-                    size={14}
-                    color={filterBookmarked ? theme.colors.textPrimary : theme.colors.textMuted}
-                    style={{ marginRight: 4 }}
-                />
-                <Text style={[styles.filterBtnText, filterBookmarked && styles.filterBtnTextActive]}>Bookmarked</Text>
-            </AnimatedScaleButton>
-        </View>
-
-        {/* Newest first notice */}
-        <View style={styles.chronoNotice}>
-            <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
-            <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
-        </View>
-    </Animated.View>
-));
+            {/* Newest first notice */}
+            <View style={styles.chronoNotice}>
+                <MaterialCommunityIcons name="clock-outline" size={12} color={theme.colors.textMuted} />
+                <Text style={styles.chronoNoticeText}>Newest first · Oldest at bottom</Text>
+            </View>
+        </Animated.View>
+    ),
+);
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
 
@@ -302,10 +352,10 @@ const FeedScreenInner: React.FC<Props> = ({
     }, []);
 
     const handleToggleType = useCallback((type: 'journals' | 'tweets' | 'vlogs' | 'checkins') => {
-        if (type === 'journals') setShowJournals(p => !p);
-        if (type === 'tweets') setShowTweets(p => !p);
-        if (type === 'vlogs') setShowVlogs(p => !p);
-        if (type === 'checkins') setShowCheckins(p => !p);
+        if (type === 'journals') setShowJournals((p) => !p);
+        if (type === 'tweets') setShowTweets((p) => !p);
+        if (type === 'vlogs') setShowVlogs((p) => !p);
+        if (type === 'checkins') setShowCheckins((p) => !p);
     }, []);
 
     /**
@@ -363,10 +413,10 @@ const FeedScreenInner: React.FC<Props> = ({
     /** Apply bookmark + type filters */
     const displayItems = useMemo(() => {
         let items = feedItems;
-        if (!showJournals) items = items.filter(i => i.type !== 'story');
-        if (!showTweets) items = items.filter(i => i.type !== 'tweet');
-        if (!showVlogs) items = items.filter(i => i.type !== 'clip');
-        if (!showCheckins) items = items.filter(i => i.type !== 'checkin');
+        if (!showJournals) items = items.filter((i) => i.type !== 'story');
+        if (!showTweets) items = items.filter((i) => i.type !== 'tweet');
+        if (!showVlogs) items = items.filter((i) => i.type !== 'clip');
+        if (!showCheckins) items = items.filter((i) => i.type !== 'checkin');
         if (filterBookmarked) {
             items = items.filter((item) => {
                 const id = item.note?.id || item.vlog?.id || '';
@@ -631,7 +681,16 @@ const FeedScreenInner: React.FC<Props> = ({
                 onClose={handleCloseButton}
             />
         ),
-        [feedItems.length, filterBookmarked, showJournals, showTweets, showVlogs, showCheckins, handleToggleType, handleCloseButton],
+        [
+            feedItems.length,
+            filterBookmarked,
+            showJournals,
+            showTweets,
+            showVlogs,
+            showCheckins,
+            handleToggleType,
+            handleCloseButton,
+        ],
     );
 
     /** getItemLayout: approximate heights for FlashList fast-path layout.
@@ -834,17 +893,27 @@ const styles = StyleSheet.create({
     },
 
     /* ── Filter toggle ──────────────────────────────────────────────── */
-    checkboxRow: {
+    /* ── Filter Scrollable Track ────────────────────────────────────── */
+    filterScrollView: {
+        marginBottom: 16,
+    },
+    filterScrollContainer: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        alignItems: 'center',
         gap: 8,
-        marginBottom: 12,
+        paddingRight: 16,
+    },
+    filterDivider: {
+        width: 1,
+        height: 18,
+        backgroundColor: theme.colors.glassBorder,
+        marginHorizontal: 4,
     },
     checkboxBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 6,
-        paddingHorizontal: 12,
+        paddingVertical: 7,
+        paddingHorizontal: 13,
         borderRadius: 100,
         backgroundColor: theme.colors.glassBackground,
         borderWidth: 1,
@@ -863,16 +932,11 @@ const styles = StyleSheet.create({
         color: theme.colors.textPrimary,
         fontWeight: '700',
     },
-    filterRow: {
-        flexDirection: 'row',
-        gap: 8,
-        marginBottom: 16,
-    },
     filterBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 8,
-        paddingHorizontal: 16,
+        paddingVertical: 7,
+        paddingHorizontal: 13,
         borderRadius: 100,
         backgroundColor: theme.colors.glassBackground,
         borderWidth: 1,
@@ -884,7 +948,7 @@ const styles = StyleSheet.create({
     },
     filterBtnText: {
         color: theme.colors.textSecondary,
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '600',
     },
     filterBtnTextActive: {

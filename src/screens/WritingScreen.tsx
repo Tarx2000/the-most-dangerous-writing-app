@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -465,6 +466,16 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 {isTweetMode ? `${wordCount} / ${TWEET_THRESHOLD} Words` : `${wordCount} Words`}
                             </Text>
                             {(() => {
+                                // For tweet mode, display a premium messaging icon instead of the text "TWEET"
+                                if (isTweetMode && !hasLost) {
+                                    return (
+                                        <MaterialCommunityIcons
+                                            name="chat-processing-outline"
+                                            size={20}
+                                            color={theme.colors.primaryAction}
+                                        />
+                                    );
+                                }
                                 const { text, style } = getStatusDisplay(
                                     hasLost,
                                     isQuickNote,
@@ -549,35 +560,6 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 )}
                             </ScrollView>
                         </View>
-
-                        {isTweetMode && !hasLost && (
-                            <Animated.View style={[styles.tweetProgressContainer, animatedHeaderStyle]}>
-                                <View style={styles.tweetProgressTrack}>
-                                    <View
-                                        style={[
-                                            styles.tweetProgressFill,
-                                            {
-                                                width: `${Math.min(100, (wordCount / TWEET_THRESHOLD) * 100)}%`,
-                                                backgroundColor:
-                                                    wordCount >= TWEET_THRESHOLD
-                                                        ? theme.colors.danger
-                                                        : theme.colors.primaryAction,
-                                            },
-                                        ]}
-                                    />
-                                </View>
-                                <Text
-                                    style={[
-                                        styles.tweetProgressText,
-                                        wordCount >= TWEET_THRESHOLD && { color: theme.colors.danger },
-                                    ]}
-                                >
-                                    {wordCount >= TWEET_THRESHOLD
-                                        ? 'Maximum length reached'
-                                        : `${TWEET_THRESHOLD - wordCount} words left`}
-                                </Text>
-                            </Animated.View>
-                        )}
 
                         {(sessionTimeRemaining === 0 || isContinuingAfterLoss || isQuickNoteMode) && !hasLost && (
                             <Animated.View style={[commonStyles.finishedActionsContainer, animatedHeaderStyle]}>
@@ -671,31 +653,6 @@ const styles = StyleSheet.create({
         color: theme.colors.background,
         fontSize: 12,
         fontWeight: 'bold',
-    },
-    tweetProgressContainer: {
-        position: 'absolute',
-        bottom: 20,
-        left: 20,
-        right: 20,
-        zIndex: 10,
-        alignItems: 'center',
-    },
-    tweetProgressTrack: {
-        width: '100%',
-        height: 4,
-        backgroundColor: theme.colors.glassSurface,
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    tweetProgressFill: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    tweetProgressText: {
-        color: theme.colors.textMuted,
-        fontSize: 11,
-        fontWeight: '600',
-        marginTop: 4,
     },
     morphText: {
         fontSize: 18,

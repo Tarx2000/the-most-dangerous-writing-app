@@ -155,7 +155,12 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                                 <Text style={styles.premiumNoteDate}>{note.dateStr}</Text>
                                                 <Text style={styles.premiumNoteMeta}>
                                                     {note.text.split(/\s+/).filter(Boolean).length} words •{' '}
-                                                    {note.durationMin > 0 ? `${note.durationMin} min` : 'Quick Note'}
+                                                    {/* Display specialized labels for tweets and quick notes instead of raw minutes to keep UI clean */}
+                                                    {note.isTweet
+                                                        ? 'Tweet'
+                                                        : note.isQuickNote
+                                                          ? 'Quick Note'
+                                                          : `${note.durationMin} min`}
                                                 </Text>
                                             </View>
                                         </View>

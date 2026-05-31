@@ -422,28 +422,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                                         <Text style={styles.tweetBtnText}>Tweet</Text>
                                     </AnimatedScaleButton>
                                 )}
-                                {selectedPersonId && (
-                                    <AnimatedScaleButton
-                                        style={styles.quickNoteBtn}
-                                        onPress={() => {
-                                            vibrate(30);
-                                            navigation.navigate('Writing', {
-                                                timeIndex: 0,
-                                                diffIndex,
-                                                mode: 'circles',
-                                                personId: selectedPersonId,
-                                                isQuickNote: true,
-                                            });
-                                        }}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name="lightning-bolt"
-                                            size={16}
-                                            color={theme.colors.background}
-                                        />
-                                        <Text style={styles.quickNoteText}>Quick Note</Text>
-                                    </AnimatedScaleButton>
-                                )}
                             </Animated.View>
                         )}
                         {sessionMode === 'checkin' && (

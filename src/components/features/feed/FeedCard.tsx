@@ -1,10 +1,5 @@
 import React, { useState } from 'react';
-import { View,
-    Text,
-    TextInput,
-    StyleSheet,
-Platform
-} from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform } from 'react-native';
 
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
@@ -36,7 +31,6 @@ const TYPE_COLORS: Record<string, string> = {
 
 /** Get word count from text */
 const getWordCount = (text: string) => (text || '').split(/\s+/).filter(Boolean).length;
-
 
 /** Get score details for check-in entries */
 const getScoreDetails = getAlignmentScoreFeed;
@@ -78,265 +72,274 @@ interface FeedCardProps {
  * Each card has a thin left border accent in its type color
  * for fast visual scanning of the feed.
  */
-export const FeedCard: React.FC<FeedCardProps> = React.memo(({
-    item,
-    isBookmarked,
-    comment,
-    onToggleBookmark,
-    onSaveComment,
-    onOpenEntry,
-    onOpenVlog,
-}) => {
-    const [showCommentInput, setShowCommentInput] = useState(false);
-    const [commentText, setCommentText] = useState(comment || '');
+export const FeedCard: React.FC<FeedCardProps> = React.memo(
+    ({ item, isBookmarked, comment, onToggleBookmark, onSaveComment, onOpenEntry, onOpenVlog }) => {
+        const [showCommentInput, setShowCommentInput] = useState(false);
+        const [commentText, setCommentText] = useState(comment || '');
 
-    /** User's chosen font — applied to content text only (not UI chrome) */
-    const { fontIndex } = usePreferences();
-    const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+        /** User's chosen font — applied to content text only (not UI chrome) */
+        const { fontIndex } = usePreferences();
+        const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
 
-    const noteId = item.note?.id || item.vlog?.id || '';
-    const isCircle = !!item.note?.personId;
-    const isCheckin = !!item.note && isAlignmentReflection(item.note);
+        const noteId = item.note?.id || item.vlog?.id || '';
+        const isCircle = !!item.note?.personId;
+        const isCheckin = !!item.note && isAlignmentReflection(item.note);
 
-    /** Determine the entry's category for visual styling */
-    const category = isCheckin ? 'checkin' : item.type === 'clip' ? 'clip' : isCircle ? 'circle' : 'journal';
-    const accentColor = category === 'checkin'
-        ? getScoreDetails(item.note && isAlignmentReflection(item.note) ? item.note.alignmentScore : 5).color
-        : TYPE_COLORS[category];
+        /** Determine the entry's category for visual styling */
+        const category = isCheckin ? 'checkin' : item.type === 'clip' ? 'clip' : isCircle ? 'circle' : 'journal';
+        const accentColor =
+            category === 'checkin'
+                ? getScoreDetails(item.note && isAlignmentReflection(item.note) ? item.note.alignmentScore : 5).color
+                : TYPE_COLORS[category];
 
-    /** Category label shown in the header */
-    const categoryLabel = isCheckin ? 'CHECK-IN'
-        : item.type === 'tweet' ? 'TWEET'
-        : isCircle ? item.personName || 'Circle'
-        : item.type === 'clip' ? 'VIDEO CLIP'
-        : 'JOURNAL';
+        /**
+         * Category label shown in the header.
+         * Prioritizes the linked person's name for circle entries (including circle tweets)
+         * so that short-form entries show the contact context clearly instead of a duplicate badge.
+         */
+        const categoryLabel = isCheckin
+            ? 'CHECK-IN'
+            : isCircle
+              ? item.personName || 'Circle'
+              : item.type === 'clip'
+                ? 'VIDEO'
+                : 'JOURNAL';
 
-    /** Word count for text entries */
-    const wordCount = item.note ? getWordCount(item.note.text) : 0;
+        /** Word count for text entries */
+        const wordCount = item.note ? getWordCount(item.note.text) : 0;
 
-    /** Duration display */
-    const durationLabel = item.note
-        ? (item.note.durationMin > 0 ? `${item.note.durationMin} min` : item.type === 'tweet' ? '🐦' : 'Quick Note')
-        : item.vlog
-        ? `${Math.ceil(item.vlog.durationSec / 60)} min`
-        : '';
+        /** Duration display */
+        const durationLabel = item.note
+            ? item.note.durationMin > 0
+                ? `${item.note.durationMin} min`
+                : item.type === 'tweet'
+                  ? '🐦'
+                  : 'Quick Note'
+            : item.vlog
+              ? `${Math.ceil(item.vlog.durationSec / 60)} min`
+              : '';
 
-    /* ── Render: Avatar ─────────────────────────────────────────────── */
-    const renderAvatar = () => {
-        if (isCheckin) {
-            const checkinNote = item.note as AlignmentReflection;
-            const score = checkinNote?.alignmentScore || 5;
-            const details = getScoreDetails(score);
-            return (
-                <View style={[styles.avatar, { borderColor: details.color, shadowColor: details.color }]}>
-                    <Text style={styles.avatarEmoji}>{details.emoji}</Text>
-                </View>
-            );
-        }
-        if (isCircle && item.personName) {
-            return (
-                <View style={[styles.avatar, { borderColor: TYPE_COLORS.circle }]}>
-                    <Text style={[styles.avatarLetter, { color: TYPE_COLORS.circle }]}>
-                        {item.personName.charAt(0).toUpperCase()}
-                    </Text>
-                </View>
-            );
-        }
-        // Tweet — bird icon
-        if (item.type === 'tweet') {
-            return (
-                <View style={[styles.avatar, { borderColor: theme.colors.primaryAction }]}>
-                    <MaterialCommunityIcons name="chat-processing-outline" size={18} color={theme.colors.primaryAction} />
-                </View>
-            );
-        }
-        // Journal — star icon
-        return (
-            <View style={[styles.avatar, { borderColor: theme.colors.border }]}>
-                <MaterialCommunityIcons name="star-four-points" size={16} color={theme.colors.textSecondary} />
-            </View>
-        );
-    };
-
-    /* ── Render: Body Content ───────────────────────────────────────── */
-    const renderBody = () => {
-        if (item.type === 'clip') {
-            // Video entries handled by FeedVideoCard
-            return null;
-        }
-
-        if (!item.note) return null;
-
-        // Check-in card
-        if (isCheckin) {
-            const checkinNote = item.note as AlignmentReflection;
-            const score = checkinNote?.alignmentScore || 5;
-            const details = getScoreDetails(score);
-            return (
-                <View>
-                    <View style={styles.checkinScoreRow}>
-                        <Text style={[styles.checkinScore, { color: details.color }]}>
-                            {score}/10
-                        </Text>
-                        <Text style={[styles.checkinLabel, { color: details.color }]}>
-                            {details.label}
+        /* ── Render: Avatar ─────────────────────────────────────────────── */
+        const renderAvatar = () => {
+            if (isCheckin) {
+                const checkinNote = item.note as AlignmentReflection;
+                const score = checkinNote?.alignmentScore || 5;
+                const details = getScoreDetails(score);
+                return (
+                    <View style={[styles.avatar, { borderColor: details.color, shadowColor: details.color }]}>
+                        <Text style={styles.avatarEmoji}>{details.emoji}</Text>
+                    </View>
+                );
+            }
+            if (isCircle && item.personName) {
+                return (
+                    <View style={[styles.avatar, { borderColor: TYPE_COLORS.circle }]}>
+                        <Text style={[styles.avatarLetter, { color: TYPE_COLORS.circle }]}>
+                            {item.personName.charAt(0).toUpperCase()}
                         </Text>
                     </View>
-                    {item.note.text && (
-                        <Text style={[styles.tweetText, { fontFamily: activeFont }]} numberOfLines={3}>
-                            {truncateWords(item.note.text, 40)}
-                        </Text>
-                    )}
-                </View>
-            );
-        }
-
-        // Tweet (short entry) — show full text
-        if (item.note.isTweet) {
-            return (
-                <View>
-                    <View style={styles.tweetBadge}>
-                        <MaterialCommunityIcons name="chat-processing-outline" size={12} color={theme.colors.primaryAction} />
-                        <Text style={styles.tweetBadgeText}>Tweet</Text>
-                    </View>
-                    <Text style={[styles.tweetText, { fontFamily: activeFont }]}>{item.note.text}</Text>
-                </View>
-            );
-        }
-
-        // Story (long entry) — show AI title prominently + preview + Read More
-        return (
-            <View>
-                {item.note.aiTitle && (
-                    <RichText style={styles.storyTitle} numberOfLines={2} text={item.note.aiTitle} />
-                )}
-                <Text style={[styles.storyPreview, { fontFamily: activeFont }]}>
-                    {truncateWords(item.note.text, STORY_PREVIEW_WORDS)}
-                </Text>
-                <AnimatedScaleButton
-                    style={styles.readMoreBtn}
-                    onPress={() => item.note && onOpenEntry(item.note)}
-                >
-                    <Text style={styles.readMoreText}>Read more</Text>
-                    <MaterialCommunityIcons name="arrow-right" size={14} color={theme.colors.primaryAction} />
-                </AnimatedScaleButton>
-            </View>
-        );
-    };
-
-    /* ── Render: Comment section ────────────────────────────────────── */
-    const handleSaveComment = () => {
-        onSaveComment(noteId, commentText);
-        setShowCommentInput(false);
-        vibrate(15);
-    };
-
-    return (
-        <AnimatedScaleButton
-            style={styles.card}
-            onPress={() => {
-                if (item.note) onOpenEntry(item.note);
-                else if (item.vlog && onOpenVlog) onOpenVlog(item.vlog);
-            }}
-            activeScale={0.98}
-        >
-            <View style={styles.leftColumn}>
-                {renderAvatar()}
-            </View>
-
-            <View style={styles.rightColumn}>
-                {/* Header: Category + Time */}
-                <View style={styles.header}>
-                    <Text style={[styles.categoryBadge, { color: accentColor }]}>
-                        {categoryLabel}
-                    </Text>
-                    <Text style={styles.timeAgo}>{formatRelativeTime(item.timestamp)}</Text>
-                </View>
-
-                {/* Body Content */}
-                {renderBody()}
-
-                {/* Existing comment display */}
-                {comment && !showCommentInput && (
-                    <View style={styles.commentDisplay}>
-                        <MaterialCommunityIcons name="comment-text-outline" size={12} color={theme.colors.textMuted} />
-                        <Text style={[styles.commentDisplayText, { fontFamily: activeFont }]} numberOfLines={2}>{comment}</Text>
-                    </View>
-                )}
-
-                {/* Comment input */}
-                {showCommentInput && (
-                    <View style={styles.commentInputContainer}>
-                        <TextInput
-                            style={styles.commentInput}
-                            value={commentText}
-                            onChangeText={setCommentText}
-                            placeholder="Add a personal note..."
-                            placeholderTextColor={theme.colors.textMuted}
-                            multiline
-                            maxLength={500}
-                            autoFocus
-                            keyboardAppearance="dark"
+                );
+            }
+            // Tweet — bird icon
+            if (item.type === 'tweet') {
+                return (
+                    <View style={[styles.avatar, { borderColor: theme.colors.primaryAction }]}>
+                        <MaterialCommunityIcons
+                            name="chat-processing-outline"
+                            size={18}
+                            color={theme.colors.primaryAction}
                         />
-                        <View style={styles.commentActions}>
-                            <AnimatedScaleButton onPress={() => setShowCommentInput(false)}>
-                                <Text style={styles.commentCancelText}>Cancel</Text>
+                    </View>
+                );
+            }
+            // Journal — star icon
+            return (
+                <View style={[styles.avatar, { borderColor: theme.colors.border }]}>
+                    <MaterialCommunityIcons name="star-four-points" size={16} color={theme.colors.textSecondary} />
+                </View>
+            );
+        };
+
+        /* ── Render: Body Content ───────────────────────────────────────── */
+        const renderBody = () => {
+            if (item.type === 'clip') {
+                // Video entries handled by FeedVideoCard
+                return null;
+            }
+
+            if (!item.note) return null;
+
+            // Check-in card
+            if (isCheckin) {
+                const checkinNote = item.note as AlignmentReflection;
+                const score = checkinNote?.alignmentScore || 5;
+                const details = getScoreDetails(score);
+                return (
+                    <View>
+                        <View style={styles.checkinScoreRow}>
+                            <Text style={[styles.checkinScore, { color: details.color }]}>{score}/10</Text>
+                            <Text style={[styles.checkinLabel, { color: details.color }]}>{details.label}</Text>
+                        </View>
+                        {item.note.text && (
+                            <Text style={[styles.tweetText, { fontFamily: activeFont }]} numberOfLines={3}>
+                                {truncateWords(item.note.text, 40)}
+                            </Text>
+                        )}
+                    </View>
+                );
+            }
+
+            // Tweet (short entry) — show full text
+            if (item.note.isTweet) {
+                return (
+                    <View>
+                        <View style={styles.tweetBadge}>
+                            <MaterialCommunityIcons
+                                name="chat-processing-outline"
+                                size={12}
+                                color={theme.colors.primaryAction}
+                            />
+                            <Text style={styles.tweetBadgeText}>Tweet</Text>
+                        </View>
+                        <Text style={[styles.tweetText, { fontFamily: activeFont }]}>{item.note.text}</Text>
+                    </View>
+                );
+            }
+
+            // Story (long entry) — show AI title prominently + preview + Read More
+            return (
+                <View>
+                    {item.note.aiTitle && (
+                        <RichText style={styles.storyTitle} numberOfLines={2} text={item.note.aiTitle} />
+                    )}
+                    <Text style={[styles.storyPreview, { fontFamily: activeFont }]}>
+                        {truncateWords(item.note.text, STORY_PREVIEW_WORDS)}
+                    </Text>
+                    <AnimatedScaleButton style={styles.readMoreBtn} onPress={() => item.note && onOpenEntry(item.note)}>
+                        <Text style={styles.readMoreText}>Read more</Text>
+                        <MaterialCommunityIcons name="arrow-right" size={14} color={theme.colors.primaryAction} />
+                    </AnimatedScaleButton>
+                </View>
+            );
+        };
+
+        /* ── Render: Comment section ────────────────────────────────────── */
+        const handleSaveComment = () => {
+            onSaveComment(noteId, commentText);
+            setShowCommentInput(false);
+            vibrate(15);
+        };
+
+        return (
+            <AnimatedScaleButton
+                style={styles.card}
+                onPress={() => {
+                    if (item.note) onOpenEntry(item.note);
+                    else if (item.vlog && onOpenVlog) onOpenVlog(item.vlog);
+                }}
+                activeScale={0.98}
+            >
+                <View style={styles.leftColumn}>{renderAvatar()}</View>
+
+                <View style={styles.rightColumn}>
+                    {/* Header: Category + Time */}
+                    <View style={styles.header}>
+                        <Text style={[styles.categoryBadge, { color: accentColor }]}>{categoryLabel}</Text>
+                        <Text style={styles.timeAgo}>{formatRelativeTime(item.timestamp)}</Text>
+                    </View>
+
+                    {/* Body Content */}
+                    {renderBody()}
+
+                    {/* Existing comment display */}
+                    {comment && !showCommentInput && (
+                        <View style={styles.commentDisplay}>
+                            <MaterialCommunityIcons
+                                name="comment-text-outline"
+                                size={12}
+                                color={theme.colors.textMuted}
+                            />
+                            <Text style={[styles.commentDisplayText, { fontFamily: activeFont }]} numberOfLines={2}>
+                                {comment}
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* Comment input */}
+                    {showCommentInput && (
+                        <View style={styles.commentInputContainer}>
+                            <TextInput
+                                style={styles.commentInput}
+                                value={commentText}
+                                onChangeText={setCommentText}
+                                placeholder="Add a personal note..."
+                                placeholderTextColor={theme.colors.textMuted}
+                                multiline
+                                maxLength={500}
+                                autoFocus
+                                keyboardAppearance="dark"
+                            />
+                            <View style={styles.commentActions}>
+                                <AnimatedScaleButton onPress={() => setShowCommentInput(false)}>
+                                    <Text style={styles.commentCancelText}>Cancel</Text>
+                                </AnimatedScaleButton>
+                                <AnimatedScaleButton style={styles.commentSaveBtn} onPress={handleSaveComment}>
+                                    <Text style={styles.commentSaveText}>Save</Text>
+                                </AnimatedScaleButton>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Metadata Footer + Actions */}
+                    <View style={styles.footer}>
+                        {/* Metadata */}
+                        <View style={styles.metaRow}>
+                            {wordCount > 0 && <Text style={styles.metaText}>{wordCount} words</Text>}
+                            {durationLabel && (
+                                <Text style={styles.metaText}>
+                                    {wordCount > 0 ? ' · ' : ''}
+                                    {durationLabel}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Interaction buttons */}
+                        <View style={styles.actionRow}>
+                            <AnimatedScaleButton
+                                onPress={(e) => {
+                                    e?.stopPropagation?.();
+                                    onToggleBookmark(noteId);
+                                    vibrate(10);
+                                }}
+                                style={styles.actionBtn}
+                            >
+                                <MaterialCommunityIcons
+                                    name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                                    size={18}
+                                    color={isBookmarked ? theme.colors.primaryAction : theme.colors.textMuted}
+                                />
                             </AnimatedScaleButton>
-                            <AnimatedScaleButton style={styles.commentSaveBtn} onPress={handleSaveComment}>
-                                <Text style={styles.commentSaveText}>Save</Text>
+                            <AnimatedScaleButton
+                                onPress={(e) => {
+                                    e?.stopPropagation?.();
+                                    setShowCommentInput(!showCommentInput);
+                                    setCommentText(comment || '');
+                                }}
+                                style={styles.actionBtn}
+                            >
+                                <MaterialCommunityIcons
+                                    name={comment ? 'comment-text' : 'comment-outline'}
+                                    size={16}
+                                    color={comment ? theme.colors.primaryAction : theme.colors.textMuted}
+                                />
                             </AnimatedScaleButton>
                         </View>
                     </View>
-                )}
-
-                {/* Metadata Footer + Actions */}
-                <View style={styles.footer}>
-                    {/* Metadata */}
-                    <View style={styles.metaRow}>
-                        {wordCount > 0 && (
-                            <Text style={styles.metaText}>{wordCount} words</Text>
-                        )}
-                        {durationLabel && (
-                            <Text style={styles.metaText}>{wordCount > 0 ? ' · ' : ''}{durationLabel}</Text>
-                        )}
-                    </View>
-
-                    {/* Interaction buttons */}
-                    <View style={styles.actionRow}>
-                        <AnimatedScaleButton
-                            onPress={(e) => {
-                                e?.stopPropagation?.();
-                                onToggleBookmark(noteId);
-                                vibrate(10);
-                            }}
-                            style={styles.actionBtn}
-                        >
-                            <MaterialCommunityIcons
-                                name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-                                size={18}
-                                color={isBookmarked ? theme.colors.primaryAction : theme.colors.textMuted}
-                            />
-                        </AnimatedScaleButton>
-                        <AnimatedScaleButton
-                            onPress={(e) => {
-                                e?.stopPropagation?.();
-                                setShowCommentInput(!showCommentInput);
-                                setCommentText(comment || '');
-                            }}
-                            style={styles.actionBtn}
-                        >
-                            <MaterialCommunityIcons
-                                name={comment ? 'comment-text' : 'comment-outline'}
-                                size={16}
-                                color={comment ? theme.colors.primaryAction : theme.colors.textMuted}
-                            />
-                        </AnimatedScaleButton>
-                    </View>
                 </View>
-            </View>
-        </AnimatedScaleButton>
-    );
-});
+            </AnimatedScaleButton>
+        );
+    },
+);
 
 /* ── STYLES ───────────────────────────────────────────────────────────────── */
 

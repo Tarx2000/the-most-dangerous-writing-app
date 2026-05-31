@@ -45,7 +45,8 @@
                     "savePhotosPermission": "Allow the app to save videos to your gallery",
                     "audioPermission": "Allow the app to save videos with audio to your gallery"
                 }
-            ]
+            ],
+            "expo-sharing"
         ],
         "web": {
             "favicon": "./assets/favicon.png"

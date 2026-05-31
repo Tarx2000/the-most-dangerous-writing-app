@@ -136,8 +136,13 @@ export const NoteCard: React.FC<Props> = React.memo(
                         )}
                     </View>
                     <Text style={commonStyles.noteCardDuration}>
-                        {note.durationMin} Min{' '}
-                        {note.won && note.durationMin >= 3 && !note.isQuickNote ? '🔥' : !note.won ? '💀' : ''}
+                        {/* Display custom labels for tweets and quick notes instead of raw minutes to keep UI descriptive */}
+                        {note.isTweet ? '🐦 Tweet' : note.isQuickNote ? 'Quick Note' : `${note.durationMin} Min`}{' '}
+                        {note.won && note.durationMin >= 3 && !note.isQuickNote && !note.isTweet
+                            ? '🔥'
+                            : !note.won
+                              ? '💀'
+                              : ''}
                     </Text>
                 </View>
 
