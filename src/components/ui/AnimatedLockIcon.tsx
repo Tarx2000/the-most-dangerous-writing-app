@@ -24,6 +24,8 @@ interface Props {
     size?: number;
     /** Optional custom style for the Svg wrapper */
     style?: import('react-native').StyleProp<import('react-native').ViewStyle>;
+    /** Optional animation duration in ms (defaults to 300) */
+    duration?: number;
 }
 
 /**
@@ -31,25 +33,27 @@ interface Props {
  * its shackle opening (translating and rotating 180 degrees around the Y-axis).
  * This creates a gorgeous 3D swing gate animation on the UI thread.
  */
-export const AnimatedLockIcon: React.FC<Props> = React.memo(({ isUnlocked, color, size = 16, style }) => {
+export const AnimatedLockIcon: React.FC<Props> = React.memo(({ isUnlocked, color, size = 16, style, duration }) => {
     // Animation shared value for realistic physical 3D lock swinging
-    const shackleRotateY = useSharedValue(0);
+    const shackleRotateY = useSharedValue(isUnlocked ? 180 : 0);
+
+    const animDuration = duration !== undefined ? duration : 300;
 
     useEffect(() => {
         if (isUnlocked) {
-            // Smooth 300ms rotation around Y-axis
+            // Smooth rotation around Y-axis
             shackleRotateY.value = withTiming(180, {
-                duration: 300,
+                duration: animDuration,
                 easing: Easing.out(Easing.quad),
             });
         } else {
             // Smooth return to closed state
             shackleRotateY.value = withTiming(0, {
-                duration: 300,
+                duration: animDuration,
                 easing: Easing.out(Easing.quad),
             });
         }
-    }, [isUnlocked, shackleRotateY]);
+    }, [isUnlocked, shackleRotateY, animDuration]);
 
     // Animate shackle transform in 3D using rotateY
     // Pivots around the left hinge coordinate (7.0, 11.0)

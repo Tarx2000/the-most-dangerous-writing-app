@@ -74,7 +74,7 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
     const saveBorderRadius = useSharedValue(0);
     const saveBorderWidth = useSharedValue(0);
     const savePadding = useSharedValue(20);
-    const saveBgColor = useSharedValue(theme.colors.background);
+    const saveBgColor = useSharedValue('transparent');
     const saveWidth = useSharedValue(screenWidth);
     const saveHeight = useSharedValue(screenHeight);
     const screenBgOpacity = useSharedValue(1);

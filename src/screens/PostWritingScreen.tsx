@@ -51,8 +51,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
 import type { AiJobCategory } from '@/types';
 import { isAlignmentReflection } from '@/types';
+import { BlurView } from 'expo-blur';
+import { AnimatedLockIcon } from '@/components/ui/AnimatedLockIcon';
+
+const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PostWriting'>;
+
+// Customizable configuration variables for animation transitions
+const FLY_AWAY_SCROLL_OFFSET = Platform.OS === 'ios' ? 140 : 120;
 
 export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
@@ -84,6 +91,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const aiEnqueuedRef = useRef(false);
     const noteSavedRef = useRef(false);
 
+    // Centered lock animation states during save transition
+    const [showLockIcon, setShowLockIcon] = useState(false);
+    const [isLockIconUnlocked, setIsLockIconUnlocked] = useState(true);
+
     /** Unmount guard to prevent setState on unmounted component */
     const isMountedRef = useRef(true);
     useEffect(() => {
@@ -91,6 +102,18 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
             isMountedRef.current = false;
         };
     }, []);
+
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    // Intercept back actions (system back button or gesture) and pop directly to Home menu
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+            if (noteSavedRef.current) return;
+            e.preventDefault();
+            navigation.dispatch(StackActions.popToTop());
+        });
+        return unsubscribe;
+    }, [navigation]);
 
     // Data is auto-loaded by StorageProvider
     /** Find the note once data is loaded */
@@ -186,7 +209,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-    // ── Save Fly-Away Animation Shared Values ──
+    // ── Save/Exit Animation Shared Values ──
     const saveTranslateX = useSharedValue(0);
     const saveScale = useSharedValue(1);
     const saveOpacity = useSharedValue(1);
@@ -196,17 +219,46 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const saveWidth = useSharedValue(screenWidth);
     const saveHeight = useSharedValue(screenHeight);
     const footerOpacity = useSharedValue(1);
+    const blurIntensity = useSharedValue<number | undefined>(0);
+    const contentOpacity = useSharedValue(1);
+    const lockIconOpacity = useSharedValue(0);
 
-    /** Plays the fly-away card animation when leaving the post writing screen */
+    /** Plays a card-shrink, content-blur, and slide-right throw animation during exit saving */
     const performSaveFlyAway = useCallback(
         (onComplete: () => void) => {
-            footerOpacity.value = withTiming(0, { duration: 100 });
+            // Reset and show lock overlay
+            setShowLockIcon(true);
+            setIsLockIconUnlocked(true);
 
+            // Smoothly scroll the container to center the AI Title in the viewport
+            scrollViewRef.current?.scrollTo({ y: FLY_AWAY_SCROLL_OFFSET, animated: true });
+
+            // Notify WritingScreen underneath to fade out its background in sync
+            DeviceEventEmitter.emit('EXIT_POST_WRITING');
+
+            // Fade background gradient to transparent in sync with exit transition
+            footerOpacity.value = withTiming(0, { duration: 250 });
+
+            // Apply card styling borders and card background color
             saveBorderRadius.value = withTiming(theme.borderRadius.md, { duration: 250 });
             saveBorderWidth.value = withTiming(1, { duration: 250 });
-            saveBgColor.value = withTiming(theme.colors.surfaceCard, { duration: 250 }); // solid opaque background
+            saveBgColor.value = withTiming(theme.colors.surfaceCard, { duration: 250 });
 
-            // Shrink dimensions directly to target 320 x 180 card size
+            // Blur the contents inside the card rapidly and with balanced density (earlier in the transition)
+            blurIntensity.value = withTiming(80, { duration: 150 });
+
+            // Fade out internal card content to dissolve details into the blur
+            contentOpacity.value = withTiming(0, { duration: 150 });
+
+            // Fade in the lock icon overlay rapidly in sync with the blur
+            lockIconOpacity.value = withTiming(1, { duration: 150 });
+
+            // Swing the shackle closed after a brief delay to ensure the user perceives the lock action
+            setTimeout(() => {
+                setIsLockIconUnlocked(false);
+            }, 30);
+
+            // Shrink dimensions to card size in place
             saveWidth.value = withTiming(320, {
                 duration: 350,
                 easing: Easing.bezier(0.25, 1, 0.5, 1),
@@ -216,14 +268,15 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 easing: Easing.bezier(0.25, 1, 0.5, 1),
             });
 
-            // Scale stays at 1 since we shrink layout dimensions directly
-            saveScale.value = withTiming(1, {
+            // Scale shrinks slightly to match the original card feel
+            saveScale.value = withTiming(0.85, {
                 duration: 350,
                 easing: Easing.bezier(0.25, 1, 0.5, 1),
             });
 
+            // Translate off screen to the right
             saveTranslateX.value = withSequence(
-                withTiming(0, { duration: 200 }),
+                withTiming(0, { duration: 200 }), // hold for shrink
                 withTiming(
                     screenWidth * 1.3,
                     {
@@ -238,20 +291,23 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                 ),
             );
 
+            // Fade the card out completely as it flies off screen
             saveOpacity.value = withSequence(withTiming(1, { duration: 350 }), withTiming(0, { duration: 250 }));
         },
         [
             screenWidth,
-            screenHeight,
             footerOpacity,
             saveBorderRadius,
             saveBorderWidth,
             saveBgColor,
+            blurIntensity,
+            contentOpacity,
+            lockIconOpacity,
+            saveWidth,
+            saveHeight,
             saveScale,
             saveTranslateX,
             saveOpacity,
-            saveWidth,
-            saveHeight,
         ],
     );
 
@@ -290,6 +346,15 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         opacity: footerOpacity.value,
     }));
 
+    const animatedContentStyle = useAnimatedStyle(() => ({
+        opacity: contentOpacity.value,
+    }));
+
+    const lockIconAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: lockIconOpacity.value,
+        transform: [{ scale: lockIconOpacity.value }],
+    }));
+
     /* ── Render ──────────────────────────────────────────────────────── */
 
     /** Word count — only recompute when editable text actually changes */
@@ -309,8 +374,9 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
             </Animated.View>
 
             <Animated.View style={saveAnimatedStyle}>
-                <ScrollView
-                    style={styles.scrollView}
+                <Animated.ScrollView
+                    ref={scrollViewRef as unknown as React.RefObject<ScrollView>}
+                    style={[styles.scrollView, animatedContentStyle]}
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
@@ -439,7 +505,12 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                 key={renderKey}
                                 style={[
                                     styles.editableTextInput,
-                                    { fontFamily: activeFont, fontSize: activeSize, lineHeight: activeLineHeight },
+                                    {
+                                        fontFamily: activeFont,
+                                        fontSize: activeSize,
+                                        lineHeight: activeLineHeight,
+                                        color: theme.colors.textInput,
+                                    },
                                 ]}
                                 defaultValue={editableTextRef.current}
                                 onChangeText={(val) => (editableTextRef.current = val)}
@@ -522,7 +593,42 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                     {/* Bottom padding */}
                     <View style={{ height: 120 }} />
-                </ScrollView>
+                </Animated.ScrollView>
+
+                {/* Animated Double Blur Overlay — stacked to double the native blur strength */}
+                <AnimatedBlurView
+                    intensity={blurIntensity}
+                    tint="dark"
+                    style={StyleSheet.absoluteFillObject}
+                    pointerEvents="none"
+                />
+                <AnimatedBlurView
+                    intensity={blurIntensity}
+                    tint="dark"
+                    style={StyleSheet.absoluteFillObject}
+                    pointerEvents="none"
+                />
+
+                {/* Centered Lock Animation Overlay */}
+                {showLockIcon && (
+                    <Animated.View
+                        style={[
+                            StyleSheet.absoluteFillObject,
+                            { justifyContent: 'center', alignItems: 'center' },
+                            lockIconAnimatedStyle,
+                        ]}
+                        pointerEvents="none"
+                    >
+                        <View style={styles.lockOverlayCircle}>
+                            <AnimatedLockIcon
+                                isUnlocked={isLockIconUnlocked}
+                                color={theme.colors.textPrimary}
+                                size={32}
+                                duration={140}
+                            />
+                        </View>
+                    </Animated.View>
+                )}
             </Animated.View>
 
             {/* ── Floating Save Button ────────────────────────────── */}
@@ -811,6 +917,21 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '900',
         letterSpacing: 0.5,
+    },
+    lockOverlayCircle: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: theme.colors.glassSurfaceMedium,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: theme.colors.shadowDark,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 5,
     },
 });
 

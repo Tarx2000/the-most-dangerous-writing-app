@@ -88,7 +88,7 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const saveBorderRadius = useSharedValue(0);
     const saveBorderWidth = useSharedValue(0);
     const savePadding = useSharedValue(20);
-    const saveBgColor = useSharedValue(theme.colors.background);
+    const saveBgColor = useSharedValue('transparent');
     const saveWidth = useSharedValue(screenWidth);
     const saveHeight = useSharedValue(screenHeight);
     const screenBgOpacity = useSharedValue(1);
@@ -117,6 +117,9 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     // Handle Entry Morph Animation & Focus Synchronization
     useEffect(() => {
+        // Ensure background is fully opaque on screen entry to cover HomeScreen
+        screenBgOpacity.value = 1;
+
         const handleMorphComplete = () => {
             setIsIntroFinished(true);
             vibrate(50); // Tactile trigger as boundaries hit screen edges
@@ -247,6 +250,15 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
         });
         return unsubscribe;
     }, [navigation, buttonLayout, performExitTransition]);
+
+    // Listen to exit events from PostWriting to fade background opacity in sync
+    useEffect(() => {
+        const subscription = DeviceEventEmitter.addListener('EXIT_POST_WRITING', () => {
+            isExitingRef.current = true; // Bypass the back-morph beforeRemove interceptor
+            screenBgOpacity.value = withTiming(0, { duration: 350 });
+        });
+        return () => subscription.remove();
+    }, [screenBgOpacity]);
 
     /** Reanimated Style: Morph borders to screen viewport and dissolve background from white to black */
     const animatedShellStyle = useAnimatedStyle(() => {
@@ -379,7 +391,11 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
             return;
         }
 
-        // Navigate to PostWriting AI review screen — AI enrichment happens there
+        // Non-tweets transition to PostWriting AI review:
+        // Fade out the editor HUD elements, but keep screenBgOpacity at 1 so HomeScreen doesn't flash.
+        editorOpacity.value = withTiming(0, { duration: 200 });
+
+        // Navigate immediately so the screen-level fade takes over smoothly
         navigation.navigate('PostWriting', {
             noteId: newNote.id,
             streakIncreased: result.streakIncreased,

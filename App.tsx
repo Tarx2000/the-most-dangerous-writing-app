@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { WritingScreen } from './src/screens/WritingScreen';
 import { PostWritingScreen } from './src/screens/PostWritingScreen';
@@ -103,33 +103,47 @@ function AiConfigGate() {
                     }}
                 >
                     <Stack.Screen name="Home" component={WrappedHomeScreen} />
+                    {/*
+                      TypeScript types for native-stack do not expose detachPreviousScreen,
+                      but the underlying react-native-screens library uses it to prevent
+                      unloading the background screen on Android. We cast as any to bypass.
+                    */}
                     <Stack.Screen
                         name="Writing"
                         component={WrappedWritingScreen}
-                        options={{
-                            animation: 'none',
-                            presentation: 'transparentModal',
-                            contentStyle: { backgroundColor: 'transparent' },
-                        }}
+                        options={
+                            {
+                                animation: 'none',
+                                presentation: 'transparentModal',
+                                contentStyle: { backgroundColor: 'transparent' },
+                                detachPreviousScreen: false,
+                            } as unknown as NativeStackNavigationOptions
+                        }
                     />
                     <Stack.Screen
                         name="PostWriting"
                         component={WrappedPostWritingScreen}
-                        options={{
-                            animation: 'none',
-                            presentation: 'transparentModal',
-                            contentStyle: { backgroundColor: 'transparent' },
-                        }}
+                        options={
+                            {
+                                animation: 'fade',
+                                presentation: 'transparentModal',
+                                contentStyle: { backgroundColor: 'transparent' },
+                                detachPreviousScreen: false,
+                            } as unknown as NativeStackNavigationOptions
+                        }
                     />
                     <Stack.Screen name="VisionBoard" component={WrappedVisionBoardScreen} />
                     <Stack.Screen
                         name="AlignmentWriting"
                         component={WrappedAlignmentWritingScreen}
-                        options={{
-                            animation: 'none',
-                            presentation: 'transparentModal',
-                            contentStyle: { backgroundColor: 'transparent' },
-                        }}
+                        options={
+                            {
+                                animation: 'none',
+                                presentation: 'transparentModal',
+                                contentStyle: { backgroundColor: 'transparent' },
+                                detachPreviousScreen: false,
+                            } as unknown as NativeStackNavigationOptions
+                        }
                     />
                     <Stack.Screen name="VlogRecording" component={WrappedVlogRecordingScreen} />
                     <Stack.Screen name="Sandbox" component={WrappedSandboxScreen} />
