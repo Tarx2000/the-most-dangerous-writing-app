@@ -7,6 +7,7 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel';
 import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToolsPanel';
 import { CompressionStatusBar } from '@/components/features/settings/CompressionStatusBar';
+import { PillarsSettingsPanel } from '@/components/features/settings/PillarsSettingsPanel';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CONFIG } from '@/config';
 import { AI_AVAILABLE_MODELS } from '@/config/ai';
@@ -720,6 +721,8 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                     </View>
 
                     <CompressionStatusBar compressionState={compressionState} />
+
+                    <PillarsSettingsPanel />
 
                     <AiSettingsPanel
                         notes={notes}

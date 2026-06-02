@@ -15,3 +15,5 @@ export type { CompressionJob, CompressionQueueState } from './compression';
 export type { AiJob, AiJobCategory, AiQueueState, AiLogEntry } from './ai';
 
 export type { FeedItem, FeedItemType } from './feed';
+
+export type { Pillar, AdviceCard, PillarLog, PillarVersion } from './pillars';

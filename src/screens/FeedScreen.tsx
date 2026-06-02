@@ -167,7 +167,7 @@ const FeedHeader = React.memo(
                         key: 'checkins' as const,
                         label: 'Check-ins',
                         active: showCheckins,
-                        icon: 'compass-outline' as React.ComponentProps<typeof MaterialCommunityIcons>['name'],
+                        icon: 'pillar' as React.ComponentProps<typeof MaterialCommunityIcons>['name'],
                     },
                 ].map((item) => (
                     <AnimatedScaleButton

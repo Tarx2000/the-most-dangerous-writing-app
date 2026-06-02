@@ -5,7 +5,8 @@ import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react
 import { HomeScreen } from './src/screens/HomeScreen';
 import { WritingScreen } from './src/screens/WritingScreen';
 import { PostWritingScreen } from './src/screens/PostWritingScreen';
-import { VisionBoardScreen } from './src/screens/VisionBoardScreen';
+import { PillarsDashboardScreen } from './src/screens/PillarsDashboardScreen';
+import { PillarDetailScreen } from './src/screens/PillarDetailScreen';
 import { AlignmentWritingScreen } from './src/screens/AlignmentWritingScreen';
 import { VlogRecordingScreen } from './src/screens/VlogRecordingScreen';
 import { SandboxScreen } from './src/screens/SandboxScreen';
@@ -132,7 +133,8 @@ function AiConfigGate() {
                             } as unknown as NativeStackNavigationOptions
                         }
                     />
-                    <Stack.Screen name="VisionBoard" component={WrappedVisionBoardScreen} />
+                    <Stack.Screen name="PillarsDashboard" component={WrappedPillarsDashboardScreen} />
+                    <Stack.Screen name="PillarDetail" component={WrappedPillarDetailScreen} />
                     <Stack.Screen
                         name="AlignmentWriting"
                         component={WrappedAlignmentWritingScreen}
@@ -171,7 +173,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const WrappedHomeScreen = withErrorBoundary(HomeScreen);
 const WrappedWritingScreen = withErrorBoundary(WritingScreen);
 const WrappedPostWritingScreen = withErrorBoundary(PostWritingScreen);
-const WrappedVisionBoardScreen = withErrorBoundary(VisionBoardScreen);
+const WrappedPillarsDashboardScreen = withErrorBoundary(PillarsDashboardScreen);
+const WrappedPillarDetailScreen = withErrorBoundary(PillarDetailScreen);
 const WrappedAlignmentWritingScreen = withErrorBoundary(AlignmentWritingScreen);
 const WrappedVlogRecordingScreen = withErrorBoundary(VlogRecordingScreen);
 const WrappedSandboxScreen = withErrorBoundary(SandboxScreen);

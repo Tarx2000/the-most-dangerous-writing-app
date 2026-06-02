@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-    View,
-    Text,
-    ScrollView,
-    TextInput,
-    StyleSheet,
-    Platform,
-    KeyboardAvoidingView
-} from 'react-native';
+import { View, Text, ScrollView, TextInput, StyleSheet, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -66,315 +58,149 @@ interface Props {
     isNoteQueued?: (id: string) => boolean;
 }
 
-export const PersonProfileModal: React.FC<Props> = React.memo(({
-    visible,
-    onClose,
-    person,
-    notes,
-    isUnlocked,
-    onUnlock,
-    onUpdatePerson,
-    onDeletePerson,
-    onNotePress,
-    isNotesUnlocked,
-    setHomeScrollEnabled,
-    isNoteActive,
-    isNoteQueued,
-}) => {
-    /* ── Edit mode state ──────────────────────────────────────────────── */
-    const [isEditing, setIsEditing] = useState(false);
+export const PersonProfileModal: React.FC<Props> = React.memo(
+    ({
+        visible,
+        onClose,
+        person,
+        notes,
+        isUnlocked,
+        onUnlock,
+        onUpdatePerson,
+        onDeletePerson,
+        onNotePress,
+        isNotesUnlocked,
+        setHomeScrollEnabled,
+        isNoteActive,
+        isNoteQueued,
+    }) => {
+        /* ── Edit mode state ──────────────────────────────────────────────── */
+        const [isEditing, setIsEditing] = useState(false);
 
-    /**
-     * Controlled edit fields — using useState (not useRef) so the keyboard
-     * never fights with stale defaultValues during parent re-renders.
-     * This eliminates the flickering bug when the keyboard opens/closes.
-     */
-    const [editNickname, setEditNickname] = useState('');
-    const [editRelationship, setEditRelationship] = useState('');
-    const [editBirthday, setEditBirthday] = useState('');
-    const [editBio, setEditBio] = useState('');
-    const [showRelationshipPicker, setShowRelationshipPicker] = useState(false);
+        /**
+         * Controlled edit fields — using useState (not useRef) so the keyboard
+         * never fights with stale defaultValues during parent re-renders.
+         * This eliminates the flickering bug when the keyboard opens/closes.
+         */
+        const [editNickname, setEditNickname] = useState('');
+        const [editRelationship, setEditRelationship] = useState('');
+        const [editBirthday, setEditBirthday] = useState('');
+        const [editBio, setEditBio] = useState('');
+        const [showRelationshipPicker, setShowRelationshipPicker] = useState(false);
 
-    /** Ref for the custom relationship input (doesn't need re-renders) */
-    const customRelInputRef = useRef('');
+        /** Ref for the custom relationship input (doesn't need re-renders) */
+        const customRelInputRef = useRef('');
 
-    /**
-     * Prevents the sync useEffect from overwriting a just-saved value.
-     * Without this, the person prop hasn't updated yet when the effect fires,
-     * causing the old value to flash momentarily.
-     */
-    const justSavedRef = useRef(false);
+        /**
+         * Prevents the sync useEffect from overwriting a just-saved value.
+         * Without this, the person prop hasn't updated yet when the effect fires,
+         * causing the old value to flash momentarily.
+         */
+        const justSavedRef = useRef(false);
 
-    /* ── Derived: all available relationship options (predefined + custom) */
-    const allRelationshipOptions = useMemo(() => {
-        const custom = person?.customRelationships || [];
-        return [...RELATIONSHIP_OPTIONS, ...custom];
-    }, [person?.customRelationships]);
+        /* ── Derived: all available relationship options (predefined + custom) */
+        const allRelationshipOptions = useMemo(() => {
+            const custom = person?.customRelationships || [];
+            return [...RELATIONSHIP_OPTIONS, ...custom];
+        }, [person?.customRelationships]);
 
-    /**
-     * Initialize edit fields ONLY when entering edit mode.
-     * Values are set atomically from the current person prop,
-     * never re-synced mid-edit (which caused the stale-data bug).
-     */
-    const startEditing = () => {
-        if (!person) return;
-        setEditNickname(person.nickname || '');
-        setEditRelationship(person.relationship || '');
-        setEditBirthday(person.birthday || '');
-        setEditBio(person.bio || '');
-        setShowRelationshipPicker(false);
-        justSavedRef.current = false;
-        setIsEditing(true);
-    };
-
-    /* ── Reset edit mode when modal closes ─────────────────────────── */
-    useEffect(() => {
-        if (!visible) {
-            setIsEditing(false);
+        /**
+         * Initialize edit fields ONLY when entering edit mode.
+         * Values are set atomically from the current person prop,
+         * never re-synced mid-edit (which caused the stale-data bug).
+         */
+        const startEditing = () => {
+            if (!person) return;
+            setEditNickname(person.nickname || '');
+            setEditRelationship(person.relationship || '');
+            setEditBirthday(person.birthday || '');
+            setEditBio(person.bio || '');
             setShowRelationshipPicker(false);
-        }
-    }, [visible]);
-
-    /* ── Auto-calculated stats ─────────────────────────────────────── */
-    const stats = useMemo(() => {
-        if (!person || notes.length === 0) {
-            return { totalEntries: 0, totalWords: 0, firstDate: null, lastDate: null };
-        }
-        const sorted = [...notes].sort((a, b) => a.timestamp - b.timestamp);
-        const totalWords = notes.reduce((sum, n) => {
-            return sum + (n.text || '').split(/\s+/).filter(Boolean).length;
-        }, 0);
-        return {
-            totalEntries: notes.length,
-            totalWords,
-            firstDate: new Date(sorted[0].timestamp),
-            lastDate: new Date(sorted[sorted.length - 1].timestamp),
+            justSavedRef.current = false;
+            setIsEditing(true);
         };
-    }, [notes, person]);
 
-    /** Recent notes (newest first, capped) */
-    const recentNotes = useMemo(() => {
-        return [...notes]
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, MAX_RECENT_NOTES);
-    }, [notes]);
+        /* ── Reset edit mode when modal closes ─────────────────────────── */
+        useEffect(() => {
+            if (!visible) {
+                setIsEditing(false);
+                setShowRelationshipPicker(false);
+            }
+        }, [visible]);
 
-    if (!person) return null;
+        /* ── Auto-calculated stats ─────────────────────────────────────── */
+        const stats = useMemo(() => {
+            if (!person || notes.length === 0) {
+                return { totalEntries: 0, totalWords: 0, firstDate: null, lastDate: null };
+            }
+            const sorted = [...notes].sort((a, b) => a.timestamp - b.timestamp);
+            const totalWords = notes.reduce((sum, n) => {
+                return sum + (n.text || '').split(/\s+/).filter(Boolean).length;
+            }, 0);
+            return {
+                totalEntries: notes.length,
+                totalWords,
+                firstDate: new Date(sorted[0].timestamp),
+                lastDate: new Date(sorted[sorted.length - 1].timestamp),
+            };
+        }, [notes, person]);
 
-    /* ── Save profile edits ────────────────────────────────────────── */
-    const handleSave = async () => {
-        justSavedRef.current = true;
-        await onUpdatePerson(person.id, {
-            nickname: editNickname.trim() || undefined,
-            relationship: editRelationship.trim() || undefined,
-            birthday: editBirthday.trim() || undefined,
-            bio: editBio.trim() || undefined,
-        });
-        vibrate(30);
-        setIsEditing(false);
-    };
+        /** Recent notes (newest first, capped) */
+        const recentNotes = useMemo(() => {
+            return [...notes].sort((a, b) => b.timestamp - a.timestamp).slice(0, MAX_RECENT_NOTES);
+        }, [notes]);
 
-    /** Add a custom relationship option */
-    const handleAddCustomRelationship = () => {
-        const trimmed = customRelInputRef.current.trim();
-        if (!trimmed || allRelationshipOptions.includes(trimmed)) return;
+        if (!person) return null;
 
-        const updated = [...(person.customRelationships || []), trimmed];
-        onUpdatePerson(person.id, { customRelationships: updated });
-        setEditRelationship(trimmed);
-        customRelInputRef.current = '';
-    };
+        /* ── Save profile edits ────────────────────────────────────────── */
+        const handleSave = async () => {
+            // Dismiss keyboard first to avoid layout fight during saving and modal dismissal
+            Keyboard.dismiss();
 
-    /** Format a date string (YYYY-MM-DD) into a readable format */
-    const formatBirthday = (dateStr: string) => {
-        try {
-            const parts = dateStr.split('-');
-            if (parts.length !== 3) return dateStr;
-            const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-            return date.toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' });
-        } catch (err: unknown) {
-            logger('warn', 'PersonProfileModal', `Failed to parse birthday: ${dateStr}`, err);
-            return dateStr;
-        }
-    };
+            justSavedRef.current = true;
+            await onUpdatePerson(person.id, {
+                nickname: editNickname.trim() || undefined,
+                relationship: editRelationship.trim() || undefined,
+                birthday: editBirthday.trim() || undefined,
+                bio: editBio.trim() || undefined,
+            });
+            vibrate(30);
+            setIsEditing(false);
+        };
 
-    /** Format a Date into a short month + year string */
-    const formatShortDate = (date: Date) => {
-        return date.toLocaleDateString('default', { month: 'short', year: 'numeric' });
-    };
+        /** Add a custom relationship option */
+        const handleAddCustomRelationship = () => {
+            const trimmed = customRelInputRef.current.trim();
+            if (!trimmed || allRelationshipOptions.includes(trimmed)) return;
 
-    /* ── Render: Locked state (before biometric) ───────────────────── */
-    const renderLockedView = () => (
-        <View style={styles.lockedContainer}>
-            {/* Avatar (always visible) */}
-            <View style={styles.avatarOuter}>
-                <LinearGradient colors={[...AVATAR_GRADIENT]} style={styles.avatarGradientRing}>
-                    <View style={styles.avatarInner}>
-                        <Text style={styles.avatarText}>{person.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                </LinearGradient>
-            </View>
+            const updated = [...(person.customRelationships || []), trimmed];
+            onUpdatePerson(person.id, { customRelationships: updated });
+            setEditRelationship(trimmed);
+            customRelInputRef.current = '';
+        };
 
-            <Text style={styles.lockedName}>{person.name}</Text>
-            <Text style={styles.lockedHint}>Verify your identity to view this profile</Text>
+        /** Format a date string (YYYY-MM-DD) into a readable format */
+        const formatBirthday = (dateStr: string) => {
+            try {
+                const parts = dateStr.split('-');
+                if (parts.length !== 3) return dateStr;
+                const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                return date.toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' });
+            } catch (err: unknown) {
+                logger('warn', 'PersonProfileModal', `Failed to parse birthday: ${dateStr}`, err);
+                return dateStr;
+            }
+        };
 
-            <AnimatedScaleButton style={styles.unlockBtn} onPress={async () => {
-                const success = await onUnlock();
-                if (success) vibrate(50);
-            }}>
-                <MaterialCommunityIcons name="fingerprint" size={24} color={theme.colors.textPrimary} style={{ marginRight: 10 }} />
-                <Text style={styles.unlockBtnText}>Unlock Profile</Text>
-            </AnimatedScaleButton>
-        </View>
-    );
+        /** Format a Date into a short month + year string */
+        const formatShortDate = (date: Date) => {
+            return date.toLocaleDateString('default', { month: 'short', year: 'numeric' });
+        };
 
-    /* ── Render: Edit mode ─────────────────────────────────────────── */
-    const renderEditMode = () => (
-        <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
-        >
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 60 }}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-            >
-                {/* Section: Nickname */}
-                <Text style={styles.editLabel}>Nickname</Text>
-                <TextInput
-                    style={styles.editInput}
-                    value={editNickname}
-                    onChangeText={setEditNickname}
-                    placeholder="Optional display name..."
-                    placeholderTextColor={theme.colors.textMuted}
-                    keyboardAppearance="dark"
-                />
-
-                {/* Section: Relationship */}
-                <Text style={styles.editLabel}>Relationship</Text>
-                <AnimatedScaleButton
-                    style={styles.editDropdown}
-                    onPress={() => setShowRelationshipPicker(!showRelationshipPicker)}
-                >
-                    <Text style={[styles.editDropdownText, !editRelationship && { color: theme.colors.textMuted }]}>
-                        {editRelationship || 'Select relationship...'}
-                    </Text>
-                    <MaterialCommunityIcons
-                        name={showRelationshipPicker ? 'chevron-up' : 'chevron-down'}
-                        size={20}
-                        color={theme.colors.textSecondary}
-                    />
-                </AnimatedScaleButton>
-
-                {showRelationshipPicker && (
-                    <View style={styles.relPickerContainer}>
-                        {allRelationshipOptions.map((rel) => (
-                            <AnimatedScaleButton
-                                key={rel}
-                                style={[styles.relOption, editRelationship === rel && styles.relOptionActive]}
-                                onPress={() => {
-                                    setEditRelationship(rel);
-                                    setShowRelationshipPicker(false);
-                                }}
-                            >
-                                <Text style={[styles.relOptionText, editRelationship === rel && styles.relOptionTextActive]}>
-                                    {rel}
-                                </Text>
-                                {editRelationship === rel && (
-                                    <MaterialCommunityIcons name="check" size={18} color={theme.colors.primaryAction} />
-                                )}
-                            </AnimatedScaleButton>
-                        ))}
-
-                        {/* Add custom relationship */}
-                        <View style={styles.addCustomRelRow}>
-                            <TextInput
-                                style={styles.addCustomRelInput}
-                                defaultValue={customRelInputRef.current}
-                                onChangeText={(text) => customRelInputRef.current = text}
-                                placeholder="Add custom..."
-                                placeholderTextColor={theme.colors.textMuted}
-                                keyboardAppearance="dark"
-                            />
-                            <AnimatedScaleButton
-                                style={[styles.addCustomRelBtn, !customRelInputRef.current.trim() && { opacity: 0.3 }]}
-                                onPress={handleAddCustomRelationship}
-                                disabled={!customRelInputRef.current.trim()}
-                            >
-                                <MaterialCommunityIcons name="plus" size={20} color={theme.colors.background} />
-                            </AnimatedScaleButton>
-                        </View>
-                    </View>
-                )}
-
-                {/* Section: Birthday */}
-                <Text style={styles.editLabel}>Birthday</Text>
-                <TextInput
-                    style={styles.editInput}
-                    value={editBirthday}
-                    onChangeText={setEditBirthday}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={theme.colors.textMuted}
-                    keyboardAppearance="dark"
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={10}
-                />
-                <Text style={styles.editHint}>Format: 2000-05-15</Text>
-
-                {/* Section: Bio / Notes */}
-                <Text style={styles.editLabel}>Personal Notes</Text>
-                <TextInput
-                    style={[styles.editInput, styles.editTextArea]}
-                    value={editBio}
-                    onChangeText={setEditBio}
-                    placeholder="Write personal notes about this person..."
-                    placeholderTextColor={theme.colors.textMuted}
-                    keyboardAppearance="dark"
-                    multiline
-                    textAlignVertical="top"
-                />
-
-                {/* Action buttons — full-width stacked: Save on top, Cancel below */}
-                <View style={styles.editActions}>
-                    <AnimatedScaleButton
-                        style={styles.editSaveBtn}
-                        onPress={handleSave}
-                    >
-                        <MaterialCommunityIcons name="check" size={20} color={theme.colors.textPrimary} style={{ marginRight: 8 }} />
-                        <Text style={styles.editSaveBtnText}>Save Changes</Text>
-                    </AnimatedScaleButton>
-                    <AnimatedScaleButton
-                        style={styles.editCancelBtn}
-                        onPress={() => setIsEditing(false)}
-                    >
-                        <Text style={styles.editCancelBtnText}>Cancel</Text>
-                    </AnimatedScaleButton>
-                </View>
-
-                {/* Delete Person — danger zone, only in edit mode */}
-                {onDeletePerson && (
-                    <AnimatedScaleButton
-                        style={styles.deleteDangerBtn}
-                        onPress={() => {
-                            onDeletePerson(person.id);
-                            onClose();
-                        }}
-                    >
-                        <MaterialCommunityIcons name="delete-outline" size={18} color={theme.colors.danger} style={{ marginRight: 8 }} />
-                        <Text style={styles.deleteDangerBtnText}>Delete Person</Text>
-                    </AnimatedScaleButton>
-                )}
-            </ScrollView>
-        </KeyboardAvoidingView>
-    );
-
-    /* ── Render: Full unlocked profile view ─────────────────────────── */
-    const renderProfileView = () => (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-            {/* Avatar */}
-            <View style={styles.profileAvatarContainer}>
+        /* ── Render: Locked state (before biometric) ───────────────────── */
+        const renderLockedView = () => (
+            <View style={styles.lockedContainer}>
+                {/* Avatar (always visible) */}
                 <View style={styles.avatarOuter}>
                     <LinearGradient colors={[...AVATAR_GRADIENT]} style={styles.avatarGradientRing}>
                         <View style={styles.avatarInner}>
@@ -383,99 +209,307 @@ export const PersonProfileModal: React.FC<Props> = React.memo(({
                     </LinearGradient>
                 </View>
 
-                <Text style={styles.profileName}>{person.nickname || person.name}</Text>
-                {person.nickname && (
-                    <Text style={styles.profileRealName}>{person.name}</Text>
-                )}
-                {person.relationship && (
-                    <View style={styles.relationshipBadge}>
-                        <Text style={styles.relationshipBadgeText}>{person.relationship}</Text>
+                <Text style={styles.lockedName}>{person.name}</Text>
+                <Text style={styles.lockedHint}>Verify your identity to view this profile</Text>
+
+                <AnimatedScaleButton
+                    style={styles.unlockBtn}
+                    onPress={async () => {
+                        const success = await onUnlock();
+                        if (success) vibrate(50);
+                    }}
+                >
+                    <MaterialCommunityIcons
+                        name="fingerprint"
+                        size={24}
+                        color={theme.colors.textPrimary}
+                        style={{ marginRight: 10 }}
+                    />
+                    <Text style={styles.unlockBtnText}>Unlock Profile</Text>
+                </AnimatedScaleButton>
+            </View>
+        );
+
+        /* ── Render: Edit mode ─────────────────────────────────────────── */
+        const renderEditMode = () => (
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+            >
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 60 }}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                >
+                    {/* Section: Nickname */}
+                    <Text style={styles.editLabel}>Nickname</Text>
+                    <TextInput
+                        style={styles.editInput}
+                        value={editNickname}
+                        onChangeText={setEditNickname}
+                        placeholder="Optional display name..."
+                        placeholderTextColor={theme.colors.textMuted}
+                        keyboardAppearance="dark"
+                    />
+
+                    {/* Section: Relationship */}
+                    <Text style={styles.editLabel}>Relationship</Text>
+                    <AnimatedScaleButton
+                        style={styles.editDropdown}
+                        onPress={() => setShowRelationshipPicker(!showRelationshipPicker)}
+                    >
+                        <Text style={[styles.editDropdownText, !editRelationship && { color: theme.colors.textMuted }]}>
+                            {editRelationship || 'Select relationship...'}
+                        </Text>
+                        <MaterialCommunityIcons
+                            name={showRelationshipPicker ? 'chevron-up' : 'chevron-down'}
+                            size={20}
+                            color={theme.colors.textSecondary}
+                        />
+                    </AnimatedScaleButton>
+
+                    {showRelationshipPicker && (
+                        <View style={styles.relPickerContainer}>
+                            {allRelationshipOptions.map((rel) => (
+                                <AnimatedScaleButton
+                                    key={rel}
+                                    style={[styles.relOption, editRelationship === rel && styles.relOptionActive]}
+                                    onPress={() => {
+                                        setEditRelationship(rel);
+                                        setShowRelationshipPicker(false);
+                                    }}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.relOptionText,
+                                            editRelationship === rel && styles.relOptionTextActive,
+                                        ]}
+                                    >
+                                        {rel}
+                                    </Text>
+                                    {editRelationship === rel && (
+                                        <MaterialCommunityIcons
+                                            name="check"
+                                            size={18}
+                                            color={theme.colors.primaryAction}
+                                        />
+                                    )}
+                                </AnimatedScaleButton>
+                            ))}
+
+                            {/* Add custom relationship */}
+                            <View style={styles.addCustomRelRow}>
+                                <TextInput
+                                    style={styles.addCustomRelInput}
+                                    defaultValue={customRelInputRef.current}
+                                    onChangeText={(text) => (customRelInputRef.current = text)}
+                                    placeholder="Add custom..."
+                                    placeholderTextColor={theme.colors.textMuted}
+                                    keyboardAppearance="dark"
+                                />
+                                <AnimatedScaleButton
+                                    style={[
+                                        styles.addCustomRelBtn,
+                                        !customRelInputRef.current.trim() && { opacity: 0.3 },
+                                    ]}
+                                    onPress={handleAddCustomRelationship}
+                                    disabled={!customRelInputRef.current.trim()}
+                                >
+                                    <MaterialCommunityIcons name="plus" size={20} color={theme.colors.background} />
+                                </AnimatedScaleButton>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Section: Birthday */}
+                    <Text style={styles.editLabel}>Birthday</Text>
+                    <TextInput
+                        style={styles.editInput}
+                        value={editBirthday}
+                        onChangeText={setEditBirthday}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={theme.colors.textMuted}
+                        keyboardAppearance="dark"
+                        keyboardType="numbers-and-punctuation"
+                        maxLength={10}
+                    />
+                    <Text style={styles.editHint}>Format: 2000-05-15</Text>
+
+                    {/* Section: Bio / Notes */}
+                    <Text style={styles.editLabel}>Personal Notes</Text>
+                    <TextInput
+                        style={[styles.editInput, styles.editTextArea]}
+                        value={editBio}
+                        onChangeText={setEditBio}
+                        placeholder="Write personal notes about this person..."
+                        placeholderTextColor={theme.colors.textMuted}
+                        keyboardAppearance="dark"
+                        multiline
+                        textAlignVertical="top"
+                    />
+
+                    {/* Action buttons — full-width stacked: Save on top, Cancel below */}
+                    <View style={styles.editActions}>
+                        <AnimatedScaleButton style={styles.editSaveBtn} onPress={handleSave}>
+                            <MaterialCommunityIcons
+                                name="check"
+                                size={20}
+                                color={theme.colors.textPrimary}
+                                style={{ marginRight: 8 }}
+                            />
+                            <Text style={styles.editSaveBtnText}>Save Changes</Text>
+                        </AnimatedScaleButton>
+                        <AnimatedScaleButton style={styles.editCancelBtn} onPress={() => setIsEditing(false)}>
+                            <Text style={styles.editCancelBtnText}>Cancel</Text>
+                        </AnimatedScaleButton>
+                    </View>
+
+                    {/* Delete Person — danger zone, only in edit mode */}
+                    {onDeletePerson && (
+                        <AnimatedScaleButton
+                            style={styles.deleteDangerBtn}
+                            onPress={() => {
+                                onDeletePerson(person.id);
+                                onClose();
+                            }}
+                        >
+                            <MaterialCommunityIcons
+                                name="delete-outline"
+                                size={18}
+                                color={theme.colors.danger}
+                                style={{ marginRight: 8 }}
+                            />
+                            <Text style={styles.deleteDangerBtnText}>Delete Person</Text>
+                        </AnimatedScaleButton>
+                    )}
+                </ScrollView>
+            </KeyboardAvoidingView>
+        );
+
+        /* ── Render: Full unlocked profile view ─────────────────────────── */
+        const renderProfileView = () => (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+                {/* Avatar */}
+                <View style={styles.profileAvatarContainer}>
+                    <View style={styles.avatarOuter}>
+                        <LinearGradient colors={[...AVATAR_GRADIENT]} style={styles.avatarGradientRing}>
+                            <View style={styles.avatarInner}>
+                                <Text style={styles.avatarText}>{person.name.charAt(0).toUpperCase()}</Text>
+                            </View>
+                        </LinearGradient>
+                    </View>
+
+                    <Text style={styles.profileName}>{person.nickname || person.name}</Text>
+                    {person.nickname && <Text style={styles.profileRealName}>{person.name}</Text>}
+                    {person.relationship && (
+                        <View style={styles.relationshipBadge}>
+                            <Text style={styles.relationshipBadgeText}>{person.relationship}</Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* Stats Row */}
+                <View style={styles.statsRow}>
+                    <View style={styles.statCard}>
+                        <Text style={styles.statValue}>{stats.totalEntries}</Text>
+                        <Text style={styles.statLabel}>Entries</Text>
+                    </View>
+                    <View style={[styles.statCard, styles.statCardMiddle]}>
+                        <Text style={styles.statValue}>{stats.totalWords.toLocaleString()}</Text>
+                        <Text style={styles.statLabel}>Words</Text>
+                    </View>
+                    <View style={styles.statCard}>
+                        <Text style={styles.statValue}>{stats.firstDate ? formatShortDate(stats.firstDate) : '—'}</Text>
+                        <Text style={styles.statLabel}>Since</Text>
+                    </View>
+                </View>
+
+                {/* Quick Info — Only show populated fields */}
+                {(person.birthday || person.bio) && (
+                    <View style={styles.infoSection}>
+                        <Text style={styles.sectionTitle}>About</Text>
+
+                        {person.birthday && (
+                            <View style={styles.infoRow}>
+                                <MaterialCommunityIcons
+                                    name="cake-variant-outline"
+                                    size={20}
+                                    color={theme.colors.textSecondary}
+                                />
+                                <Text style={styles.infoText}>{formatBirthday(person.birthday)}</Text>
+                            </View>
+                        )}
+
+                        {person.bio && (
+                            <View style={styles.bioContainer}>
+                                <Text style={styles.bioText}>{person.bio}</Text>
+                            </View>
+                        )}
                     </View>
                 )}
-            </View>
 
-            {/* Stats Row */}
-            <View style={styles.statsRow}>
-                <View style={styles.statCard}>
-                    <Text style={styles.statValue}>{stats.totalEntries}</Text>
-                    <Text style={styles.statLabel}>Entries</Text>
-                </View>
-                <View style={[styles.statCard, styles.statCardMiddle]}>
-                    <Text style={styles.statValue}>{stats.totalWords.toLocaleString()}</Text>
-                    <Text style={styles.statLabel}>Words</Text>
-                </View>
-                <View style={styles.statCard}>
-                    <Text style={styles.statValue}>
-                        {stats.firstDate ? formatShortDate(stats.firstDate) : '—'}
+                {/* Edit Profile button */}
+                <AnimatedScaleButton style={styles.editProfileBtn} onPress={startEditing}>
+                    <MaterialCommunityIcons
+                        name="pencil-outline"
+                        size={18}
+                        color={theme.colors.primaryAction}
+                        style={{ marginRight: 8 }}
+                    />
+                    <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+                </AnimatedScaleButton>
+
+                {/* Recent Entries */}
+                {recentNotes.length > 0 && (
+                    <View style={styles.recentSection}>
+                        <Text style={styles.sectionTitle}>Recent Entries</Text>
+                        {recentNotes.map((note) => (
+                            <NoteCard
+                                key={note.id}
+                                note={note}
+                                onPress={onNotePress}
+                                isLocked={!isNotesUnlocked}
+                                isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
+                                isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
+                            />
+                        ))}
+                    </View>
+                )}
+
+                {/* Member since footer */}
+                <View style={styles.memberSince}>
+                    <MaterialCommunityIcons
+                        name="clock-outline"
+                        size={14}
+                        color={theme.colors.textMuted}
+                        style={{ marginRight: 6 }}
+                    />
+                    <Text style={styles.memberSinceText}>
+                        Added{' '}
+                        {new Date(person.createdAt).toLocaleDateString('default', {
+                            month: 'long',
+                            day: 'numeric',
+                            year: 'numeric',
+                        })}
                     </Text>
-                    <Text style={styles.statLabel}>Since</Text>
                 </View>
-            </View>
+            </ScrollView>
+        );
 
-            {/* Quick Info — Only show populated fields */}
-            {(person.birthday || person.bio) && (
-                <View style={styles.infoSection}>
-                    <Text style={styles.sectionTitle}>About</Text>
-
-                    {person.birthday && (
-                        <View style={styles.infoRow}>
-                            <MaterialCommunityIcons name="cake-variant-outline" size={20} color={theme.colors.textSecondary} />
-                            <Text style={styles.infoText}>{formatBirthday(person.birthday)}</Text>
-                        </View>
-                    )}
-
-                    {person.bio && (
-                        <View style={styles.bioContainer}>
-                            <Text style={styles.bioText}>{person.bio}</Text>
-                        </View>
-                    )}
-                </View>
-            )}
-
-            {/* Edit Profile button */}
-            <AnimatedScaleButton style={styles.editProfileBtn} onPress={startEditing}>
-                <MaterialCommunityIcons name="pencil-outline" size={18} color={theme.colors.primaryAction} style={{ marginRight: 8 }} />
-                <Text style={styles.editProfileBtnText}>Edit Profile</Text>
-            </AnimatedScaleButton>
-
-            {/* Recent Entries */}
-            {recentNotes.length > 0 && (
-                <View style={styles.recentSection}>
-                    <Text style={styles.sectionTitle}>Recent Entries</Text>
-                    {recentNotes.map(note => (
-                        <NoteCard
-                            key={note.id}
-                            note={note}
-                            onPress={onNotePress}
-                            isLocked={!isNotesUnlocked}
-                            isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
-                            isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
-                        />
-                    ))}
-                </View>
-            )}
-
-            {/* Member since footer */}
-            <View style={styles.memberSince}>
-                <MaterialCommunityIcons name="clock-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 6 }} />
-                <Text style={styles.memberSinceText}>
-                    Added {new Date(person.createdAt).toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' })}
-                </Text>
-            </View>
-        </ScrollView>
-    );
-
-    return (
-        <BaseModal
-            visible={visible}
-            onClose={onClose}
-            title={isEditing ? 'Edit Profile' : person.name}
-            setHomeScrollEnabled={setHomeScrollEnabled}
-        >
-            {!isUnlocked ? renderLockedView() : (isEditing ? renderEditMode() : renderProfileView())}
-        </BaseModal>
-    );
-});
+        return (
+            <BaseModal
+                visible={visible}
+                onClose={onClose}
+                title={isEditing ? 'Edit Profile' : person.name}
+                setHomeScrollEnabled={setHomeScrollEnabled}
+            >
+                {!isUnlocked ? renderLockedView() : isEditing ? renderEditMode() : renderProfileView()}
+            </BaseModal>
+        );
+    },
+);
 
 /* ═══════════════════════════════════════════════════════════════════
    STYLES — Premium dark UI matching the app's AMOLED aesthetic
@@ -848,4 +882,3 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
 });
-

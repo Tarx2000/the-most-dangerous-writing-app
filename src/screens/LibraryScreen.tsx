@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, Activity, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, ActivityIndicator, useWindowDimensions, Alert } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, {
@@ -25,7 +25,7 @@ import { ActionSheet } from '@/components/ui/ActionSheet';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { useNotes, usePersons, useVlogs, usePreferences } from '@/lib/hooks/useStorage';
+import { useNotes, usePersons, useVlogs, usePreferences, usePillars } from '@/lib/hooks/useStorage';
 import { CONFIG } from '@/config';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
@@ -67,6 +67,7 @@ const LibraryNotesTab = React.memo(
         activeFont,
         onPressNote,
         onGoToStart,
+        onVersionPress,
     }: {
         visible: boolean;
         sortBy: SortOption;
@@ -74,6 +75,7 @@ const LibraryNotesTab = React.memo(
         activeFont: string;
         onPressNote: (note: SavedNote) => void;
         onGoToStart: () => void;
+        onVersionPress?: (note: SavedNote) => void;
     }) => {
         const { savedNotes } = useNotes();
         const { persons } = usePersons();
@@ -103,6 +105,7 @@ const LibraryNotesTab = React.memo(
                         activeFont={activeFont}
                         onPressNote={onPressNote}
                         onGoToStart={onGoToStart}
+                        onVersionPress={onVersionPress}
                     />
                 </View>
             </Activity>
@@ -118,6 +121,7 @@ const CheckinsTab = React.memo(
         activeFont,
         onPressNote,
         onGoToStart,
+        onVersionPress,
     }: {
         visible: boolean;
         sortBy: SortOption;
@@ -125,6 +129,7 @@ const CheckinsTab = React.memo(
         activeFont: string;
         onPressNote: (note: SavedNote) => void;
         onGoToStart: () => void;
+        onVersionPress?: (note: SavedNote) => void;
     }) => {
         const { savedNotes } = useNotes();
         const { persons } = usePersons();
@@ -154,6 +159,7 @@ const CheckinsTab = React.memo(
                         activeFont={activeFont}
                         onPressNote={onPressNote}
                         onGoToStart={onGoToStart}
+                        onVersionPress={onVersionPress}
                     />
                 </View>
             </Activity>
@@ -558,7 +564,37 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
 
     const { savedNotes, deleteNote } = useNotes();
     const { persons } = usePersons();
+    const { getPillarVersion, pillars } = usePillars();
     const security = useSecurity();
+
+    // Callback when pressing a note's version tag
+    const handleVersionPress = useCallback(
+        async (note: SavedNote) => {
+            if (!note.pillarId) return;
+            const version = note.pillarVersion || 1;
+            try {
+                vibrate(10);
+                const verPrompt = await getPillarVersion(note.pillarId, version);
+                if (verPrompt) {
+                    Alert.alert(
+                        `Mastery Definition (v${version})`,
+                        `Title: ${verPrompt.title}\n\nGuidelines:\n${verPrompt.description || 'No guidelines recorded for this version.'}`,
+                        [{ text: 'Close', style: 'cancel' }],
+                    );
+                } else {
+                    const currentPillar = pillars.find((p) => p.id === note.pillarId);
+                    Alert.alert(
+                        `Mastery Definition (v${version})`,
+                        `Title: ${currentPillar?.title || 'Unknown'}\n\nGuidelines:\n${currentPillar?.description || 'No guidelines.'}`,
+                        [{ text: 'Close', style: 'cancel' }],
+                    );
+                }
+            } catch (err) {
+                console.error('Failed to fetch prompt version', err);
+            }
+        },
+        [getPillarVersion, pillars],
+    );
 
     // Dynamic styles for the morphing lock/unlock button in the header
     const lockButtonAnimatedStyle = useAnimatedStyle(() => {
@@ -770,6 +806,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                     activeFont={activeFont}
                     onPressNote={setViewNoteModal}
                     onGoToStart={onGoToStart}
+                    onVersionPress={handleVersionPress}
                 />
                 <CheckinsTab
                     visible={libraryTab === 'checkins'}
@@ -778,6 +815,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                     activeFont={activeFont}
                     onPressNote={setViewNoteModal}
                     onGoToStart={onGoToStart}
+                    onVersionPress={handleVersionPress}
                 />
                 <CirclesTab
                     visible={libraryTab === 'circles'}
@@ -820,6 +858,7 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                     onDelete={handleDeleteFromViewer}
                     isNoteActive={isNoteActive}
                     onRegenerateAi={(note) => handleRegenerateAi(note)}
+                    onVersionPress={handleVersionPress}
                 />
             </ErrorBoundary>
 

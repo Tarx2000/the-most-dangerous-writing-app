@@ -32,10 +32,11 @@ interface Props {
     isQueued?: boolean;
     onLongPress?: () => void;
     isSelected?: boolean;
+    onVersionPress?: (note: SavedNote) => void;
 }
 
 export const NoteCard: React.FC<Props> = React.memo(
-    ({ note, onPress, onLongPress, personName, isLocked, isProcessing, isQueued, isSelected }) => {
+    ({ note, onPress, onLongPress, personName, isLocked, isProcessing, isQueued, isSelected, onVersionPress }) => {
         const hasAi = !!note.aiTitle;
         const { fontIndex } = usePreferences();
         const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
@@ -123,6 +124,17 @@ export const NoteCard: React.FC<Props> = React.memo(
                 <View style={commonStyles.noteCardHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                         <Text style={commonStyles.noteCardDate}>{note.dateStr}</Text>
+                        {(note.pillarVersion || note.pillarId) && (
+                            <Pressable
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    onVersionPress?.(note);
+                                }}
+                                style={styles.versionTag}
+                            >
+                                <Text style={styles.versionTagText}>v{note.pillarVersion || 1}</Text>
+                            </Pressable>
+                        )}
                         {isQueued && !isProcessing && (
                             <View
                                 style={{
@@ -258,5 +270,19 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: theme.colors.overlayDark,
+    },
+    versionTag: {
+        backgroundColor: theme.colors.glassSurface,
+        borderColor: theme.colors.glassBorder,
+        borderWidth: 1,
+        borderRadius: 6,
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        marginLeft: 4,
+    },
+    versionTagText: {
+        color: theme.colors.primaryAction,
+        fontSize: 10,
+        fontWeight: 'bold',
     },
 });

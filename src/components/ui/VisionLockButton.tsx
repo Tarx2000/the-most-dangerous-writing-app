@@ -106,8 +106,8 @@ export const VisionLockButton: React.FC<Props> = React.memo(({ isUnlocked, onPre
         >
             {/* Stable layout driver: Invisible dummy view matching the largest size (Unlocked) */}
             <View style={styles.layoutPlaceholder} pointerEvents="none">
-                <MaterialCommunityIcons name="star-four-points" size={16} style={{ opacity: 0 }} />
-                <Text style={[commonStyles.iconButtonText, { opacity: 0, marginLeft: 4 }]}>Vision</Text>
+                <MaterialCommunityIcons name="pillar" size={16} style={{ opacity: 0 }} />
+                <Text style={[commonStyles.iconButtonText, { opacity: 0, marginLeft: 4 }]}>Masteries</Text>
             </View>
 
             {/* Locked Content Layer */}
@@ -118,8 +118,8 @@ export const VisionLockButton: React.FC<Props> = React.memo(({ isUnlocked, onPre
 
             {/* Unlocked Content Layer */}
             <Animated.View style={[StyleSheet.absoluteFillObject, styles.layer, unlockedLayerStyle]}>
-                <MaterialCommunityIcons name="star-four-points" size={16} color={theme.colors.gold} />
-                <Text style={[commonStyles.iconButtonText, styles.unlockedText]}>Vision</Text>
+                <MaterialCommunityIcons name="pillar" size={16} color={theme.colors.gold} />
+                <Text style={[commonStyles.iconButtonText, styles.unlockedText]}>Masteries</Text>
             </Animated.View>
         </AnimatedScaleButton>
     );

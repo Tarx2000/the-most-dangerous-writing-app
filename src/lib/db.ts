@@ -136,6 +136,77 @@ const MIGRATIONS: Migration[] = [
             `UPDATE notes SET is_tweet = 1 WHERE (LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1) <= 45;`,
         ],
     },
+    {
+        version: 4,
+        name: 'Add pillars, advice_cards, and pillar_logs tables',
+        up: [
+            `CREATE TABLE IF NOT EXISTS pillars (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                type TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                adaptive_days INTEGER NOT NULL DEFAULT 14,
+                is_active INTEGER NOT NULL DEFAULT 1
+            );`,
+            `CREATE TABLE IF NOT EXISTS advice_cards (
+                id TEXT PRIMARY KEY,
+                text TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_reflected_at INTEGER,
+                reflection_count INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1
+            );`,
+            `CREATE TABLE IF NOT EXISTS pillar_logs (
+                id TEXT PRIMARY KEY,
+                pillar_id TEXT NOT NULL,
+                value_num REAL,
+                value_str TEXT,
+                timestamp INTEGER NOT NULL,
+                note_id TEXT,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+            );`,
+            `CREATE INDEX IF NOT EXISTS idx_pillar_logs_timestamp ON pillar_logs(timestamp);`,
+            `CREATE INDEX IF NOT EXISTS idx_pillar_logs_pillar ON pillar_logs(pillar_id);`,
+            `ALTER TABLE notes ADD COLUMN pillar_id TEXT;`,
+            `ALTER TABLE notes ADD COLUMN advice_id TEXT;`,
+            `ALTER TABLE notes ADD COLUMN pillar_value REAL;`,
+            `INSERT OR IGNORE INTO pillars (id, title, type, scope, created_at, adaptive_days, is_active) VALUES
+             ('mock_pillar_sleep', 'Sleep Duration', 'time', 'daily', (strftime('%s','now') * 1000), 14, 1),
+             ('mock_pillar_comfort', 'Leaving Comfort Zone', 'rating', 'adaptive', (strftime('%s','now') * 1000), 14, 1),
+             ('mock_pillar_mindfulness', 'Daily Mindfulness', 'boolean', 'daily', (strftime('%s','now') * 1000), 14, 1);`,
+            `INSERT OR IGNORE INTO advice_cards (id, text, created_at, last_reflected_at, reflection_count, is_active) VALUES
+             ('mock_advice_listen', 'Listen 80%, speak 20%', (strftime('%s','now') * 1000), NULL, 0, 1),
+             ('mock_advice_comfort', 'Do one thing each day that scares you', (strftime('%s','now') * 1000), NULL, 0, 1);`,
+        ],
+    },
+    {
+        version: 5,
+        name: 'Add description and last_edited_at to pillars',
+        up: [
+            `ALTER TABLE pillars ADD COLUMN description TEXT;`,
+            `ALTER TABLE pillars ADD COLUMN last_edited_at INTEGER;`,
+            `UPDATE pillars SET last_edited_at = created_at WHERE last_edited_at IS NULL;`,
+        ],
+    },
+    {
+        version: 6,
+        name: 'Add versioning to pillars and notes',
+        up: [
+            `CREATE TABLE IF NOT EXISTS pillar_versions (
+                id TEXT PRIMARY KEY,
+                pillar_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                created_at INTEGER NOT NULL
+            );`,
+            `ALTER TABLE pillars ADD COLUMN version INTEGER NOT NULL DEFAULT 1;`,
+            `ALTER TABLE notes ADD COLUMN pillar_version INTEGER;`,
+            `INSERT OR IGNORE INTO pillar_versions (id, pillar_id, version, title, description, created_at)
+             SELECT id || '_v1', id, 1, title, description, created_at FROM pillars;`,
+        ],
+    },
 ];
 
 async function migrate(db: SQLiteDatabase): Promise<void> {

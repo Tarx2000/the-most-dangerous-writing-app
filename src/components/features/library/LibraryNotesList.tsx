@@ -29,6 +29,7 @@ interface Props {
     activeFont: string;
     onPressNote: (note: SavedNote) => void;
     onGoToStart: () => void;
+    onVersionPress?: (note: SavedNote) => void;
 }
 
 /* ── Stable sub-components (hoisted to avoid re-creation on every render) ─── */
@@ -137,6 +138,7 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
         activeFont,
         onPressNote,
         onGoToStart,
+        onVersionPress,
     }) => {
         const flashListStyle = React.useMemo(() => ({ marginHorizontal: -20 }), []);
         const contentContainerStyle = React.useMemo(
@@ -172,10 +174,11 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
                         isLocked={!isUnlocked}
                         isProcessing={isNoteActive(note.id)}
                         isQueued={isNoteQueued(note.id)}
+                        onVersionPress={onVersionPress}
                     />
                 );
             },
-            [isUnlocked, isNoteActive, isNoteQueued, activeFont, onPressNote, personMap],
+            [isUnlocked, isNoteActive, isNoteQueued, activeFont, onPressNote, personMap, onVersionPress],
         );
 
         const getItemLayout = useCallback(
@@ -187,7 +190,7 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
             [],
         );
 
-        const emptyIcon = libraryTab === 'checkins' ? 'compass-outline' : 'notebook-outline';
+        const emptyIcon = libraryTab === 'checkins' ? 'pillar' : 'notebook-outline';
         const emptyTitle = libraryTab === 'checkins' ? 'No check-ins yet' : 'No entries found';
         const emptyDesc =
             libraryTab === 'checkins'

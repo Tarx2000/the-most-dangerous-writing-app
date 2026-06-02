@@ -11,14 +11,13 @@ import { FeedScreen } from './FeedScreen';
 import { LiquidGlassNav } from '@/components/ui/LiquidGlassNav';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogViewerModal } from '@/components/features/library/VlogViewerModal';
-import { usePreferences } from '@/lib/hooks/useStorage';
+import { usePillars } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { useHomeModals } from '@/lib/hooks/useHomeModals';
 import { useHomeGestures } from '@/lib/hooks/useHomeGestures';
 import { theme } from '@/styles/theme';
 import type { SavedNote, AiJobCategory } from '@/types';
-import { CONFIG } from '@/config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -67,7 +66,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      */
     const [currentPage, setCurrentPage] = useState(0);
 
-    const { lastReflectionDate } = usePreferences();
+    const { lastLogDate } = usePillars();
     const security = useSecurity();
     const { enqueueNote, isNoteActive } = useAiQueueContext();
 
@@ -138,9 +137,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
         [screenWidth],
     );
 
-    /** Check-in urgency: show dot when overdue (>CONFIG.CHECKIN_URGENT_DAYS days) AND only on homescreen */
-    const isCheckinUrgent =
-        currentPage === 0 && (!lastReflectionDate || Date.now() - lastReflectionDate > CONFIG.CHECKIN_URGENT_MS);
+    /** Check-in urgency: show dot when no check-in logs exist OR the last log was > 24 hours ago */
+    const isCheckinUrgent = currentPage === 0 && (!lastLogDate || Date.now() - lastLogDate > 24 * 60 * 60 * 1000);
 
     /**
      * Memoize nav items to prevent LiquidGlassNav re-renders.
@@ -153,7 +151,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
             { id: 'journal', icon: 'notebook-edit', label: 'Journal' },
             { id: 'circles', icon: 'account-group', label: 'Circles' },
             { id: 'vlog', icon: 'video-outline', label: 'Vlog' },
-            { id: 'checkin', icon: 'compass-outline', label: 'Check-in', urgent: isCheckinUrgent },
+            { id: 'checkin', icon: 'pillar', label: 'Check-in', urgent: isCheckinUrgent },
         ],
         [isCheckinUrgent],
     );

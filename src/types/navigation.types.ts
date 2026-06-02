@@ -11,10 +11,12 @@ export type RootStackParamList = {
         buttonLayout?: { x: number; y: number; width: number; height: number };
     };
     Library: undefined;
-    VisionBoard: undefined;
+    PillarsDashboard: undefined;
+    PillarDetail: { pillarId: string };
     Sandbox: undefined;
     AlignmentWriting: {
-        alignmentScore: number;
+        alignmentScore?: number;
+        isWeekly?: boolean;
         timeIndex: number;
         buttonLayout?: { x: number; y: number; width: number; height: number };
     };

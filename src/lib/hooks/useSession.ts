@@ -135,7 +135,7 @@ export function useSession(
 
     const startSession = useCallback(
         (isQuickNote?: boolean) => {
-            const minutes = CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
+            const minutes = timeIndex === -99 ? 1 : CONFIG.SESSION_OPTIONS_MINS[timeIndex] || 5;
             const difficultyLimit = CONFIG.DIFFICULTIES[diffIndex]?.value || 8000;
 
             const seconds = minutes * 60;

@@ -19,6 +19,14 @@ export interface SavedNote {
     aiModelUsed?: string;
     /** Discriminator for alignment reflections */
     isAlignmentReflection?: boolean;
+    /** Reference to a custom Pillar this note is a reflection for */
+    pillarId?: string;
+    /** Reference to a Life Advice card this note is a reflection for */
+    adviceId?: string;
+    /** The numeric Pillar value logged during this reflection session */
+    pillarValue?: number;
+    /** The version of the Mastery rules active when this reflection was written */
+    pillarVersion?: number;
 }
 
 /** Union type for any note entry */

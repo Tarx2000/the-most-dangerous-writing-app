@@ -226,7 +226,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                         isUnlocked={security.isNotesUnlocked}
                         onPress={async () => {
                             if (security.isNotesUnlocked) {
-                                navigation.navigate('VisionBoard');
+                                navigation.navigate('PillarsDashboard');
                             } else {
                                 const success = await security.unlockNotes();
                                 if (success) vibrate(50);

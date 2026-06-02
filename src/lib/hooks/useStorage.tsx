@@ -22,7 +22,18 @@
  */
 
 import { useState, useCallback, useMemo, useRef, createContext, useContext, useEffect, type ReactNode } from 'react';
-import { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
+import {
+    SavedNote,
+    Person,
+    VisionBoard,
+    AlignmentReflection,
+    SavedVlog,
+    Pillar,
+    AdviceCard,
+    PillarLog,
+    PillarVersion,
+} from '@/types';
+import { getAllPillars, getAllAdviceCards, getLatestPillarLogTimestamp } from '@/lib/repositories/pillarsRepository';
 import {
     DEFAULT_AI_PROMPTS,
     DEFAULT_OLLAMA_API_KEY,
@@ -38,6 +49,7 @@ import {
     createPreferencesOps,
     createAiConfigOps,
     createCrossCuttingOps,
+    createPillarsOps,
 } from '@/lib/storageOps';
 import {
     loadAllData as loadAllDataFromDataLoaders,
@@ -88,6 +100,7 @@ interface PreferencesContextType {
     debugLayout: boolean;
     visionBoard: VisionBoard | null;
     lastReflectionDate: number | null;
+    setLastReflectionDate: (date: number | null) => void;
     preferPinAuth: boolean;
     savePreferences: (fIdx: number, sIdx: number) => Promise<void>;
     updateBiometricsPref: (val: boolean) => Promise<void>;
@@ -132,6 +145,22 @@ interface FeedContextType {
 }
 
 /** Vlogs — low-frequency */
+interface PillarsContextType {
+    pillars: Pillar[];
+    adviceCards: AdviceCard[];
+    lastLogDate: number | null;
+    savePillar: (pillar: Pillar) => Promise<void>;
+    deletePillar: (id: string) => Promise<void>;
+    togglePillarActive: (id: string, isActive: boolean) => Promise<void>;
+    saveAdviceCard: (advice: AdviceCard) => Promise<void>;
+    deleteAdviceCard: (id: string) => Promise<void>;
+    savePillarLog: (log: PillarLog) => Promise<void>;
+    getPillarLogs: (pillarId: string) => Promise<PillarLog[]>;
+    getPillarsForCheckIn: (isWeekly: boolean) => { pillars: Pillar[]; advice: AdviceCard | null };
+    linkPillarLogNote: (logId: string, noteId: string) => Promise<void>;
+    getPillarVersion: (pillarId: string, version: number) => Promise<PillarVersion | undefined>;
+}
+
 interface VlogContextType {
     savedVlogs: SavedVlog[];
     totalVlogStorageBytes: number;
@@ -170,6 +199,7 @@ interface StorageActionsContextType {
    CONTEXT CREATION
    ═══════════════════════════════════════════════════════════════════════════ */
 
+const PillarsContext = createContext<PillarsContextType | null>(null);
 const NotesContext = createContext<NotesContextType | null>(null);
 const PersonsContext = createContext<PersonsContextType | null>(null);
 const StreakContext = createContext<StreakContextType | null>(null);
@@ -215,8 +245,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [aiPrompts, setAiPrompts] = useState<AiPrompts>({ ...DEFAULT_AI_PROMPTS });
     const [autoGenerateSummaries, setAutoGenerateSummaries] = useState<boolean>(true);
     const [aiFavoriteModels, setAiFavoriteModels] = useState<string[]>([]);
+    const [pillars, setPillars] = useState<Pillar[]>([]);
+    const [adviceCards, setAdviceCards] = useState<AdviceCard[]>([]);
+    const [lastLogDate, setLastLogDate] = useState<number | null>(null);
 
     /* ── Refs (fresh-read pattern) --------------------------------─── */
+    const pillarsRef = useRef(pillars);
+    pillarsRef.current = pillars;
+    const adviceCardsRef = useRef(adviceCards);
+    adviceCardsRef.current = adviceCards;
     const savedNotesRef = useRef(savedNotes);
     savedNotesRef.current = savedNotes;
     const personsRef = useRef(persons);
@@ -379,6 +416,11 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         [],
     );
 
+    const pillarsOps = useMemo(
+        () => createPillarsOps(pillarsRef, setPillars, adviceCardsRef, setAdviceCards, setLastLogDate),
+        [],
+    );
+
     /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
         await loadAllDataFromDataLoaders({
@@ -413,6 +455,18 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             setAutoGenerateSummaries,
             setAiFavoriteModels,
         });
+
+        // Load Pillars, Advice Card, and last check-in log date from SQLite
+        const [activePillars, activeAdvice, latestLogTime] = await Promise.all([
+            getAllPillars(),
+            getAllAdviceCards(),
+            getLatestPillarLogTimestamp(),
+        ]);
+        setPillars(activePillars);
+        pillarsRef.current = activePillars;
+        setAdviceCards(activeAdvice);
+        adviceCardsRef.current = activeAdvice;
+        setLastLogDate(latestLogTime);
     }, []);
 
     useEffect(() => {
@@ -441,6 +495,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                     bookmarkedNoteIdsRef: bookmarkedNoteIdsRef,
                     feedCommentsRef: feedCommentsRef,
                     autoPlayFeedVideosRef: autoPlayFeedVideosRef,
+                    pillarsRef: pillarsRef,
+                    adviceCardsRef: adviceCardsRef,
                 },
                 {
                     setSavedNotes,
@@ -460,6 +516,8 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                     setBookmarkedNoteIds,
                     setFeedComments,
                     setAutoPlayFeedVideos,
+                    setPillars,
+                    setAdviceCards,
                 },
             ),
         [notesOps],
@@ -546,6 +604,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             debugLayout,
             visionBoard,
             lastReflectionDate,
+            setLastReflectionDate,
             preferPinAuth,
             logMode,
             ...preferencesOps,
@@ -562,6 +621,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             debugLayout,
             visionBoard,
             lastReflectionDate,
+            setLastReflectionDate,
             preferPinAuth,
             logMode,
             preferencesOps,
@@ -643,6 +703,16 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         [crossCuttingOps, loadAllData],
     );
 
+    const pillarsValue = useMemo<PillarsContextType>(
+        () => ({
+            pillars,
+            adviceCards,
+            lastLogDate,
+            ...pillarsOps,
+        }),
+        [pillars, adviceCards, lastLogDate, pillarsOps],
+    );
+
     /* ══════════════════════════════════════════════════════════════════════
        PROVIDER TREE
        ══════════════════════════════════════════════════════════════════════ */
@@ -655,9 +725,11 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                         <AiConfigContext.Provider value={aiConfigValue}>
                             <FeedContext.Provider value={feedValue}>
                                 <VlogContext.Provider value={vlogValue}>
-                                    <StorageActionsContext.Provider value={actionsValue}>
-                                        {children}
-                                    </StorageActionsContext.Provider>
+                                    <PillarsContext.Provider value={pillarsValue}>
+                                        <StorageActionsContext.Provider value={actionsValue}>
+                                            {children}
+                                        </StorageActionsContext.Provider>
+                                    </PillarsContext.Provider>
                                 </VlogContext.Provider>
                             </FeedContext.Provider>
                         </AiConfigContext.Provider>
@@ -717,6 +789,12 @@ export function useVlogs(): VlogContextType {
 export function useStorageActions(): StorageActionsContextType {
     const ctx = useContext(StorageActionsContext);
     if (!ctx) throw new Error('useStorageActions must be used within StorageProvider');
+    return ctx;
+}
+
+export function usePillars(): PillarsContextType {
+    const ctx = useContext(PillarsContext);
+    if (!ctx) throw new Error('usePillars must be used within StorageProvider');
     return ctx;
 }
 

@@ -31,10 +31,11 @@ interface Props {
     onDelete: (id: string) => void;
     isNoteActive: (id: string) => boolean;
     onRegenerateAi: (note: SavedNote, category: AiJobCategory) => void;
+    onVersionPress?: (note: SavedNote) => void;
 }
 
 export const NoteViewerModal: React.FC<Props> = React.memo(
-    ({ note, visible, onClose, onDelete, isNoteActive, onRegenerateAi }) => {
+    ({ note, visible, onClose, onDelete, isNoteActive, onRegenerateAi, onVersionPress }) => {
         const insets = useSafeAreaInsets();
         const { height: SCREEN_HEIGHT } = useWindowDimensions();
         const { fontIndex, sizeIndex } = usePreferences();
@@ -155,12 +156,25 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                                 <Text style={styles.premiumNoteDate}>{note.dateStr}</Text>
                                                 <Text style={styles.premiumNoteMeta}>
                                                     {note.text.split(/\s+/).filter(Boolean).length} words •{' '}
-                                                    {/* Display specialized labels for tweets and quick notes instead of raw minutes to keep UI clean */}
                                                     {note.isTweet
                                                         ? 'Tweet'
                                                         : note.isQuickNote
                                                           ? 'Quick Note'
                                                           : `${note.durationMin} min`}
+                                                    {note.pillarId && (
+                                                        <>
+                                                            {' • '}
+                                                            <Text
+                                                                style={{
+                                                                    textDecorationLine: 'underline',
+                                                                    color: theme.colors.gold,
+                                                                }}
+                                                                onPress={() => onVersionPress?.(note)}
+                                                            >
+                                                                v{note.pillarVersion || 1}
+                                                            </Text>
+                                                        </>
+                                                    )}
                                                 </Text>
                                             </View>
                                         </View>

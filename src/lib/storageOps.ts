@@ -40,8 +40,31 @@ import {
     updateVlog as repoUpdateVlog,
     deleteAllVlogs,
 } from '@/lib/repositories/vlogsRepository';
+import {
+    insertPillar,
+    updatePillar,
+    hardDeletePillar,
+    insertAdviceCard,
+    updateAdviceCard,
+    deactivateAdviceCard,
+    getPillarLogs as repoGetPillarLogs,
+    insertPillarLog,
+    deleteAllPillarsData,
+    updatePillarLogNoteId,
+    insertPillarVersion,
+    getPillarVersion as repoGetPillarVersion,
+} from '@/lib/repositories/pillarsRepository';
 import { setSetting, deleteAllSettings } from '@/lib/repositories/settingsRepository';
-import type { SavedNote, Person, VisionBoard, AlignmentReflection, SavedVlog } from '@/types';
+import type {
+    SavedNote,
+    Person,
+    VisionBoard,
+    AlignmentReflection,
+    SavedVlog,
+    Pillar,
+    AdviceCard,
+    PillarLog,
+} from '@/types';
 
 export type Ref<T> = { current: T };
 export type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
@@ -466,9 +489,239 @@ export function createFeedOps(
     return { toggleBookmark, saveFeedComment, toggleAutoPlayFeedVideos };
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
    PREFERENCES OPERATIONS
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•  */
+
+export function createPillarsOps(
+    pillarsRef: Ref<Pillar[]>,
+    setPillars: Setter<Pillar[]>,
+    adviceCardsRef: Ref<AdviceCard[]>,
+    setAdviceCards: Setter<AdviceCard[]>,
+    setLastLogDate: Setter<number | null>,
+) {
+    const savePillar = async (pillar: Pillar) => {
+        const prev = [...pillarsRef.current];
+        const exists = prev.some((p) => p.id === pillar.id);
+
+        const finalPillar = { ...pillar };
+
+        try {
+            if (exists) {
+                const existing = prev.find((p) => p.id === pillar.id);
+                // Only bump version if rule configuration (title or description) changed
+                if (existing && (existing.title !== pillar.title || existing.description !== pillar.description)) {
+                    finalPillar.version = (existing.version || 1) + 1;
+                    finalPillar.lastEditedAt = Date.now();
+
+                    await insertPillarVersion({
+                        id: generateId(),
+                        pillarId: finalPillar.id,
+                        version: finalPillar.version,
+                        title: finalPillar.title,
+                        description: finalPillar.description,
+                        createdAt: finalPillar.lastEditedAt,
+                    });
+                }
+                await updatePillar(finalPillar.id, finalPillar);
+            } else {
+                finalPillar.version = 1;
+                finalPillar.lastEditedAt = finalPillar.createdAt;
+
+                await insertPillar(finalPillar);
+                await insertPillarVersion({
+                    id: generateId(),
+                    pillarId: finalPillar.id,
+                    version: 1,
+                    title: finalPillar.title,
+                    description: finalPillar.description,
+                    createdAt: finalPillar.createdAt,
+                });
+            }
+
+            const updated = exists
+                ? prev.map((p) => (p.id === finalPillar.id ? finalPillar : p))
+                : [finalPillar, ...prev];
+
+            pillarsRef.current = updated;
+            setPillars(updated);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to save pillar:', error);
+            pillarsRef.current = prev;
+            setPillars(prev);
+            throw error;
+        }
+    };
+
+    const deletePillar = async (id: string) => {
+        const prev = [...pillarsRef.current];
+        const updated = prev.filter((p) => p.id !== id);
+        pillarsRef.current = updated;
+        setPillars(updated);
+
+        try {
+            await hardDeletePillar(id);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to delete pillar:', error);
+            pillarsRef.current = prev;
+            setPillars(prev);
+            throw error;
+        }
+    };
+
+    const togglePillarActive = async (id: string, isActive: boolean) => {
+        const prev = [...pillarsRef.current];
+        const updated = prev.map((p) => (p.id === id ? { ...p, isActive } : p));
+        pillarsRef.current = updated;
+        setPillars(updated);
+
+        try {
+            await updatePillar(id, { isActive });
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to toggle active status:', error);
+            pillarsRef.current = prev;
+            setPillars(prev);
+            throw error;
+        }
+    };
+
+    const saveAdviceCard = async (advice: AdviceCard) => {
+        const prev = [...adviceCardsRef.current];
+        const exists = prev.some((a) => a.id === advice.id);
+        const updated = exists ? prev.map((a) => (a.id === advice.id ? advice : a)) : [advice, ...prev];
+
+        adviceCardsRef.current = updated;
+        setAdviceCards(updated);
+
+        try {
+            if (exists) {
+                await updateAdviceCard(advice.id, advice);
+            } else {
+                await insertAdviceCard(advice);
+            }
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to save advice card:', error);
+            adviceCardsRef.current = prev;
+            setAdviceCards(prev);
+            throw error;
+        }
+    };
+
+    const deleteAdviceCard = async (id: string) => {
+        const prev = [...adviceCardsRef.current];
+        const updated = prev.filter((a) => a.id !== id);
+        adviceCardsRef.current = updated;
+        setAdviceCards(updated);
+
+        try {
+            await deactivateAdviceCard(id);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to delete advice card:', error);
+            adviceCardsRef.current = prev;
+            setAdviceCards(prev);
+            throw error;
+        }
+    };
+
+    const savePillarLog = async (log: PillarLog) => {
+        try {
+            await insertPillarLog(log);
+            setLastLogDate(log.timestamp);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to save pillar log:', error);
+            throw error;
+        }
+    };
+
+    const getPillarLogs = async (pillarId: string): Promise<PillarLog[]> => {
+        try {
+            return await repoGetPillarLogs(pillarId);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to fetch pillar logs:', error);
+            return [];
+        }
+    };
+
+    const getSmartAdvice = (): AdviceCard | null => {
+        const activeAdvice = adviceCardsRef.current.filter((a) => a.isActive);
+        if (activeAdvice.length === 0) return null;
+
+        const now = Date.now();
+        const weighted = activeAdvice.map((a) => {
+            const lastReflected = a.lastReflectedAt || now - 30 * 24 * 60 * 60 * 1000;
+            const daysSince = Math.max(0.1, (now - lastReflected) / (24 * 60 * 60 * 1000));
+            const weight = daysSince / (a.reflectionCount + 1);
+            return { advice: a, weight };
+        });
+
+        const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0);
+        if (totalWeight === 0) {
+            return activeAdvice[Math.floor(Math.random() * activeAdvice.length)];
+        }
+
+        let roll = Math.random() * totalWeight;
+        for (const item of weighted) {
+            roll -= item.weight;
+            if (roll <= 0) {
+                return item.advice;
+            }
+        }
+        return activeAdvice[activeAdvice.length - 1];
+    };
+
+    const getPillarsForCheckIn = (isWeekly: boolean): { pillars: Pillar[]; advice: AdviceCard | null } => {
+        const allActive = pillarsRef.current.filter((p) => p.isActive);
+
+        let filtered: Pillar[];
+        if (isWeekly) {
+            filtered = allActive.filter((p) => p.scope === 'weekly' || p.scope === 'adaptive');
+        } else {
+            filtered = allActive.filter((p) => p.scope === 'daily' || p.scope === 'adaptive');
+        }
+
+        const shuffled = [...filtered].sort(() => 0.5 - Math.random());
+        const limit = isWeekly ? 3 : 2;
+        const pickedPillars = shuffled.slice(0, limit);
+
+        const pickedAdvice = getSmartAdvice();
+
+        return {
+            pillars: pickedPillars,
+            advice: pickedAdvice,
+        };
+    };
+
+    const linkPillarLogNote = async (logId: string, noteId: string) => {
+        try {
+            await updatePillarLogNoteId(logId, noteId);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to link log to note:', error);
+        }
+    };
+
+    const getPillarVersion = async (pillarId: string, version: number) => {
+        try {
+            return await repoGetPillarVersion(pillarId, version);
+        } catch (error) {
+            logger('error', 'Storage', 'Failed to fetch pillar version:', error);
+            return undefined;
+        }
+    };
+
+    return {
+        savePillar,
+        deletePillar,
+        togglePillarActive,
+        saveAdviceCard,
+        deleteAdviceCard,
+        savePillarLog,
+        getPillarLogs,
+        getSmartAdvice,
+        getPillarsForCheckIn,
+        linkPillarLogNote,
+        getPillarVersion,
+    };
+}
 
 export function createPreferencesOps(
     refs: {
@@ -816,6 +1069,8 @@ export function createCrossCuttingOps(
         bookmarkedNoteIdsRef: Ref<string[]>;
         feedCommentsRef: Ref<Record<string, string>>;
         autoPlayFeedVideosRef: Ref<boolean>;
+        pillarsRef: Ref<Pillar[]>;
+        adviceCardsRef: Ref<AdviceCard[]>;
     },
     setters: {
         setSavedNotes: Setter<SavedNote[]>;
@@ -835,6 +1090,8 @@ export function createCrossCuttingOps(
         setBookmarkedNoteIds: Setter<string[]>;
         setFeedComments: Setter<Record<string, string>>;
         setAutoPlayFeedVideos: Setter<boolean>;
+        setPillars: Setter<Pillar[]>;
+        setAdviceCards: Setter<AdviceCard[]>;
     },
 ) {
     const clearAllData = async () => {
@@ -842,6 +1099,7 @@ export function createCrossCuttingOps(
         await deleteAllPersons();
         await deleteAllVlogs();
         await deleteAllSettings();
+        await deleteAllPillarsData();
 
         // Also clean local files
         const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
@@ -883,6 +1141,10 @@ export function createCrossCuttingOps(
         setters.setFeedComments({});
         refs.autoPlayFeedVideosRef.current = true;
         setters.setAutoPlayFeedVideos(true);
+        refs.pillarsRef.current = [];
+        setters.setPillars([]);
+        refs.adviceCardsRef.current = [];
+        setters.setAdviceCards([]);
     };
 
     const saveAlignmentReflection = async (

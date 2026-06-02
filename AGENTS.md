@@ -1,6 +1,6 @@
 # The Most Dangerous Writing App — Agent Context
 
-React Native (Expo SDK 55) journaling app where stopping typing destroys your text. Extends the core mechanic with social circles, vlog recording, vision boards, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud.
+React Native (Expo SDK 55) journaling app where stopping typing destroys your text. Extends the core mechanic with social circles, vlog recording, self-tracking growth masteries, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud.
 
 ## Tech Stack
 - React 19.2 + React Native 0.83.6 (Expo managed, custom native builds)
@@ -17,7 +17,7 @@ src/
   config/                  — App configurations (timers, difficulties, fonts, AI config)
   types/                   — TypeScript type definitions and interfaces
   lib/                     — Core utilities, hooks, SQLite database access (db.ts), and AI logic
-  screens/                 — Navigation screens (HomeScreen, StartScreen, WritingScreen, LibraryScreen, FeedScreen, VlogRecordingScreen, VisionBoardScreen, AlignmentWritingScreen, SandboxScreen, etc.)
+  screens/                 — Navigation screens (HomeScreen, StartScreen, WritingScreen, LibraryScreen, FeedScreen, VlogRecordingScreen, PillarsDashboardScreen, PillarDetailScreen, AlignmentWritingScreen, SandboxScreen, etc.)
   components/ui/           — Reusable visual components (LiquidGlassNav, BaseModal, TickDial, PinPadModal, etc.)
   components/features/     — Domain-specific components (writing/, library/, feed/, circles/, settings/, alignment/)
   styles/                  — theme.ts (AMOLED tokens and styling utilities)
@@ -29,6 +29,7 @@ src/
 - **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
 - **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly.
 - **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
+- **Masteries Rebranding**: All user-facing references (headers, modals, lists, settings) are rebranded as **Masteries** (or **Mastery**), whereas code-level imports, hooks (`usePillars`), repositories, and database schemas remain `pillar` and `pillars` to guarantee data integrity and bypass migration corruption.
 
 ## Domain Instructions
 Critical per-domain rules live in `.agents/instructions/*.md`. Read the relevant file before editing that area.

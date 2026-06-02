@@ -20,6 +20,10 @@ export interface NoteRow {
     stop_text: string | null;
     start_text: string | null;
     continue_text: string | null;
+    pillar_id: string | null;
+    advice_id: string | null;
+    pillar_value: number | null;
+    pillar_version: number | null;
 }
 
 function rowToNote(row: NoteRow): SavedNote | AlignmentReflection {
@@ -34,9 +38,21 @@ function rowToNote(row: NoteRow): SavedNote | AlignmentReflection {
         isQuickNote: !!row.is_quick_note,
         isTweet: !!row.is_tweet,
         aiTitle: row.ai_title ?? undefined,
-        aiSummary: row.ai_summary ? ((): string[] | undefined => { try { return JSON.parse(row.ai_summary) as string[]; } catch { return undefined; } })() : undefined,
+        aiSummary: row.ai_summary
+            ? ((): string[] | undefined => {
+                  try {
+                      return JSON.parse(row.ai_summary) as string[];
+                  } catch {
+                      return undefined;
+                  }
+              })()
+            : undefined,
         aiModelUsed: row.ai_model_used ?? undefined,
         isAlignmentReflection: !!row.is_alignment_reflection,
+        pillarId: row.pillar_id ?? undefined,
+        adviceId: row.advice_id ?? undefined,
+        pillarValue: row.pillar_value !== null ? row.pillar_value : undefined,
+        pillarVersion: row.pillar_version !== null ? row.pillar_version : undefined,
     };
     if (row.is_alignment_reflection) {
         return {
@@ -64,19 +80,31 @@ export async function getNoteById(id: string): Promise<SavedNote | AlignmentRefl
 export async function insertNote(note: SavedNote): Promise<void> {
     const summaryJson = note.aiSummary ? JSON.stringify(note.aiSummary) : null;
     await run(
-        `INSERT INTO notes (id, text, date_str, timestamp, duration_min, won, person_id, is_quick_note, is_tweet, ai_title, ai_summary, ai_model_used, is_alignment_reflection, alignment_score, stop_text, start_text, continue_text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO notes (id, text, date_str, timestamp, duration_min, won, person_id, is_quick_note, is_tweet, ai_title, ai_summary, ai_model_used, is_alignment_reflection, alignment_score, stop_text, start_text, continue_text, pillar_id, advice_id, pillar_value, pillar_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-            note.id, note.text, note.dateStr, note.timestamp, note.durationMin,
-            note.won ? 1 : 0, note.personId ?? null, note.isQuickNote ? 1 : 0,
+            note.id,
+            note.text,
+            note.dateStr,
+            note.timestamp,
+            note.durationMin,
+            note.won ? 1 : 0,
+            note.personId ?? null,
+            note.isQuickNote ? 1 : 0,
             note.isTweet ? 1 : 0,
-            note.aiTitle ?? null, summaryJson, note.aiModelUsed ?? null,
+            note.aiTitle ?? null,
+            summaryJson,
+            note.aiModelUsed ?? null,
             isAlignmentReflection(note) ? 1 : 0,
             isAlignmentReflection(note) ? note.alignmentScore : null,
             isAlignmentReflection(note) ? note.stopText : null,
             isAlignmentReflection(note) ? note.startText : null,
             isAlignmentReflection(note) ? note.continueText : null,
-        ]
+            note.pillarId ?? null,
+            note.adviceId ?? null,
+            note.pillarValue !== undefined ? note.pillarValue : null,
+            note.pillarVersion !== undefined ? note.pillarVersion : null,
+        ],
     );
 }
 
@@ -84,18 +112,70 @@ export async function updateNote(id: string, updates: Partial<SavedNote>): Promi
     const fields: string[] = [];
     const values: (string | number | null)[] = [];
 
-    if (updates.text !== undefined) { fields.push('text = ?'); values.push(updates.text); }
-    if (updates.dateStr !== undefined) { fields.push('date_str = ?'); values.push(updates.dateStr); }
-    if (updates.timestamp !== undefined) { fields.push('timestamp = ?'); values.push(updates.timestamp); }
-    if (updates.durationMin !== undefined) { fields.push('duration_min = ?'); values.push(updates.durationMin); }
-    if (updates.won !== undefined) { fields.push('won = ?'); values.push(updates.won ? 1 : 0); }
-    if (updates.personId !== undefined) { fields.push('person_id = ?'); values.push(updates.personId ?? null); }
-    if (updates.isQuickNote !== undefined) { fields.push('is_quick_note = ?'); values.push(updates.isQuickNote ? 1 : 0); }
-    if (updates.isTweet !== undefined) { fields.push('is_tweet = ?'); values.push(updates.isTweet ? 1 : 0); }
-    if (updates.aiTitle !== undefined) { fields.push('ai_title = ?'); values.push(updates.aiTitle ?? null); }
-    if (updates.aiSummary !== undefined) { fields.push('ai_summary = ?'); values.push(updates.aiSummary ? JSON.stringify(updates.aiSummary) : null); }
-    if (updates.aiModelUsed !== undefined) { fields.push('ai_model_used = ?'); values.push(updates.aiModelUsed ?? null); }
-    if (updates.isAlignmentReflection !== undefined) { fields.push('is_alignment_reflection = ?'); values.push(updates.isAlignmentReflection ? 1 : 0); }
+    if (updates.text !== undefined) {
+        fields.push('text = ?');
+        values.push(updates.text);
+    }
+    if (updates.dateStr !== undefined) {
+        fields.push('date_str = ?');
+        values.push(updates.dateStr);
+    }
+    if (updates.timestamp !== undefined) {
+        fields.push('timestamp = ?');
+        values.push(updates.timestamp);
+    }
+    if (updates.durationMin !== undefined) {
+        fields.push('duration_min = ?');
+        values.push(updates.durationMin);
+    }
+    if (updates.won !== undefined) {
+        fields.push('won = ?');
+        values.push(updates.won ? 1 : 0);
+    }
+    if (updates.personId !== undefined) {
+        fields.push('person_id = ?');
+        values.push(updates.personId ?? null);
+    }
+    if (updates.isQuickNote !== undefined) {
+        fields.push('is_quick_note = ?');
+        values.push(updates.isQuickNote ? 1 : 0);
+    }
+    if (updates.isTweet !== undefined) {
+        fields.push('is_tweet = ?');
+        values.push(updates.isTweet ? 1 : 0);
+    }
+    if (updates.aiTitle !== undefined) {
+        fields.push('ai_title = ?');
+        values.push(updates.aiTitle ?? null);
+    }
+    if (updates.aiSummary !== undefined) {
+        fields.push('ai_summary = ?');
+        values.push(updates.aiSummary ? JSON.stringify(updates.aiSummary) : null);
+    }
+    if (updates.aiModelUsed !== undefined) {
+        fields.push('ai_model_used = ?');
+        values.push(updates.aiModelUsed ?? null);
+    }
+    if (updates.isAlignmentReflection !== undefined) {
+        fields.push('is_alignment_reflection = ?');
+        values.push(updates.isAlignmentReflection ? 1 : 0);
+    }
+    if (updates.pillarId !== undefined) {
+        fields.push('pillar_id = ?');
+        values.push(updates.pillarId ?? null);
+    }
+    if (updates.adviceId !== undefined) {
+        fields.push('advice_id = ?');
+        values.push(updates.adviceId ?? null);
+    }
+    if (updates.pillarValue !== undefined) {
+        fields.push('pillar_value = ?');
+        values.push(updates.pillarValue ?? null);
+    }
+    if (updates.pillarVersion !== undefined) {
+        fields.push('pillar_version = ?');
+        values.push(updates.pillarVersion ?? null);
+    }
 
     if (fields.length === 0) return;
     values.push(id);
