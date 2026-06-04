@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Modal,
     StyleSheet,
     View,
     Text,
     useWindowDimensions,
-    KeyboardAvoidingView,
     Platform,
     TouchableWithoutFeedback,
+    Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -48,6 +48,7 @@ export interface BaseModalProps {
  * - Spring-animated exit to bottom BEFORE calling onClose
  * - Swipe-down-to-dismiss from the drag handle zone
  * - Pan gesture activeOffsetY gating (won't interfere with button taps/scroll)
+ * - Dynamic keyboard avoidance and resizing on both iOS and Android (translucent modals)
  *
  * Content (children) is rendered below the drag handle. Each feature modal
  * only provides its own content — never re-implements the shell.
@@ -66,10 +67,39 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(
     }) => {
         const { height: SCREEN_HEIGHT } = useWindowDimensions();
         const insets = useSafeAreaInsets();
-        const resolvedHeight = height ?? SCREEN_HEIGHT * 0.88;
+        const [keyboardHeight, setKeyboardHeight] = useState(0);
+        const keyboardHeightSV = useSharedValue(0);
+
+        // Keep track of the baseline screen height (keyboard closed) to detect window resizes automatically
+        const screenHeightBaseline = useRef(SCREEN_HEIGHT);
+        if (keyboardHeight === 0 && SCREEN_HEIGHT !== screenHeightBaseline.current) {
+            screenHeightBaseline.current = SCREEN_HEIGHT;
+        }
+
+        useEffect(() => {
+            const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+            const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+            const showSubscription = Keyboard.addListener(showEvent, (e) => {
+                setKeyboardHeight(e.endCoordinates.height);
+            });
+            const hideSubscription = Keyboard.addListener(hideEvent, () => {
+                setKeyboardHeight(0);
+            });
+
+            return () => {
+                showSubscription.remove();
+                hideSubscription.remove();
+            };
+        }, []);
+
+        useEffect(() => {
+            keyboardHeightSV.value = withTiming(keyboardHeight, { duration: 250 });
+        }, [keyboardHeight, keyboardHeightSV]);
 
         const translateY = useSharedValue(SCREEN_HEIGHT);
         const overlayOpacity = useSharedValue(0);
+        const hasAnimatedIn = useRef(false);
 
         /* ── Exit animation: slide down, then notify parent ── */
         const handleClose = useCallback(() => {
@@ -83,16 +113,21 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(
         /* ── Entry animation ── */
         useEffect(() => {
             if (visible) {
-                setHomeScrollEnabled?.(false);
-                translateY.value = SCREEN_HEIGHT;
-                overlayOpacity.value = 0;
+                if (!hasAnimatedIn.current) {
+                    hasAnimatedIn.current = true;
+                    setHomeScrollEnabled?.(false);
+                    translateY.value = SCREEN_HEIGHT;
+                    overlayOpacity.value = 0;
 
-                translateY.value = withSpring(0, {
-                    damping: 22,
-                    stiffness: 220,
-                    mass: 0.8,
-                });
-                overlayOpacity.value = withTiming(1, { duration: 300 });
+                    translateY.value = withSpring(0, {
+                        damping: 22,
+                        stiffness: 220,
+                        mass: 0.8,
+                    });
+                    overlayOpacity.value = withTiming(1, { duration: 300 });
+                }
+            } else {
+                hasAnimatedIn.current = false;
             }
         }, [visible, setHomeScrollEnabled, translateY, overlayOpacity, SCREEN_HEIGHT]);
 
@@ -119,10 +154,23 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(
             [handleClose, translateY, overlayOpacity, SCREEN_HEIGHT],
         );
 
-        const animatedStyle = useAnimatedStyle(() => ({
-            transform: [{ translateY: translateY.value }],
-            height: resolvedHeight,
-        }));
+        const animatedStyle = useAnimatedStyle(() => {
+            // Compute how much the window has already shrunk (e.g. Android adjustResize)
+            const windowResize = Math.max(0, screenHeightBaseline.current - SCREEN_HEIGHT);
+            // Calculate the remaining keyboard height that needs manual layout adjustments
+            const remainingKeyboardHeight = keyboardAvoiding ? Math.max(0, keyboardHeightSV.value - windowResize) : 0;
+
+            const currentHeight = Math.min(
+                height ?? SCREEN_HEIGHT * 0.88,
+                SCREEN_HEIGHT - insets.top - remainingKeyboardHeight - 20,
+            );
+
+            return {
+                transform: [{ translateY: translateY.value }],
+                bottom: -20 + remainingKeyboardHeight,
+                height: currentHeight,
+            };
+        });
 
         const overlayStyle = useAnimatedStyle(() => ({
             opacity: overlayOpacity.value,
@@ -146,55 +194,26 @@ export const BaseModal: React.FC<BaseModalProps> = React.memo(
                         </TouchableWithoutFeedback>
                     )}
 
-                    {keyboardAvoiding ? (
-                        <KeyboardAvoidingView
-                            style={StyleSheet.absoluteFill}
-                            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                            pointerEvents="box-none"
-                        >
-                            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-                                <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
-                                    {showHandle && (
-                                        <GestureDetector gesture={panGesture}>
-                                            <View style={styles.dragZone}>
-                                                <View style={styles.handlePill} />
-                                                {title && <Text style={styles.sheetTitle}>{title}</Text>}
-                                            </View>
-                                        </GestureDetector>
-                                    )}
-
-                                    {/*
-                                  Added +20 padding to compensate for the bottom: -20 offset of styles.sheetAbsolute,
-                                  which hides the bottom border off-screen. insets.bottom handles safe area above the translucent nav bar.
-                                */}
-                                    <View style={[styles.contentArea, { paddingBottom: insets.bottom + 20 + 10 }]}>
-                                        {children}
+                    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                        <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
+                            {showHandle && (
+                                <GestureDetector gesture={panGesture}>
+                                    <View style={styles.dragZone}>
+                                        <View style={styles.handlePill} />
+                                        {title && <Text style={styles.sheetTitle}>{title}</Text>}
                                     </View>
-                                </Animated.View>
-                            </View>
-                        </KeyboardAvoidingView>
-                    ) : (
-                        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-                            <Animated.View style={[styles.sheet, animatedStyle, styles.sheetAbsolute]}>
-                                {showHandle && (
-                                    <GestureDetector gesture={panGesture}>
-                                        <View style={styles.dragZone}>
-                                            <View style={styles.handlePill} />
-                                            {title && <Text style={styles.sheetTitle}>{title}</Text>}
-                                        </View>
-                                    </GestureDetector>
-                                )}
+                                </GestureDetector>
+                            )}
 
-                                {/*
+                            {/*
                               Added +20 padding to compensate for the bottom: -20 offset of styles.sheetAbsolute,
-                              which hides the bottom border off-screen.
+                              which hides the bottom border off-screen. insets.bottom handles safe area above the translucent nav bar.
                             */}
-                                <View style={[styles.contentArea, { paddingBottom: insets.bottom + 20 + 10 }]}>
-                                    {children}
-                                </View>
-                            </Animated.View>
-                        </View>
-                    )}
+                            <View style={[styles.contentArea, { paddingBottom: insets.bottom + 20 + 10 }]}>
+                                {children}
+                            </View>
+                        </Animated.View>
+                    </View>
                 </GestureHandlerRootView>
             </Modal>
         );

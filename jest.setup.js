@@ -54,6 +54,16 @@ jest.mock('react-native', () => {
     const RN = jest.requireActual('react-native');
     RN.Vibration.vibrate = jest.fn();
     RN.Alert.alert = jest.fn();
+    Object.defineProperty(RN, 'useWindowDimensions', {
+        configurable: true,
+        writable: true,
+        value: jest.fn(() => ({
+            height: global.__mockWindowHeight || 800,
+            width: 400,
+            scale: 2,
+            fontScale: 1,
+        })),
+    });
     // Make View's measureInWindow synchronous for tests
     const mockOriginalView = RN.View;
     RN.View = mockReact.forwardRef((props, ref) => {
@@ -78,7 +88,14 @@ jest.mock('react-native-reanimated', () => {
             warn: 'warn',
             error: 'error',
         },
-        useSharedValue: jest.fn((val) => ({ value: val })),
+        useSharedValue: jest.fn((val) => {
+            const React = require('react');
+            const ref = React.useRef(null);
+            if (ref.current === null) {
+                ref.current = { value: val };
+            }
+            return ref.current;
+        }),
         useAnimatedStyle: jest.fn(() => ({})),
         useDerivedValue: jest.fn((fn) => ({ value: fn() })),
         useAnimatedReaction: jest.fn(),
