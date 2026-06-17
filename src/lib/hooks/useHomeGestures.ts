@@ -1,13 +1,7 @@
 ﻿import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
-import {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    cancelAnimation,
-    runOnJS,
-} from 'react-native-reanimated';
+import { useSharedValue, useAnimatedStyle, withSpring, cancelAnimation, runOnJS } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
 
 /**
@@ -42,7 +36,7 @@ export function useHomeGestures(currentPage: number) {
      * finger auto-completes the open animation.
      * At 0.40, a ~320px upward drag on an 800px screen commits to open.
      */
-    const OPEN_COMMIT_THRESHOLD = 0.40;
+    const OPEN_COMMIT_THRESHOLD = 0.4;
     /**
      * Velocity threshold: a flick faster than this (negative = upward, px/s)
      * commits to open. At -3000, ONLY a very fast flick commits.
@@ -52,7 +46,6 @@ export function useHomeGestures(currentPage: number) {
 
     /** Animated progress for the feed reveal (0 to 1) */
     const feedProgress = useSharedValue(0);
-
 
     /** Gesture coordination SharedValues */
     const gestureStartProgress = useSharedValue(0);
@@ -84,66 +77,84 @@ export function useHomeGestures(currentPage: number) {
      * horizontal library swipe). A quick flick above the velocity threshold
      * commits to open even on a shorter drag.
      */
-    const feedPanGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetY([-8, 10000])    // Only activate on UPWARD movement (8px = very responsive)
-        .failOffsetX([-20, 20])         // Allow some horizontal jitter
-        .enabled(currentPage === 0)
-        .onStart(() => {
-            cancelAnimation(feedProgress);
-            gestureStartProgress.value = feedProgress.value;
-            startTranslationOffset.value = 0;
-            isFeedGestureActive.value = false;
-        })
-        .onUpdate((e) => {
-            if (!isFeedGestureActive.value) {
-                // Activate on upward swipe from any position (including mid-rescue)
-                if (e.translationY < -5) {
-                    isFeedGestureActive.value = true;
+    const feedPanGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .activeOffsetY([-8, 10000]) // Only activate on UPWARD movement (8px = very responsive)
+                .failOffsetX([-20, 20]) // Allow some horizontal jitter
+                .enabled(currentPage === 0)
+                .onStart(() => {
+                    cancelAnimation(feedProgress);
                     gestureStartProgress.value = feedProgress.value;
-                    startTranslationOffset.value = e.translationY;
-                }
-                return;
-            }
-            const delta = e.translationY - startTranslationOffset.value;
-            const progressDelta = -delta / screenHeightSV.value;
-            const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value + progressDelta));
-            feedProgress.value = newProgress;
-        })
-        .onEnd((e) => {
-            if (!isFeedGestureActive.value) return;
-            isFeedGestureActive.value = false;
+                    startTranslationOffset.value = 0;
+                    isFeedGestureActive.value = false;
+                })
+                .onUpdate((e) => {
+                    if (!isFeedGestureActive.value) {
+                        // Activate on upward swipe from any position (including mid-rescue)
+                        if (e.translationY < -5) {
+                            isFeedGestureActive.value = true;
+                            gestureStartProgress.value = feedProgress.value;
+                            startTranslationOffset.value = e.translationY;
+                        }
+                        return;
+                    }
+                    const delta = e.translationY - startTranslationOffset.value;
+                    const progressDelta = -delta / screenHeightSV.value;
+                    const newProgress = Math.max(0, Math.min(1, gestureStartProgress.value + progressDelta));
+                    feedProgress.value = newProgress;
+                })
+                .onEnd((e) => {
+                    if (!isFeedGestureActive.value) return;
+                    isFeedGestureActive.value = false;
 
-            const shouldOpen = feedProgress.value > OPEN_COMMIT_THRESHOLD
-                || e.velocityY < OPEN_VELOCITY_THRESHOLD;
+                    const shouldOpen =
+                        feedProgress.value > OPEN_COMMIT_THRESHOLD || e.velocityY < OPEN_VELOCITY_THRESHOLD;
 
-            // Gesture decision made — spring to target
+                    // Gesture decision made — spring to target
 
-            const target = shouldOpen ? 1 : 0;
-            feedProgress.value = withSpring(target, theme.animation.springSnappy);
-            if (shouldOpen) runOnJS(openFeed)();
-            else runOnJS(closeFeed)();
-        })
-        .onFinalize(() => {
-            isFeedGestureActive.value = false;
-        }), [currentPage, feedProgress, screenHeightSV, openFeed, closeFeed, gestureStartProgress, isFeedGestureActive, startTranslationOffset, OPEN_VELOCITY_THRESHOLD]);
+                    const target = shouldOpen ? 1 : 0;
+                    feedProgress.value = withSpring(target, theme.animation.springSnappy);
+                    if (shouldOpen) runOnJS(openFeed)();
+                    else runOnJS(closeFeed)();
+                })
+                .onFinalize(() => {
+                    isFeedGestureActive.value = false;
+                }),
+        [
+            currentPage,
+            feedProgress,
+            screenHeightSV,
+            openFeed,
+            closeFeed,
+            gestureStartProgress,
+            isFeedGestureActive,
+            startTranslationOffset,
+            OPEN_VELOCITY_THRESHOLD,
+        ],
+    );
 
-    /** Main content animates UP (to -screenHeight) when feed opens */
+    /** Main content animates UP (to -screenHeight) when feed opens.
+     *  pointerEvents is intentionally NOT set here — modifying layout-level
+     *  properties inside a worklet forces an extra native commit every frame.
+     *  Instead, the consuming component drives pointerEvents from React
+     *  state (feedVisible), which flips exactly once per transition.
+     */
     const mainContentAnimStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: feedProgress.value * -screenHeightSV.value }],
-        pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
-    /** Feed layer animates UP (from screenHeight to 0) */
+    /** Feed layer animates UP (from screenHeight to 0).
+     *  Same rationale as above — no pointerEvents inside the worklet.
+     */
     const feedAnimStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: (1 - feedProgress.value) * screenHeightSV.value }],
-        pointerEvents: feedProgress.value > 0.5 ? 'auto' : 'none',
     }));
 
     /** Nav bar fades out and slides down as feed opens — driven by feedProgress */
     const navAnimStyle = useAnimatedStyle(() => ({
         opacity: 1 - feedProgress.value,
         transform: [{ translateY: feedProgress.value * 80 }],
-        pointerEvents: feedProgress.value > 0.5 ? 'none' : 'auto',
     }));
 
     // Safety net REMOVED — it fights onEnd with asymmetric thresholds.

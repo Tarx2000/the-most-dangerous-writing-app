@@ -3,6 +3,11 @@ import { View, type ViewStyle } from 'react-native';
 import type { StyleProp } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { interpolate } from 'flubber';
+// expo-file-system v15 exposes the new File/Directory class API at the root,
+// but the legacy cacheDirectory/writeAsStringAsync/readAsStringAsync getters
+// are importable from /legacy. We use them because they return sync string
+// paths (cacheDirectory is a plain property, not an async File constructor).
+import * as FileSystem from 'expo-file-system/legacy';
 import { theme } from '@/styles/theme';
 import { logger } from '@/lib/logger';
 
@@ -147,33 +152,144 @@ const BOUNCE_SCALES = (() => {
     return scales;
 })();
 
-/** Precompute all 12 static transitions at startup so there is 0ms delay at runtime */
-setTimeout(() => {
+/**
+ * Disk cache file path for pre-computed morph frames.
+ *
+ * Why cache to disk:
+ *  - First launch ever: compute all 12 transitions (~5-15ms JS work), write
+ *    to a JSON file in the app's cacheDirectory.
+ *  - Subsequent launches: read the file (cheap async I/O), populate MORPH_CACHE
+ *    from JSON. NO synchronous JS compute on the JS thread = no TTI impact.
+ *  - The OS may evict cacheDirectory under disk pressure; we silently
+ *    recompute on the next launch.
+ *
+ * The cache key includes a version suffix so any future changes to PATHS,
+ * FRAME_COUNT, MAX_SEGMENT_LENGTH, or easing automatically invalidate it.
+ */
+const CACHE_VERSION = 'v1';
+const CACHE_FILE = `${FileSystem.cacheDirectory}morph_frames_${CACHE_VERSION}.json`;
+
+/**
+ * Compute all 12 mode→mode transitions and return them as a plain object.
+ * Pure (no side effects) — caller decides whether to write to MORPH_CACHE,
+ * disk, or both.
+ */
+function computeAllTransitions(): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
     const modes = Object.keys(PATHS) as Mode[];
     for (const fromMode of modes) {
         for (const toMode of modes) {
             if (fromMode === toMode) continue;
             const cacheKey = `${fromMode}_to_${toMode}`;
-            if (!MORPH_CACHE.has(cacheKey)) {
-                try {
-                    const startPath = PATHS[fromMode];
-                    const endPath = PATHS[toMode];
-                    const morphFn = interpolate(startPath, endPath, { maxSegmentLength: MAX_SEGMENT_LENGTH });
-                    const frames = new Array(FRAME_COUNT + 1);
-                    for (let i = 0; i <= FRAME_COUNT; i++) {
-                        const linearT = i / FRAME_COUNT;
-                        const easedT =
-                            linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
-                        frames[i] = sanitizePath(morphFn(easedT));
-                    }
-                    MORPH_CACHE.set(cacheKey, frames);
-                } catch {
-                    // Ignore silently
+            try {
+                const startPath = PATHS[fromMode];
+                const endPath = PATHS[toMode];
+                const morphFn = interpolate(startPath, endPath, { maxSegmentLength: MAX_SEGMENT_LENGTH });
+                const frames = new Array(FRAME_COUNT + 1);
+                for (let i = 0; i <= FRAME_COUNT; i++) {
+                    const linearT = i / FRAME_COUNT;
+                    const easedT =
+                        linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
+                    frames[i] = sanitizePath(morphFn(easedT));
                 }
+                result[cacheKey] = frames;
+            } catch {
+                // Ignore silently — single failed transition falls back to instant swap
             }
         }
     }
-}, 100);
+    return result;
+}
+
+/**
+ * Read pre-computed frames from disk.
+ * Returns null on any failure (missing file, parse error, etc.) — callers
+ * handle by recomputing.
+ */
+async function loadDiskCache(): Promise<Record<string, string[]> | null> {
+    try {
+        const info = await FileSystem.getInfoAsync(CACHE_FILE);
+        if (!info.exists) return null;
+        const content = await FileSystem.readAsStringAsync(CACHE_FILE, {
+            encoding: FileSystem.EncodingType.UTF8,
+        });
+        const parsed = JSON.parse(content) as Record<string, string[]>;
+        // Basic shape validation before trusting the cache
+        if (!parsed || typeof parsed !== 'object') return null;
+        return parsed;
+    } catch (err) {
+        logger('warn', 'LiquidMorphIcon', 'Disk cache read failed, will recompute:', err);
+        return null;
+    }
+}
+
+/**
+ * Write pre-computed frames to disk for next launch.
+ * Fire-and-forget — failures here are non-critical (worst case: recompute
+ * next launch).
+ */
+async function saveDiskCache(frames: Record<string, string[]>): Promise<void> {
+    try {
+        await FileSystem.writeAsStringAsync(CACHE_FILE, JSON.stringify(frames), {
+            encoding: FileSystem.EncodingType.UTF8,
+        });
+    } catch (err) {
+        logger('warn', 'LiquidMorphIcon', 'Disk cache write failed (non-critical):', err);
+    }
+}
+
+/**
+ * Bootstrap the morph frame cache.
+ *
+ * Strategy (keeps pre-compute-all approach but avoids JS compute on warm
+ * launches — no on-demand lazy computation, as required):
+ *
+ *  1. Await disk cache read (cheap async I/O — does NOT block the JS thread).
+ *  2. If disk cache HIT: populate MORPH_CACHE from the parsed JSON. Done —
+ *     zero synchronous flubber computation this launch.
+ *  3. If disk cache MISS (first ever launch, or cache evicted): synchronously
+ *     compute all transitions (~5-15ms JS work, same as before), then fire
+ *     saveDiskCache() in the background.
+ *
+ * Note: the in-component fallback logic (lines further down) still handles
+ * the rare case where a specific transition isn't in MORPH_CACHE yet
+ * because the disk read hasn't completed by the time the user triggers a
+ * morph. It computes that single transition on the fly and caches it.
+ */
+let cacheBootstrapStarted = false;
+function bootstrapMorphCache() {
+    if (cacheBootstrapStarted) return;
+    cacheBootstrapStarted = true;
+
+    // Kick off the async disk read IMMEDIATELY at module load. The original
+    // setTimeout(100) delayed this; we now let it race against first paint.
+    (async () => {
+        const diskCache = await loadDiskCache();
+        if (diskCache !== null) {
+            // Warm path — populate in-memory cache from disk, zero JS compute.
+            for (const [key, frames] of Object.entries(diskCache)) {
+                MORPH_CACHE.set(key, frames);
+            }
+            return;
+        }
+
+        // Cold path — first ever launch (or cache evicted). Synchronous
+        // compute, then persist to disk so future launches hit the warm path.
+        const allFrames = computeAllTransitions();
+        for (const [key, frames] of Object.entries(allFrames)) {
+            MORPH_CACHE.set(key, frames);
+        }
+        // Persist in the background — do not block module load.
+        void saveDiskCache(allFrames);
+    })().catch((err) => {
+        logger('warn', 'LiquidMorphIcon', 'Cache bootstrap failed:', err);
+    });
+}
+
+// Trigger the bootstrap as soon as this module is imported (app startup).
+// This replaces the old synchronous setTimeout(100) pre-compute-all approach
+// with a disk-cache-backed equivalent.
+bootstrapMorphCache();
 
 /**
  * LiquidMorphIcon — Smoothly morphs between SVG icon shapes.

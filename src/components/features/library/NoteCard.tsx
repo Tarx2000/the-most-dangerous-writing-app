@@ -109,10 +109,10 @@ export const NoteCard: React.FC<Props> = React.memo(
                 onPress={() => !isLocked && onPress(note)}
                 onLongPress={onLongPress}
                 onPressIn={() => {
-                    if (!isLocked) scale.value = withSpring(0.97, { damping: 20, stiffness: 300 });
+                    if (!isLocked) scale.value = withSpring(0.97, theme.animation.springSnappy);
                 }}
                 onPressOut={() => {
-                    scale.value = withSpring(1, { damping: 20, stiffness: 300 });
+                    scale.value = withSpring(1, theme.animation.springSnappy);
                 }}
                 delayLongPress={400}
             >

@@ -60,11 +60,20 @@ The feed reveal/dismiss uses `feedProgress` SharedValue (0→1) driving three an
 
 ## Performance & Layout Sizing Rules
 - **Conditional Mounting**: Defer mounting expensive children inside expandable elements (like accordions or slide-outs) using a local React state (e.g., `shouldRenderContent`). Only mount when expanding, and unmount when collapsing completes via Reanimated's animation finished callback (using `runOnJS`).
-- **Android Software Blur Avoidance**: Never use `<BlurView>` inside lists or animating elements on Android, as Android runs software-based blurs on the CPU which causes layout lag. Use a translucent solid background color instead (e.g., `theme.colors.overlayLockAndroid`).
+- **Android Software Blur Avoidance**: Never use `<BlurView>` inside lists or animating elements on Android, as Android runs software-based blurs on the CPU which causes layout lag. Use a translucent solid background color instead (e.g., `theme.colors.overlayLockAndroid`). Conditionally render: `{Platform.OS === 'ios' ? <BlurView .../> : null}` and set a solid `backgroundColor` on the container style for Android.
 - **FlashList Dynamic Heights**: For lists with expanding/collapsing items, do NOT provide a fixed `getItemLayout` prop to `FlashList` or `FlatList`. A fixed `getItemLayout` causes layout conflicts and thrashing when items resize.
+- **Max 3 Visible Stacked Layers**: When building composite UI elements (e.g. floating pills, nav bars, glass cards), collapse visual layers into at most 3 stacked compositor layers: (1) background layer, (2) animating/moving layer, (3) interactive layer. Extra absolute-fill gradients and tint overlays add a per-frame compositor cost that becomes visible jank on throttled GPUs.
+- **No `pointerEvents` Inside `useAnimatedStyle`**: `pointerEvents` is a layout-level property, not a transform. Toggling it inside a worklet forces an extra native commit on every frame the threshold is crossed. Drive `pointerEvents` from React state (`visible` / `feedVisible`) on the consuming `Animated.View` instead, so it flips exactly once per transition rather than being re-evaluated every animation frame.
 
 ## Aesthetics & Spring Parameters (Decent, Clean, Professional)
 - **Avoid Excessive/Playful Bounciness**: Animations must look clean, elegant, and professional rather than bouncy or hyperactive.
 - **Damping Over Stiffness**: When configuring spring presets, use higher damping values (e.g., `damping: 26` to `35`) to prevent overshooting, oscillation, or excessive bounce.
+- **Always Use `theme.animation.*` Presets — No Inline Spring Configs**: Inline `{ damping: ..., stiffness: ..., mass: ... }` objects passed to `withSpring` are **DEPRECATED**. Always reference a preset from `theme.animation` in `src/styles/theme.ts`:
+  - `springDefault` — modal entries, sheet slides, card expands (damping 30)
+  - `springSnappy` — quick press scales, snap-backs, tick snaps (damping 35)
+  - `springGentle` — visible-but-tamed motion like celebratory popups (damping 26)
+  - `springLight` — lighter-feeling springs (damping 28, mass 0.5)
+  - `springFeed` — the feed reveal gesture (damping 32)
+  If a new use case doesn't fit a preset, add a new preset to `theme.animation` rather than writing an inline config at the call site.
 - **Timing Transitions**: For micro-interactions (like tab switching, input fade-ins, and button presses), prefer clean timing transitions (`withTiming`) or highly-damped, non-oscillating springs (`withSpring` with high damping).
 - **Scale Factor**: Keep scaling factors subtle (e.g. `1.03` to `1.05` instead of `1.15`). Let the size shift remain modest.

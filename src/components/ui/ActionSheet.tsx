@@ -100,11 +100,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = React.memo(
                 translateY.value = SCREEN_HEIGHT;
                 overlayOpacity.value = 0;
 
-                translateY.value = withSpring(0, {
-                    damping: 22,
-                    stiffness: 220,
-                    mass: 0.8,
-                });
+                translateY.value = withSpring(0, theme.animation.springDefault);
                 overlayOpacity.value = withTiming(1, { duration: 300 });
             }
         }, [visible, translateY, overlayOpacity, SCREEN_HEIGHT]);
@@ -125,7 +121,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = React.memo(
                         if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
                             runOnJS(handleClose)();
                         } else {
-                            translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
+                            translateY.value = withSpring(0, theme.animation.springDefault);
                             overlayOpacity.value = withTiming(1, { duration: 150 });
                         }
                     }),

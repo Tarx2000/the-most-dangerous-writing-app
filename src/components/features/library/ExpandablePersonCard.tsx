@@ -48,11 +48,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
             }
             expandHeight.value = withSpring(
                 isExpanded ? EXPANDED_MAX_HEIGHT : 0,
-                {
-                    damping: 18,
-                    stiffness: 180,
-                    mass: 0.8,
-                },
+                theme.animation.springDefault,
                 (finished) => {
                     if (finished && !isExpanded) {
                         runOnJS(setShouldRenderContent)(false);

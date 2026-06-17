@@ -127,12 +127,21 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
      * Track horizontal scroll to determine current page.
      * Used to conditionally show check-in urgent dot
      * and to restrict Feed pull-down to Start page only.
+     *
+     * Performance: We keep a pageRef so we can early-return without
+     * spending a React render attempt when the rounded page hasn't changed.
+     * This avoids 60 setState calls/sec during pager swipe (even though
+     * React bails on equal values, the closure still runs every frame).
      */
+    const pageRef = useRef(0);
     const handleScroll = useCallback(
         (e: NativeSyntheticEvent<NativeScrollEvent>) => {
             const offsetX = e.nativeEvent.contentOffset.x;
             const page = Math.round(offsetX / screenWidth);
-            setCurrentPage(page);
+            if (pageRef.current !== page) {
+                pageRef.current = page;
+                setCurrentPage(page);
+            }
         },
         [screenWidth],
     );
@@ -193,8 +202,11 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
 
     return (
         <View style={styles.container}>
-            {/* Feed Page — positioned below viewport, slides up when revealed */}
+            {/* Feed Page — positioned below viewport, slides up when revealed.
+                pointerEvents driven by React state so the worklet never has to
+                touch layout-level properties every frame. */}
             <Animated.View
+                pointerEvents={feedVisible ? 'auto' : 'none'}
                 style={useMemo(
                     () => [styles.feedLayer, feedAnimStyle, { height: screenHeight }],
                     [feedAnimStyle, screenHeight],
@@ -232,9 +244,14 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 onClose={handleCloseVlogModal}
             />
 
-            {/* Main Content — Start + Library horizontal scroll */}
+            {/* Main Content — Start + Library horizontal scroll.
+                pointerEvents="none" when feed is revealed so taps pass through
+                to the Feed layer without the worklet touching this prop. */}
             <GestureDetector gesture={feedPanGesture}>
-                <Animated.View style={[styles.mainContent, mainContentAnimStyle]}>
+                <Animated.View
+                    pointerEvents={feedVisible ? 'none' : 'auto'}
+                    style={[styles.mainContent, mainContentAnimStyle]}
+                >
                     <ScrollView
                         ref={scrollViewRef}
                         horizontal
@@ -274,8 +291,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 </Animated.View>
             </GestureDetector>
 
-            {/* Persistent Liquid Glass Navigation — fades out and slides down when feed opens */}
-            <Animated.View style={navAnimStyle}>
+            {/* Persistent Liquid Glass Navigation — fades out and slides down
+                when feed opens. pointerEvents gated by React state so the
+                worklet steers clear of layout-level property writes. */}
+            <Animated.View pointerEvents={feedVisible ? 'none' : 'auto'} style={navAnimStyle}>
                 <LiquidGlassNav items={navItems} activeId={activeTabId} onSelect={handleModeChange} />
             </Animated.View>
         </View>

@@ -9,7 +9,10 @@ jest.mock('react-native-safe-area-context', () => ({
     useSafeAreaInsets: () => ({ top: 40, bottom: 20, left: 0, right: 0 }),
 }));
 
-// Mock theme to avoid undefined style errors during rendering
+// Mock theme to avoid undefined style errors during rendering.
+// Includes the `animation` block because BaseModal now uses
+// `theme.animation.springDefault` (replaced inline spring configs to comply
+// with .agents/instructions/animations.md — no inline spring configs allowed).
 jest.mock('@/styles/theme', () => ({
     theme: {
         colors: {
@@ -33,6 +36,13 @@ jest.mock('@/styles/theme', () => ({
             sm: 8,
             md: 12,
             lg: 16,
+        },
+        animation: {
+            springDefault: { damping: 30, stiffness: 200, mass: 0.8 },
+            springSnappy: { damping: 35, stiffness: 250, mass: 0.8 },
+            springGentle: { damping: 26, stiffness: 120, mass: 0.8 },
+            springLight: { damping: 28, stiffness: 150, mass: 0.5 },
+            springFeed: { damping: 32, stiffness: 160, mass: 0.9 },
         },
     },
 }));

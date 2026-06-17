@@ -4,7 +4,9 @@ module.exports = function (api) {
         presets: ['babel-preset-expo'],
         plugins: [
             ['babel-plugin-react-compiler', { target: '19' }],
-            'react-native-reanimated/plugin'
+            // Reanimated v4 requires react-native-worklets/plugin as the LAST entry.
+            // It compiles worklets to run on the dedicated UI thread instead of JS.
+            'react-native-worklets/plugin',
         ],
     };
 };

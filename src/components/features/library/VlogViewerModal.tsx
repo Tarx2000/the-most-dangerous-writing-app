@@ -301,8 +301,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                         // to the thumbnail in the calendar grid.
                         runOnJS(handleCloseInternal)();
                     } else {
-                        panX.value = withSpring(0, { damping: 20, stiffness: 200 });
-                        panY.value = withSpring(0, { damping: 20, stiffness: 200 });
+                        panX.value = withSpring(0, theme.animation.springDefault);
+                        panY.value = withSpring(0, theme.animation.springDefault);
                     }
                 }),
         [handleCloseInternal, panX, panY],

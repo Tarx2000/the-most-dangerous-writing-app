@@ -77,16 +77,16 @@ export const StreakPopup = React.memo(({ visible, streakHistory = [], onClose }:
         // Staggered entrance using withDelay from Reanimated
         overlayFade.value = withTiming(1, { duration: 400 });
 
-        iconScale.value = withDelay(200, withSpring(1, { damping: 10, mass: 1, stiffness: 100 }));
+        iconScale.value = withDelay(200, withSpring(1, theme.animation.springGentle)); // springGentle: celebratory but still controlled motion
         iconFade.value = withDelay(200, withTiming(1, { duration: 300 }));
 
         textFade.value = withDelay(500, withTiming(1, { duration: 350 }));
-        textSlide.value = withDelay(500, withSpring(0, { damping: 12, mass: 1, stiffness: 80 }));
+        textSlide.value = withDelay(500, withSpring(0, theme.animation.springGentle));
 
         weekFade.value = withDelay(800, withTiming(1, { duration: 300 }));
 
         buttonFade.value = withDelay(1000, withTiming(1, { duration: 300 }));
-        buttonSlide.value = withDelay(1000, withSpring(0, { damping: 12, mass: 1, stiffness: 80 }));
+        buttonSlide.value = withDelay(1000, withSpring(0, theme.animation.springGentle));
     }, [visible, overlayFade, iconScale, iconFade, textFade, textSlide, weekFade, buttonFade, buttonSlide]);
 
     const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayFade.value }));

@@ -124,11 +124,7 @@ export const PinPadModal: React.FC = () => {
             checkLockout(); // Check lockout every time modal opens
             translateY.value = SCREEN_HEIGHT;
             overlayOpacity.value = 0;
-            translateY.value = withSpring(0, {
-                damping: 22,
-                stiffness: 220,
-                mass: 0.8,
-            });
+            translateY.value = withSpring(0, theme.animation.springDefault);
             overlayOpacity.value = withTiming(1, { duration: 300 });
         }
     }, [isVisible, mode, promptText, translateY, overlayOpacity, SCREEN_HEIGHT, checkLockout]);
@@ -150,10 +146,7 @@ export const PinPadModal: React.FC = () => {
                     if (e.translationY > DISMISS_THRESHOLD || e.velocityY > DISMISS_VELOCITY) {
                         runOnJS(handleDismiss)();
                     } else {
-                        translateY.value = withSpring(0, {
-                            damping: 22,
-                            stiffness: 220,
-                        });
+                        translateY.value = withSpring(0, theme.animation.springDefault);
                         overlayOpacity.value = withTiming(1, { duration: 150 });
                     }
                 }),

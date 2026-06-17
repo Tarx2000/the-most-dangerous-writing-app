@@ -75,7 +75,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                 if (e.translationY > 150 || e.velocityY > 1000) {
                     runOnJS(handleClose)();
                 } else {
-                    panY.value = withSpring(0, { damping: 20, stiffness: 200 });
+                    panY.value = withSpring(0, theme.animation.springDefault);
                     overlayOpacity.value = withTiming(1, { duration: 150 });
                 }
             });

@@ -241,7 +241,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         // Quick Video: show stop button immediately
         if (isQuickVideo) {
             setPhase('canStop');
-            stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
+            stopBtnSlide.value = withSpring(0, theme.animation.springSnappy);
         }
 
         // Start the timer
@@ -259,7 +259,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
                     timerRef.current = null;
                     setPhase('canStop');
                     vibrate([0, 100, 50, 100]);
-                    stopBtnSlide.value = withSpring(0, { damping: 15, stiffness: 150 });
+                    stopBtnSlide.value = withSpring(0, theme.animation.springSnappy);
                 }
             }
         }, TIMER_TICK_MS);
@@ -313,7 +313,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
         const animateNumber = () => {
             countdownScale.value = 0.3;
             countdownOpacity.value = 0;
-            countdownScale.value = withSpring(1, { damping: 12, stiffness: 180 });
+            countdownScale.value = withSpring(1, theme.animation.springSnappy);
             countdownOpacity.value = withTiming(1, { duration: 200 });
             vibrate(50);
         };

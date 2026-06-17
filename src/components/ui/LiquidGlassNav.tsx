@@ -1,8 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { View, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 
@@ -17,16 +16,23 @@ const PILL_HEIGHT = 72;
 /** Icon size — larger now that labels are removed */
 const ICON_SIZE = 26;
 
+/** Indicator padding from edges */
+const INDICATOR_PADDING = 7;
+
 /**
- * Indicator spring configuration.
- * Tuned for a visibly-smooth settle that masks occasional JS lag.
- * Lower stiffness (200) + higher mass (0.8) = longer travel (~120ms)
- * with a pronounced slide rather than an instant snap.
+ * Indicator slide config — uses `withTiming` (NOT withSpring).
+ *
+ * Rationale: A spring's overshoot oscillations show up as visible jank on
+ * throttled GPUs (battery saver, low-end devices). A cubic-out timing slide
+ * settles in a fixed ~180ms with ZERO overshoot frames, so the compositor
+ * never has to paint extra frames beyond what's actually visible.
+ *
+ * Per `.agents/instructions/animations.md` rule:
+ *   "For micro-interactions like tab switching, prefer clean timing transitions."
  */
-const INDICATOR_SPRING = {
-    damping: 18,
-    stiffness: 200,
-    mass: 0.8,
+const INDICATOR_TIMING = {
+    duration: 180,
+    easing: Easing.out(Easing.cubic),
 };
 
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
@@ -34,16 +40,20 @@ const INDICATOR_SPRING = {
 /**
  * LiquidGlassNav — Premium floating pill navigation bar (icon-only).
  *
- * Design:
- * - Multi-layer glass effect: BlurView + dark tint + specular highlight
- * - Icon-only tabs (no labels) for a cleaner, more modern look
- * - Larger pill height (72px) with bigger icons (26px)
- * - Top-edge specular gradient simulates light refraction on glass
+ * Layer architecture (max 3 stacked visible layers, was 7):
  *
- * Performance:
- * - Wrapped in React.memo to skip scroll-event re-renders
- * - Uses raw Pressable for instant tap response (<16ms)
- * - Indicator animation in useEffect (not render-time) for stutter-free sliding
+ *   Layer A — Pill background
+ *     • iOS:    BlurView (intensity 80, tint dark) — native GPU blur
+ *     • Android: solid translucent color (CPU blur kills perf per AGENTS.md)
+ *
+ *   Layer B — Sliding indicator (the "bubble")
+ *     • Animated.View driven by `indicatorX` SharedValue via withTiming
+ *
+ *   Layer C — Row of Pressable tab icons
+ *
+ * The previous outer specular border gradient + tint overlay + specular
+ * highlight gradient were removed — they added 4 extra compositor layers
+ * per frame the indicator moved, but were barely perceptible visually.
  */
 interface NavItem {
     id: string;
@@ -69,27 +79,21 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
     /** Animated position for the sliding indicator */
     const indicatorX = useSharedValue(activeIndex * tabWidth);
 
-    /** Track previous activeIndex to avoid duplicate spring triggers */
+    /** Track previous activeIndex to avoid duplicate timing triggers */
     const prevActiveIndexRef = useRef(activeIndex);
 
     /**
      * Drive indicator to the new position synchronously BEFORE paint commits.
      * useLayoutEffect fires after DOM mutations but before the browser paints,
      * eliminating the one-frame delay caused by useEffect.
-     *
-     * For extra safety on rapid switches, we also guard against duplicate
-     * targets and batch the spring start on the UI thread via runOnUI.
      */
     useLayoutEffect(() => {
         if (activeIndex === prevActiveIndexRef.current) return;
         prevActiveIndexRef.current = activeIndex;
 
         const targetX = activeIndex * tabWidth;
-        indicatorX.value = withSpring(targetX, INDICATOR_SPRING);
+        indicatorX.value = withTiming(targetX, INDICATOR_TIMING);
     }, [activeIndex, tabWidth, indicatorX]);
-
-    /** Indicator padding from edges */
-    const INDICATOR_PADDING = 7;
 
     const indicatorStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: indicatorX.value + INDICATOR_PADDING }],
@@ -97,60 +101,53 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
 
     return (
         <View style={styles.wrapper}>
-            <LinearGradient
-                colors={[theme.colors.specularBorderStart, theme.colors.specularBorderEnd]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={[styles.pillContainer, { width: PILL_WIDTH, padding: 1 }]}
-            >
-                <View style={styles.pill}>
-                    {/* Layer 1: Frosted glass blur */}
-                    <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
+            {/*
+             * Layer A — Pill background.
+             *   iOS:    BlurView fills the pill (native GPU blur)
+             *   Android: solid translucent color on the container itself
+             *            (Android software blur kills scroll/animation perf
+             *             per .agents/instructions/animations.md:63)
+             *
+             * All visual pill properties (radius, shadow, border) live on
+             * this single layer to maximize view flattening.
+             */}
+            <View style={[styles.pill, { width: PILL_WIDTH }, Platform.OS === 'android' && styles.pillAndroidSolid]}>
+                {Platform.OS === 'ios' && <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />}
 
-                    {/* Layer 2: Dense dark tint for depth */}
-                    <View style={styles.tintOverlay} />
+                {/*
+                 * Layer B — Sliding active indicator (the "bubble").
+                 * Vertically centered, equal padding top/bottom.
+                 */}
+                <Animated.View
+                    style={[styles.indicator, { width: tabWidth - INDICATOR_PADDING * 2 }, indicatorStyle]}
+                />
 
-                    {/* Layer 3: Specular highlight — top-edge gradient simulating glass refraction */}
-                    <LinearGradient
-                        colors={[
-                            theme.colors.navSpecularHighlightStart,
-                            theme.colors.navSpecularHighlightMid,
-                            'transparent',
-                        ]}
-                        style={styles.specularHighlight}
-                    />
-
-                    {/* Sliding active indicator — vertically centered */}
-                    <Animated.View
-                        style={[styles.indicator, { width: tabWidth - INDICATOR_PADDING * 2 }, indicatorStyle]}
-                    />
-
-                    {/* Tab items — icon only, no labels */}
-                    <View style={styles.tabRow}>
-                        {items.map((item) => {
-                            const isActive = item.id === activeId;
-                            return (
-                                <Pressable
-                                    key={item.id}
-                                    style={[styles.tab, { width: tabWidth }]}
-                                    onPress={() => onSelect(item.id)}
-                                >
-                                    <View style={styles.iconContainer}>
-                                        {item.urgent && <View style={styles.urgentDot} />}
-                                        <MaterialCommunityIcons
-                                            name={
-                                                item.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']
-                                            }
-                                            size={ICON_SIZE}
-                                            color={isActive ? theme.colors.navIconActive : theme.colors.navIconInactive}
-                                        />
-                                    </View>
-                                </Pressable>
-                            );
-                        })}
-                    </View>
+                {/*
+                 * Layer C — Row of tab items (icon only, no labels).
+                 * Sits above the indicator so active icon color "pops".
+                 */}
+                <View style={styles.tabRow}>
+                    {items.map((item) => {
+                        const isActive = item.id === activeId;
+                        return (
+                            <Pressable
+                                key={item.id}
+                                style={[styles.tab, { width: tabWidth }]}
+                                onPress={() => onSelect(item.id)}
+                            >
+                                <View style={styles.iconContainer}>
+                                    {item.urgent && <View style={styles.urgentDot} />}
+                                    <MaterialCommunityIcons
+                                        name={item.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
+                                        size={ICON_SIZE}
+                                        color={isActive ? theme.colors.navIconActive : theme.colors.navIconInactive}
+                                    />
+                                </View>
+                            </Pressable>
+                        );
+                    })}
                 </View>
-            </LinearGradient>
+            </View>
         </View>
     );
 };
@@ -164,7 +161,7 @@ export const LiquidGlassNav = React.memo(LiquidGlassNavInner);
 /* ── STYLES ───────────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
-    /** Positioned at the bottom of the screen */
+    /** Positioned at the bottom of the screen, layout-only wrapper (no visual layer) */
     wrapper: {
         position: 'absolute',
         bottom: Platform.OS === 'ios' ? 30 : 16,
@@ -173,50 +170,42 @@ const styles = StyleSheet.create({
         zIndex: 999,
     },
 
-    /** Outer gradient container with shadow for floating depth */
-    pillContainer: {
+    /**
+     * The glass pill — single visible "Layer A".
+     * Carries border, radius, shadow, and overflow clipping so all visual
+     * properties collapse into one native view (maximizes view flattening).
+     * Width is set inline via PILL_WIDTH.
+     */
+    pill: {
         height: PILL_HEIGHT,
         borderRadius: PILL_HEIGHT / 2,
+        borderWidth: 1,
+        borderColor: theme.colors.specularBorderStart,
         shadowColor: theme.colors.navPillShadow,
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.7,
         shadowRadius: 24,
         elevation: 24,
-    },
-
-    /** The glass pill inner container */
-    pill: {
-        flex: 1,
-        borderRadius: PILL_HEIGHT / 2 - 1,
         overflow: 'hidden',
+        flexDirection: 'row',
+        alignItems: 'center',
     },
 
     /**
-     * Layer 2: Dense tint overlay — more opaque for a solid "liquid glass" look
-     * rather than a thin barely-visible frosted effect.
+     * Android fallback — solid translucent background.
+     * Replaces BlurView because Android blurs on the CPU and stutters
+     * every indicator frame. `overlayLockAndroid` is tuned for exactly
+     * this purpose (see theme.ts).
      */
-    tintOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: theme.colors.navPillBackground,
+    pillAndroidSolid: {
+        backgroundColor: theme.colors.overlayLockAndroid,
     },
 
-    /**
-     * Layer 3: Specular highlight on the top edge.
-     * Simulates the way light refracts through real glass surfaces,
-     * creating a subtle bright strip along the top of the pill.
-     */
-    specularHighlight: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: PILL_HEIGHT * 0.4,
-    },
-
-    /** Sliding highlight — vertically centered with equal padding top/bottom */
+    /** Sliding active indicator — "Layer B" */
     indicator: {
         position: 'absolute',
         top: 7,
+        left: 0,
         height: PILL_HEIGHT - 14,
         borderRadius: (PILL_HEIGHT - 14) / 2,
         backgroundColor: theme.colors.navIndicatorBackground,
@@ -224,10 +213,11 @@ const styles = StyleSheet.create({
         borderColor: theme.colors.navIndicatorBorder,
     },
 
-    /** Row of tab buttons */
+    /** Row of tab buttons — "Layer C" */
     tabRow: {
         flexDirection: 'row',
         flex: 1,
+        height: PILL_HEIGHT,
         zIndex: 2,
     },
 

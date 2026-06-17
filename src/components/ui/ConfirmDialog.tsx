@@ -27,7 +27,7 @@ import { theme } from '@/styles/theme';
 
 /* ── Animation constants ──────────────────────────────────────────────── */
 
-const SPRING = { damping: 18, stiffness: 220, mass: 0.8 };
+const SPRING = theme.animation.springDefault;
 const SCRIM_DURATION = 250;
 
 /* ── Types ────────────────────────────────────────────────────────────── */

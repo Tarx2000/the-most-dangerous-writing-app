@@ -102,12 +102,15 @@ export const TickDial = React.memo(function TickDial({
             justSnappedRef.current = false;
             return;
         }
-        const t = setTimeout(() => {
+        // Use requestAnimationFrame instead of setTimeout(60) so the sync
+        // runs on the next paint tick (~16ms) rather than waiting 60ms.
+        // This makes programmatic index changes feel noticeably more responsive.
+        const rafId = requestAnimationFrame(() => {
             scrollRef.current?.scrollTo({ x: selectedIndex * SNAP, animated: false });
             setReady(true);
             hasMounted.current = true;
-        }, 60);
-        return () => clearTimeout(t);
+        });
+        return () => cancelAnimationFrame(rafId);
     }, [selectedIndex]);
 
     /**
