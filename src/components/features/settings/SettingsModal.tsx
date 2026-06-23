@@ -109,14 +109,14 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
     const [showLockTimeoutModal, setShowLockTimeoutModal] = useState(false);
     const [showVlogQualityModal, setShowVlogQualityModal] = useState(false);
     const [showCompressionModal, setShowCompressionModal] = useState(false);
+    const [showProviderModal, setShowProviderModal] = useState(false);
 
     // --- Live model fetching state ---
     const [fetchedModels, setFetchedModels] = useState<string[]>([]);
     const [fetchingModels, setFetchingModels] = useState(false);
 
-    // Live fetch models whenever the model picker opens
+    // Live fetch models on mount / config change
     useEffect(() => {
-        if (!batchState.choosingModelFor) return;
         setFetchingModels(true);
         const fallback = AI_PROVIDERS[aiConfig.aiProvider]?.models || [];
         fetchAvailableModels({
@@ -127,7 +127,7 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
             setFetchedModels(models.length > 0 ? models : fallback);
             setFetchingModels(false);
         });
-    }, [batchState.choosingModelFor, aiConfig.aiApiKey, aiConfig.aiBaseUrl, aiConfig.aiProvider]);
+    }, [aiConfig.aiProvider, aiConfig.aiApiKey, aiConfig.aiBaseUrl]);
 
     // Sort models: favorites first, then rest in original order
     const modelOptions = useMemo(() => {
@@ -741,6 +741,7 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                         setBatchCheckins={batchState.setBatchCheckins}
                         handleBatchProcess={handleBatchProcess}
                         setChoosingModelFor={batchState.setChoosingModelFor}
+                        setChoosingProvider={setShowProviderModal}
                     />
 
                     <DeveloperToolsPanel
@@ -801,6 +802,22 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                     }
                     aiConfig.saveAiFavoriteModels(Array.from(current));
                 }}
+            />
+
+            {/* Select AI Provider ActionSheet */}
+            <ActionSheet
+                visible={showProviderModal}
+                title="Select AI Provider"
+                options={[
+                    { id: 'ollama', label: 'Ollama Cloud' },
+                    { id: 'neuralwatt', label: 'Neuralwatt Cloud' },
+                ]}
+                activeId={aiConfig.aiProvider}
+                onSelect={(id) => {
+                    aiConfig.saveAiProvider(id as import('@/config/ai').AiProvider);
+                    setShowProviderModal(false);
+                }}
+                onClose={() => setShowProviderModal(false)}
             />
 
             {/* Lock Timeout Options */}

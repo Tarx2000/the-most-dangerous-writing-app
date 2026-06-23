@@ -32,16 +32,18 @@ interface WordProps {
     index: number; // Stagger index: 0 is the last word, 1 is the 2nd-to-last, etc.
     idleTimeMsShared: SharedValue<number>;
     difficultyLimit: number;
+    style?: StyleProp<TextStyle>;
 }
 
 /**
  * VaporizingWord — Renders a single word that decays in opacity on the UI thread.
  *
  * Utilizes Reanimated `useAnimatedStyle` to interpolate the word's opacity
- * based on the elapsed idle ratio. This avoids JavaScript thread blockages
- * and ensures fluid 60fps animations.
+ * based on the elapsed idle ratio. Animates the color's alpha channel (rgba)
+ * rather than the layout opacity. This preserves baseline text metrics and
+ * prevents layout remeasures/shifts on the UI thread.
  */
-const VaporizingWord: React.FC<WordProps> = React.memo(({ word, index, idleTimeMsShared, difficultyLimit }) => {
+const VaporizingWord: React.FC<WordProps> = React.memo(({ word, index, idleTimeMsShared, difficultyLimit, style }) => {
     const animatedStyle = useAnimatedStyle(() => {
         // Calculate the ratio of current idle time to the limit
         const ratio = difficultyLimit > 0 ? idleTimeMsShared.value / difficultyLimit : 0;
@@ -61,10 +63,12 @@ const VaporizingWord: React.FC<WordProps> = React.memo(({ word, index, idleTimeM
             }
         }
 
-        return { opacity };
+        return {
+            color: `rgba(255, 255, 255, ${opacity})`,
+        };
     });
 
-    return <Animated.Text style={animatedStyle}>{word}</Animated.Text>;
+    return <Animated.Text style={[style, animatedStyle]}>{word}</Animated.Text>;
 });
 
 interface VaporizingTextProps {
@@ -120,6 +124,7 @@ export const VaporizingText: React.FC<VaporizingTextProps> = React.memo(
                                     index={indexFromEnd}
                                     idleTimeMsShared={idleTimeMsShared}
                                     difficultyLimit={difficultyLimit}
+                                    style={style}
                                 />
                             );
                         }

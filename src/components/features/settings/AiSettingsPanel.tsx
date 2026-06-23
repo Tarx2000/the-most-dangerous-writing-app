@@ -42,6 +42,7 @@ type AiSettingsPanelProps = {
     setBatchCheckins: (val: boolean) => void;
     handleBatchProcess: () => void;
     setChoosingModelFor: (val: 'summary' | 'grammar' | null) => void;
+    setChoosingProvider: (val: boolean) => void;
 };
 
 export const AiSettingsPanel = React.memo(function AiSettingsPanel({
@@ -58,6 +59,7 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     setBatchCheckins,
     handleBatchProcess,
     setChoosingModelFor,
+    setChoosingProvider,
 }: AiSettingsPanelProps) {
     const apiKeyRef = React.useRef(aiConfig.aiApiKey);
     const baseUrlRef = React.useRef(aiConfig.aiBaseUrl);
@@ -81,48 +83,14 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 <Text style={[commonStyles.settingsLabel, styles.headerTitle]}>AI Settings</Text>
             </View>
 
-            {/* Provider Selector Tab Segment */}
+            {/* Provider Dropdown */}
             <Text style={styles.fieldLabel}>AI Provider</Text>
-            <View style={styles.providerToggleRow}>
-                <AnimatedScaleButton
-                    style={[
-                        styles.providerToggleBtn,
-                        aiConfig.aiProvider === 'ollama' && styles.providerToggleBtnActive,
-                    ]}
-                    onPress={() => {
-                        aiConfig.saveAiProvider('ollama');
-                        vibrate(10);
-                    }}
-                >
-                    <Text
-                        style={[
-                            styles.providerToggleBtnText,
-                            aiConfig.aiProvider === 'ollama' && styles.providerToggleBtnTextActive,
-                        ]}
-                    >
-                        Ollama Cloud
-                    </Text>
-                </AnimatedScaleButton>
-                <AnimatedScaleButton
-                    style={[
-                        styles.providerToggleBtn,
-                        aiConfig.aiProvider === 'neuralwatt' && styles.providerToggleBtnActive,
-                    ]}
-                    onPress={() => {
-                        aiConfig.saveAiProvider('neuralwatt');
-                        vibrate(10);
-                    }}
-                >
-                    <Text
-                        style={[
-                            styles.providerToggleBtnText,
-                            aiConfig.aiProvider === 'neuralwatt' && styles.providerToggleBtnTextActive,
-                        ]}
-                    >
-                        Neuralwatt Cloud
-                    </Text>
-                </AnimatedScaleButton>
-            </View>
+            <AnimatedScaleButton style={styles.modelSelectBtn} onPress={() => setChoosingProvider(true)}>
+                <Text style={styles.modelSelectText}>
+                    {aiConfig.aiProvider === 'ollama' ? 'Ollama Cloud' : 'Neuralwatt Cloud'}
+                </Text>
+                <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
+            </AnimatedScaleButton>
 
             {/* API Key */}
             <View style={styles.fieldLabelRow}>
