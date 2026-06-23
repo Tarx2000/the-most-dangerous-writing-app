@@ -18,7 +18,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { CONFIG, isTweet as isTweetWordCount } from '@/config';
 import { generateId, toLocalDateString } from '@/lib/utils';
 import { cleanupOrphanedVlogs as cleanupOrphanFiles } from '@/lib/storageManager';
-import { AI_STORAGE_KEYS, type AiPrompts } from '@/config/ai';
+import { AI_STORAGE_KEYS, type AiPrompts, type AiProvider } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
 import { setPerfEnabled } from '@/lib/perf';
 import {
@@ -927,73 +927,152 @@ export function createPreferencesOps(
 
 export function createAiConfigOps(
     refs: {
-        aiApiKey: Ref<string>;
-        aiBaseUrl: Ref<string>;
-        aiModel: Ref<string>;
-        aiGrammarModel: Ref<string>;
+        aiProvider: Ref<AiProvider>;
+        ollamaApiKey: Ref<string>;
+        ollamaBaseUrl: Ref<string>;
+        ollamaModel: Ref<string>;
+        ollamaGrammarModel: Ref<string>;
+        neuralwattApiKey: Ref<string>;
+        neuralwattBaseUrl: Ref<string>;
+        neuralwattModel: Ref<string>;
+        neuralwattGrammarModel: Ref<string>;
         aiPrompts: Ref<AiPrompts>;
         autoGenerateSummaries: Ref<boolean>;
         aiFavoriteModels: Ref<string[]>;
     },
     setters: {
-        setAiApiKey: Setter<string>;
-        setAiBaseUrl: Setter<string>;
-        setAiModel: Setter<string>;
-        setAiGrammarModel: Setter<string>;
+        setAiProvider: Setter<AiProvider>;
+        setOllamaApiKey: Setter<string>;
+        setOllamaBaseUrl: Setter<string>;
+        setOllamaModel: Setter<string>;
+        setOllamaGrammarModel: Setter<string>;
+        setNeuralwattApiKey: Setter<string>;
+        setNeuralwattBaseUrl: Setter<string>;
+        setNeuralwattModel: Setter<string>;
+        setNeuralwattGrammarModel: Setter<string>;
         setAiPrompts: Setter<AiPrompts>;
         setAutoGenerateSummaries: Setter<boolean>;
         setAiFavoriteModels: Setter<string[]>;
     },
 ) {
-    const saveAiApiKey = async (key: string) => {
-        const prev = refs.aiApiKey.current;
-        setters.setAiApiKey(key);
-        refs.aiApiKey.current = key;
+    const saveAiProvider = async (provider: AiProvider) => {
+        const prev = refs.aiProvider.current;
+        setters.setAiProvider(provider);
+        refs.aiProvider.current = provider;
         try {
-            await setSetting(AI_STORAGE_KEYS.API_KEY, key);
+            await setSetting(AI_STORAGE_KEYS.PROVIDER, provider);
         } catch (error) {
-            logger('error', 'Storage', 'Failed to save AI API key:', error);
-            setters.setAiApiKey(prev);
-            refs.aiApiKey.current = prev;
+            logger('error', 'Storage', 'Failed to save AI provider:', error);
+            setters.setAiProvider(prev);
+            refs.aiProvider.current = prev;
+        }
+    };
+
+    const saveAiApiKey = async (key: string) => {
+        const provider = refs.aiProvider.current;
+        if (provider === 'ollama') {
+            const prev = refs.ollamaApiKey.current;
+            setters.setOllamaApiKey(key);
+            refs.ollamaApiKey.current = key;
+            try {
+                await setSetting(AI_STORAGE_KEYS.OLLAMA_API_KEY, key);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Ollama API key:', error);
+                setters.setOllamaApiKey(prev);
+                refs.ollamaApiKey.current = prev;
+            }
+        } else {
+            const prev = refs.neuralwattApiKey.current;
+            setters.setNeuralwattApiKey(key);
+            refs.neuralwattApiKey.current = key;
+            try {
+                await setSetting(AI_STORAGE_KEYS.NEURALWATT_API_KEY, key);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Neuralwatt API key:', error);
+                setters.setNeuralwattApiKey(prev);
+                refs.neuralwattApiKey.current = prev;
+            }
         }
     };
 
     const saveAiBaseUrl = async (url: string) => {
-        const prev = refs.aiBaseUrl.current;
-        setters.setAiBaseUrl(url);
-        refs.aiBaseUrl.current = url;
-        try {
-            await setSetting(AI_STORAGE_KEYS.BASE_URL, url);
-        } catch (error) {
-            logger('error', 'Storage', 'Failed to save AI base URL:', error);
-            setters.setAiBaseUrl(prev);
-            refs.aiBaseUrl.current = prev;
+        const provider = refs.aiProvider.current;
+        if (provider === 'ollama') {
+            const prev = refs.ollamaBaseUrl.current;
+            setters.setOllamaBaseUrl(url);
+            refs.ollamaBaseUrl.current = url;
+            try {
+                await setSetting(AI_STORAGE_KEYS.OLLAMA_BASE_URL, url);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Ollama base URL:', error);
+                setters.setOllamaBaseUrl(prev);
+                refs.ollamaBaseUrl.current = prev;
+            }
+        } else {
+            const prev = refs.neuralwattBaseUrl.current;
+            setters.setNeuralwattBaseUrl(url);
+            refs.neuralwattBaseUrl.current = url;
+            try {
+                await setSetting(AI_STORAGE_KEYS.NEURALWATT_BASE_URL, url);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Neuralwatt base URL:', error);
+                setters.setNeuralwattBaseUrl(prev);
+                refs.neuralwattBaseUrl.current = prev;
+            }
         }
     };
 
     const saveAiModel = async (model: string) => {
-        const prev = refs.aiModel.current;
-        setters.setAiModel(model);
-        refs.aiModel.current = model;
-        try {
-            await setSetting(AI_STORAGE_KEYS.MODEL, model);
-        } catch (error) {
-            logger('error', 'Storage', 'Failed to save AI model:', error);
-            setters.setAiModel(prev);
-            refs.aiModel.current = prev;
+        const provider = refs.aiProvider.current;
+        if (provider === 'ollama') {
+            const prev = refs.ollamaModel.current;
+            setters.setOllamaModel(model);
+            refs.ollamaModel.current = model;
+            try {
+                await setSetting(AI_STORAGE_KEYS.OLLAMA_MODEL, model);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Ollama model:', error);
+                setters.setOllamaModel(prev);
+                refs.ollamaModel.current = prev;
+            }
+        } else {
+            const prev = refs.neuralwattModel.current;
+            setters.setNeuralwattModel(model);
+            refs.neuralwattModel.current = model;
+            try {
+                await setSetting(AI_STORAGE_KEYS.NEURALWATT_MODEL, model);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Neuralwatt model:', error);
+                setters.setNeuralwattModel(prev);
+                refs.neuralwattModel.current = prev;
+            }
         }
     };
 
     const saveAiGrammarModel = async (grammarModel: string) => {
-        const prev = refs.aiGrammarModel.current;
-        setters.setAiGrammarModel(grammarModel);
-        refs.aiGrammarModel.current = grammarModel;
-        try {
-            await setSetting(AI_STORAGE_KEYS.GRAMMAR_MODEL, grammarModel);
-        } catch (error) {
-            logger('error', 'Storage', 'Failed to save AI grammar model:', error);
-            setters.setAiGrammarModel(prev);
-            refs.aiGrammarModel.current = prev;
+        const provider = refs.aiProvider.current;
+        if (provider === 'ollama') {
+            const prev = refs.ollamaGrammarModel.current;
+            setters.setOllamaGrammarModel(grammarModel);
+            refs.ollamaGrammarModel.current = grammarModel;
+            try {
+                await setSetting(AI_STORAGE_KEYS.OLLAMA_GRAMMAR_MODEL, grammarModel);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Ollama grammar model:', error);
+                setters.setOllamaGrammarModel(prev);
+                refs.ollamaGrammarModel.current = prev;
+            }
+        } else {
+            const prev = refs.neuralwattGrammarModel.current;
+            setters.setNeuralwattGrammarModel(grammarModel);
+            refs.neuralwattGrammarModel.current = grammarModel;
+            try {
+                await setSetting(AI_STORAGE_KEYS.NEURALWATT_GRAMMAR_MODEL, grammarModel);
+            } catch (error) {
+                logger('error', 'Storage', 'Failed to save Neuralwatt grammar model:', error);
+                setters.setNeuralwattGrammarModel(prev);
+                refs.neuralwattGrammarModel.current = prev;
+            }
         }
     };
 
@@ -1028,14 +1107,14 @@ export function createAiConfigOps(
         refs.aiFavoriteModels.current = models;
         try {
             await setSetting(AI_STORAGE_KEYS.FAVORITE_MODELS, JSON.stringify(models));
-        } catch (error) {
-            logger('error', 'Storage', 'Failed to save AI favorite models:', error);
+        } catch {
             setters.setAiFavoriteModels(prev);
             refs.aiFavoriteModels.current = prev;
         }
     };
 
     return {
+        saveAiProvider,
         saveAiApiKey,
         saveAiBaseUrl,
         saveAiModel,

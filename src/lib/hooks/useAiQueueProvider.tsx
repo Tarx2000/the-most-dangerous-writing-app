@@ -66,7 +66,7 @@ const AiQueueContext = createContext<AiQueueContextType | null>(null);
 
 export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     const { savedNotes, updateNote } = useNotes();
-    const { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts } = useAiConfig();
+    const { aiProvider, aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts } = useAiConfig();
     const { persons } = usePersons();
     const [queueState, setQueueState] = useState<AiQueueState>(aiQueue.getState());
     const [failureNotifications, setFailureNotifications] = useState<AiFailureNotification[]>([]);
@@ -74,8 +74,28 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     const queueInitedRef = useRef(false);
 
     // Keep a ref so callbacks always see the latest deps without re-creating
-    const depsRef = useRef({ aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes, updateNote, persons });
-    depsRef.current = { aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes, updateNote, persons };
+    const depsRef = useRef({
+        aiProvider,
+        aiApiKey,
+        aiBaseUrl,
+        aiModel,
+        aiGrammarModel,
+        aiPrompts,
+        savedNotes,
+        updateNote,
+        persons,
+    });
+    depsRef.current = {
+        aiProvider,
+        aiApiKey,
+        aiBaseUrl,
+        aiModel,
+        aiGrammarModel,
+        aiPrompts,
+        savedNotes,
+        updateNote,
+        persons,
+    };
 
     // Update queue dependencies when AI config or notes change
     useEffect(() => {
@@ -86,25 +106,25 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                 model: depsRef.current.aiModel,
                 grammarModel: depsRef.current.aiGrammarModel,
                 prompts: depsRef.current.aiPrompts,
+                provider: depsRef.current.aiProvider,
             }),
-            (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
+            (noteId) => depsRef.current.savedNotes.find((n) => n.id === noteId),
             depsRef.current.updateNote,
             () => depsRef.current.savedNotes,
-            (personId) => depsRef.current.persons.find(p => p.id === personId)
+            (personId) => depsRef.current.persons.find((p) => p.id === personId),
         );
-    }, [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes.length, persons.length]);
+    }, [aiProvider, aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, savedNotes.length, persons.length]);
 
     // Reset connection health when AI config changes so stale offline state
     // doesn't carry over to a new key / endpoint.
     useEffect(() => {
         resetConnectionState();
-    }, [aiApiKey, aiBaseUrl, aiModel]);
+    }, [aiProvider, aiApiKey, aiBaseUrl, aiModel]);
 
     // Single event subscription for the entire app — queue state updates
     useEffect(() => {
-        const subscription = DeviceEventEmitter.addListener(
-            AI_QUEUE_EVENT,
-            (state: AiQueueState) => setQueueState(state)
+        const subscription = DeviceEventEmitter.addListener(AI_QUEUE_EVENT, (state: AiQueueState) =>
+            setQueueState(state),
         );
         setQueueState(aiQueue.getState());
         return () => subscription.remove();
@@ -123,8 +143,8 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                     isTimeout: false,
                     isPermanent: payload.permanent || false,
                 };
-                setFailureNotifications(prev => [...prev.slice(-4), notif]); // Keep last 5
-            }
+                setFailureNotifications((prev) => [...prev.slice(-4), notif]); // Keep last 5
+            },
         );
         return () => sub.remove();
     }, []);
@@ -137,13 +157,14 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                 const notif: AiFailureNotification = {
                     id: `timeout-${payload.noteId}-${Date.now()}`,
                     noteId: payload.noteId,
-                    message: payload.reason || `AI processing timed out after ${Math.round(payload.durationMs / 1000)}s.`,
+                    message:
+                        payload.reason || `AI processing timed out after ${Math.round(payload.durationMs / 1000)}s.`,
                     timestamp: Date.now(),
                     isTimeout: true,
                     isPermanent: true,
                 };
-                setFailureNotifications(prev => [...prev.slice(-4), notif]); // Keep last 5
-            }
+                setFailureNotifications((prev) => [...prev.slice(-4), notif]); // Keep last 5
+            },
         );
         return () => sub.remove();
     }, []);
@@ -162,10 +183,10 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                 grammarModel: depsRef.current.aiGrammarModel,
                 prompts: depsRef.current.aiPrompts,
             }),
-            (noteId) => depsRef.current.savedNotes.find(n => n.id === noteId),
+            (noteId) => depsRef.current.savedNotes.find((n) => n.id === noteId),
             depsRef.current.updateNote,
             () => depsRef.current.savedNotes,
-            (personId) => depsRef.current.persons.find(p => p.id === personId)
+            (personId) => depsRef.current.persons.find((p) => p.id === personId),
         );
     }, []);
 
@@ -179,16 +200,10 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     }, [initializeQueue, configReady]);
 
     /** Check if a specific note is actively processing */
-    const isNoteActive = useCallback(
-        (noteId: string) => aiQueue.isNoteActive(noteId),
-        []
-    );
+    const isNoteActive = useCallback((noteId: string) => aiQueue.isNoteActive(noteId), []);
 
     /** Check if a specific note is queued */
-    const isNoteQueued = useCallback(
-        (noteId: string) => aiQueue.isNoteQueued(noteId),
-        []
-    );
+    const isNoteQueued = useCallback((noteId: string) => aiQueue.isNoteQueued(noteId), []);
 
     /** Enqueue a single note */
     const enqueueNote = useCallback(async (noteId: string, category: AiJobCategory) => {
@@ -207,7 +222,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
 
     /** Dismiss a single notification */
     const dismissNotification = useCallback((id: string) => {
-        setFailureNotifications(prev => prev.filter(n => n.id !== id));
+        setFailureNotifications((prev) => prev.filter((n) => n.id !== id));
     }, []);
 
     /** Clear all notifications */
@@ -215,24 +230,34 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         setFailureNotifications([]);
     }, []);
 
-    const value = React.useMemo<AiQueueContextType>(() => ({
-        queueState,
-        isNoteActive,
-        isNoteQueued,
-        enqueueNote,
-        startBatch,
-        cancelBatch,
-        initializeQueue,
-        failureNotifications,
-        dismissNotification,
-        clearAllNotifications,
-    }), [queueState, isNoteActive, isNoteQueued, enqueueNote, startBatch, cancelBatch, initializeQueue, failureNotifications, dismissNotification, clearAllNotifications]);
-
-    return (
-        <AiQueueContext.Provider value={value}>
-            {children}
-        </AiQueueContext.Provider>
+    const value = React.useMemo<AiQueueContextType>(
+        () => ({
+            queueState,
+            isNoteActive,
+            isNoteQueued,
+            enqueueNote,
+            startBatch,
+            cancelBatch,
+            initializeQueue,
+            failureNotifications,
+            dismissNotification,
+            clearAllNotifications,
+        }),
+        [
+            queueState,
+            isNoteActive,
+            isNoteQueued,
+            enqueueNote,
+            startBatch,
+            cancelBatch,
+            initializeQueue,
+            failureNotifications,
+            dismissNotification,
+            clearAllNotifications,
+        ],
     );
+
+    return <AiQueueContext.Provider value={value}>{children}</AiQueueContext.Provider>;
 };
 
 /* ── Hook ──────────────────────────────────────────────────────────────── */

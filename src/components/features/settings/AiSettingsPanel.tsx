@@ -1,7 +1,5 @@
 import React from 'react';
-import {
-    View, Text, TextInput, ActivityIndicator, Platform, StyleSheet, Pressable
-} from 'react-native';
+import { View, Text, TextInput, ActivityIndicator, Platform, StyleSheet, Pressable } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -11,17 +9,22 @@ import { pingServer } from '@/lib/aiService';
 import {
     DEFAULT_OLLAMA_API_KEY,
     DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_NEURALWATT_API_KEY,
+    DEFAULT_NEURALWATT_BASE_URL,
+    type AiProvider,
 } from '@/config/ai';
 import type { SavedNote, AiQueueState } from '@/types';
 
 type AiSettingsPanelProps = {
     notes: { savedNotes: SavedNote[] };
     aiConfig: {
+        aiProvider: AiProvider;
         aiApiKey: string;
         aiBaseUrl: string;
         aiModel: string;
         aiGrammarModel: string;
         autoGenerateSummaries: boolean;
+        saveAiProvider: (provider: AiProvider) => Promise<void>;
         saveAiApiKey: (key: string) => Promise<void>;
         saveAiBaseUrl: (url: string) => Promise<void>;
         saveAiModel: (model: string) => Promise<void>;
@@ -54,13 +57,22 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
     batchCheckins,
     setBatchCheckins,
     handleBatchProcess,
-    setChoosingModelFor
+    setChoosingModelFor,
 }: AiSettingsPanelProps) {
     const apiKeyRef = React.useRef(aiConfig.aiApiKey);
     const baseUrlRef = React.useRef(aiConfig.aiBaseUrl);
 
-    const isDefaultKey = aiConfig.aiApiKey === DEFAULT_OLLAMA_API_KEY;
-    const isDefaultUrl = aiConfig.aiBaseUrl === DEFAULT_OLLAMA_BASE_URL;
+    // Sync refs when active provider or config changes
+    React.useEffect(() => {
+        apiKeyRef.current = aiConfig.aiApiKey;
+        baseUrlRef.current = aiConfig.aiBaseUrl;
+    }, [aiConfig.aiProvider, aiConfig.aiApiKey, aiConfig.aiBaseUrl]);
+
+    const defaultApiKey = aiConfig.aiProvider === 'ollama' ? DEFAULT_OLLAMA_API_KEY : DEFAULT_NEURALWATT_API_KEY;
+    const defaultBaseUrl = aiConfig.aiProvider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : DEFAULT_NEURALWATT_BASE_URL;
+
+    const isDefaultKey = aiConfig.aiApiKey === defaultApiKey;
+    const isDefaultUrl = aiConfig.aiBaseUrl === defaultBaseUrl;
 
     return (
         <View style={styles.container}>
@@ -69,6 +81,48 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 <Text style={[commonStyles.settingsLabel, styles.headerTitle]}>AI Settings</Text>
             </View>
 
+            {/* Provider Selector Tab Segment */}
+            <Text style={styles.fieldLabel}>AI Provider</Text>
+            <View style={styles.providerToggleRow}>
+                <AnimatedScaleButton
+                    style={[
+                        styles.providerToggleBtn,
+                        aiConfig.aiProvider === 'ollama' && styles.providerToggleBtnActive,
+                    ]}
+                    onPress={() => {
+                        aiConfig.saveAiProvider('ollama');
+                        vibrate(10);
+                    }}
+                >
+                    <Text
+                        style={[
+                            styles.providerToggleBtnText,
+                            aiConfig.aiProvider === 'ollama' && styles.providerToggleBtnTextActive,
+                        ]}
+                    >
+                        Ollama Cloud
+                    </Text>
+                </AnimatedScaleButton>
+                <AnimatedScaleButton
+                    style={[
+                        styles.providerToggleBtn,
+                        aiConfig.aiProvider === 'neuralwatt' && styles.providerToggleBtnActive,
+                    ]}
+                    onPress={() => {
+                        aiConfig.saveAiProvider('neuralwatt');
+                        vibrate(10);
+                    }}
+                >
+                    <Text
+                        style={[
+                            styles.providerToggleBtnText,
+                            aiConfig.aiProvider === 'neuralwatt' && styles.providerToggleBtnTextActive,
+                        ]}
+                    >
+                        Neuralwatt Cloud
+                    </Text>
+                </AnimatedScaleButton>
+            </View>
 
             {/* API Key */}
             <View style={styles.fieldLabelRow}>
@@ -81,8 +135,8 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     <Pressable
                         style={styles.resetBtn}
                         onPress={() => {
-                            aiConfig.saveAiApiKey(DEFAULT_OLLAMA_API_KEY);
-                            apiKeyRef.current = DEFAULT_OLLAMA_API_KEY;
+                            aiConfig.saveAiApiKey(defaultApiKey);
+                            apiKeyRef.current = defaultApiKey;
                             vibrate(10);
                         }}
                     >
@@ -92,39 +146,44 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 )}
             </View>
             <TextInput
+                key={`api-key-${aiConfig.aiProvider}`}
                 style={styles.apiKeyInput}
                 defaultValue={aiConfig.aiApiKey}
-                onChangeText={(text) => { apiKeyRef.current = text; }}
+                onChangeText={(text) => {
+                    apiKeyRef.current = text;
+                }}
                 onEndEditing={() => aiConfig.saveAiApiKey(apiKeyRef.current)}
                 secureTextEntry
-                placeholder="Enter your own API key"
+                placeholder={aiConfig.aiProvider === 'ollama' ? 'Enter Ollama API key' : 'Enter Neuralwatt API key'}
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"
             />
 
             {/* Model Selection (Summary/Title) */}
             <Text style={styles.modelFieldLabel}>Summary & Title Model</Text>
-            <AnimatedScaleButton
-                style={styles.modelSelectBtn}
-                onPress={() => setChoosingModelFor('summary')}
-            >
+            <AnimatedScaleButton style={styles.modelSelectBtn} onPress={() => setChoosingModelFor('summary')}>
                 <Text style={styles.modelSelectText}>{aiConfig.aiModel}</Text>
                 <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
             </AnimatedScaleButton>
 
             {/* Grammar Model Selection */}
             <Text style={styles.modelFieldLabel}>Grammar & Spell Check Model</Text>
-            <AnimatedScaleButton
-                style={styles.modelSelectBtn}
-                onPress={() => setChoosingModelFor('grammar')}
-            >
+            <AnimatedScaleButton style={styles.modelSelectBtn} onPress={() => setChoosingModelFor('grammar')}>
                 <Text style={styles.modelSelectText}>{aiConfig.aiGrammarModel}</Text>
                 <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
             </AnimatedScaleButton>
 
             {/* Auto-Generate Toggle */}
             <AnimatedScaleButton
-                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.glassSurfaceLow, borderRadius: theme.borderRadius.sm, padding: 14, marginBottom: 16 }}
+                style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    backgroundColor: theme.colors.glassSurfaceLow,
+                    borderRadius: theme.borderRadius.sm,
+                    padding: 14,
+                    marginBottom: 16,
+                }}
                 onPress={() => {
                     aiConfig.updateAutoGenerateSummaries(!aiConfig.autoGenerateSummaries);
                     vibrate(10);
@@ -133,12 +192,35 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                     <MaterialCommunityIcons name="robot-outline" size={20} color={theme.colors.textSecondary} />
                     <View style={{ flex: 1 }}>
-                        <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>Auto-Generate Summaries</Text>
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>Run AI automatically after writing</Text>
+                        <Text style={{ color: theme.colors.textPrimary, fontSize: 13, fontWeight: '600' }}>
+                            Auto-Generate Summaries
+                        </Text>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>
+                            Run AI automatically after writing
+                        </Text>
                     </View>
                 </View>
-                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: aiConfig.autoGenerateSummaries ? theme.colors.primaryAction : theme.colors.glassBorder, justifyContent: 'center', padding: 2 }}>
-                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.colors.textPrimary, alignSelf: aiConfig.autoGenerateSummaries ? 'flex-end' : 'flex-start' }} />
+                <View
+                    style={{
+                        width: 44,
+                        height: 26,
+                        borderRadius: 13,
+                        backgroundColor: aiConfig.autoGenerateSummaries
+                            ? theme.colors.primaryAction
+                            : theme.colors.glassBorder,
+                        justifyContent: 'center',
+                        padding: 2,
+                    }}
+                >
+                    <View
+                        style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            backgroundColor: theme.colors.textPrimary,
+                            alignSelf: aiConfig.autoGenerateSummaries ? 'flex-end' : 'flex-start',
+                        }}
+                    />
                 </View>
             </AnimatedScaleButton>
 
@@ -150,8 +232,20 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     onPress={() => !queueState.isProcessing && setForceBatchOverwrite(!forceBatchOverwrite)}
                     disabled={queueState.isProcessing}
                 >
-                    <View style={[styles.checkbox, { borderColor: forceBatchOverwrite ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: forceBatchOverwrite ? theme.colors.primaryAction : 'transparent' }]}>
-                        {forceBatchOverwrite && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
+                    <View
+                        style={[
+                            styles.checkbox,
+                            {
+                                borderColor: forceBatchOverwrite
+                                    ? theme.colors.primaryAction
+                                    : theme.colors.glassBorder,
+                                backgroundColor: forceBatchOverwrite ? theme.colors.primaryAction : 'transparent',
+                            },
+                        ]}
+                    >
+                        {forceBatchOverwrite && (
+                            <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />
+                        )}
                     </View>
                     <Text style={styles.overwriteLabel}>Force overwrite ALL entries (Slow)</Text>
                 </AnimatedScaleButton>
@@ -164,8 +258,18 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         onPress={() => !queueState.isProcessing && setBatchJournals(!batchJournals)}
                         disabled={queueState.isProcessing}
                     >
-                        <View style={[styles.checkbox, { borderColor: batchJournals ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchJournals ? theme.colors.primaryAction : 'transparent' }]}>
-                            {batchJournals && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
+                        <View
+                            style={[
+                                styles.checkbox,
+                                {
+                                    borderColor: batchJournals ? theme.colors.primaryAction : theme.colors.glassBorder,
+                                    backgroundColor: batchJournals ? theme.colors.primaryAction : 'transparent',
+                                },
+                            ]}
+                        >
+                            {batchJournals && (
+                                <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />
+                            )}
                         </View>
                         <Text style={styles.categoryCheckLabel}>📓 Journals</Text>
                     </AnimatedScaleButton>
@@ -175,8 +279,18 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         onPress={() => !queueState.isProcessing && setBatchCircles(!batchCircles)}
                         disabled={queueState.isProcessing}
                     >
-                        <View style={[styles.checkbox, { borderColor: batchCircles ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchCircles ? theme.colors.primaryAction : 'transparent' }]}>
-                            {batchCircles && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
+                        <View
+                            style={[
+                                styles.checkbox,
+                                {
+                                    borderColor: batchCircles ? theme.colors.primaryAction : theme.colors.glassBorder,
+                                    backgroundColor: batchCircles ? theme.colors.primaryAction : 'transparent',
+                                },
+                            ]}
+                        >
+                            {batchCircles && (
+                                <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />
+                            )}
                         </View>
                         <Text style={styles.categoryCheckLabel}>👥 Circles</Text>
                     </AnimatedScaleButton>
@@ -186,15 +300,35 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         onPress={() => !queueState.isProcessing && setBatchCheckins(!batchCheckins)}
                         disabled={queueState.isProcessing}
                     >
-                        <View style={[styles.checkbox, { borderColor: batchCheckins ? theme.colors.primaryAction : theme.colors.glassBorder, backgroundColor: batchCheckins ? theme.colors.primaryAction : 'transparent' }]}>
-                            {batchCheckins && <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />}
+                        <View
+                            style={[
+                                styles.checkbox,
+                                {
+                                    borderColor: batchCheckins ? theme.colors.primaryAction : theme.colors.glassBorder,
+                                    backgroundColor: batchCheckins ? theme.colors.primaryAction : 'transparent',
+                                },
+                            ]}
+                        >
+                            {batchCheckins && (
+                                <MaterialCommunityIcons name="check" size={14} color={theme.colors.textPrimary} />
+                            )}
                         </View>
                         <Text style={styles.categoryCheckLabel}>🧭 Check-ins</Text>
                     </AnimatedScaleButton>
                 </View>
 
                 <AnimatedScaleButton
-                    style={[styles.batchProcessBtn, { backgroundColor: queueState.isProcessing ? theme.colors.dangerFill : theme.colors.successBorder, borderColor: queueState.isProcessing ? theme.colors.dangerBorderStrong : theme.colors.successBorder }]}
+                    style={[
+                        styles.batchProcessBtn,
+                        {
+                            backgroundColor: queueState.isProcessing
+                                ? theme.colors.dangerFill
+                                : theme.colors.successBorder,
+                            borderColor: queueState.isProcessing
+                                ? theme.colors.dangerBorderStrong
+                                : theme.colors.successBorder,
+                        },
+                    ]}
                     onPress={handleBatchProcess}
                 >
                     {queueState.isProcessing ? (
@@ -205,7 +339,9 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     ) : (
                         <>
                             <MaterialCommunityIcons name="brain" size={16} color={theme.colors.green} />
-                            <Text style={styles.processBtnText}>Process {forceBatchOverwrite ? 'All' : 'Missing'} Entries</Text>
+                            <Text style={styles.processBtnText}>
+                                Process {forceBatchOverwrite ? 'All' : 'Missing'} Entries
+                            </Text>
                         </>
                     )}
                 </AnimatedScaleButton>
@@ -217,25 +353,41 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                             <View style={styles.progressBlock}>
                                 <View style={styles.progressRow}>
                                     <Text style={styles.progressCategoryLabel}>
-                                        {queueState.currentCategory === 'journal' ? '📓 Journals' : queueState.currentCategory === 'circle' ? '👥 Circles' : queueState.currentCategory === 'checkin' ? '🧭 Check-ins' : '⏳ Processing...'}
+                                        {queueState.currentCategory === 'journal'
+                                            ? '📓 Journals'
+                                            : queueState.currentCategory === 'circle'
+                                              ? '👥 Circles'
+                                              : queueState.currentCategory === 'checkin'
+                                                ? '🧭 Check-ins'
+                                                : '⏳ Processing...'}
                                     </Text>
                                     <Text style={styles.progressCountLabel}>
                                         {queueState.batchProgress.current}/{queueState.batchProgress.total}
                                     </Text>
                                 </View>
                                 <View style={styles.progressTrack}>
-                                    <View style={[styles.progressFill, { width: `${Math.round((queueState.batchProgress.current / Math.max(queueState.batchProgress.total, 1)) * 100)}%` }]} />
+                                    <View
+                                        style={[
+                                            styles.progressFill,
+                                            {
+                                                width: `${Math.round((queueState.batchProgress.current / Math.max(queueState.batchProgress.total, 1)) * 100)}%`,
+                                            },
+                                        ]}
+                                    />
                                 </View>
                             </View>
                         )}
-                        {queueState.currentJob && (() => {
-                            const currentNote = notes.savedNotes.find((n: SavedNote) => n.id === queueState.currentJob?.noteId);
-                            return currentNote ? (
-                                <Text style={styles.currentJobText} numberOfLines={1}>
-                                    Now: "{currentNote.text.slice(0, 60)}..."
-                                </Text>
-                            ) : null;
-                        })()}
+                        {queueState.currentJob &&
+                            (() => {
+                                const currentNote = notes.savedNotes.find(
+                                    (n: SavedNote) => n.id === queueState.currentJob?.noteId,
+                                );
+                                return currentNote ? (
+                                    <Text style={styles.currentJobText} numberOfLines={1}>
+                                        Now: "{currentNote.text.slice(0, 60)}..."
+                                    </Text>
+                                ) : null;
+                            })()}
                     </View>
                 )}
             </View>
@@ -244,24 +396,44 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
             <Text style={styles.batchSectionLabel}>AI Status</Text>
             <View style={styles.statusSection}>
                 <View style={styles.statusRow}>
-                    <View style={[styles.statusDot, { backgroundColor: queueState.serverOnline ? theme.colors.green : queueState.serverOnline === false ? theme.colors.danger : theme.colors.textMuted }]} />
+                    <View
+                        style={[
+                            styles.statusDot,
+                            {
+                                backgroundColor: queueState.serverOnline
+                                    ? theme.colors.green
+                                    : queueState.serverOnline === false
+                                      ? theme.colors.danger
+                                      : theme.colors.textMuted,
+                            },
+                        ]}
+                    />
                     <Text style={styles.statusServerText}>
-                        Server: {queueState.serverOnline ? 'Online' : queueState.serverOnline === false ? 'Offline' : 'Checking...'}
+                        Server:{' '}
+                        {queueState.serverOnline
+                            ? 'Online'
+                            : queueState.serverOnline === false
+                              ? 'Offline'
+                              : 'Checking...'}
                     </Text>
                 </View>
                 <View style={styles.statusQueueRow}>
-                    <MaterialCommunityIcons name={queueState.isProcessing ? 'loading' : 'check-circle-outline'} size={14} color={queueState.isProcessing ? theme.colors.primaryAction : theme.colors.green} />
+                    <MaterialCommunityIcons
+                        name={queueState.isProcessing ? 'loading' : 'check-circle-outline'}
+                        size={14}
+                        color={queueState.isProcessing ? theme.colors.primaryAction : theme.colors.green}
+                    />
                     <Text style={styles.statusQueueText}>
                         {queueState.isProcessing
                             ? `Processing (${queueState.pendingCount} queued)`
                             : queueState.pendingCount > 0
-                                ? `${queueState.pendingCount} jobs waiting (server offline)`
-                                : 'All done — no pending jobs'
-                        }
+                              ? `${queueState.pendingCount} jobs waiting (server offline)`
+                              : 'All done — no pending jobs'}
                     </Text>
                 </View>
                 <Text style={styles.coverageText}>
-                    AI Coverage: {notes.savedNotes.filter((n: SavedNote) => n.aiTitle).length}/{notes.savedNotes.length} entries
+                    AI Coverage: {notes.savedNotes.filter((n: SavedNote) => n.aiTitle).length}/{notes.savedNotes.length}{' '}
+                    entries
                 </Text>
 
                 {queueState.serverOnline === false && queueState.lastError && (
@@ -269,12 +441,8 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                         <Text style={styles.errorTitle}>
                             <MaterialCommunityIcons name="alert-circle-outline" size={12} /> Connection Error
                         </Text>
-                        <Text style={styles.errorMessage}>
-                            {queueState.lastError}
-                        </Text>
-                        <Text style={styles.errorHint}>
-                            Queue is paused and will auto-resume when reachable.
-                        </Text>
+                        <Text style={styles.errorMessage}>{queueState.lastError}</Text>
+                        <Text style={styles.errorHint}>Queue is paused and will auto-resume when reachable.</Text>
                     </View>
                 )}
             </View>
@@ -290,8 +458,8 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                     <Pressable
                         style={styles.resetBtn}
                         onPress={() => {
-                            aiConfig.saveAiBaseUrl(DEFAULT_OLLAMA_BASE_URL);
-                            baseUrlRef.current = DEFAULT_OLLAMA_BASE_URL;
+                            aiConfig.saveAiBaseUrl(defaultBaseUrl);
+                            baseUrlRef.current = defaultBaseUrl;
                             vibrate(10);
                         }}
                     >
@@ -301,11 +469,14 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
                 )}
             </View>
             <TextInput
+                key={`base-url-${aiConfig.aiProvider}`}
                 style={styles.baseUrlInput}
                 defaultValue={aiConfig.aiBaseUrl}
-                onChangeText={(text) => { baseUrlRef.current = text; }}
+                onChangeText={(text) => {
+                    baseUrlRef.current = text;
+                }}
                 onEndEditing={() => aiConfig.saveAiBaseUrl(baseUrlRef.current)}
-                placeholder="https://ollama.com"
+                placeholder={aiConfig.aiProvider === 'ollama' ? 'https://ollama.com' : 'https://api.neuralwatt.com'}
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"
                 keyboardType="url"
@@ -315,9 +486,17 @@ export const AiSettingsPanel = React.memo(function AiSettingsPanel({
             <AnimatedScaleButton
                 style={[commonStyles.closeVersionBtn, styles.testConnectionBtn]}
                 onPress={async () => {
-                    const result = await pingServer({ apiKey: aiConfig.aiApiKey, baseUrl: aiConfig.aiBaseUrl });
+                    const result = await pingServer({
+                        apiKey: aiConfig.aiApiKey,
+                        baseUrl: aiConfig.aiBaseUrl,
+                        provider: aiConfig.aiProvider,
+                    });
                     vibrate(result.online ? 20 : [0, 50, 50, 50]);
-                    alert(result.online ? '✅ AI server is reachable!' : `❌ Cannot reach AI server.\n\nError: ${result.error}`);
+                    alert(
+                        result.online
+                            ? '✅ AI server is reachable!'
+                            : `❌ Cannot reach AI server.\n\nError: ${result.error}`,
+                    );
                 }}
             >
                 <MaterialCommunityIcons name="connection" size={16} color={theme.colors.primaryAction} />
@@ -632,5 +811,32 @@ const styles = StyleSheet.create({
     },
     testConnectionText: {
         color: theme.colors.primaryAction,
+    },
+    providerToggleRow: {
+        flexDirection: 'row',
+        backgroundColor: theme.colors.glassBackground,
+        borderRadius: theme.borderRadius.sm,
+        padding: 4,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
+    providerToggleBtn: {
+        flex: 1,
+        paddingVertical: 10,
+        borderRadius: theme.borderRadius.sm - 2,
+        alignItems: 'center',
+    },
+    providerToggleBtnActive: {
+        backgroundColor: theme.colors.glassHighlight,
+    },
+    providerToggleBtnText: {
+        color: theme.colors.textSecondary,
+        fontSize: 13,
+        fontWeight: theme.typography.weightMedium,
+    },
+    providerToggleBtnTextActive: {
+        color: theme.colors.textPrimary,
+        fontWeight: theme.typography.weightBold,
     },
 });

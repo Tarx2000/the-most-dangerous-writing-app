@@ -1,4 +1,4 @@
-﻿import { Share } from 'react-native';
+import { Share } from 'react-native';
 import { logger } from '@/lib/logger';
 import { storage } from '@/lib/storage';
 import { run } from '@/lib/db';
@@ -33,7 +33,7 @@ export function safeParse<T>(key: string, raw: string | null | undefined, fallba
     try {
         return JSON.parse(raw) as T;
     } catch (err) {
-        logger("warn", "Storage", `Failed to parse key "${key}", using fallback:`, err);
+        logger('warn', 'Storage', `Failed to parse key "${key}", using fallback:`, err);
         return fallback;
     }
 }
@@ -66,10 +66,15 @@ export interface LoadContext {
     setBookmarkedNoteIds: Setter<string[]>;
     setFeedComments: Setter<Record<string, string>>;
     setAutoPlayFeedVideos: Setter<boolean>;
-    setAiApiKey: Setter<string>;
-    setAiBaseUrl: Setter<string>;
-    setAiModel: Setter<string>;
-    setAiGrammarModel: Setter<string>;
+    setAiProvider: Setter<import('@/config/ai').AiProvider>;
+    setOllamaApiKey: Setter<string>;
+    setOllamaBaseUrl: Setter<string>;
+    setOllamaModel: Setter<string>;
+    setOllamaGrammarModel: Setter<string>;
+    setNeuralwattApiKey: Setter<string>;
+    setNeuralwattBaseUrl: Setter<string>;
+    setNeuralwattModel: Setter<string>;
+    setNeuralwattGrammarModel: Setter<string>;
     setAiPrompts: Setter<import('@/config/ai').AiPrompts>;
     setAutoGenerateSummaries: Setter<boolean>;
     setAiFavoriteModels: Setter<string[]>;
@@ -102,11 +107,7 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
        PHASE 1 — Parallel independent loads
        Notes + Persons + Settings can all load simultaneously from SQLite.
        ════════════════════════════════════════════════════════════════════ */
-    const [notes, persons, allSettings] = await Promise.all([
-        getAllNotes(),
-        getAllPersons(),
-        getAllSettings(),
-    ]);
+    const [notes, persons, allSettings] = await Promise.all([getAllNotes(), getAllPersons(), getAllSettings()]);
 
     ctx.setSavedNotes(notes);
     ctx.setPersons(persons);
@@ -163,19 +164,50 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     ctx.setTotalVlogStorageBytes(totalBytes);
 
     /* ── AI Config ─────────────────────────────────────────────────────── */
-    const storedApiKey = allSettings[AI_STORAGE_KEYS.API_KEY];
-    const storedBaseUrl = allSettings[AI_STORAGE_KEYS.BASE_URL];
-    const storedModel = allSettings[AI_STORAGE_KEYS.MODEL];
-    const storedGrammarModel = allSettings[AI_STORAGE_KEYS.GRAMMAR_MODEL];
+    const storedProvider = (allSettings[AI_STORAGE_KEYS.PROVIDER] as import('@/config/ai').AiProvider) || 'ollama';
+    ctx.setAiProvider(storedProvider);
 
-    ctx.setAiApiKey(storedApiKey && storedApiKey.trim().length > 0 ? storedApiKey : DEFAULT_OLLAMA_API_KEY);
-    ctx.setAiBaseUrl(storedBaseUrl && storedBaseUrl.trim().length > 0 ? storedBaseUrl : DEFAULT_OLLAMA_BASE_URL);
-    ctx.setAiModel(storedModel && storedModel.trim().length > 0 ? storedModel : DEFAULT_OLLAMA_MODEL);
-    ctx.setAiGrammarModel(storedGrammarModel && storedGrammarModel.trim().length > 0 ? storedGrammarModel : '');
+    const storedOllamaApiKey = allSettings[AI_STORAGE_KEYS.OLLAMA_API_KEY];
+    const storedOllamaBaseUrl = allSettings[AI_STORAGE_KEYS.OLLAMA_BASE_URL];
+    const storedOllamaModel = allSettings[AI_STORAGE_KEYS.OLLAMA_MODEL];
+    const storedOllamaGrammarModel = allSettings[AI_STORAGE_KEYS.OLLAMA_GRAMMAR_MODEL];
 
-    const rawPrompts = safeParse<Record<string, string>>(
-        'AI_PROMPTS', allSettings[AI_STORAGE_KEYS.PROMPTS], {}
+    ctx.setOllamaApiKey(
+        storedOllamaApiKey && storedOllamaApiKey.trim().length > 0 ? storedOllamaApiKey : DEFAULT_OLLAMA_API_KEY,
     );
+    ctx.setOllamaBaseUrl(
+        storedOllamaBaseUrl && storedOllamaBaseUrl.trim().length > 0 ? storedOllamaBaseUrl : DEFAULT_OLLAMA_BASE_URL,
+    );
+    ctx.setOllamaModel(
+        storedOllamaModel && storedOllamaModel.trim().length > 0 ? storedOllamaModel : DEFAULT_OLLAMA_MODEL,
+    );
+    ctx.setOllamaGrammarModel(
+        storedOllamaGrammarModel && storedOllamaGrammarModel.trim().length > 0 ? storedOllamaGrammarModel : '',
+    );
+
+    const storedNeuralwattApiKey = allSettings[AI_STORAGE_KEYS.NEURALWATT_API_KEY];
+    const storedNeuralwattBaseUrl = allSettings[AI_STORAGE_KEYS.NEURALWATT_BASE_URL];
+    const storedNeuralwattModel = allSettings[AI_STORAGE_KEYS.NEURALWATT_MODEL];
+    const storedNeuralwattGrammarModel = allSettings[AI_STORAGE_KEYS.NEURALWATT_GRAMMAR_MODEL];
+
+    ctx.setNeuralwattApiKey(
+        storedNeuralwattApiKey && storedNeuralwattApiKey.trim().length > 0 ? storedNeuralwattApiKey : '',
+    );
+    ctx.setNeuralwattBaseUrl(
+        storedNeuralwattBaseUrl && storedNeuralwattBaseUrl.trim().length > 0
+            ? storedNeuralwattBaseUrl
+            : 'https://api.neuralwatt.com/v1',
+    );
+    ctx.setNeuralwattModel(
+        storedNeuralwattModel && storedNeuralwattModel.trim().length > 0 ? storedNeuralwattModel : 'glm-5.2',
+    );
+    ctx.setNeuralwattGrammarModel(
+        storedNeuralwattGrammarModel && storedNeuralwattGrammarModel.trim().length > 0
+            ? storedNeuralwattGrammarModel
+            : 'glm-5.2',
+    );
+
+    const rawPrompts = safeParse<Record<string, string>>('AI_PROMPTS', allSettings[AI_STORAGE_KEYS.PROMPTS], {});
     ctx.setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...rawPrompts });
     ctx.setAutoGenerateSummaries(safeParse('AUTO_GENERATE_SUMMARIES', allSettings['AUTO_GENERATE_SUMMARIES'], true));
 
@@ -243,7 +275,11 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
  * NON-DESTRUCTIVE diagnostic: list every key in AsyncStorage with size.
  * Does NOT delete or write anything. Safe to run repeatedly.
  */
-export async function inspectAsyncStorage(): Promise<{ keys: string[]; keySizes: Record<string, number>; maybeJson: Record<string, { length: number; sample: string }> }> {
+export async function inspectAsyncStorage(): Promise<{
+    keys: string[];
+    keySizes: Record<string, number>;
+    maybeJson: Record<string, { length: number; sample: string }>;
+}> {
     const keys = await storage.getAllKeys();
     const allPairs = await storage.multiGet(keys);
     const keySizes: Record<string, number> = {};
@@ -271,7 +307,13 @@ export async function inspectAsyncStorage(): Promise<{ keys: string[]; keySizes:
  * that normalizeParams.reduce() skips, resulting in SQL NULL via sqlite3_clear_bindings).
  * Returns detailed error log if any insertion fails.
  */
-export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: number; personsRecovered: number; vlogsRecovered: number; skipped: boolean; errors: string[] }> {
+export async function safeReMigrateAsyncStorage(): Promise<{
+    notesRecovered: number;
+    personsRecovered: number;
+    vlogsRecovered: number;
+    skipped: boolean;
+    errors: string[];
+}> {
     logger('info', 'Migration', 'Starting safe re-migration from AsyncStorage (non-destructive)');
 
     const rawNotes = await storage.getItem('SAVED_NOTES');
@@ -286,13 +328,19 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
     let legacyPersons: Person[] = [];
     let legacyVlogs: SavedVlog[] = [];
 
-    try { if (rawNotes) legacyNotes = JSON.parse(rawNotes); } catch (err) {
+    try {
+        if (rawNotes) legacyNotes = JSON.parse(rawNotes);
+    } catch (err) {
         logger('warn', 'Migration', 'Failed to parse legacy notes JSON:', err);
     }
-    try { if (rawPersons) legacyPersons = JSON.parse(rawPersons); } catch (err) {
+    try {
+        if (rawPersons) legacyPersons = JSON.parse(rawPersons);
+    } catch (err) {
         logger('warn', 'Migration', 'Failed to parse legacy persons JSON:', err);
     }
-    try { if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs); } catch (err) {
+    try {
+        if (rawVlogs) legacyVlogs = JSON.parse(rawVlogs);
+    } catch (err) {
         logger('warn', 'Migration', 'Failed to parse legacy vlogs JSON:', err);
     }
 
@@ -308,9 +356,13 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
     // INSERT notes with raw SQL and explicit defaults — bypasses any type-guard bugs
     for (const n of legacyNotes) {
         try {
-            const safeNote: Record<string, unknown> = (n as unknown) as Record<string, unknown>;
+            const safeNote: Record<string, unknown> = n as unknown as Record<string, unknown>;
             const rawSummary = safeNote.aiSummary;
-            const summaryJson = Array.isArray(rawSummary) ? JSON.stringify(rawSummary) : (rawSummary ? JSON.stringify(rawSummary) : null);
+            const summaryJson = Array.isArray(rawSummary)
+                ? JSON.stringify(rawSummary)
+                : rawSummary
+                  ? JSON.stringify(rawSummary)
+                  : null;
             const alignScore = (n as AlignmentReflection).alignmentScore ?? 0;
             const stopT = (n as AlignmentReflection).stopText ?? '';
             const startT = (n as AlignmentReflection).startText ?? '';
@@ -324,8 +376,8 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
                     (safeNote.id ?? '') as string,
                     (safeNote.text ?? '') as string,
                     (safeNote.dateStr ?? new Date(ts).toISOString()) as string,
-                    (typeof safeNote.timestamp === 'number' ? safeNote.timestamp : Date.now()),
-                    (typeof safeNote.durationMin === 'number' ? safeNote.durationMin : 0),
+                    typeof safeNote.timestamp === 'number' ? safeNote.timestamp : Date.now(),
+                    typeof safeNote.durationMin === 'number' ? safeNote.durationMin : 0,
                     safeNote.won ? 1 : 0,
                     (safeNote.personId ?? null) as string | null,
                     safeNote.isQuickNote ? 1 : 0,
@@ -337,11 +389,14 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
                     safeNote.isAlignmentReflection ? (stopT ?? '') : null,
                     safeNote.isAlignmentReflection ? (startT ?? '') : null,
                     safeNote.isAlignmentReflection ? (contT ?? '') : null,
-                ]
+                ],
             );
             notesRecovered++;
         } catch (err: unknown) {
-            const msg = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: string }).message) : String(err);
+            const msg =
+                typeof err === 'object' && err !== null && 'message' in err
+                    ? String((err as { message: string }).message)
+                    : String(err);
             errors.push(`Note ${n.id}: ${msg}`);
         }
     }
@@ -349,24 +404,27 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
     // INSERT persons
     for (const p of legacyPersons) {
         try {
-            const safeP: Record<string, unknown> = (p as unknown) as Record<string, unknown>;
+            const safeP: Record<string, unknown> = p as unknown as Record<string, unknown>;
             await run(
                 `INSERT INTO persons (id, name, created_at, nickname, relationship, birthday, bio, custom_relationships)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     (safeP.id ?? '') as string,
                     (safeP.name ?? '') as string,
-                    (typeof safeP.createdAt === 'number' ? safeP.createdAt : Date.now()),
+                    typeof safeP.createdAt === 'number' ? safeP.createdAt : Date.now(),
                     (safeP.nickname ?? null) as string | null,
                     (safeP.relationship ?? null) as string | null,
                     (safeP.birthday ?? null) as string | null,
                     (safeP.bio ?? null) as string | null,
                     Array.isArray(safeP.customRelationships) ? JSON.stringify(safeP.customRelationships) : null,
-                ]
+                ],
             );
             personsRecovered++;
         } catch (err: unknown) {
-            const msg = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: string }).message) : String(err);
+            const msg =
+                typeof err === 'object' && err !== null && 'message' in err
+                    ? String((err as { message: string }).message)
+                    : String(err);
             errors.push(`Person ${p.id}: ${msg}`);
         }
     }
@@ -374,7 +432,7 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
     // INSERT vlogs
     for (const v of legacyVlogs) {
         try {
-            const safeV: Record<string, unknown> = (v as unknown) as Record<string, unknown>;
+            const safeV: Record<string, unknown> = v as unknown as Record<string, unknown>;
             await run(
                 `INSERT INTO vlogs (id, file_path, date_str, timestamp, duration_sec, file_size_bytes, thumbnail_path, compression_preset, original_file_size_bytes, compression_pending)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -382,18 +440,21 @@ export async function safeReMigrateAsyncStorage(): Promise<{ notesRecovered: num
                     (safeV.id ?? '') as string,
                     (safeV.filePath ?? '') as string,
                     (safeV.dateStr ?? '') as string,
-                    (typeof safeV.timestamp === 'number' ? safeV.timestamp : Date.now()),
-                    (typeof safeV.durationSec === 'number' ? safeV.durationSec : 0),
-                    (typeof safeV.fileSizeBytes === 'number' ? safeV.fileSizeBytes : 0),
+                    typeof safeV.timestamp === 'number' ? safeV.timestamp : Date.now(),
+                    typeof safeV.durationSec === 'number' ? safeV.durationSec : 0,
+                    typeof safeV.fileSizeBytes === 'number' ? safeV.fileSizeBytes : 0,
                     (safeV.thumbnailPath ?? null) as string | null,
                     (safeV.compressionPreset ?? null) as string | null,
-                    (typeof safeV.originalFileSizeBytes === 'number' ? safeV.originalFileSizeBytes : null),
+                    typeof safeV.originalFileSizeBytes === 'number' ? safeV.originalFileSizeBytes : null,
                     safeV.compressionPending ? 1 : 0,
-                ]
+                ],
             );
             vlogsRecovered++;
         } catch (err: unknown) {
-            const msg = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: string }).message) : String(err);
+            const msg =
+                typeof err === 'object' && err !== null && 'message' in err
+                    ? String((err as { message: string }).message)
+                    : String(err);
             errors.push(`Vlog ${v.id}: ${msg}`);
         }
     }
@@ -432,7 +493,8 @@ export async function exportAsyncStorageToFile(): Promise<{ filePath: string; fi
     await FileSystem.writeAsStringAsync(filePath, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
 
     const fileInfo = await FileSystem.getInfoAsync(filePath);
-    const sizeBytes = fileInfo.exists && 'size' in fileInfo && typeof fileInfo.size === 'number' ? fileInfo.size : jsonStr.length;
+    const sizeBytes =
+        fileInfo.exists && 'size' in fileInfo && typeof fileInfo.size === 'number' ? fileInfo.size : jsonStr.length;
 
     try {
         // On Android, file:// URIs cannot be shared without a FileProvider (requires expo-sharing).

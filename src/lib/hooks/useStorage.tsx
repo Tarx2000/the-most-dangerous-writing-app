@@ -40,6 +40,7 @@ import {
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     type AiPrompts,
+    type AiProvider,
 } from '@/config/ai';
 import {
     createNotesOps,
@@ -118,6 +119,7 @@ interface PreferencesContextType {
 
 /** AI Configuration — almost never changes */
 interface AiConfigContextType {
+    aiProvider: AiProvider;
     aiApiKey: string;
     aiBaseUrl: string;
     aiModel: string;
@@ -125,6 +127,7 @@ interface AiConfigContextType {
     aiPrompts: AiPrompts;
     autoGenerateSummaries: boolean;
     aiFavoriteModels: string[];
+    saveAiProvider: (provider: AiProvider) => Promise<void>;
     saveAiApiKey: (key: string) => Promise<void>;
     saveAiBaseUrl: (url: string) => Promise<void>;
     saveAiModel: (model: string) => Promise<void>;
@@ -238,13 +241,26 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     const [bookmarkedNoteIds, setBookmarkedNoteIds] = useState<string[]>([]);
     const [feedComments, setFeedComments] = useState<Record<string, string>>({});
     const [autoPlayFeedVideos, setAutoPlayFeedVideos] = useState<boolean>(true);
-    const [aiApiKey, setAiApiKey] = useState<string>(DEFAULT_OLLAMA_API_KEY);
-    const [aiBaseUrl, setAiBaseUrl] = useState<string>(DEFAULT_OLLAMA_BASE_URL);
-    const [aiModel, setAiModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
-    const [aiGrammarModel, setAiGrammarModel] = useState<string>('');
+    const [aiProvider, setAiProvider] = useState<AiProvider>('ollama');
+    const [ollamaApiKey, setOllamaApiKey] = useState<string>(DEFAULT_OLLAMA_API_KEY);
+    const [ollamaBaseUrl, setOllamaBaseUrl] = useState<string>(DEFAULT_OLLAMA_BASE_URL);
+    const [ollamaModel, setOllamaModel] = useState<string>(DEFAULT_OLLAMA_MODEL);
+    const [ollamaGrammarModel, setOllamaGrammarModel] = useState<string>('');
+
+    const [neuralwattApiKey, setNeuralwattApiKey] = useState<string>('');
+    const [neuralwattBaseUrl, setNeuralwattBaseUrl] = useState<string>('https://api.neuralwatt.com/v1');
+    const [neuralwattModel, setNeuralwattModel] = useState<string>('glm-5.2');
+    const [neuralwattGrammarModel, setNeuralwattGrammarModel] = useState<string>('glm-5.2');
+
     const [aiPrompts, setAiPrompts] = useState<AiPrompts>({ ...DEFAULT_AI_PROMPTS });
     const [autoGenerateSummaries, setAutoGenerateSummaries] = useState<boolean>(true);
     const [aiFavoriteModels, setAiFavoriteModels] = useState<string[]>([]);
+
+    // Dynamically computed active values based on provider selection
+    const aiApiKey = aiProvider === 'ollama' ? ollamaApiKey : neuralwattApiKey;
+    const aiBaseUrl = aiProvider === 'ollama' ? ollamaBaseUrl : neuralwattBaseUrl;
+    const aiModel = aiProvider === 'ollama' ? ollamaModel : neuralwattModel;
+    const aiGrammarModel = aiProvider === 'ollama' ? ollamaGrammarModel : neuralwattGrammarModel;
     const [pillars, setPillars] = useState<Pillar[]>([]);
     const [adviceCards, setAdviceCards] = useState<AdviceCard[]>([]);
     const [lastLogDate, setLastLogDate] = useState<number | null>(null);
@@ -294,6 +310,26 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
     bookmarkedNoteIdsRef.current = bookmarkedNoteIds;
     const feedCommentsRef = useRef(feedComments);
     feedCommentsRef.current = feedComments;
+    const aiProviderRef = useRef(aiProvider);
+    aiProviderRef.current = aiProvider;
+    const ollamaApiKeyRef = useRef(ollamaApiKey);
+    ollamaApiKeyRef.current = ollamaApiKey;
+    const ollamaBaseUrlRef = useRef(ollamaBaseUrl);
+    ollamaBaseUrlRef.current = ollamaBaseUrl;
+    const ollamaModelRef = useRef(ollamaModel);
+    ollamaModelRef.current = ollamaModel;
+    const ollamaGrammarModelRef = useRef(ollamaGrammarModel);
+    ollamaGrammarModelRef.current = ollamaGrammarModel;
+
+    const neuralwattApiKeyRef = useRef(neuralwattApiKey);
+    neuralwattApiKeyRef.current = neuralwattApiKey;
+    const neuralwattBaseUrlRef = useRef(neuralwattBaseUrl);
+    neuralwattBaseUrlRef.current = neuralwattBaseUrl;
+    const neuralwattModelRef = useRef(neuralwattModel);
+    neuralwattModelRef.current = neuralwattModel;
+    const neuralwattGrammarModelRef = useRef(neuralwattGrammarModel);
+    neuralwattGrammarModelRef.current = neuralwattGrammarModel;
+
     const aiApiKeyRef = useRef(aiApiKey);
     aiApiKeyRef.current = aiApiKey;
     const aiBaseUrlRef = useRef(aiBaseUrl);
@@ -395,19 +431,29 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
         () =>
             createAiConfigOps(
                 {
-                    aiApiKey: aiApiKeyRef,
-                    aiBaseUrl: aiBaseUrlRef,
-                    aiModel: aiModelRef,
-                    aiGrammarModel: aiGrammarModelRef,
+                    aiProvider: aiProviderRef,
+                    ollamaApiKey: ollamaApiKeyRef,
+                    ollamaBaseUrl: ollamaBaseUrlRef,
+                    ollamaModel: ollamaModelRef,
+                    ollamaGrammarModel: ollamaGrammarModelRef,
+                    neuralwattApiKey: neuralwattApiKeyRef,
+                    neuralwattBaseUrl: neuralwattBaseUrlRef,
+                    neuralwattModel: neuralwattModelRef,
+                    neuralwattGrammarModel: neuralwattGrammarModelRef,
                     aiPrompts: aiPromptsRef,
                     autoGenerateSummaries: autoGenerateSummariesRef,
                     aiFavoriteModels: aiFavoriteModelsRef,
                 },
                 {
-                    setAiApiKey,
-                    setAiBaseUrl,
-                    setAiModel,
-                    setAiGrammarModel,
+                    setAiProvider,
+                    setOllamaApiKey,
+                    setOllamaBaseUrl,
+                    setOllamaModel,
+                    setOllamaGrammarModel,
+                    setNeuralwattApiKey,
+                    setNeuralwattBaseUrl,
+                    setNeuralwattModel,
+                    setNeuralwattGrammarModel,
                     setAiPrompts,
                     setAutoGenerateSummaries,
                     setAiFavoriteModels,
@@ -447,10 +493,15 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             setBookmarkedNoteIds,
             setFeedComments,
             setAutoPlayFeedVideos,
-            setAiApiKey,
-            setAiBaseUrl,
-            setAiModel,
-            setAiGrammarModel,
+            setAiProvider,
+            setOllamaApiKey,
+            setOllamaBaseUrl,
+            setOllamaModel,
+            setOllamaGrammarModel,
+            setNeuralwattApiKey,
+            setNeuralwattBaseUrl,
+            setNeuralwattModel,
+            setNeuralwattGrammarModel,
             setAiPrompts,
             setAutoGenerateSummaries,
             setAiFavoriteModels,
@@ -630,6 +681,7 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     const aiConfigValue = useMemo<AiConfigContextType>(
         () => ({
+            aiProvider,
             aiApiKey,
             aiBaseUrl,
             aiModel,
@@ -639,7 +691,17 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
             aiFavoriteModels,
             ...aiConfigOps,
         }),
-        [aiApiKey, aiBaseUrl, aiModel, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiFavoriteModels, aiConfigOps],
+        [
+            aiProvider,
+            aiApiKey,
+            aiBaseUrl,
+            aiModel,
+            aiGrammarModel,
+            aiPrompts,
+            autoGenerateSummaries,
+            aiFavoriteModels,
+            aiConfigOps,
+        ],
     );
 
     const feedValue = useMemo<FeedContextType>(

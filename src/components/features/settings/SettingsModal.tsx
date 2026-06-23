@@ -10,7 +10,7 @@ import { CompressionStatusBar } from '@/components/features/settings/Compression
 import { PillarsSettingsPanel } from '@/components/features/settings/PillarsSettingsPanel';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CONFIG } from '@/config';
-import { AI_AVAILABLE_MODELS } from '@/config/ai';
+import { AI_PROVIDERS } from '@/config/ai';
 import { fetchAvailableModels } from '@/lib/aiService';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
@@ -118,18 +118,21 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
     useEffect(() => {
         if (!batchState.choosingModelFor) return;
         setFetchingModels(true);
+        const fallback = AI_PROVIDERS[aiConfig.aiProvider]?.models || [];
         fetchAvailableModels({
             apiKey: aiConfig.aiApiKey,
             baseUrl: aiConfig.aiBaseUrl,
+            provider: aiConfig.aiProvider,
         }).then((models) => {
-            setFetchedModels(models.length > 0 ? models : [...AI_AVAILABLE_MODELS]);
+            setFetchedModels(models.length > 0 ? models : fallback);
             setFetchingModels(false);
         });
-    }, [batchState.choosingModelFor, aiConfig.aiApiKey, aiConfig.aiBaseUrl]);
+    }, [batchState.choosingModelFor, aiConfig.aiApiKey, aiConfig.aiBaseUrl, aiConfig.aiProvider]);
 
     // Sort models: favorites first, then rest in original order
     const modelOptions = useMemo(() => {
-        const all = fetchedModels.length > 0 ? [...fetchedModels] : [...AI_AVAILABLE_MODELS];
+        const fallback = AI_PROVIDERS[aiConfig.aiProvider]?.models || [];
+        const all = fetchedModels.length > 0 ? [...fetchedModels] : fallback;
         const favs = new Set(aiConfig.aiFavoriteModels);
         all.sort((a, b) => {
             const aFav = favs.has(a);
@@ -139,7 +142,7 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
             return 0;
         });
         return all;
-    }, [fetchedModels, aiConfig.aiFavoriteModels]);
+    }, [fetchedModels, aiConfig.aiFavoriteModels, aiConfig.aiProvider]);
 
     // --- AI Batch Processing via AI Queue -------------------------
     const handleBatchProcess = async () => {

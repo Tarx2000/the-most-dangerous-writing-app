@@ -14,23 +14,72 @@
 
 /* ── Customizable Config Variables ───────────────────────────────────── */
 
-/** Default Ollama Cloud API key — override in Settings without rebuilding */
+export type AiProvider = 'ollama' | 'neuralwatt';
+
+export interface ProviderConfig {
+    id: AiProvider;
+    name: string;
+    defaultBaseUrl: string;
+    defaultApiKey: string;
+    defaultModel: string;
+    defaultGrammarModel: string;
+    models: string[];
+}
+
+/** Config variables for Ollama Cloud (default provider) */
 export const DEFAULT_OLLAMA_API_KEY = '0256ae2a4fa64e95980bc0c6d6177e3d.5l7X5me0ClCd9Nnx3pUKJIKS';
+export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com/v1';
+export const DEFAULT_OLLAMA_MODEL = 'gemma4:31b-cloud';
+
+/** Config variables for Neuralwatt Cloud */
+export const DEFAULT_NEURALWATT_API_KEY = '';
+export const DEFAULT_NEURALWATT_BASE_URL = 'https://api.neuralwatt.com/v1';
+export const DEFAULT_NEURALWATT_MODEL = 'glm-5.2';
+
+export const AI_PROVIDERS: Record<AiProvider, ProviderConfig> = {
+    ollama: {
+        id: 'ollama',
+        name: 'Ollama Cloud',
+        defaultBaseUrl: DEFAULT_OLLAMA_BASE_URL,
+        defaultApiKey: DEFAULT_OLLAMA_API_KEY,
+        defaultModel: DEFAULT_OLLAMA_MODEL,
+        defaultGrammarModel: DEFAULT_OLLAMA_MODEL,
+        models: [
+            'kimi-k2.5:cloud',
+            'kimi-k2.6:cloud',
+            'qwen3.5:397b-cloud',
+            'glm-5:cloud',
+            'minimax-m2.7:cloud',
+            'nemotron-3-super:cloud',
+            'gemma4:31b-cloud',
+        ],
+    },
+    neuralwatt: {
+        id: 'neuralwatt',
+        name: 'Neuralwatt Cloud',
+        defaultBaseUrl: DEFAULT_NEURALWATT_BASE_URL,
+        defaultApiKey: DEFAULT_NEURALWATT_API_KEY,
+        defaultModel: DEFAULT_NEURALWATT_MODEL,
+        defaultGrammarModel: DEFAULT_NEURALWATT_MODEL,
+        models: ['glm-5.2'],
+    },
+};
 
 /**
  * Returns true when the AI API key is non-empty and appears configured.
  * Use this to gate AI features and decide whether to show the setup modal.
  */
-export function isApiKeyConfigured(config?: { apiKey?: string }): boolean {
-    const key = config?.apiKey ?? DEFAULT_OLLAMA_API_KEY;
-    return typeof key === 'string' && key.trim().length > 0;
+export function isApiKeyConfigured(config?: { apiKey?: string; provider?: AiProvider }): boolean {
+    const provider = config?.provider ?? 'ollama';
+    const key = config?.apiKey;
+    if (provider === 'ollama') {
+        const finalKey = key ?? DEFAULT_OLLAMA_API_KEY;
+        return typeof finalKey === 'string' && finalKey.trim().length > 0;
+    } else {
+        // Neuralwatt requires a custom user key (no default exists)
+        return typeof key === 'string' && key.trim().length > 0;
+    }
 }
-
-/** Ollama Cloud base URL (NOT localhost — this is the cloud-hosted endpoint) */
-export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com/v1';
-
-/** Default model identifier for Ollama Cloud */
-export const DEFAULT_OLLAMA_MODEL = 'gemma4:31b-cloud';
 
 /** How often to ping Ollama to check connectivity (milliseconds) */
 export const AI_HEALTH_CHECK_INTERVAL_MS = 10_000;
@@ -76,23 +125,25 @@ export const AI_STALL_DETECTION_MS = 60_000;
 
 /* ── Available AI Models (shown in Settings picker) ──────────────────── */
 
-export const AI_AVAILABLE_MODELS = [
-    'kimi-k2.5:cloud',
-    'kimi-k2.6:cloud',
-    'qwen3.5:397b-cloud',
-    'glm-5:cloud',
-    'minimax-m2.7:cloud',
-    'nemotron-3-super:cloud',
-    'gemma4:31b-cloud',
-] as const;
+export const AI_AVAILABLE_MODELS = AI_PROVIDERS.ollama.models;
 
 /* ── AsyncStorage Keys for User Overrides ────────────────────────────── */
 
 export const AI_STORAGE_KEYS = {
-    API_KEY: 'AI_OLLAMA_API_KEY',
-    BASE_URL: 'AI_OLLAMA_BASE_URL',
-    MODEL: 'AI_OLLAMA_MODEL',
-    GRAMMAR_MODEL: 'AI_OLLAMA_GRAMMAR_MODEL',
+    PROVIDER: 'AI_PROVIDER',
+
+    // Ollama Specific keys (keeps backward compatibility with legacy keys)
+    OLLAMA_API_KEY: 'AI_OLLAMA_API_KEY',
+    OLLAMA_BASE_URL: 'AI_OLLAMA_BASE_URL',
+    OLLAMA_MODEL: 'AI_OLLAMA_MODEL',
+    OLLAMA_GRAMMAR_MODEL: 'AI_OLLAMA_GRAMMAR_MODEL',
+
+    // Neuralwatt Specific keys
+    NEURALWATT_API_KEY: 'AI_NEURALWATT_API_KEY',
+    NEURALWATT_BASE_URL: 'AI_NEURALWATT_BASE_URL',
+    NEURALWATT_MODEL: 'AI_NEURALWATT_MODEL',
+    NEURALWATT_GRAMMAR_MODEL: 'AI_NEURALWATT_GRAMMAR_MODEL',
+
     /** JSON-serialized AI_PROMPTS override */
     PROMPTS: 'AI_CUSTOM_PROMPTS',
     /** Persisted AI job queue (JSON array of AiJob) */

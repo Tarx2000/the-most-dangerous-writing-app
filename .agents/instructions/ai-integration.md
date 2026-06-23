@@ -21,14 +21,13 @@ AI jobs are processed in this order:
 Within each category, newest entries are processed first.
 
 ## Streaming Protocol
-Ollama Cloud API uses `XMLHttpRequest` (not fetch) for progressive response reading. `aiService.ts` handles the XHR streaming with reader callbacks. Do not switch to `fetch` — it buffers the entire response before resolving.
+AI Providers use `XMLHttpRequest` (not fetch) for progressive response reading. `aiService.ts` handles the XHR streaming with reader callbacks (with Ollama-specific properties conditionally omitted for Neuralwatt). Do not switch to `fetch` — it buffers the entire response before resolving.
 
 ## Config & Prompts
-- Models and prompts are defined in `src/config/ai.ts`
+- Providers (Ollama & Neuralwatt), default models, and system prompts are defined in `src/config/ai.ts`
 - `DEFAULT_AI_PROMPTS` is overridable at runtime via Dev Settings
-- `AI_AVAILABLE_MODELS` lists supported models
-- Base URL and model are user-configurable in settings
-- Queue validates `apiKey` and `baseUrl` are non-empty before starting any job; missing credentials fail fast without retries
+- Base URL, API key, model, and active provider are user-configurable in settings
+- Queue validates that the active provider's `apiKey` and `baseUrl` are non-empty before starting any job; missing credentials fail fast without retries
 
 ## Retry & Error Handling
 - Failed AI jobs retry up to `AI_MAX_RETRIES` times, then move to end of queue

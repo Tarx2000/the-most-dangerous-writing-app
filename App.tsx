@@ -1,6 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Prevent the native splash screen from auto-hiding before our assets/fonts are loaded.
+SplashScreen.preventAutoHideAsync().catch(() => {
+    /* ignore */
+});
+
+// Custom React Navigation theme to match our AMOLED true black background
+const navigationTheme = {
+    ...DarkTheme,
+    colors: {
+        ...DarkTheme.colors,
+        background: '#000000',
+    },
+};
 import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { WritingScreen } from './src/screens/WritingScreen';
@@ -11,7 +26,7 @@ import { AlignmentWritingScreen } from './src/screens/AlignmentWritingScreen';
 import { VlogRecordingScreen } from './src/screens/VlogRecordingScreen';
 import { SandboxScreen } from './src/screens/SandboxScreen';
 import { RootStackParamList } from '@/types/navigation.types';
-import { StatusBar, View, ActivityIndicator } from 'react-native';
+import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StorageProvider, useAiConfig } from '@/lib/hooks/useStorage';
 import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
@@ -94,7 +109,7 @@ function AiConfigGate() {
 
     return (
         <>
-            <NavigationContainer theme={DarkTheme}>
+            <NavigationContainer theme={navigationTheme}>
                 <StatusBar hidden={true} translucent={true} />
                 <Stack.Navigator
                     screenOptions={{
@@ -193,19 +208,18 @@ function AppContent() {
         EagleLake_400Regular,
     });
 
+    // Dismiss the splash screen once fonts are loaded to ensure a seamless AMOLED transition
+    useEffect(() => {
+        if (fontsLoaded) {
+            SplashScreen.hideAsync().catch(() => {
+                /* ignore */
+            });
+        }
+    }, [fontsLoaded]);
+
     if (!fontsLoaded) {
-        return (
-            <View
-                style={{
-                    flex: 1,
-                    backgroundColor: theme.colors.background,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                }}
-            >
-                <ActivityIndicator size="large" color={theme.colors.textPrimary} />
-            </View>
-        );
+        // Return null while loading since the native splash screen is locked on top.
+        return null;
     }
 
     perfMark('fonts.loaded');

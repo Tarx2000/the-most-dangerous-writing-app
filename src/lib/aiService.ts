@@ -39,6 +39,7 @@ export interface AiConfig {
     model?: string;
     grammarModel?: string;
     prompts?: Partial<AiPrompts>;
+    provider?: string;
 }
 
 /**
@@ -304,17 +305,22 @@ async function ollamaChatSingle(
             }, 200);
         }
 
-        xhr.send(
-            JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userMessage },
-                ],
-                stream: true, // ALWAYS stream to prevent silent idle connection timeouts
-                options: mergedOptions,
-            }),
-        );
+        const payload: Record<string, unknown> = {
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMessage },
+            ],
+            stream: true, // ALWAYS stream to prevent silent idle connection timeouts
+        };
+
+        // Only send Ollama-specific options block if the provider is Ollama
+        const provider = config.provider || 'ollama';
+        if (provider === 'ollama') {
+            payload.options = mergedOptions;
+        }
+
+        xhr.send(JSON.stringify(payload));
     });
 }
 
@@ -505,15 +511,20 @@ export async function checkGrammar(
  * Uses the /v1/models endpoint (OpenAI-compatible).
  */
 export async function fetchAvailableModels(config: AiConfig = {}): Promise<string[]> {
-    const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
-    const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
+    const provider = config.provider || 'ollama';
+    const apiKey = config.apiKey !== undefined ? config.apiKey : provider === 'ollama' ? DEFAULT_OLLAMA_API_KEY : '';
+    const baseUrl = (
+        config.baseUrl || (provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : 'https://api.neuralwatt.com/v1')
+    ).replace(/\/$/, '');
 
     return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
         const url = `${baseUrl}/models`;
 
         xhr.open('GET', url);
-        xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+        if (apiKey && apiKey.trim().length > 0) {
+            xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+        }
         xhr.send();
 
         const timeoutId = setTimeout(() => {
@@ -560,15 +571,21 @@ export async function fetchAvailableModels(config: AiConfig = {}): Promise<strin
  * @returns Object with online status and any error message
  */
 export async function pingServer(config: AiConfig = {}): Promise<{ online: boolean; error?: string }> {
-    const apiKey = config.apiKey || DEFAULT_OLLAMA_API_KEY;
-    const baseUrl = (config.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '');
+    const provider = config.provider || 'ollama';
+    const apiKey = config.apiKey !== undefined ? config.apiKey : provider === 'ollama' ? DEFAULT_OLLAMA_API_KEY : '';
+    const baseUrl = (
+        config.baseUrl || (provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : 'https://api.neuralwatt.com/v1')
+    ).replace(/\/$/, '');
 
     return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
-        const pingUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
+        const pingUrl =
+            provider === 'neuralwatt' || baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/api/version`;
 
         xhr.open('GET', pingUrl);
-        xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+        if (apiKey && apiKey.trim().length > 0) {
+            xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+        }
         xhr.send();
 
         const timeoutId = setTimeout(() => {

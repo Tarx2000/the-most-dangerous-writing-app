@@ -7,7 +7,7 @@ React Native (Expo SDK 55) journaling app where stopping typing destroys your te
 - React Navigation v7 (Native Stack)
 - Reanimated v4 + `react-native-worklets` + Gesture Handler + Flubber
 - SQLite (expo-sqlite v15) + AsyncStorage + expo-file-system
-- Ollama Cloud API (XHR streaming)
+- AI Providers: Ollama Cloud & Neuralwatt (OpenAI-compatible) APIs via XHR streaming
 - Babel (`babel-plugin-react-compiler` target 19, `react-native-worklets/plugin` LAST entry), TypeScript 5.9 strict
 
 > **Reanimated v4 Babel Requirement**: The worklet compiler plugin must be imported from `react-native-worklets/plugin` (NOT `react-native-reanimated/plugin`, which is the legacy v3 path) and must be the **last** entry in `babel.config.js` `plugins`. Otherwise worklets fall back to JS-thread shims and animations jank on throttled devices.

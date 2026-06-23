@@ -527,10 +527,11 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                                 fontFamily: currentFont,
                                                 fontWeight: 'normal',
                                                 textAlignVertical: 'top',
-                                                paddingTop: Platform.OS === 'ios' ? 8 : 10,
-                                                paddingHorizontal: Platform.OS === 'ios' ? 4 : 6,
+                                                paddingTop: Platform.OS === 'ios' ? 0 : 10,
+                                                paddingHorizontal: Platform.OS === 'ios' ? 0 : 6,
                                                 paddingBottom: 200, // Ensures text doesn't stay hidden under keyboard
                                                 color: theme.colors.textPrimary,
+                                                ...(Platform.OS === 'android' ? { includeFontPadding: false } : {}),
                                             },
                                         ]}
                                         scrollEnabled={false}
@@ -566,9 +567,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                                     fontWeight: 'normal',
                                                     textAlignVertical: 'top',
                                                     paddingTop: Platform.OS === 'ios' ? 8 : 10,
-                                                    paddingHorizontal: Platform.OS === 'ios' ? 4 : 6,
+                                                    paddingHorizontal: Platform.OS === 'ios' ? 5 : 6,
                                                     paddingBottom: 200,
                                                     color: theme.colors.textPrimary,
+                                                    ...(Platform.OS === 'android' ? { includeFontPadding: false } : {}),
                                                 },
                                             ]}
                                         />
