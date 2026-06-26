@@ -14,7 +14,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { aiQueue, AI_QUEUE_EVENT, AI_JOB_FAILED_EVENT, AI_JOB_TIMEOUT_EVENT } from '@/lib/aiQueue';
-import { resetConnectionState } from '@/lib/aiService';
+import { resetConnectionState, type AiErrorKind } from '@/lib/aiService';
 import { useNotes, useAiConfig, usePersons } from '@/lib/hooks/useStorage';
 import type { AiQueueState, AiJobCategory } from '@/types';
 
@@ -25,7 +25,7 @@ export interface AiFailureNotification {
     id: string;
     /** Which note failed */
     noteId: string;
-    /** Human-readable error message */
+    /** Human-readable error message (already actionable, from AiError.userMessage) */
     message: string;
     /** When the failure occurred */
     timestamp: number;
@@ -33,6 +33,9 @@ export interface AiFailureNotification {
     isTimeout: boolean;
     /** Whether the failure is permanent (config error, max retries) */
     isPermanent: boolean;
+    /** Structured error kind — lets the UI render targeted troubleshooting hints
+     *  (e.g. a "Open AI Settings" CTA on `auth`/`config`). */
+    errorKind?: AiErrorKind;
 }
 
 /* ── Context Type ──────────────────────────────────────────────────────── */
@@ -50,6 +53,8 @@ interface AiQueueContextType {
     startBatch: (forceOverwrite?: boolean, categoryFilter?: Set<AiJobCategory>) => Promise<number>;
     /** Cancel the current batch (finishes current job) */
     cancelBatch: () => Promise<void>;
+    /** Re-enqueue a note that previously failed (from a failure notification) */
+    retryNote: (noteId: string) => Promise<void>;
     /** Initialize the queue manager (call once on app startup) */
     initializeQueue: () => Promise<void>;
     /** Recent failure notifications for user display (toast/snackbar) */
@@ -134,7 +139,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener(
             AI_JOB_FAILED_EVENT,
-            (payload: { noteId: string; error: string; permanent?: boolean }) => {
+            (payload: { noteId: string; error: string; errorKind?: AiErrorKind; permanent?: boolean }) => {
                 const notif: AiFailureNotification = {
                     id: `fail-${payload.noteId}-${Date.now()}`,
                     noteId: payload.noteId,
@@ -142,6 +147,9 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                     timestamp: Date.now(),
                     isTimeout: false,
                     isPermanent: payload.permanent || false,
+                    // Capture the structured kind so the UI can show a targeted
+                    // fix hint (e.g. auth → "check API key", config → "check model/URL").
+                    errorKind: payload.errorKind,
                 };
                 setFailureNotifications((prev) => [...prev.slice(-4), notif]); // Keep last 5
             },
@@ -162,6 +170,8 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                     timestamp: Date.now(),
                     isTimeout: true,
                     isPermanent: true,
+                    // A hard timeout always maps to the 'timeout' kind.
+                    errorKind: 'timeout',
                 };
                 setFailureNotifications((prev) => [...prev.slice(-4), notif]); // Keep last 5
             },
@@ -182,6 +192,11 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
                 model: depsRef.current.aiModel,
                 grammarModel: depsRef.current.aiGrammarModel,
                 prompts: depsRef.current.aiPrompts,
+                // IMPORTANT: include the active provider so pingServer/processNote
+                // route to the correct endpoint & use the right default key.
+                // Previously this was omitted, causing the very first init to
+                // always fall back to 'ollama' even when Neuralwatt was selected.
+                provider: depsRef.current.aiProvider,
             }),
             (noteId) => depsRef.current.savedNotes.find((n) => n.id === noteId),
             depsRef.current.updateNote,
@@ -220,6 +235,19 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
         await aiQueue.cancelBatch();
     }, []);
 
+    /**
+     * Re-enqueue a note that previously failed (e.g. from a failure notification).
+     * Looks up the note, categorizes it, and re-queues it. Also clears the
+     * matching notification so the user sees the retry took effect.
+     */
+    const retryNote = useCallback(async (noteId: string) => {
+        const note = depsRef.current.savedNotes.find((n) => n.id === noteId);
+        if (!note) return;
+        const category: AiJobCategory = note.isAlignmentReflection ? 'checkin' : note.personId ? 'circle' : 'journal';
+        await aiQueue.enqueueNote(noteId, category);
+        setFailureNotifications((prev) => prev.filter((n) => n.noteId !== noteId));
+    }, []);
+
     /** Dismiss a single notification */
     const dismissNotification = useCallback((id: string) => {
         setFailureNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -238,6 +266,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             enqueueNote,
             startBatch,
             cancelBatch,
+            retryNote,
             initializeQueue,
             failureNotifications,
             dismissNotification,
@@ -250,6 +279,7 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
             enqueueNote,
             startBatch,
             cancelBatch,
+            retryNote,
             initializeQueue,
             failureNotifications,
             dismissNotification,

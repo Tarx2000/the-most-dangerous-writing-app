@@ -25,6 +25,143 @@ import {
 } from '@/config/ai';
 import { logAi } from '@/lib/logger';
 
+/* ── Structured Error Classification ──────────────────────────────────── */
+
+/**
+ * Machine-readable category for every failure mode the AI service can hit.
+ *
+ * The UI uses `kind` (not a fragile string) to decide what troubleshooting
+ * hint to show the user and whether to retry.
+ *
+ * - `network`  → connection dropped / unreachable (retryable)
+ * - `timeout`  → request exceeded the per-call limit (retryable)
+ * - `server`   → 5xx from the provider (retryable)
+ * - `rateLimit`→ 429 from the provider (retryable, with backoff)
+ * - `auth`     → 401 / 403, or Neuralwatt with no key (NOT retryable)
+ * - `config`   → missing API key / base URL (NOT retryable)
+ * - `cancelled`→ user or queue aborted (NOT retryable)
+ * - `parse`    → response could not be parsed into the expected shape
+ *                (e.g. grammar JSON malformed) (NOT retryable)
+ */
+export type AiErrorKind = 'network' | 'timeout' | 'server' | 'rateLimit' | 'auth' | 'config' | 'cancelled' | 'parse';
+
+/**
+ * Error thrown (or returned via classification) by the AI service.
+ *
+ * The `message` field stays a plain, human-readable string so that legacy
+ * string-based callers (e.g. the queue's catch path) keep behaving the same.
+ * The `kind` + `userMessage` give the UI a precise, actionable signal:
+ * `userMessage` is what we surface directly to the end user, while `message`
+ * is a slightly more technical line used for logs.
+ *
+ * SSE: Server-Sent Events — a streaming text format where each event is a
+ * line starting with "data: ". Providers stream tokens this way so the UI
+ * can render text piece-by-piece as the model generates it.
+ */
+export class AiError extends Error {
+    readonly kind: AiErrorKind;
+    /** Short, non-technical message safe to show end users. */
+    readonly userMessage: string;
+    /** HTTP status code if the error originated from a response, else undefined. */
+    readonly statusCode?: number;
+
+    constructor(kind: AiErrorKind, userMessage: string, technicalMessage?: string, statusCode?: number) {
+        // Prefer the explicit technical message; fall back to userMessage so
+        // string-based catchers always see something useful.
+        super(technicalMessage || userMessage);
+        this.name = 'AiError';
+        this.kind = kind;
+        this.userMessage = userMessage;
+        this.statusCode = statusCode;
+    }
+}
+
+/**
+ * True when an error kind is worth retrying.
+ * Network blips, timeouts, 5xx, and rate-limit (with backoff) recover.
+ * Auth / config / cancel / parse errors never will.
+ */
+export function isRetryableKind(kind: AiErrorKind): boolean {
+    return kind === 'network' || kind === 'timeout' || kind === 'server' || kind === 'rateLimit';
+}
+
+/**
+ * Map an HTTP status code to a structured AiError.
+ * 401/403 → auth, 429 → rateLimit, 4xx → config/parse, 5xx → server.
+ */
+export function classifyHttpStatus(status: number, context: string = 'AI request'): AiError {
+    if (status === 401 || status === 403) {
+        return new AiError(
+            'auth',
+            'Your API key is invalid or expired. Open AI Settings and check the key for the active provider.',
+            `${context} failed with HTTP ${status} (auth)`,
+            status,
+        );
+    }
+    if (status === 429) {
+        return new AiError(
+            'rateLimit',
+            'The AI provider is rate-limiting your account. Wait a moment and try again.',
+            `${context} failed with HTTP 429 (rate limited)`,
+            status,
+        );
+    }
+    if (status >= 500 && status < 600) {
+        return new AiError(
+            'server',
+            `The AI provider returned a server error (HTTP ${status}). It's usually temporary — try again shortly.`,
+            `${context} failed with HTTP ${status} (server)`,
+            status,
+        );
+    }
+    // Other 4xx (400, 404, 422, ...) — generally not recoverable by retrying.
+    return new AiError(
+        'config',
+        `The request was rejected by the provider (HTTP ${status}). Check the model name and base URL in AI Settings.`,
+        `${context} failed with HTTP ${status} (client)`,
+        status,
+    );
+}
+
+/**
+ * Convert any thrown value (Error, string, unknown) into an `AiError`.
+ * Uses string heuristics for non-AiError values so existing code paths
+ * that throw plain `Error('Network request failed')` still classify.
+ */
+export function classifyError(error: unknown): AiError {
+    if (error instanceof AiError) return error;
+
+    const msg = error instanceof Error ? error.message : String(error ?? '');
+
+    // Cancellation
+    if (msg.includes('cancelled') || msg.includes('aborted')) {
+        return new AiError('cancelled', 'The request was cancelled.', msg);
+    }
+    // Timeout
+    if (msg.includes('timed out')) {
+        return new AiError('timeout', 'The request took too long and timed out.', msg);
+    }
+    // Network / connection
+    if (msg.includes('Network request failed') || msg.includes('connection dropped') || msg.includes('unreachable')) {
+        return new AiError('network', 'Cannot reach the AI server. Check your internet connection and base URL.', msg);
+    }
+    // Auth markers produced by classifyHttpStatus or plain status strings
+    if (msg.includes('401') || msg.includes('403') || /auth/i.test(msg)) {
+        return new AiError('auth', 'Your API key is invalid or expired. Check it in AI Settings.', msg);
+    }
+    // Rate limit
+    if (msg.includes('429')) {
+        return new AiError('rateLimit', 'The AI provider is rate-limiting you. Wait a moment.', msg);
+    }
+    // 5xx
+    if (/[5]\d\d/.test(msg)) {
+        return new AiError('server', 'The AI provider returned a server error. Try again shortly.', msg);
+    }
+
+    // Fallback — treat as a generic/parse failure (not retryable)
+    return new AiError('parse', 'The AI response could not be processed. Try again later.', msg);
+}
+
 /* ── Types ────────────────────────────────────────────────────────────── */
 
 export interface GrammarSuggestion {
@@ -94,25 +231,14 @@ export const resetAiServiceState = resetStateForTesting;
 
 /**
  * Determine whether an error is transient (worth retrying).
- * Network errors, timeouts, and 5xx responses are retryable.
- * Auth errors and 4xx client errors are NOT retryable.
+ *
+ * Delegates to the structured `AiError.kind` when possible; for callers that
+ * still throw plain `Error` objects, `classifyError` heuristically maps the
+ * message to a kind. Network errors, timeouts, 5xx, and 429 are retryable.
+ * Auth errors, 4xx client errors, parse errors, and cancellations are NOT.
  */
 function isTransientError(error: Error): boolean {
-    const msg = error.message || '';
-
-    // Network / connection errors
-    if (msg.includes('Network request failed')) return true;
-    if (msg.includes('connection dropped')) return true;
-    if (msg.includes('unreachable')) return true;
-
-    // Timeout errors
-    if (msg.includes('timed out')) return true;
-
-    // 5xx server errors — retryable (server is having a bad time)
-    if (/Ollama API error [5]\d\d/.test(msg)) return true;
-
-    // Everything else (4xx, auth errors, parse errors, etc.) — not retryable
-    return false;
+    return isRetryableKind(classifyError(error).kind);
 }
 
 /**
@@ -205,7 +331,9 @@ async function ollamaChatSingle(
                 }
                 if (xhr.status !== 200) {
                     xhr.abort();
-                    settle('reject', new Error(`Ollama API error ${xhr.status}`));
+                    // Classify the HTTP status into an actionable AiError
+                    // (401/403 → auth, 429 → rateLimit, 5xx → server, else → config).
+                    settle('reject', classifyHttpStatus(xhr.status, 'Ollama API'));
                 }
             } else if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) {
                 if (!xhr.responseText) {
@@ -236,7 +364,14 @@ async function ollamaChatSingle(
 
                             const parsed = JSON.parse(contentToParse);
                             if (parsed.error) {
-                                settle('reject', new Error(`Ollama Error: ${parsed.error}`));
+                                settle(
+                                    'reject',
+                                    new AiError(
+                                        'server',
+                                        `The AI provider reported an error: ${String(parsed.error).slice(0, 140)}`,
+                                        `Ollama Error: ${parsed.error}`,
+                                    ),
+                                );
                                 return;
                             }
 
@@ -281,26 +416,40 @@ async function ollamaChatSingle(
         };
         xhr.onerror = () => {
             logAi('warn', 'XHR Error occurred', { readyState: xhr.readyState, status: xhr.status });
-            settle('reject', new Error(`Network request failed (connection dropped or unreachable)`));
+            settle(
+                'reject',
+                new AiError(
+                    'network',
+                    'Cannot reach the AI server. Check your internet connection and base URL in AI Settings.',
+                    'Network request failed (connection dropped or unreachable)',
+                ),
+            );
         };
 
         // Abort after timeout to prevent hanging requests
         const timeoutId = setTimeout(() => {
             xhr.abort();
-            settle('reject', new Error(`AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s`));
+            settle(
+                'reject',
+                new AiError(
+                    'timeout',
+                    `The AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s. The model may be cold-starting or busy.`,
+                    `AI request timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s`,
+                ),
+            );
         }, AI_REQUEST_TIMEOUT_MS);
 
         // Cancel token: poll for external abort (e.g. user cancels or queue cancels)
         if (cancelToken) {
             if (cancelToken.aborted) {
                 clearTimeout(timeoutId);
-                return Promise.reject(new Error('AI request cancelled'));
+                return Promise.reject(new AiError('cancelled', 'The request was cancelled.', 'AI request cancelled'));
             }
             cancelCheckInterval = setInterval(() => {
                 if (cancelToken && cancelToken.aborted) {
                     if (cancelCheckInterval) clearInterval(cancelCheckInterval);
                     xhr.abort();
-                    settle('reject', new Error('AI request cancelled'));
+                    settle('reject', new AiError('cancelled', 'The request was cancelled.', 'AI request cancelled'));
                 }
             }, 200);
         }
@@ -328,12 +477,14 @@ async function ollamaChatSingle(
  * Send a chat completion request with exponential-backoff retries.
  *
  * Wraps `ollamaChatSingle` and retries on transient errors only
- * (network failures, timeouts, 5xx).  Auth errors and 4xx responses
- * are not retried.  Backoff starts at 1 s and doubles each attempt.
+ * (network failures, timeouts, 5xx, 429).  Auth errors, 4xx, parse and
+ * cancellation errors are short-circuited — never retried — via
+ * `isRetryableKind`.  Backoff starts at 1 s and doubles each attempt.
  *
- * The `onChunk` callback is only wired on the final (or only) attempt
- * so that partial streaming from a failed request doesn't corrupt the
- * consumer's buffer.
+ * NOTE on streaming + retries: `onChunk` IS wired on every attempt so the
+ * UI keeps updating live.  When a transient error triggers a retry, we
+ * reset the consumer's buffer by calling `onChunk('')` first so that
+ * partial tokens from the failed attempt don't corrupt the output.
  */
 async function ollamaChat(
     systemPrompt: string,
@@ -471,7 +622,11 @@ export async function generateSummary(
  *
  * @param text - The full journal entry text
  * @param config - Optional config overrides
- * @returns Array of GrammarSuggestion objects
+ * @returns Array of GrammarSuggestion objects. An empty array means the
+ *          model successfully found no issues.
+ * @throws {AiError} with kind 'parse' if the response cannot be parsed
+ *         into the expected JSON shape (so callers can show "couldn't check"
+ *         instead of the misleading "No issues found").
  */
 export async function checkGrammar(
     text: string,
@@ -480,7 +635,10 @@ export async function checkGrammar(
     cancelToken?: AiCancelToken,
 ): Promise<GrammarSuggestion[]> {
     const prompt = config.prompts?.grammar || DEFAULT_AI_PROMPTS.grammar;
-    const raw = await ollamaChat(prompt, text, config, {}, onChunk, cancelToken);
+    // Honour a dedicated grammar model when set, else fall through to the
+    // provider default inside ollamaChatSingle (avoids passing an empty model).
+    const grammarConfig: AiConfig = config.grammarModel ? { ...config, model: config.grammarModel } : config;
+    const raw = await ollamaChat(prompt, text, grammarConfig, {}, onChunk, cancelToken);
 
     try {
         // Try to extract JSON from the response (model might wrap in code fences)
@@ -490,7 +648,9 @@ export async function checkGrammar(
             .trim();
         const parsed = JSON.parse(jsonStr);
 
-        if (!Array.isArray(parsed)) return [];
+        if (!Array.isArray(parsed)) {
+            throw new Error('Grammar response was not a JSON array');
+        }
 
         // Validate each item has required fields
         return parsed.filter(
@@ -500,15 +660,26 @@ export async function checkGrammar(
                 typeof (item as Record<string, unknown>).explanation === 'string',
         );
     } catch (err: unknown) {
-        logAi('warn', 'Failed to parse grammar response as JSON:', raw, err);
-        return [];
+        // Distinguish "model returned garbage" from "model returned []": the
+        // former is a parse error so the UI shows "couldn't check", never the
+        // misleading "No issues found".
+        logAi('warn', 'Grammar response could not be parsed as JSON', { raw, err });
+        throw new AiError(
+            'parse',
+            "Couldn't read the grammar response. The model may be unable to follow the JSON format — try another model.",
+            `Failed to parse grammar response: ${(err as Error)?.message ?? err}`,
+        );
     }
 }
 
 /**
- * Fetch available models from the Ollama Cloud API.
+ * Fetch available models from the AI provider.
  * Returns an array of model IDs (strings) or an empty array on failure.
- * Uses the /v1/models endpoint (OpenAI-compatible).
+ * Uses the OpenAI-compatible /v1/models endpoint.
+ *
+ * Failures are logged with a classified reason so the Settings UI can
+ * explain why the model list is empty (auth, network, etc.) rather than
+ * silently rendering a blank picker.
  */
 export async function fetchAvailableModels(config: AiConfig = {}): Promise<string[]> {
     const provider = config.provider || 'ollama';
@@ -529,6 +700,7 @@ export async function fetchAvailableModels(config: AiConfig = {}): Promise<strin
 
         const timeoutId = setTimeout(() => {
             xhr.abort();
+            logAi('warn', 'fetchAvailableModels timed out', { url });
             resolve([]);
         }, 10_000);
 
@@ -536,6 +708,12 @@ export async function fetchAvailableModels(config: AiConfig = {}): Promise<strin
             if (xhr.readyState !== XMLHttpRequest.DONE) return;
             clearTimeout(timeoutId);
             if (xhr.status !== 200) {
+                const err = classifyHttpStatus(xhr.status, 'fetchAvailableModels');
+                logAi('warn', 'fetchAvailableModels failed', {
+                    status: xhr.status,
+                    kind: err.kind,
+                    userMessage: err.userMessage,
+                });
                 resolve([]);
                 return;
             }
@@ -545,13 +723,16 @@ export async function fetchAvailableModels(config: AiConfig = {}): Promise<strin
                     .map((m: Record<string, unknown>) => m.id as string)
                     .filter((id: string | undefined) => !!id);
                 resolve(models);
-            } catch {
+            } catch (err) {
+                logAi('warn', 'fetchAvailableModels parse failed', { err });
                 resolve([]);
             }
         };
 
         xhr.onerror = () => {
             clearTimeout(timeoutId);
+            const classified = classifyError(new Error('Network request failed'));
+            logAi('warn', 'fetchAvailableModels network error', { kind: classified.kind });
             resolve([]);
         };
     });
@@ -559,7 +740,12 @@ export async function fetchAvailableModels(config: AiConfig = {}): Promise<strin
 
 /**
  * Health check — ping the server to verify it's reachable and properly configured.
- * Returns { online: true } if the server responds without throwing a network error.
+ * Returns `{ online: true }` if the server responds successfully.
+ *
+ * On failure, `error` carries a short, actionable, user-facing string
+ * (e.g. "Your API key is invalid or expired…") derived from the
+ * `AiError` classification, plus `errorKind` so callers can render
+ * targeted troubleshooting hints (e.g. a "Check API key" link on `auth`).
  *
  * Tracks consecutive failures: after more than 3 in a row the server is
  * considered persistently offline.  This status can be queried via
@@ -568,14 +754,33 @@ export async function fetchAvailableModels(config: AiConfig = {}): Promise<strin
  * period.
  *
  * @param config - Optional config overrides
- * @returns Object with online status and any error message
+ * @returns Object with online status, error message, and error kind
  */
-export async function pingServer(config: AiConfig = {}): Promise<{ online: boolean; error?: string }> {
+export interface PingResult {
+    online: boolean;
+    /** Short, actionable, user-facing message (empty when online) */
+    error?: string;
+    /** Structured error kind (empty when online) */
+    errorKind?: AiErrorKind;
+}
+export async function pingServer(config: AiConfig = {}): Promise<PingResult> {
     const provider = config.provider || 'ollama';
     const apiKey = config.apiKey !== undefined ? config.apiKey : provider === 'ollama' ? DEFAULT_OLLAMA_API_KEY : '';
     const baseUrl = (
         config.baseUrl || (provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : 'https://api.neuralwatt.com/v1')
     ).replace(/\/$/, '');
+
+    // Fast pre-flight: Neuralwatt has no default key — classify as config
+    // error up front so the user sees a clear message instead of a 401 from
+    // a ping that was doomed from the start.
+    if (provider === 'neuralwatt' && (!apiKey || apiKey.trim().length === 0)) {
+        _consecutivePingFailures++;
+        return {
+            online: false,
+            error: 'No Neuralwatt API key set. Add your key in AI Settings.',
+            errorKind: 'config',
+        };
+    }
 
     return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
@@ -591,7 +796,11 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
         const timeoutId = setTimeout(() => {
             xhr.abort();
             _consecutivePingFailures++;
-            resolve({ online: false, error: 'Ping timed out after 5s' });
+            resolve({
+                online: false,
+                error: 'The server did not respond within 5s. It may be offline or the base URL is wrong.',
+                errorKind: 'timeout',
+            });
         }, 5000);
 
         xhr.onreadystatechange = () => {
@@ -600,16 +809,22 @@ export async function pingServer(config: AiConfig = {}): Promise<{ online: boole
             if (xhr.status === 200) {
                 _consecutivePingFailures = 0;
                 resolve({ online: true });
-            } else {
-                _consecutivePingFailures++;
-                resolve({ online: false, error: `Server reachable but returned HTTP ${xhr.status}` });
+                return;
             }
+            // Map the status to an actionable message via AiError classification.
+            _consecutivePingFailures++;
+            const err = classifyHttpStatus(xhr.status, 'Ping');
+            resolve({ online: false, error: err.userMessage, errorKind: err.kind });
         };
 
         xhr.onerror = () => {
             clearTimeout(timeoutId);
             _consecutivePingFailures++;
-            resolve({ online: false, error: 'Network request failed' });
+            resolve({
+                online: false,
+                error: 'Cannot reach the AI server. Check your internet connection and base URL.',
+                errorKind: 'network',
+            });
         };
     });
 }

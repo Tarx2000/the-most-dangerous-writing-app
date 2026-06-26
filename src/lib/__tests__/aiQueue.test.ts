@@ -24,28 +24,45 @@ jest.mock('react-native', () => ({
     },
 }));
 
-// Mock aiService — processNote hangs by default to prevent auto-completion
+// Mock aiService — processNote hangs by default to prevent auto-completion.
+// Pure helpers (AiError, classifyError, classifyHttpStatus, isRetryableKind,
+// isServerPersistentlyOffline, resetStateForTesting/resetAiServiceState) are
+// pulled from the REAL module so the queue's classification logic behaves
+// identically to production. Only processNote + pingServer are mocked.
+//
+// NOTE: requireActual is invoked INSIDE the factory and accessed by explicit
+// key (NOT spread) — a module namespace object spread yields {} because ESM
+// live bindings aren't enumerable own properties.
 let processNoteResolve: (value: Record<string, unknown>) => void;
-jest.mock('@/lib/aiService', () => ({
-    processNote: jest.fn(
-        () =>
-            new Promise((r) => {
-                processNoteResolve = r;
-            }),
-    ),
-    pingServer: jest.fn(() => Promise.resolve({ online: true })),
-    isServerPersistentlyOffline: jest.fn(() => false),
-    resetAiServiceState: jest.fn(),
-    AiCancelToken: class AiCancelToken {
-        aborted = false;
-        abort() {
-            this.aborted = true;
-        }
-        reset() {
-            this.aborted = false;
-        }
-    },
-}));
+jest.mock('@/lib/aiService', () => {
+    const actual = jest.requireActual('@/lib/aiService') as Record<string, unknown>;
+    return {
+        AiError: actual.AiError,
+        classifyError: actual.classifyError,
+        classifyHttpStatus: actual.classifyHttpStatus,
+        isRetryableKind: actual.isRetryableKind,
+        isServerPersistentlyOffline: actual.isServerPersistentlyOffline,
+        resetStateForTesting: actual.resetStateForTesting,
+        resetAiServiceState: actual.resetAiServiceState,
+        resetConnectionState: actual.resetConnectionState,
+        processNote: jest.fn(
+            () =>
+                new Promise((r) => {
+                    processNoteResolve = r;
+                }),
+        ),
+        pingServer: jest.fn(() => Promise.resolve({ online: true })),
+        AiCancelToken: class AiCancelToken {
+            aborted = false;
+            abort() {
+                this.aborted = true;
+            }
+            reset() {
+                this.aborted = false;
+            }
+        },
+    };
+});
 
 // Mock aiLogger
 jest.mock('@/lib/aiLogger', () => ({

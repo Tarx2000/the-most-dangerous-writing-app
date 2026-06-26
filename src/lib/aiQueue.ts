@@ -26,7 +26,16 @@
 import { DeviceEventEmitter, AppState, type NativeEventSubscription } from 'react-native';
 import { logger, logAiQueue } from '@/lib/logger';
 import { storage } from '@/lib/storage';
-import { processNote, pingServer, type AiConfig, type RelationshipContext, AiCancelToken } from '@/lib/aiService';
+import {
+    processNote,
+    pingServer,
+    classifyError,
+    isServerPersistentlyOffline,
+    AiError,
+    type AiConfig,
+    type RelationshipContext,
+    AiCancelToken,
+} from '@/lib/aiService';
 import { logAi, logStartupDiagnostics } from '@/lib/aiLogger';
 import { generateId } from '@/lib/utils';
 import {
@@ -38,6 +47,14 @@ import {
     AI_STALL_DETECTION_MS,
     MIN_AI_WORDS,
 } from '@/config/ai';
+
+/**
+ * When the server is *persistently* offline (isServerPersistentlyOffline),
+ * widen the health-check interval to this many ms so we stop polling a dead
+ * endpoint every 10s. Recovery still happens automatically the moment a ping
+ * succeeds. 60s ≈ a check per minute while offline.
+ */
+const HEALTH_CHECK_PERSISTENT_INTERVAL_MS = 60_000;
 import type { AiJob, AiJobCategory, AiQueueState, SavedNote, Person } from '@/types';
 import { isAlignmentReflection } from '@/types';
 
@@ -206,6 +223,12 @@ class AiQueueManager {
 
     /**
      * Perform a health check and update state. Automatically starts processing if it comes back online.
+     *
+     * Health-check frequency adapts: once the server is *persistently* offline
+     * (more than 3 consecutive ping failures, via `isServerPersistentlyOffline`),
+     * the interval is widened to `HEALTH_CHECK_PERSISTENT_INTERVAL_MS` so we
+     * stop hammering a dead endpoint and the user's battery, while still
+     * auto-resuming the moment it recovers.
      */
     private async checkHealth(): Promise<void> {
         const wasOffline = this.serverOnline === false;
@@ -218,6 +241,10 @@ class AiQueueManager {
         if (wasOffline && result.online && this.getPendingJobs().length > 0) {
             this.startProcessing();
         }
+
+        // Re-arm the next check with an adaptive interval based on whether the
+        // server is now considered persistently offline.
+        this.rescheduleHealthCheck();
     }
 
     /**
@@ -226,7 +253,24 @@ class AiQueueManager {
      */
     private startHealthChecks(): void {
         if (!this.healthCheckInterval && this.getPendingJobs().length > 0) {
-            this.healthCheckInterval = setInterval(() => this.checkHealth(), AI_HEALTH_CHECK_INTERVAL_MS);
+            const interval = isServerPersistentlyOffline()
+                ? HEALTH_CHECK_PERSISTENT_INTERVAL_MS
+                : AI_HEALTH_CHECK_INTERVAL_MS;
+            this.healthCheckInterval = setInterval(() => this.checkHealth(), interval);
+        }
+    }
+
+    /**
+     * Reschedule the next health check with an adaptive interval.
+     * Called after each check so a transition into "persistently offline"
+     * widens the interval, and recovery tightens it again.
+     */
+    private rescheduleHealthCheck(): void {
+        if (!this.healthCheckInterval) return;
+        clearInterval(this.healthCheckInterval);
+        this.healthCheckInterval = null;
+        if (this.getPendingJobs().length > 0) {
+            this.startHealthChecks();
         }
     }
 
@@ -849,7 +893,15 @@ class AiQueueManager {
                 logAiQueue('warn', 'processNext — result.failed=true, throwing to retry path', {
                     noteId: nextJob.noteId,
                 });
-                throw new Error('AI processing returned empty results');
+                // Empty results are treated as a transient model hiccup (the model
+                // returned nothing / unparseable content), so classify as 'server'
+                // — a retryable kind — instead of falling back to the permanent
+                // 'parse' kind. This preserves the retry-up-to-AI_MAX_RETRIES behavior.
+                throw new AiError(
+                    'server',
+                    'AI processing returned empty results.',
+                    'AI processing returned empty results',
+                );
             }
 
             try {
@@ -894,8 +946,16 @@ class AiQueueManager {
                 this.batchCompleted++;
             }
         } catch (error: unknown) {
+            // Classify into a structured AiError so we can decide server status
+            // and the user-facing message precisely (no fragile string matching).
+            const classified = classifyError(error);
             const errMsg = error instanceof Error ? error.message : 'Unknown error';
-            logAiQueue('error', 'processNext — CATCH', { noteId: nextJob.noteId, error: errMsg });
+            logAiQueue('error', 'processNext — CATCH', {
+                noteId: nextJob.noteId,
+                error: errMsg,
+                kind: classified.kind,
+                userMessage: classified.userMessage,
+            });
             const duration = Date.now() - (nextJob.startedAt || Date.now());
 
             await logAi({
@@ -907,25 +967,49 @@ class AiQueueManager {
                 error: errMsg,
             });
 
-            // If it's a network/timeout or auth error, mark server as offline
+            // Network / timeout / auth / rate-limit errors mean the server
+            // wasn't usable right now — mark it offline so the queue pauses
+            // (and health checks down-throttle) instead of churning retries.
+            // Parse / config / cancelled errors are NOT a server problem.
             if (
-                errMsg.includes('timeout') ||
-                errMsg.includes('Network') ||
-                errMsg.includes('fetch') ||
-                errMsg.includes('401') ||
-                errMsg.includes('403')
+                classified.kind === 'network' ||
+                classified.kind === 'timeout' ||
+                classified.kind === 'auth' ||
+                classified.kind === 'rateLimit' ||
+                classified.kind === 'server'
             ) {
                 this.serverOnline = false;
-                this.lastError = errMsg;
+                // Surface the actionable, user-friendly message (not the raw
+                // technical string) so the AI Status panel reads clearly.
+                this.lastError = classified.userMessage;
             }
 
-            if (nextJob.retryCount < AI_MAX_RETRIES) {
-                // Don't retry a job that was explicitly marked failed (e.g. by cancelJob)
-                // Race: cancelJob mutates shared state between try and catch
+            // Permanently-fatal kinds (auth, config, parse) should NOT be
+            // retried — they'll never succeed until the user changes config.
+            // These short-circuit straight to permanent failure.
+            const permanentlyFatal =
+                classified.kind === 'auth' || classified.kind === 'config' || classified.kind === 'parse';
+
+            if (permanentlyFatal || nextJob.retryCount >= AI_MAX_RETRIES) {
+                // Max retries exceeded (or a non-retryable kind) — mark failed.
+                nextJob.status = 'failed';
+                nextJob.completedAt = Date.now();
+                nextJob.error = classified.userMessage || errMsg;
+
+                // Notify user of permanent failure (with the friendly message)
+                DeviceEventEmitter.emit(AI_JOB_FAILED_EVENT, {
+                    noteId: nextJob.noteId,
+                    error: classified.userMessage || errMsg,
+                    errorKind: classified.kind,
+                    permanent: true,
+                });
+            } else {
+                // Retryable transient error — move to end of queue for another attempt.
+                // Don't retry a job that was explicitly marked failed mid-flight (e.g.
+                // by cancelJob); the cancel race mutates shared state between try/catch.
                 if ((nextJob.status as string) === 'failed') {
-                    // Already handled; just persist
+                    // Already handled (e.g. cancelled); just persist and continue.
                 } else {
-                    // Retry: move to end of queue
                     nextJob.retryCount++;
                     nextJob.status = 'queued';
                     nextJob.startedAt = undefined;
@@ -938,22 +1022,10 @@ class AiQueueManager {
                         phase: 'both',
                     });
 
-                    // Move to end of queue
+                    // Move to end of queue so other notes get a turn first.
                     this.jobs = this.jobs.filter((j) => j.id !== nextJob.id);
                     this.jobs.push(nextJob);
                 }
-            } else {
-                // Max retries exceeded — mark as failed and move on
-                nextJob.status = 'failed';
-                nextJob.completedAt = Date.now();
-                nextJob.error = errMsg;
-
-                // Notify user of permanent failure
-                DeviceEventEmitter.emit(AI_JOB_FAILED_EVENT, {
-                    noteId: nextJob.noteId,
-                    error: errMsg,
-                    permanent: true,
-                });
             }
         }
 

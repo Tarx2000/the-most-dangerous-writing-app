@@ -39,7 +39,7 @@ import { RootStackParamList } from '@/types/navigation.types';
 import { StackActions } from '@react-navigation/native';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
-import { checkGrammar, type GrammarSuggestion } from '@/lib/aiService';
+import { checkGrammar, classifyError, type GrammarSuggestion } from '@/lib/aiService';
 import { logger } from '@/lib/logger';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { ShimmerLine } from '@/components/ui/ShimmerLine';
@@ -64,7 +64,7 @@ const FLY_AWAY_SCROLL_OFFSET = Platform.OS === 'ios' ? 140 : 120;
 export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const { noteId } = route.params;
     const { savedNotes, updateNote } = useNotes();
-    const { aiApiKey, aiBaseUrl, aiGrammarModel, aiPrompts, autoGenerateSummaries } = useAiConfig();
+    const { aiApiKey, aiBaseUrl, aiGrammarModel, aiPrompts, autoGenerateSummaries, aiProvider } = useAiConfig();
 
     /** User typography — applied to entry text only, not AI chrome */
     const { fontIndex, sizeIndex } = usePreferences();
@@ -73,7 +73,13 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const activeLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
 
     /** AI Queue — centralized, single-instance via AiQueueProvider */
-    const { enqueueNote, isNoteActive, isNoteQueued, queueState } = useAiQueueContext();
+    const { enqueueNote, isNoteActive, isNoteQueued, queueState, failureNotifications, retryNote } =
+        useAiQueueContext();
+
+    /** Per-note failure notification (if this note's AI processing failed permanently)
+     *  — surfaces the actionable reason + Retry so the user isn't left guessing why
+     *  no title/summary appeared. */
+    const noteFailure = failureNotifications.find((n) => n.noteId === noteId) ?? null;
 
     /* ── State ──────────────────────────────────────────────────────── */
     const editableTextRef = useRef('');
@@ -83,6 +89,13 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const [grammarSuggestions, setGrammarSuggestions] = useState<GrammarSuggestion[]>([]);
     const [grammarLoading, setGrammarLoading] = useState(false);
     const [grammarChecked, setGrammarChecked] = useState(false);
+    /**
+     * Grammar check error — holds a friendly, actionable message when the
+     * check itself fails (network, auth, parse, …). When set, the UI shows an
+     * error banner instead of the misleading "No issues found!" state, and
+     * offers a Retry button. `null` means "no error surfaced yet".
+     */
+    const [grammarError, setGrammarError] = useState<string | null>(null);
 
     /** Track if user is in text edit mode */
     const [isEditing, setIsEditing] = useState(false);
@@ -177,26 +190,36 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     const handleGrammarCheck = useCallback(async () => {
         if (grammarLoading || !editableTextRef.current.trim()) return;
         setGrammarLoading(true);
+        setGrammarError(null); // clear any prior error before re-checking
         vibrate(30);
 
         try {
             const suggestions = await checkGrammar(editableTextRef.current, {
                 apiKey: aiApiKey,
                 baseUrl: aiBaseUrl,
-                model: aiGrammarModel,
+                // Honour the dedicated grammar model when set; checkGrammar
+                // already falls back to the provider default if undefined.
+                grammarModel: aiGrammarModel || undefined,
+                provider: aiProvider,
                 prompts: aiPrompts,
             });
             if (!isMountedRef.current) return;
             setGrammarSuggestions(suggestions);
             setGrammarChecked(true);
-        } catch (err) {
-            logger('warn', 'AI', 'Grammar check failed:', err);
+        } catch (err: unknown) {
+            // Classify so the user gets an actionable message rather than a
+            // silent return-to-idle. checkGrammar now throws AiError('parse')
+            // on unparseable responses; network/auth/timeouts come from the XHR layer.
+            const classified = classifyError(err);
+            logger('warn', 'AI', 'Grammar check failed:', { kind: classified.kind, message: classified.message });
+            if (!isMountedRef.current) return;
+            setGrammarError(classified.userMessage);
         } finally {
             if (isMountedRef.current) {
                 setGrammarLoading(false);
             }
         }
-    }, [aiApiKey, aiBaseUrl, aiGrammarModel, aiPrompts, grammarLoading]);
+    }, [aiApiKey, aiBaseUrl, aiGrammarModel, aiProvider, aiPrompts, grammarLoading]);
 
     /* ── Apply a single grammar suggestion (tap-to-accept) ──────────── */
     const applySuggestion = useCallback((suggestion: GrammarSuggestion) => {
@@ -393,6 +416,29 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </Text>
                     </View>
 
+                    {/* ── Per-note AI failure banner ──────────────────────
+                        If this note's AI processing failed permanently (max retries,
+                        auth error, parse error, …) the queue surfaced a notification.
+                        Show it here with the actionable reason + Retry instead of
+                        leaving the writer wondering why no title/summary appeared. */}
+                    {noteFailure && !hasAiTitle && (
+                        <View style={styles.noteFailureBox}>
+                            <View style={styles.noteFailureHeader}>
+                                <MaterialCommunityIcons
+                                    name="alert-circle-outline"
+                                    size={16}
+                                    color={theme.colors.danger}
+                                />
+                                <Text style={styles.noteFailureTitle}>AI processing failed</Text>
+                            </View>
+                            <Text style={styles.noteFailureMsg}>{noteFailure.message}</Text>
+                            <AnimatedScaleButton style={styles.noteFailureRetryBtn} onPress={() => retryNote(noteId)}>
+                                <MaterialCommunityIcons name="refresh" size={14} color={theme.colors.primaryAction} />
+                                <Text style={styles.noteFailureRetryText}>Retry</Text>
+                            </AnimatedScaleButton>
+                        </View>
+                    )}
+
                     {/* ── AI Title ────────────────────────────────────── */}
                     <View style={styles.sectionContainer}>
                         <Text style={styles.sectionLabel}>
@@ -401,9 +447,35 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </Text>
                         {!hasAiTitle ? (
                             queueState.serverOnline === false ? (
-                                <Text style={{ color: theme.colors.danger, fontStyle: 'italic', paddingVertical: 10 }}>
-                                    AI Server Unreachable
-                                </Text>
+                                <View style={{ paddingVertical: 10 }}>
+                                    <Text style={{ color: theme.colors.danger, fontStyle: 'italic' }}>
+                                        AI Server Unreachable
+                                    </Text>
+                                    {/* Show the actionable, classified reason (e.g. "Your API key
+                                        is invalid or expired…") so the user knows what to fix. */}
+                                    {queueState.lastError ? (
+                                        <Text
+                                            style={{
+                                                color: theme.colors.textMuted,
+                                                fontSize: 11,
+                                                marginTop: 4,
+                                                fontStyle: 'italic',
+                                            }}
+                                        >
+                                            {queueState.lastError}
+                                        </Text>
+                                    ) : null}
+                                    <Text
+                                        style={{
+                                            color: theme.colors.textMuted,
+                                            fontSize: 11,
+                                            marginTop: 4,
+                                        }}
+                                    >
+                                        Open AI Settings to check your provider, key, and base URL. The queue will
+                                        resume automatically when the server is back.
+                                    </Text>
+                                </View>
                             ) : isTooShortForAi ? (
                                 <Text
                                     style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
@@ -441,11 +513,23 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                         </View>
                         {!hasAiSummary ? (
                             queueState.serverOnline === false ? (
-                                <Text
-                                    style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
-                                >
-                                    Summary unavailable.
-                                </Text>
+                                <View style={{ paddingVertical: 10 }}>
+                                    <Text style={{ color: theme.colors.textMuted, fontStyle: 'italic' }}>
+                                        Summary unavailable.
+                                    </Text>
+                                    {queueState.lastError ? (
+                                        <Text
+                                            style={{
+                                                color: theme.colors.textMuted,
+                                                fontSize: 11,
+                                                marginTop: 4,
+                                                fontStyle: 'italic',
+                                            }}
+                                        >
+                                            {queueState.lastError}
+                                        </Text>
+                                    ) : null}
+                                </View>
                             ) : isTooShortForAi ? (
                                 <Text
                                     style={{ color: theme.colors.textMuted, fontStyle: 'italic', paddingVertical: 10 }}
@@ -533,7 +617,37 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                     {/* ── Grammar Check (user-triggered only) ─────────── */}
                     <View style={styles.grammarSection}>
-                        {!grammarChecked ? (
+                        {/* Error banner: the check itself failed (network/auth/parse).
+                            Previously this was swallowed to a logger call and the user
+                            saw a misleading "No issues found!" — now we surface a
+                            friendly message + Retry so they can act on it. */}
+                        {grammarError ? (
+                            <View style={styles.grammarErrorBox}>
+                                <View style={styles.grammarErrorHeader}>
+                                    <MaterialCommunityIcons
+                                        name="alert-circle-outline"
+                                        size={16}
+                                        color={theme.colors.danger}
+                                    />
+                                    <Text style={styles.grammarErrorTitle}>Couldn't check grammar</Text>
+                                </View>
+                                <Text style={styles.grammarErrorMsg}>{grammarError}</Text>
+                                <AnimatedScaleButton
+                                    style={styles.grammarRetryBtn}
+                                    onPress={() => {
+                                        setGrammarError(null);
+                                        handleGrammarCheck();
+                                    }}
+                                >
+                                    <MaterialCommunityIcons
+                                        name="refresh"
+                                        size={14}
+                                        color={theme.colors.primaryAction}
+                                    />
+                                    <Text style={styles.grammarRetryText}>Try again</Text>
+                                </AnimatedScaleButton>
+                            </View>
+                        ) : !grammarChecked ? (
                             <AnimatedScaleButton
                                 style={[styles.grammarBtn, grammarLoading && styles.grammarBtnLoading]}
                                 onPress={handleGrammarCheck}
@@ -840,6 +954,93 @@ const styles = StyleSheet.create({
     grammarResultTitle: {
         color: theme.colors.green,
         fontSize: 14,
+        fontWeight: '700',
+    },
+    /* Grammar check error banner — shown when the check itself fails
+       (network/auth/parse) instead of the misleading "No issues found!". */
+    grammarErrorBox: {
+        backgroundColor: theme.colors.dangerFill,
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: theme.colors.dangerBorderStrong,
+    },
+    grammarErrorHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6,
+    },
+    grammarErrorTitle: {
+        color: theme.colors.danger,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    grammarErrorMsg: {
+        color: theme.colors.danger,
+        fontSize: 12,
+        lineHeight: 18,
+        marginBottom: 12,
+    },
+    grammarRetryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        alignSelf: 'flex-start',
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+        backgroundColor: theme.colors.glassSurfaceLow,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
+    grammarRetryText: {
+        color: theme.colors.primaryAction,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    /* Per-note AI failure banner — shown when this note's AI job failed
+       permanently (max retries / auth / parse). Mirrors the grammar banner. */
+    noteFailureBox: {
+        backgroundColor: theme.colors.dangerFill,
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: theme.colors.dangerBorderStrong,
+        marginBottom: 16,
+    },
+    noteFailureHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6,
+    },
+    noteFailureTitle: {
+        color: theme.colors.danger,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    noteFailureMsg: {
+        color: theme.colors.danger,
+        fontSize: 12,
+        lineHeight: 18,
+        marginBottom: 12,
+    },
+    noteFailureRetryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        alignSelf: 'flex-start',
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+        backgroundColor: theme.colors.glassSurfaceLow,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
+    noteFailureRetryText: {
+        color: theme.colors.primaryAction,
+        fontSize: 13,
         fontWeight: '700',
     },
     suggestionCard: {
