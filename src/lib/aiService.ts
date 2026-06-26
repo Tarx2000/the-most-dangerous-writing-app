@@ -874,6 +874,6 @@ export async function processNote(
     } catch (error: unknown) {
         const errMsg = error instanceof Error ? error.message : String(error);
         logAi('error', 'processNote EXCEPTION', { model, error: errMsg });
-        return { title: '', summary: [], failed: true };
+        throw error;
     }
 }

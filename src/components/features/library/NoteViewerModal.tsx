@@ -21,7 +21,8 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { RichText } from '@/components/ui/RichText';
 import type { SavedNote, AiJobCategory } from '@/types';
 import { isAlignmentReflection } from '@/types';
-import { usePreferences } from '@/lib/hooks/useStorage';
+import { usePreferences, useNotes } from '@/lib/hooks/useStorage';
+import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { CONFIG } from '@/config';
 
 interface Props {
@@ -42,6 +43,15 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
         const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
         const activeSize = CONFIG.SIZES[sizeIndex]?.value || 17;
         const activeLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
+
+        const { savedNotes } = useNotes();
+        const { failureNotifications, retryNote } = useAiQueueContext();
+
+        // Resolve the active/freshest note object from savedNotes to ensure
+        // the modal displays newly generated summaries in real-time.
+        const activeNote = note ? savedNotes.find((n) => n.id === note.id) || note : null;
+
+        const noteFailure = activeNote ? (failureNotifications.find((n) => n.noteId === activeNote.id) ?? null) : null;
 
         /* ── Local confirmation state ── */
         const [confirmDelete, setConfirmDelete] = useState(false);
@@ -105,18 +115,18 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
         }, [visible, note, handleClose, panY, overlayOpacity, SCREEN_HEIGHT]);
 
         const handleRegenerateAi = useCallback(() => {
-            if (!note) return;
+            if (!activeNote) return;
             vibrate(30);
-            const category: AiJobCategory = isAlignmentReflection(note)
+            const category: AiJobCategory = isAlignmentReflection(activeNote)
                 ? 'checkin'
-                : note.personId
+                : activeNote.personId
                   ? 'circle'
                   : 'journal';
-            onRegenerateAi(note, category);
-        }, [note, onRegenerateAi]);
+            onRegenerateAi(activeNote, category);
+        }, [activeNote, onRegenerateAi]);
 
         /* ── Render ── */
-        if (!note) return null;
+        if (!activeNote) return null;
 
         return (
             <>
@@ -146,22 +156,22 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                         <View style={styles.cardPopupHandle} />
                                         <View style={styles.cardPopupHeader}>
                                             <View style={{ flex: 1 }}>
-                                                {note.aiTitle ? (
+                                                {activeNote.aiTitle ? (
                                                     <RichText
                                                         style={styles.premiumNoteAiTitle}
                                                         numberOfLines={2}
-                                                        text={note.aiTitle}
+                                                        text={activeNote.aiTitle}
                                                     />
                                                 ) : null}
-                                                <Text style={styles.premiumNoteDate}>{note.dateStr}</Text>
+                                                <Text style={styles.premiumNoteDate}>{activeNote.dateStr}</Text>
                                                 <Text style={styles.premiumNoteMeta}>
-                                                    {note.text.split(/\s+/).filter(Boolean).length} words •{' '}
-                                                    {note.isTweet
+                                                    {activeNote.text.split(/\s+/).filter(Boolean).length} words •{' '}
+                                                    {activeNote.isTweet
                                                         ? 'Tweet'
-                                                        : note.isQuickNote
+                                                        : activeNote.isQuickNote
                                                           ? 'Quick Note'
-                                                          : `${note.durationMin} min`}
-                                                    {note.pillarId && (
+                                                          : `${activeNote.durationMin} min`}
+                                                    {activeNote.pillarId && (
                                                         <>
                                                             {' • '}
                                                             <Text
@@ -169,9 +179,9 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                                                     textDecorationLine: 'underline',
                                                                     color: theme.colors.gold,
                                                                 }}
-                                                                onPress={() => onVersionPress?.(note)}
+                                                                onPress={() => onVersionPress?.(activeNote)}
                                                             >
-                                                                v{note.pillarVersion || 1}
+                                                                v{activeNote.pillarVersion || 1}
                                                             </Text>
                                                         </>
                                                     )}
@@ -189,7 +199,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                     overScrollMode="always"
                                     scrollEventThrottle={16}
                                 >
-                                    {note.aiSummary && note.aiSummary.length > 0 && (
+                                    {activeNote.aiSummary && activeNote.aiSummary.length > 0 && (
                                         <View style={styles.aiSummaryCard}>
                                             <View style={styles.aiSummaryHeader}>
                                                 <MaterialCommunityIcons
@@ -199,13 +209,13 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                                 />
                                                 <Text style={styles.aiSummaryHeaderText}>AI Summary</Text>
                                             </View>
-                                            {note.aiSummary.map((bullet, idx) => (
+                                            {activeNote.aiSummary.map((bullet, idx) => (
                                                 <View key={idx} style={styles.aiSummaryBulletRow}>
                                                     <Text style={styles.aiSummaryBulletDot}>•</Text>
                                                     <RichText style={styles.aiSummaryBulletText} text={bullet} />
                                                 </View>
                                             ))}
-                                            {note.aiModelUsed && (
+                                            {activeNote.aiModelUsed && (
                                                 <Text
                                                     style={{
                                                         textAlign: 'right',
@@ -214,15 +224,41 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                                         marginTop: 8,
                                                     }}
                                                 >
-                                                    {note.aiModelUsed}
+                                                    {activeNote.aiModelUsed}
                                                 </Text>
                                             )}
                                         </View>
                                     )}
 
-                                    {!note.aiTitle &&
-                                        (!note.aiSummary || note.aiSummary.length === 0) &&
-                                        !isNoteActive(note.id) && (
+                                    {noteFailure && !isNoteActive(activeNote.id) && (
+                                        <View style={styles.noteFailureBox}>
+                                            <View style={styles.noteFailureHeader}>
+                                                <MaterialCommunityIcons
+                                                    name="alert-circle-outline"
+                                                    size={16}
+                                                    color={theme.colors.danger}
+                                                />
+                                                <Text style={styles.noteFailureTitle}>AI processing failed</Text>
+                                            </View>
+                                            <Text style={styles.noteFailureMsg}>{noteFailure.message}</Text>
+                                            <AnimatedScaleButton
+                                                style={styles.noteFailureRetryBtn}
+                                                onPress={() => retryNote(activeNote.id)}
+                                            >
+                                                <MaterialCommunityIcons
+                                                    name="refresh"
+                                                    size={14}
+                                                    color={theme.colors.primaryAction}
+                                                />
+                                                <Text style={styles.noteFailureRetryText}>Retry</Text>
+                                            </AnimatedScaleButton>
+                                        </View>
+                                    )}
+
+                                    {!activeNote.aiTitle &&
+                                        (!activeNote.aiSummary || activeNote.aiSummary.length === 0) &&
+                                        !isNoteActive(activeNote.id) &&
+                                        !noteFailure && (
                                             <AnimatedScaleButton
                                                 style={styles.regenerateBtn}
                                                 onPress={handleRegenerateAi}
@@ -236,7 +272,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                             </AnimatedScaleButton>
                                         )}
 
-                                    {isNoteActive(note.id) && (
+                                    {isNoteActive(activeNote.id) && (
                                         <View
                                             style={[styles.regenerateBtn, { borderColor: theme.colors.dangerBorder }]}
                                         >
@@ -256,7 +292,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                         ]}
                                         selectable={true}
                                     >
-                                        {note.text}
+                                        {activeNote.text}
                                     </Text>
                                     <View style={{ height: 100 }} />
                                 </ScrollView>
@@ -275,13 +311,14 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                                             />
                                             <Text style={styles.premiumNoteDeleteText}>Delete Entry</Text>
                                         </AnimatedScaleButton>
-                                        {(note.aiTitle || (note.aiSummary && note.aiSummary.length > 0)) && (
+                                        {(activeNote.aiTitle ||
+                                            (activeNote.aiSummary && activeNote.aiSummary.length > 0)) && (
                                             <AnimatedScaleButton
                                                 style={styles.regenerateSmallBtn}
                                                 onPress={handleRegenerateAi}
-                                                disabled={isNoteActive(note.id)}
+                                                disabled={isNoteActive(activeNote.id)}
                                             >
-                                                {isNoteActive(note.id) ? (
+                                                {isNoteActive(activeNote.id) ? (
                                                     <ActivityIndicator size="small" color={theme.colors.textMuted} />
                                                 ) : (
                                                     <MaterialCommunityIcons
@@ -310,7 +347,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                     cancelIcon="close"
                     destructive
                     onConfirm={() => {
-                        if (note) onDelete(note.id);
+                        if (activeNote) onDelete(activeNote.id);
                         setConfirmDelete(false);
                     }}
                     onCancel={() => setConfirmDelete(false)}
@@ -479,5 +516,47 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.glassSurface,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    noteFailureBox: {
+        backgroundColor: theme.colors.dangerFill,
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: theme.colors.dangerBorderStrong,
+        marginBottom: 24,
+    },
+    noteFailureHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6,
+    },
+    noteFailureTitle: {
+        color: theme.colors.danger,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    noteFailureMsg: {
+        color: theme.colors.danger,
+        fontSize: 12,
+        lineHeight: 18,
+        marginBottom: 12,
+    },
+    noteFailureRetryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        alignSelf: 'flex-start',
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+        backgroundColor: theme.colors.glassSurfaceLow,
+        borderWidth: 1,
+        borderColor: theme.colors.glassBorder,
+    },
+    noteFailureRetryText: {
+        color: theme.colors.primaryAction,
+        fontSize: 13,
+        fontWeight: '700',
     },
 });
