@@ -172,10 +172,18 @@ jest.mock('react-native-compressor', () => ({
 }));
 
 // expo-file-system mock
-jest.mock('expo-file-system', () => ({
-    getInfoAsync: jest.fn(() => Promise.resolve({ size: 5000000 })),
+const mockFileSystem = {
+    getInfoAsync: jest.fn(() => Promise.resolve({ exists: false, size: 5000000 })),
     deleteAsync: jest.fn(() => Promise.resolve()),
-}));
+    readAsStringAsync: jest.fn(() => Promise.resolve('')),
+    writeAsStringAsync: jest.fn(() => Promise.resolve()),
+    cacheDirectory: 'file:///mock-cache/',
+    EncodingType: {
+        UTF8: 'utf8',
+    },
+};
+jest.mock('expo-file-system', () => mockFileSystem);
+jest.mock('expo-file-system/legacy', () => mockFileSystem);
 
 // Stateful expo-video mock — tracks play/pause, emits events, simulates time
 jest.mock('expo-video', () => {

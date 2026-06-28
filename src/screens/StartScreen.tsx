@@ -355,7 +355,11 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                     <View style={{ width: '100%', height: 80, alignItems: 'center' }}>
                         {sessionMode === 'journal' && (
                             <Animated.View
-                                entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)}
+                                // Snappy entry transition matching theme settings
+                                entering={FadeInUp.springify()
+                                    .damping(theme.animation.springSnappy.damping)
+                                    .stiffness(theme.animation.springSnappy.stiffness)
+                                    .mass(theme.animation.springSnappy.mass)}
                                 exiting={FadeOutUp.duration(200)}
                                 style={{ position: 'absolute', alignItems: 'center', width: '100%' }}
                             >
@@ -387,7 +391,11 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                         )}
                         {sessionMode === 'circles' && (
                             <Animated.View
-                                entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)}
+                                // Snappy entry transition matching theme settings
+                                entering={FadeInUp.springify()
+                                    .damping(theme.animation.springSnappy.damping)
+                                    .stiffness(theme.animation.springSnappy.stiffness)
+                                    .mass(theme.animation.springSnappy.mass)}
                                 exiting={FadeOutUp.duration(200)}
                                 style={{ position: 'absolute', alignItems: 'center', width: '100%' }}
                             >
@@ -431,7 +439,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                         )}
                         {sessionMode === 'checkin' && (
                             <Animated.View
-                                entering={FadeIn.duration(400)}
+                                // Faster fade-in to align with snappy transitions
+                                entering={FadeIn.duration(200)}
                                 exiting={FadeOutUp.duration(200)}
                                 style={{ position: 'absolute', alignItems: 'center', width: '100%' }}
                             >
@@ -458,7 +467,11 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                         )}
                         {sessionMode === 'vlog' && (
                             <Animated.View
-                                entering={FadeInUp.springify().damping(14).mass(1).stiffness(120)}
+                                // Snappy entry transition matching theme settings
+                                entering={FadeInUp.springify()
+                                    .damping(theme.animation.springSnappy.damping)
+                                    .stiffness(theme.animation.springSnappy.stiffness)
+                                    .mass(theme.animation.springSnappy.mass)}
                                 exiting={FadeOutUp.duration(200)}
                                 style={{ position: 'absolute', alignItems: 'center', width: '100%' }}
                             >

@@ -18,9 +18,16 @@ import { logger } from '@/lib/logger';
  * All flubber math + sanitization runs ONCE in a burst before animation starts,
  * then each frame is just an array lookup + setNativeProps (near-zero JS cost).
  *
- * 24 frames over 400ms ≈ 60fps perceived smoothness.
+ * Reduced from 24 to 12 frames to speed up the morphing animation so it finishes
+ * in ~200ms (at 60fps) for a much faster, snappier feel.
  */
-const FRAME_COUNT = 24;
+const FRAME_COUNT = 12;
+
+/**
+ * Maximum scale factor for the entry/finish bounce.
+ * Tamed to a subtle, premium range per animations.md guidelines (1.03x - 1.05x).
+ */
+const MAX_BOUNCE_SCALE = 1.04;
 
 /**
  * Max segment length for flubber's polygon approximation.
@@ -136,7 +143,7 @@ function sanitizePath(pathStr: string): string {
 /** Cache for pre-computed shape transitions between clean states (e.g. "journal_to_circles") */
 const MORPH_CACHE = new Map<string, string[]>();
 
-/** Compile-time pre-computed scale bounce factors matching the 24 animation frames */
+/** Compile-time pre-computed scale bounce factors matching the animation frames */
 const BOUNCE_SCALES = (() => {
     const scales = new Array(FRAME_COUNT + 1);
     for (let i = 0; i <= FRAME_COUNT; i++) {
@@ -144,7 +151,7 @@ const BOUNCE_SCALES = (() => {
         let scale = 1.0;
         if (progress > 0.4 && progress < 1) {
             const x = (progress - 0.4) / 0.6; // x runs 0->1 over the last 60% of morph
-            const bounceAmt = Math.sin(x * Math.PI * 2.2) * Math.pow(1 - x, 1.2) * 0.15;
+            const bounceAmt = Math.sin(x * Math.PI * 2.2) * Math.pow(1 - x, 1.2) * (MAX_BOUNCE_SCALE - 1.0);
             scale = 1.0 + bounceAmt;
         }
         scales[i] = scale;
@@ -166,7 +173,7 @@ const BOUNCE_SCALES = (() => {
  * The cache key includes a version suffix so any future changes to PATHS,
  * FRAME_COUNT, MAX_SEGMENT_LENGTH, or easing automatically invalidate it.
  */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2'; // Bumped version to invalidate old 24-frame caches
 const CACHE_FILE = `${FileSystem.cacheDirectory}morph_frames_${CACHE_VERSION}.json`;
 
 /**
@@ -188,8 +195,8 @@ function computeAllTransitions(): Record<string, string[]> {
                 const frames = new Array(FRAME_COUNT + 1);
                 for (let i = 0; i <= FRAME_COUNT; i++) {
                     const linearT = i / FRAME_COUNT;
-                    const easedT =
-                        linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
+                    // Easing: cubic ease-out for instant acceleration and snappy settle
+                    const easedT = 1 - Math.pow(1 - linearT, 3);
                     frames[i] = sanitizePath(morphFn(easedT));
                 }
                 result[cacheKey] = frames;
@@ -448,10 +455,9 @@ export const LiquidMorphIcon = React.memo(function LiquidMorphIcon({
                     const morphFn = interpolate(startPath, endPath, { maxSegmentLength: MAX_SEGMENT_LENGTH });
                     frames = new Array(FRAME_COUNT + 1);
                     for (let i = 0; i <= FRAME_COUNT; i++) {
-                        // Easing: cubic ease-in-out for premium feel
+                        // Easing: cubic ease-out for instant acceleration and snappy settle
                         const linearT = i / FRAME_COUNT;
-                        const easedT =
-                            linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
+                        const easedT = 1 - Math.pow(1 - linearT, 3);
                         frames[i] = sanitizePath(morphFn(easedT));
                     }
                     if (isCleanStart) {
