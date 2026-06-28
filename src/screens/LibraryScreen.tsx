@@ -18,6 +18,8 @@ const ANIM_WIDTHS = {
     LOWERCASE_L: 4.5,
     UPPERCASE_L: 7.2,
 };
+
+const EMPTY_NOTES_ARRAY: SavedNote[] = [];
 import { AnimatedLockIcon } from '@/components/ui/AnimatedLockIcon';
 import { EmptyLibraryState } from '@/components/features/library/EmptyLibraryState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -179,6 +181,7 @@ const CirclesTab = React.memo(
         selectedCircleId,
         onToggleCircle,
         onNotePress,
+        activeFont,
     }: {
         visible: boolean;
         onGoToStart: () => void;
@@ -190,13 +193,16 @@ const CirclesTab = React.memo(
         selectedCircleId: string | null;
         onToggleCircle: (id: string | null) => void;
         onNotePress: (note: SavedNote) => void;
+        activeFont: string;
     }) => {
         const { persons, deletePerson, updatePerson } = usePersons();
         const { savedNotes } = useNotes();
-        const { isNoteActive, isNoteQueued } = useAiQueueContext();
+        const { isNoteActive, isNoteQueued, queueState } = useAiQueueContext();
 
         const [profilePerson, setProfilePerson] = useState<Person | null>(null);
         const [personToDelete, setPersonToDelete] = useState<string | null>(null);
+
+        const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
 
         const circlesListContentStyle = useMemo(
             () => ({ paddingBottom: 120, paddingTop: 16, paddingHorizontal: 20 }),
@@ -208,8 +214,9 @@ const CirclesTab = React.memo(
                 selectedCircleId,
                 notesLength: savedNotes.length,
                 isUnlocked: isNotesUnlocked,
+                activeNoteIds,
             }),
-            [selectedCircleId, savedNotes.length, isNotesUnlocked],
+            [selectedCircleId, savedNotes.length, isNotesUnlocked, activeNoteIds],
         );
 
         const notesByPerson = useMemo(() => {
@@ -232,23 +239,38 @@ const CirclesTab = React.memo(
             });
         }, [persons, notesByPerson]);
 
+        const handleProfilePress = useCallback((p: Person) => {
+            setProfilePerson(p);
+        }, []);
+
         const renderPersonItem = useCallback(
             ({ item: p }: { item: Person }) => (
                 <View style={styles.personItemWrapper}>
                     <ExpandablePersonCard
                         person={p}
-                        notes={notesByPerson.get(p.id) || []}
+                        notes={notesByPerson.get(p.id) || EMPTY_NOTES_ARRAY}
                         isExpanded={selectedCircleId === p.id}
                         isLocked={!isNotesUnlocked}
-                        onToggle={() => onToggleCircle(selectedCircleId === p.id ? null : p.id)}
+                        onToggle={onToggleCircle}
                         onNotePress={onNotePress}
-                        onProfilePress={() => setProfilePerson(p)}
+                        onProfilePress={handleProfilePress}
                         isNoteActive={isNoteActive}
                         isNoteQueued={isNoteQueued}
+                        activeFont={activeFont}
                     />
                 </View>
             ),
-            [selectedCircleId, isNotesUnlocked, isNoteActive, isNoteQueued, notesByPerson, onToggleCircle, onNotePress],
+            [
+                selectedCircleId,
+                isNotesUnlocked,
+                isNoteActive,
+                isNoteQueued,
+                notesByPerson,
+                onToggleCircle,
+                onNotePress,
+                handleProfilePress,
+                activeFont,
+            ],
         );
 
         const handleDeleteFromProfile = useCallback((id: string) => {
@@ -562,6 +584,10 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
     const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
     const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
 
+    const handleToggleCircle = useCallback((id: string | null) => {
+        setSelectedCircleId((prev) => (prev === id ? null : id));
+    }, []);
+
     const { savedNotes, deleteNote } = useNotes();
     const { persons } = usePersons();
     const { getPillarVersion, pillars } = usePillars();
@@ -826,8 +852,9 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
                     unlockProfile={security.unlockProfile}
                     isProfileUnlocked={security.isProfileUnlocked}
                     selectedCircleId={selectedCircleId}
-                    onToggleCircle={setSelectedCircleId}
+                    onToggleCircle={handleToggleCircle}
                     onNotePress={setViewNoteModal}
+                    activeFont={activeFont}
                 />
                 <VlogsTab
                     visible={libraryTab === 'vlogs'}

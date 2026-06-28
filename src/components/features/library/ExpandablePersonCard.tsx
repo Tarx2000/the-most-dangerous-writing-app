@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
-import { SavedNote } from '@/types';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import { SavedNote, Person } from '@/types';
 import { NoteCard } from '@/components/features/library/NoteCard';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
@@ -15,6 +14,13 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 const EXPANDED_MAX_HEIGHT = 320;
 
 /**
+ * CONFIGURABLE: Maximum number of notes to render during the opening animation.
+ * Rendering a small subset during animation avoids layout thrashing,
+ * after which the remaining notes are loaded once the animation is finished.
+ */
+const INITIAL_PREVIEW_COUNT = 3;
+
+/**
  * ExpandablePersonCard - An accordion-style person card for the Circles tab.
  *
  * When collapsed: shows person name, avatar, entry count, word count,
@@ -25,33 +31,64 @@ const EXPANDED_MAX_HEIGHT = 320;
  * Only one card should be expanded at a time (controlled by parent).
  */
 interface Props {
-    person: { id: string; name: string; relationship?: string; nickname?: string };
+    person: Person;
     notes: SavedNote[];
     isExpanded: boolean;
     isLocked: boolean;
-    onToggle: () => void;
+    onToggle: (personId: string) => void;
     onNotePress: (note: SavedNote) => void;
     /** Open person profile modal */
-    onProfilePress: () => void;
+    onProfilePress: (person: Person) => void;
     isNoteActive?: (id: string) => boolean;
     isNoteQueued?: (id: string) => boolean;
+    activeFont?: string;
 }
 
 export const ExpandablePersonCard: React.FC<Props> = React.memo(
-    ({ person, notes, isExpanded, isLocked, onToggle, onNotePress, onProfilePress, isNoteActive, isNoteQueued }) => {
+    ({
+        person,
+        notes,
+        isExpanded,
+        isLocked,
+        onToggle,
+        onNotePress,
+        onProfilePress,
+        isNoteActive,
+        isNoteQueued,
+        activeFont,
+    }) => {
         const [shouldRenderContent, setShouldRenderContent] = useState(isExpanded);
+        const [isAnimationFinished, setIsAnimationFinished] = useState(isExpanded);
         const expandHeight = useSharedValue(isExpanded ? EXPANDED_MAX_HEIGHT : 0);
+
+        // Stabilize callbacks to prevent child re-renders
+        const handleToggle = React.useCallback(() => {
+            onToggle(person.id);
+        }, [person.id, onToggle]);
+
+        const handleProfilePress = React.useCallback(() => {
+            onProfilePress(person);
+        }, [person, onProfilePress]);
 
         useEffect(() => {
             if (isExpanded) {
                 setShouldRenderContent(true);
+            } else {
+                setIsAnimationFinished(false);
             }
-            expandHeight.value = withSpring(
+            expandHeight.value = withTiming(
                 isExpanded ? EXPANDED_MAX_HEIGHT : 0,
-                theme.animation.springDefault,
+                {
+                    duration: 250,
+                    easing: Easing.out(Easing.cubic),
+                },
                 (finished) => {
-                    if (finished && !isExpanded) {
-                        runOnJS(setShouldRenderContent)(false);
+                    if (finished) {
+                        if (!isExpanded) {
+                            runOnJS(setShouldRenderContent)(false);
+                        } else {
+                            runOnJS(setIsAnimationFinished)(true);
+                        }
                     }
                 },
             );
@@ -60,6 +97,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
         const animatedStyle = useAnimatedStyle(() => {
             return {
                 maxHeight: expandHeight.value,
+                opacity: expandHeight.value / EXPANDED_MAX_HEIGHT,
             };
         });
 
@@ -75,22 +113,24 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
             return [...notes].sort((a, b) => b.timestamp - a.timestamp);
         }, [notes]);
 
+        // Sliced notes list for progressive rendering (first 3 during animation, then all)
+        const renderedNotes = useMemo(() => {
+            if (!isAnimationFinished && sortedNotes.length > INITIAL_PREVIEW_COUNT) {
+                return sortedNotes.slice(0, INITIAL_PREVIEW_COUNT);
+            }
+            return sortedNotes;
+        }, [sortedNotes, isAnimationFinished]);
+
         return (
             <View style={styles.cardContainer}>
-                {/* Subtle gradient overlay for depth */}
-                <LinearGradient
-                    colors={[theme.colors.glassSurfaceMinimal, 'transparent']}
-                    style={StyleSheet.absoluteFillObject}
-                />
-
                 {/* Header row — tap to expand/collapse */}
-                <AnimatedScaleButton style={styles.headerRow} onPress={onToggle}>
+                <AnimatedScaleButton style={styles.headerRow} onPress={handleToggle}>
                     {/* Avatar — tap to open profile (separate touchable to prevent toggle) */}
                     <AnimatedScaleButton
                         style={commonStyles.personAvatar}
                         onPress={(e) => {
                             e?.stopPropagation?.();
-                            onProfilePress();
+                            handleProfilePress();
                         }}
                     >
                         <Text style={commonStyles.personAvatarText}>{person.name.charAt(0)}</Text>
@@ -131,7 +171,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
                                 nestedScrollEnabled
                                 showsVerticalScrollIndicator={false}
                             >
-                                {sortedNotes.map((note: SavedNote) => (
+                                {renderedNotes.map((note: SavedNote) => (
                                     <NoteCard
                                         key={note.id}
                                         note={note}
@@ -139,6 +179,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
                                         isLocked={isLocked}
                                         isProcessing={isNoteActive ? isNoteActive(note.id) : undefined}
                                         isQueued={isNoteQueued ? isNoteQueued(note.id) : undefined}
+                                        activeFont={activeFont}
                                     />
                                 ))}
                                 {/* Bottom padding to avoid last card being cut off */}
@@ -154,7 +195,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
 const styles = StyleSheet.create({
     /** Card wrapper — glassmorphism container */
     cardContainer: {
-        backgroundColor: theme.colors.glassBackground,
+        backgroundColor: theme.colors.surfaceCard,
         borderRadius: 16,
         marginBottom: 10,
         borderWidth: 1,

@@ -66,7 +66,7 @@ export const PillarDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     /* ── DOMAIN STATE & HOOKS ────────────────────────────────────────────── */
     const { pillars, getPillarLogs, savePillar, deletePillar, getPillarVersion } = usePillars();
     const { savedNotes, deleteNote } = useNotes();
-    const { isNoteActive, enqueueNote } = useAiQueueContext();
+    const { isNoteActive, enqueueNote, queueState } = useAiQueueContext();
 
     // Fetch the target pillar from context
     const pillar = useMemo(() => pillars.find((p) => p.id === pillarId), [pillars, pillarId]);
@@ -730,6 +730,7 @@ export const PillarDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                     ListEmptyComponent={renderListEmpty}
                     contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
                     showsVerticalScrollIndicator={false}
+                    extraData={queueState}
                 />
 
                 {/* Note details pop-up viewer */}

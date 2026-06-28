@@ -17,15 +17,13 @@ import { StreakPopup } from '@/components/features/writing/StreakPopup';
 import { CalendarView } from '@/components/features/library/CalendarView';
 import { BaseModal } from '@/components/ui/BaseModal';
 import { CustomSlider } from '@/components/features/alignment/CustomSlider';
-import { APP_VERSION, CONFIG } from '@/config';
+import { CONFIG } from '@/config';
 import { getFeatureFlags } from '@/lib/featureFlags';
-import { VERSION_HISTORY } from '@/config/changelog';
 import { commonStyles } from '@/styles/commonStyles';
 import { RootStackParamList } from '@/types/navigation.types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Route } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
 import { BenchmarkModal } from '@/components/features/dev/BenchmarkModal';
 import { SettingsModal } from '@/components/features/settings/SettingsModal';
 import { CirclePickerSheet } from '@/components/features/circles/CirclePickerSheet';
@@ -60,7 +58,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
 
     const [showSettings, setShowSettings] = useState(false);
     const [showCalendar, setShowCalendar] = useState(false);
-    const [showVersionHistory, setShowVersionHistory] = useState(false);
     const [showPersonSelect, setShowPersonSelect] = useState(false);
     const [showStreakPopup, setShowStreakPopup] = useState(false);
     const [showBenchmarkModal, setShowBenchmarkModal] = useState(false);
@@ -69,7 +66,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
     /** Toast message for dev mode unlock feedback */
     const [devToast, setDevToast] = useState<string | null>(null);
 
-    /** Ref for the 5-second long-press timer on the settings button */
+    /** Ref for the 4-second long-press timer on the settings button */
     const settingsLongPressTimer = useRef<NodeJS.Timeout | null>(null);
 
     // AI Batch UI State (processing is handled by the queue)
@@ -95,7 +92,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
     /** Compression Queue — single instance via CompressionQueueProvider */
     const { compressionState, cancelJob, retryJob, clearPending } = useCompressionQueueContext();
 
-    const isModalOpen = showSettings || showCalendar || showVersionHistory || showPersonSelect || showStreakPopup;
+    const isModalOpen = showSettings || showCalendar || showPersonSelect || showStreakPopup;
     const isModalOpenRef = useRef(isModalOpen);
     isModalOpenRef.current = isModalOpen;
 
@@ -243,7 +240,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                         <AnimatedScaleButton
                             onPress={() => setShowSettings(true)}
                             onPressIn={() => {
-                                // Start 5s timer to unlock dev tools
+                                // Start 4s timer to unlock dev tools
                                 settingsLongPressTimer.current = setTimeout(() => {
                                     const newState = !devModeUnlocked;
                                     setDevModeUnlocked(newState);
@@ -525,9 +522,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                         </Text>
                     </AnimatedScaleButton>
                 </View>
-                <AnimatedScaleButton style={{ marginTop: 8 }} onPress={() => setShowVersionHistory(true)}>
-                    <Text style={{ color: theme.colors.grey, fontSize: 10, fontWeight: 'bold' }}>v{APP_VERSION}</Text>
-                </AnimatedScaleButton>
             </View>
 
             {/* Bottom spacer for the floating LiquidGlassNav pill */}
@@ -540,40 +534,6 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                 setHomeScrollEnabled={setHomeScrollEnabled}
             >
                 <CalendarView currentStreak={streak.currentStreak} streakHistory={streak.streakHistory} />
-            </BaseModal>
-
-            <BaseModal
-                visible={showVersionHistory}
-                onClose={() => setShowVersionHistory(false)}
-                title="Version History"
-                setHomeScrollEnabled={setHomeScrollEnabled}
-            >
-                <View style={{ height: 400, width: '100%' }}>
-                    <FlashList
-                        data={VERSION_HISTORY}
-                        keyExtractor={(v) => v.version}
-                        estimatedItemSize={80}
-                        renderItem={({ item: v }) => (
-                            <View
-                                style={[
-                                    commonStyles.cardsRow,
-                                    { marginTop: 20 },
-                                    preferences.debugLayout && {
-                                        borderWidth: 1,
-                                        borderColor: theme.colors.dangerBorder,
-                                    },
-                                ]}
-                            >
-                                <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>
-                                {v.changes.map((c, j) => (
-                                    <Text key={j} style={commonStyles.versionHistoryItem}>
-                                        • {c}
-                                    </Text>
-                                ))}
-                            </View>
-                        )}
-                    />
-                </View>
             </BaseModal>
 
             <SettingsModal

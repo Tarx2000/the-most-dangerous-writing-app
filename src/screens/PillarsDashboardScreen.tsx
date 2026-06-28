@@ -40,6 +40,7 @@ import { theme } from '@/styles/theme';
 import { vibrate } from '@/lib/haptics';
 import { BaseModal } from '@/components/ui/BaseModal';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
+import { PillarsSettingsPanel } from '@/components/features/settings/PillarsSettingsPanel';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PillarsDashboard'>;
 
@@ -303,6 +304,7 @@ export const PillarsDashboardScreen: React.FC<Props> = ({ navigation }) => {
     // Local triggers and states
     const [refreshKey, setRefreshKey] = useState(0);
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
     const [isInactiveExpanded, setIsInactiveExpanded] = useState(false);
 
     // Section grouping freeze states
@@ -444,15 +446,27 @@ export const PillarsDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
                 <Text style={styles.title}>Masteries</Text>
 
-                <AnimatedScaleButton
-                    onPress={() => {
-                        vibrate(10);
-                        setIsModalVisible(true);
-                    }}
-                    style={styles.addBtn}
-                >
-                    <MaterialCommunityIcons name="plus" size={24} color={theme.colors.textPrimary} />
-                </AnimatedScaleButton>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <AnimatedScaleButton
+                        onPress={() => {
+                            vibrate(10);
+                            setIsSettingsModalVisible(true);
+                        }}
+                        style={styles.addBtn}
+                    >
+                        <MaterialCommunityIcons name="cog-outline" size={24} color={theme.colors.textPrimary} />
+                    </AnimatedScaleButton>
+
+                    <AnimatedScaleButton
+                        onPress={() => {
+                            vibrate(10);
+                            setIsModalVisible(true);
+                        }}
+                        style={styles.addBtn}
+                    >
+                        <MaterialCommunityIcons name="plus" size={24} color={theme.colors.textPrimary} />
+                    </AnimatedScaleButton>
+                </View>
             </View>
 
             {/* Scrollable list of active tracking cards */}
@@ -624,6 +638,21 @@ export const PillarsDashboardScreen: React.FC<Props> = ({ navigation }) => {
                     <AnimatedScaleButton style={styles.submitButton} onPress={handleCreatePillar}>
                         <Text style={styles.submitButtonText}>CREATE MASTERY</Text>
                     </AnimatedScaleButton>
+                </ScrollView>
+            </BaseModal>
+
+            {/* Masteries Settings Modal */}
+            <BaseModal
+                visible={isSettingsModalVisible}
+                onClose={() => {
+                    setIsSettingsModalVisible(false);
+                    setHasInitializedIds(false); // Force groups to re-partition from updated pillars context
+                }}
+                title="Mastery Settings"
+                height={Platform.OS === 'ios' ? 720 : 680}
+            >
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 50 }}>
+                    <PillarsSettingsPanel />
                 </ScrollView>
             </BaseModal>
         </View>

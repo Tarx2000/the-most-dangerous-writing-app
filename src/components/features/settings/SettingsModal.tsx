@@ -7,9 +7,9 @@ import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel';
 import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToolsPanel';
 import { CompressionStatusBar } from '@/components/features/settings/CompressionStatusBar';
-import { PillarsSettingsPanel } from '@/components/features/settings/PillarsSettingsPanel';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { CONFIG } from '@/config';
+import { CONFIG, APP_VERSION } from '@/config';
+import { VERSION_HISTORY } from '@/config/changelog';
 import { AI_PROVIDERS } from '@/config/ai';
 import { fetchAvailableModels } from '@/lib/aiService';
 import { commonStyles } from '@/styles/commonStyles';
@@ -110,6 +110,7 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
     const [showVlogQualityModal, setShowVlogQualityModal] = useState(false);
     const [showCompressionModal, setShowCompressionModal] = useState(false);
     const [showProviderModal, setShowProviderModal] = useState(false);
+    const [showVersionHistory, setShowVersionHistory] = useState(false);
 
     // --- Live model fetching state ---
     const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -205,6 +206,26 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                     showsVerticalScrollIndicator={false}
                     style={preferences.debugLayout && { borderWidth: 1, borderColor: theme.colors.dangerBorderMedium }}
                 >
+                    {/* Version Info Header */}
+                    <Pressable
+                        style={{
+                            alignSelf: 'center',
+                            marginTop: 5,
+                            marginBottom: 20,
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 12,
+                            backgroundColor: theme.colors.glassSurface,
+                        }}
+                        onPress={() => {
+                            vibrate(10);
+                            setShowVersionHistory(true);
+                        }}
+                    >
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 11, fontWeight: 'bold' }}>
+                            Version {APP_VERSION}
+                        </Text>
+                    </Pressable>
                     {/* Appearance & Typography Card */}
                     <View
                         style={{
@@ -725,8 +746,6 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
 
                     <CompressionStatusBar compressionState={compressionState} />
 
-                    <PillarsSettingsPanel />
-
                     <AiSettingsPanel
                         notes={notes}
                         aiConfig={aiConfig}
@@ -869,6 +888,34 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                 }}
                 onClose={() => setShowCompressionModal(false)}
             />
+            <BaseModal
+                visible={showVersionHistory}
+                onClose={() => setShowVersionHistory(false)}
+                title="Version History"
+            >
+                <ScrollView style={{ height: 400, width: '100%' }} showsVerticalScrollIndicator={false}>
+                    {VERSION_HISTORY.map((v, i) => (
+                        <View
+                            key={v.version}
+                            style={[
+                                commonStyles.cardsRow,
+                                { marginTop: i === 0 ? 0 : 20 },
+                                preferences.debugLayout && {
+                                    borderWidth: 1,
+                                    borderColor: theme.colors.dangerBorder,
+                                },
+                            ]}
+                        >
+                            <Text style={commonStyles.versionHistoryHeader}>{v.version}</Text>
+                            {v.changes.map((c, j) => (
+                                <Text key={j} style={commonStyles.versionHistoryItem}>
+                                    • {c}
+                                </Text>
+                            ))}
+                        </View>
+                    ))}
+                </ScrollView>
+            </BaseModal>
         </>
     );
 });

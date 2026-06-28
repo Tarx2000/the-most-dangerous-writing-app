@@ -33,13 +33,26 @@ interface Props {
     onLongPress?: () => void;
     isSelected?: boolean;
     onVersionPress?: (note: SavedNote) => void;
+    activeFont?: string;
 }
 
 export const NoteCard: React.FC<Props> = React.memo(
-    ({ note, onPress, onLongPress, personName, isLocked, isProcessing, isQueued, isSelected, onVersionPress }) => {
+    ({
+        note,
+        onPress,
+        onLongPress,
+        personName,
+        isLocked,
+        isProcessing,
+        isQueued,
+        isSelected,
+        onVersionPress,
+        activeFont: activeFontProp,
+    }) => {
         const hasAi = !!note.aiTitle;
         const { fontIndex } = usePreferences();
-        const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+        const activeFont =
+            activeFontProp || CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
 
         // Skeleton calculations removed per user request (overlay covers whole card)
 
@@ -62,14 +75,24 @@ export const NoteCard: React.FC<Props> = React.memo(
             };
         }, [isProcessing, pulse]);
 
-        const overlayStyle = useAnimatedStyle(() => {
+        const cardAnimatedStyle = useAnimatedStyle(() => {
+            if (isProcessing) {
+                return {
+                    borderColor: interpolateColor(
+                        pulse.value,
+                        [0, 1],
+                        [theme.colors.dangerBorder, theme.colors.dangerOverlayLight],
+                    ),
+                    backgroundColor: interpolateColor(
+                        pulse.value,
+                        [0, 1],
+                        [theme.colors.cardBackground, theme.colors.dangerSubtle],
+                    ),
+                };
+            }
             return {
-                borderColor: interpolateColor(
-                    pulse.value,
-                    [0, 1],
-                    [theme.colors.dangerTint, theme.colors.dangerOverlayLight],
-                ),
-                backgroundColor: interpolateColor(pulse.value, [0, 1], ['transparent', theme.colors.dangerSubtle]),
+                borderColor: isSelected ? theme.colors.primaryAction : theme.colors.glassBorder,
+                backgroundColor: isSelected ? theme.colors.glassSurface : theme.colors.cardBackground,
             };
         });
 
@@ -79,8 +102,14 @@ export const NoteCard: React.FC<Props> = React.memo(
 
         // Shared value for tracking lock transition progress (1 = fully locked, 0 = fully unlocked)
         const lockProgress = useSharedValue(isLocked ? 1 : 0);
+        const isMountedRef = React.useRef(false);
 
         useEffect(() => {
+            if (!isMountedRef.current) {
+                isMountedRef.current = true;
+                lockProgress.value = isLocked ? 1 : 0;
+                return;
+            }
             lockProgress.value = withTiming(isLocked ? 1 : 0, {
                 duration: 350,
                 easing: Easing.out(Easing.cubic),
@@ -98,14 +127,7 @@ export const NoteCard: React.FC<Props> = React.memo(
 
         return (
             <AnimatedPressable
-                style={[
-                    commonStyles.noteCard,
-                    isSelected && {
-                        borderColor: theme.colors.primaryAction,
-                        backgroundColor: theme.colors.glassSurface,
-                    },
-                    pressStyle,
-                ]}
+                style={[commonStyles.noteCard, cardAnimatedStyle, pressStyle]}
                 onPress={() => !isLocked && onPress(note)}
                 onLongPress={onLongPress}
                 onPressIn={() => {
@@ -116,11 +138,6 @@ export const NoteCard: React.FC<Props> = React.memo(
                 }}
                 delayLongPress={400}
             >
-                {/* Animated processing overlay — sits behind content */}
-                {isProcessing && (
-                    <Animated.View style={[StyleSheet.absoluteFillObject, styles.processingOverlay, overlayStyle]} />
-                )}
-
                 <View style={commonStyles.noteCardHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                         <Text style={commonStyles.noteCardDate}>{note.dateStr}</Text>
@@ -246,10 +263,6 @@ export const NoteCard: React.FC<Props> = React.memo(
 /* ━━ Styles ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 const styles = StyleSheet.create({
-    processingOverlay: {
-        borderRadius: 16,
-        borderWidth: 1,
-    },
     processingRow: {
         flexDirection: 'row',
         alignItems: 'center',

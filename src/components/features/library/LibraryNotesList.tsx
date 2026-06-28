@@ -59,8 +59,14 @@ const ReflectionCard = React.memo(
 
         // Shared value for tracking lock transition progress (1 = locked, 0 = unlocked)
         const lockProgress = useSharedValue(!isUnlocked ? 1 : 0);
+        const isMountedRef = React.useRef(false);
 
         useEffect(() => {
+            if (!isMountedRef.current) {
+                isMountedRef.current = true;
+                lockProgress.value = !isUnlocked ? 1 : 0;
+                return;
+            }
             lockProgress.value = withTiming(!isUnlocked ? 1 : 0, {
                 duration: 350,
                 easing: Easing.out(Easing.cubic),
@@ -133,6 +139,7 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
         libraryTab,
         personMap,
         isUnlocked,
+        activeNoteIds,
         isNoteActive,
         isNoteQueued,
         activeFont,
@@ -175,10 +182,11 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
                         isProcessing={isNoteActive(note.id)}
                         isQueued={isNoteQueued(note.id)}
                         onVersionPress={onVersionPress}
+                        activeFont={activeFont}
                     />
                 );
             },
-            [isUnlocked, isNoteActive, isNoteQueued, activeFont, onPressNote, personMap, onVersionPress],
+            [isUnlocked, isNoteActive, isNoteQueued, activeFont, onPressNote, personMap, onVersionPress, activeNoteIds],
         );
 
         const getItemLayout = useCallback(
@@ -249,6 +257,7 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
                     showsVerticalScrollIndicator={false}
                     renderItem={renderItem}
                     getItemLayout={getItemLayout}
+                    extraData={{ activeNoteIds, isUnlocked, activeFont, personMap }}
                 />
             </>
         );

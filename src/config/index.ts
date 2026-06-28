@@ -125,7 +125,7 @@ export const CONFIG = {
 
     /* ── Dev Mode ────────────────────────────────────────────────────── */
     /** Milliseconds to long-press the settings button to toggle dev mode */
-    DEV_MODE_LONG_PRESS_MS: 5_000,
+    DEV_MODE_LONG_PRESS_MS: 4_000,
     /** Milliseconds to show the dev mode toast notification */
     DEV_MODE_TOAST_DURATION_MS: 2_000,
 
