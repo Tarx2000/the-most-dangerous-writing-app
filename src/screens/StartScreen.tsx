@@ -30,6 +30,14 @@ import { CirclePickerSheet } from '@/components/features/circles/CirclePickerShe
 import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
 import type { AiLogEntry } from '@/types';
 
+/* -- LAYOUT CONFIGURATION -------------------------------------------------- */
+/** Spacer height to keep the start button and other content from being hidden behind the floating LiquidGlassNav */
+const BOTTOM_SPACER_HEIGHT = Platform.OS === 'ios' ? 115 : 100;
+/** Bottom margin for the start writing button container to separate it from the spacer */
+const START_BUTTON_MARGIN_BOTTOM = 15;
+/** Bottom margin for the difficulty selector to balance space above the start button */
+const DIFFICULTY_SELECTOR_MARGIN_BOTTOM = 25;
+
 type StartScreenParams = undefined | { streakIncreased?: boolean; newStreak?: number };
 
 type Props = {
@@ -525,7 +533,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
             </View>
 
             {/* Bottom spacer for the floating LiquidGlassNav pill */}
-            <View style={{ height: 90 }} />
+            <View style={styles.bottomSpacer} />
 
             {/* Modals */}
             <BaseModal
@@ -669,7 +677,7 @@ const styles = StyleSheet.create({
         width: '100%',
         alignItems: 'center',
         marginTop: 10,
-        marginBottom: 35,
+        marginBottom: DIFFICULTY_SELECTOR_MARGIN_BOTTOM,
     },
     diffScroll: {
         gap: 8,
@@ -698,7 +706,10 @@ const styles = StyleSheet.create({
     /** Container for the standalone Start Writing button */
     startBtnContainer: {
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: START_BUTTON_MARGIN_BOTTOM,
+    },
+    bottomSpacer: {
+        height: BOTTOM_SPACER_HEIGHT,
     },
     massiveStartBtn: {
         backgroundColor: theme.colors.textPrimary,
