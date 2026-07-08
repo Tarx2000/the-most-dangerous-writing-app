@@ -196,6 +196,10 @@ interface StorageActionsContextType {
     exportAsyncStorageToFile: () => Promise<{ filePath: string; fileSizeKB: number; keyCount: number }>;
     scanOrphanVlogs: () => Promise<{ orphans: { fileName: string; fileSizeBytes: number; modDate: string }[] }>;
     reattachOrphanVlogs: () => Promise<{ reattached: number; failed: number }>;
+    exportBackupZip: (
+        onProgress: (status: string) => void,
+    ) => Promise<{ success: boolean; filePath?: string; error?: string; vlogsExcluded?: boolean }>;
+    importBackupZip: (onProgress: (status: string) => void) => Promise<{ success: boolean; error?: string }>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -759,6 +763,18 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
                 const totalBytes = fresh.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
                 setTotalVlogStorageBytes(totalBytes);
                 totalVlogStorageBytesRef.current = totalBytes;
+                return result;
+            },
+            exportBackupZip: async (onProgress) => {
+                const { exportBackupZip: serviceExport } = await import('@/lib/backupService');
+                return serviceExport(onProgress);
+            },
+            importBackupZip: async (onProgress) => {
+                const { importBackupZip: serviceImport } = await import('@/lib/backupService');
+                const result = await serviceImport(onProgress);
+                if (result.success) {
+                    await loadAllData();
+                }
                 return result;
             },
         }),

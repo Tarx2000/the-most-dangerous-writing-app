@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, Platform, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { BaseModal } from '@/components/ui/BaseModal';
 import { ActionSheet } from '@/components/ui/ActionSheet';
@@ -8,6 +8,7 @@ import { AiSettingsPanel } from '@/components/features/settings/AiSettingsPanel'
 import { DeveloperToolsPanel } from '@/components/features/settings/DeveloperToolsPanel';
 import { CompressionStatusBar } from '@/components/features/settings/CompressionStatusBar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSecurity } from '@/lib/hooks/useSecurity';
 import { CONFIG, APP_VERSION } from '@/config';
 import { VERSION_HISTORY } from '@/config/changelog';
 import { AI_PROVIDERS } from '@/config/ai';
@@ -102,6 +103,75 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
     const personsHook = usePersons();
     const streak = useStreak();
     const storageActions = useStorageActions();
+    const { unlockNotes } = useSecurity();
+    const [backupStatus, setBackupStatus] = useState<string | null>(null);
+
+    const handleExportBackup = async () => {
+        vibrate(15);
+        const authenticated = await unlockNotes();
+        if (!authenticated) return;
+
+        setBackupStatus('Initializing export...');
+        try {
+            const result = await storageActions.exportBackupZip((status) => {
+                setBackupStatus(status);
+            });
+            setBackupStatus(null);
+            if (result.success) {
+                if (result.vlogsExcluded) {
+                    Alert.alert(
+                        'Warning',
+                        'Backup ZIP created successfully, but your video vlogs were excluded because they are too large for the Expo Go memory limits. To back up all videos, please use a native production build of the app.',
+                    );
+                } else {
+                    Alert.alert('Success', 'Backup ZIP file created and shared successfully.');
+                }
+            } else if (result.error !== 'Cancelled') {
+                Alert.alert('Backup Failed', `Error: ${result.error}`);
+            }
+        } catch (err) {
+            setBackupStatus(null);
+            Alert.alert('Backup Failed', `An unexpected error occurred: ${(err as Error)?.message || String(err)}`);
+        }
+    };
+
+    const handleImportBackup = async () => {
+        vibrate(15);
+        const authenticated = await unlockNotes();
+        if (!authenticated) return;
+
+        Alert.alert(
+            'Confirm Overwrite',
+            'WARNING: Importing a backup ZIP file will completely delete and overwrite all your current entries, circles, Masteries, settings, and vlogs.\n\nThis cannot be undone. Are you sure you want to proceed?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Wipe & Import',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setBackupStatus('Initializing import...');
+                        try {
+                            const result = await storageActions.importBackupZip((status) => {
+                                setBackupStatus(status);
+                            });
+                            setBackupStatus(null);
+                            if (result.success) {
+                                Alert.alert('Success', 'Data restored successfully. App state has been reloaded.');
+                            } else if (result.error !== 'Cancelled') {
+                                Alert.alert('Import Failed', `Error: ${result.error}`);
+                            }
+                        } catch (err) {
+                            setBackupStatus(null);
+                            Alert.alert(
+                                'Import Failed',
+                                `An unexpected error occurred: ${(err as Error)?.message || String(err)}`,
+                            );
+                        }
+                    },
+                },
+            ],
+        );
+    };
 
     const activeFont = CONFIG.FONTS[preferences.fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[preferences.sizeIndex]?.value || 18;
@@ -744,6 +814,94 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                         </AnimatedScaleButton>
                     </View>
 
+                    {/* Backup & Import Card */}
+                    <View
+                        style={{
+                            backgroundColor: theme.colors.glassBackground,
+                            borderRadius: theme.borderRadius.md,
+                            padding: 20,
+                            marginBottom: 20,
+                            borderWidth: 1,
+                            borderColor: theme.colors.glassBorder,
+                            marginTop: 10,
+                        }}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <MaterialCommunityIcons
+                                name="backup-restore"
+                                size={18}
+                                color={theme.colors.primaryAction}
+                            />
+                            <Text
+                                style={[
+                                    commonStyles.settingsLabel,
+                                    { marginTop: 0, marginBottom: 0, color: theme.colors.textPrimary, fontSize: 16 },
+                                ]}
+                            >
+                                Backup & Import
+                            </Text>
+                        </View>
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 16, lineHeight: 20 }}>
+                            Export your journal entries, settings, Masteries, and vlog videos to a ZIP backup, or
+                            restore them from a previous ZIP file.
+                        </Text>
+
+                        {/* Export Button */}
+                        <AnimatedScaleButton
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                backgroundColor: theme.colors.glassSurfaceMinimal,
+                                borderRadius: theme.borderRadius.sm,
+                                padding: 14,
+                                marginBottom: 10,
+                            }}
+                            onPress={handleExportBackup}
+                        >
+                            <MaterialCommunityIcons
+                                name="export"
+                                size={20}
+                                color={theme.colors.textSecondary}
+                                style={{ marginRight: 10 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>
+                                    Export Backup ZIP
+                                </Text>
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>
+                                    Bundle database, settings, and video vlogs
+                                </Text>
+                            </View>
+                        </AnimatedScaleButton>
+
+                        {/* Import Button */}
+                        <AnimatedScaleButton
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                backgroundColor: theme.colors.glassSurfaceMinimal,
+                                borderRadius: theme.borderRadius.sm,
+                                padding: 14,
+                            }}
+                            onPress={handleImportBackup}
+                        >
+                            <MaterialCommunityIcons
+                                name="import"
+                                size={20}
+                                color={theme.colors.textSecondary}
+                                style={{ marginRight: 10 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600' }}>
+                                    Import Backup ZIP
+                                </Text>
+                                <Text style={{ color: theme.colors.textMuted, fontSize: 11, marginTop: 2 }}>
+                                    Restore database, settings, and video vlogs
+                                </Text>
+                            </View>
+                        </AnimatedScaleButton>
+                    </View>
+
                     <CompressionStatusBar compressionState={compressionState} />
 
                     <AiSettingsPanel
@@ -789,6 +947,32 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                         onClearPendingCompressions={onClearPendingCompressions}
                     />
                 </ScrollView>
+                {backupStatus && (
+                    <View
+                        style={{
+                            ...StyleSheet.absoluteFillObject,
+                            backgroundColor: theme.colors.overlayMedium,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            zIndex: 10000,
+                        }}
+                    >
+                        <ActivityIndicator size="large" color={theme.colors.primaryAction} />
+                        <Text
+                            style={{
+                                color: theme.colors.textPrimary,
+                                fontSize: 15,
+                                fontWeight: 'bold',
+                                marginTop: 20,
+                                textAlign: 'center',
+                                paddingHorizontal: 30,
+                                letterSpacing: 0.5,
+                            }}
+                        >
+                            {backupStatus}
+                        </Text>
+                    </View>
+                )}
             </BaseModal>
 
             {/* Select AI Model — unified ActionSheet with live fetching + favorites */}

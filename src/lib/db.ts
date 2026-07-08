@@ -245,7 +245,7 @@ export type BindValue = string | number | null | undefined | boolean;
  * `sqlite3_clear_bindings()` call (executed before every run) defaults all
  * unbound positions to SQL NULL — exactly what we need.
  */
-function sanitizeBindParams(params: BindValue[] | undefined): (string | number | boolean | undefined)[] {
+export function sanitizeBindParams(params: BindValue[] | undefined): (string | number | boolean | undefined)[] {
     if (!params) return [];
     const out = [...params] as (string | number | boolean | undefined)[];
     for (let i = 0; i < out.length; i++) {
