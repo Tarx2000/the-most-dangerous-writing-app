@@ -46,7 +46,8 @@
                     "audioPermission": "Allow the app to save videos with audio to your gallery"
                 }
             ],
-            "expo-sharing"
+            "expo-sharing",
+            "./plugins/withAndroidSigning.js"
         ],
         "web": {
             "favicon": "./assets/favicon.png"

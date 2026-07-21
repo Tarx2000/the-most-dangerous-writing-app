@@ -28,6 +28,7 @@ src/
 ## Key Constraints
 - **Path alias**: `@/` maps to `src/` (tsconfig + babel)
 - **Build Setup**: Expo Go is used for rapid iterative testing. However, the app is built as a custom native build (e.g., local Android release APK) for distribution/production. Standard Expo Go compatibility must be maintained during testing, but custom native code/builds are supported for the final export.
+- **Android signing keys**: Signing keys for debug and release builds are stored in `credentials/` (tracked in Git) and are automatically copied to native `android/app/` during prebuild via the local config plugin `./plugins/withAndroidSigning.js`. This ensures identical signatures across all dev environments (Windows & macOS) so local updates do not trigger Android signature mismatch errors.
 - **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
 - **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly.
 - **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
