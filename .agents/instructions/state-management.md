@@ -48,6 +48,14 @@ try {
 ## Compression Queue Provider
 `CompressionQueueProvider` (`src/lib/hooks/useCompressionQueueProvider.tsx`) is a standalone context provider (not part of useStorage). It wraps `compressionQueue` singleton and auto-initializes with the latest `updateVlog` callback from `useVlogs()`. Use `useCompressionQueueContext()` to access state and actions.
 
+## Data Integrity Rules
+- **Shared single-source helpers in `src/lib/utils.ts`**: use `countWords(text)` and `isStreakEligible(note)` everywhere. Never hand-roll `text.trim().split(/\s+/)` or the streak-won predicate — they must stay identical across save-time and boot-recalc (they previously drifted).
+- **`saveNote`**: the SQLite `insertNote` is the single source of truth for the UI. If the insert succeeds, NEVER roll back the note in state (a ghost-note desync); streak settings are best-effort secondary writes with their own try/catch.
+- **`deleteVlog`**: delete the DB row FIRST, only then delete the video file — never the reverse (a failed DB delete would otherwise orphan the file).
+- **`clearAllData`**: must also `storage.clearAll()` (AsyncStorage) and shut down the AI/compression queue singletons, so "clear all" is a real factory reset.
+- **Destructive deletes** (pillar/mastery, advice card, notes) require a confirmation dialog, and deletes must never fire as side effects inside a `setState` updater (StrictMode double-invokes them in dev).
+- **Single pending async operation per action**: guard buttons that persist data (e.g. `isSavingRef` in WritingScreen) against double-submit; a second tap must be a no-op.
+
 ## Crash-Proof Startup (Mandatory)
 The app must **never crash on launch**, regardless of stored user data (legacy/corrupt SQLite rows, stale schema versions, malformed AsyncStorage JSON).
 

@@ -90,7 +90,6 @@ const LibraryNotesTab = React.memo(
         }, [persons]);
 
         const { groupedNotes } = useLibraryNotes(savedNotes, 'notes', sortBy, null);
-        const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
 
         return (
             <Activity mode={visible ? 'visible' : 'hidden'}>
@@ -100,7 +99,6 @@ const LibraryNotesTab = React.memo(
                         libraryTab="notes"
                         personMap={personMap}
                         isUnlocked={isUnlocked}
-                        activeNoteIds={activeNoteIds}
                         isProcessing={queueState.isProcessing}
                         isNoteActive={isNoteActive}
                         isNoteQueued={isNoteQueued}
@@ -144,7 +142,6 @@ const CheckinsTab = React.memo(
         }, [persons]);
 
         const { groupedNotes } = useLibraryNotes(savedNotes, 'checkins', sortBy, null);
-        const activeNoteIds = useMemo(() => queueState.jobs.map((j) => j.noteId), [queueState.jobs]);
 
         return (
             <Activity mode={visible ? 'visible' : 'hidden'}>
@@ -154,7 +151,6 @@ const CheckinsTab = React.memo(
                         libraryTab="checkins"
                         personMap={personMap}
                         isUnlocked={isUnlocked}
-                        activeNoteIds={activeNoteIds}
                         isProcessing={queueState.isProcessing}
                         isNoteActive={isNoteActive}
                         isNoteQueued={isNoteQueued}
@@ -326,33 +322,17 @@ const CirclesTab = React.memo(
         // Sync SharedValue to lock state changes and manage the unmounting of the lock overlay.
         useEffect(() => {
             if (isAnimatingLock) {
-                unlockProgress.value = withSpring(
-                    0,
-                    {
-                        damping: 30,
-                        stiffness: 150,
-                        mass: 0.8,
-                    },
-                    (finished) => {
-                        if (finished) {
-                            runOnJS(setIsAnimatingLock)(false);
-                        }
-                    },
-                );
+                unlockProgress.value = withSpring(0, theme.animation.springDefault, (finished) => {
+                    if (finished) {
+                        runOnJS(setIsAnimatingLock)(false);
+                    }
+                });
             } else if (isAnimatingUnlock) {
-                unlockProgress.value = withSpring(
-                    1,
-                    {
-                        damping: 30,
-                        stiffness: 150,
-                        mass: 0.8,
-                    },
-                    (finished) => {
-                        if (finished) {
-                            runOnJS(setIsAnimatingUnlock)(false);
-                        }
-                    },
-                );
+                unlockProgress.value = withSpring(1, theme.animation.springDefault, (finished) => {
+                    if (finished) {
+                        runOnJS(setIsAnimatingUnlock)(false);
+                    }
+                });
             } else {
                 unlockProgress.value = isLocked ? 0 : 1;
             }
@@ -519,14 +499,17 @@ const VlogsTab = React.memo(
         }, []);
 
         const handleConfirmDeleteVlog = useCallback(() => {
-            setVlogToDelete((prev) => {
-                if (prev) {
-                    logger('info', 'LibraryScreen', `Confirming vlog delete: ${prev}`);
-                    deleteVlog(prev);
-                }
-                return null;
-            });
-        }, [deleteVlog]);
+            const id = vlogToDelete;
+            setVlogToDelete(null);
+            if (id) {
+                logger('info', 'LibraryScreen', `Confirming vlog delete: ${id}`);
+                // Fire outside the updater so React StrictMode's double-invoked
+                // updaters can never double-delete the file.
+                deleteVlog(id).catch(() => {
+                    /* error already logged + state rolled back inside deleteVlog */
+                });
+            }
+        }, [vlogToDelete, deleteVlog]);
 
         return (
             <Activity mode={visible ? 'visible' : 'hidden'}>
@@ -700,11 +683,16 @@ const LibraryScreenInner: React.FC<Props> = ({ onGoToStart, sessionMode }) => {
         setNoteToDelete(id);
     }, []);
     const handleConfirmDeleteNote = useCallback(() => {
-        setNoteToDelete((prev) => {
-            if (prev) deleteNote(prev);
-            return null;
-        });
-    }, [deleteNote]);
+        const id = noteToDelete;
+        setNoteToDelete(null);
+        if (id) {
+            // Fire outside the updater so React StrictMode's double-invoked
+            // updaters can never double-delete.
+            deleteNote(id).catch(() => {
+                /* error already logged + state rolled back inside deleteNote */
+            });
+        }
+    }, [noteToDelete, deleteNote]);
 
     return (
         <View style={commonStyles.libraryContainer}>

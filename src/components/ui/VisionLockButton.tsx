@@ -71,7 +71,9 @@ export const VisionLockButton: React.FC<Props> = React.memo(({ isUnlocked, onPre
         }
     }, [isUnlocked, animationProgress]);
 
-    // Locked Layer Style: Fades out, shrinks slightly, and rotates clockwise
+    // Locked Layer Style: Fades out, shrinks slightly, and rotates clockwise.
+    // pointerEvents is driven from React state (not the worklet) so it flips
+    // exactly once per transition instead of being re-evaluated every frame.
     const lockedLayerStyle = useAnimatedStyle(() => {
         const p = animationProgress.value;
         const scaleVal = 1 - p * (1 - CONFIG.LOCKED_SCALE_END);
@@ -79,8 +81,6 @@ export const VisionLockButton: React.FC<Props> = React.memo(({ isUnlocked, onPre
         return {
             opacity: 1 - p,
             transform: [{ scale: scaleVal }, { rotate: rotateVal }],
-            // Prevent touching the layer when fully invisible
-            pointerEvents: p > 0.8 ? 'none' : 'auto',
         };
     });
 
@@ -92,8 +92,6 @@ export const VisionLockButton: React.FC<Props> = React.memo(({ isUnlocked, onPre
         return {
             opacity: p,
             transform: [{ scale: scaleVal }, { rotate: rotateVal }],
-            // Prevent touching the layer when fully invisible
-            pointerEvents: p < 0.2 ? 'none' : 'auto',
         };
     });
 
@@ -111,13 +109,19 @@ export const VisionLockButton: React.FC<Props> = React.memo(({ isUnlocked, onPre
             </View>
 
             {/* Locked Content Layer */}
-            <Animated.View style={[StyleSheet.absoluteFillObject, styles.layer, lockedLayerStyle]}>
+            <Animated.View
+                pointerEvents={isUnlocked ? 'none' : 'auto'}
+                style={[StyleSheet.absoluteFillObject, styles.layer, lockedLayerStyle]}
+            >
                 <AnimatedLockIcon isUnlocked={isUnlocked} size={16} color={theme.colors.dangerIconOverlay} />
                 <Text style={[commonStyles.iconButtonText, styles.lockedText]}>Locked</Text>
             </Animated.View>
 
             {/* Unlocked Content Layer */}
-            <Animated.View style={[StyleSheet.absoluteFillObject, styles.layer, unlockedLayerStyle]}>
+            <Animated.View
+                pointerEvents={isUnlocked ? 'auto' : 'none'}
+                style={[StyleSheet.absoluteFillObject, styles.layer, unlockedLayerStyle]}
+            >
                 <MaterialCommunityIcons name="pillar" size={16} color={theme.colors.gold} />
                 <Text style={[commonStyles.iconButtonText, styles.unlockedText]}>Masteries</Text>
             </Animated.View>

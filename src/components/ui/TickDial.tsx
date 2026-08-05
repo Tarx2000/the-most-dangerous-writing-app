@@ -123,7 +123,7 @@ export const TickDial = React.memo(function TickDial({
             vibrate(10);
             scaleAnim.value = withSequence(
                 withTiming(1.03, { duration: 90 }),
-                withSpring(1.0, { damping: 24, stiffness: 140 }),
+                withSpring(1.0, theme.animation.springSnappy),
             );
         }
     }, [selectedIndex, scaleAnim]);

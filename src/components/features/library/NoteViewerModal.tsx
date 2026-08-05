@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -72,23 +72,30 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                 runOnJS(onClose)();
             });
         }, [onClose, panY, overlayOpacity, SCREEN_HEIGHT]);
-        const notePanGesture = Gesture.Pan()
-            .activeOffsetY([-20, 20])
-            .onUpdate((e) => {
-                if (e.translationY > 0) {
-                    panY.value = e.translationY;
-                    const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
-                    overlayOpacity.value = 1 - progress;
-                }
-            })
-            .onEnd((e) => {
-                if (e.translationY > 150 || e.velocityY > 1000) {
-                    runOnJS(handleClose)();
-                } else {
-                    panY.value = withSpring(0, theme.animation.springDefault);
-                    overlayOpacity.value = withTiming(1, { duration: 150 });
-                }
-            });
+
+        // Memoized so the gesture object (and its worklet callbacks) is not
+        // recreated on every render of the modal.
+        const notePanGesture = useMemo(
+            () =>
+                Gesture.Pan()
+                    .activeOffsetY([-20, 20])
+                    .onUpdate((e) => {
+                        if (e.translationY > 0) {
+                            panY.value = e.translationY;
+                            const progress = Math.min(e.translationY / (SCREEN_HEIGHT * 0.4), 1);
+                            overlayOpacity.value = 1 - progress;
+                        }
+                    })
+                    .onEnd((e) => {
+                        if (e.translationY > 150 || e.velocityY > 1000) {
+                            runOnJS(handleClose)();
+                        } else {
+                            panY.value = withSpring(0, theme.animation.springDefault);
+                            overlayOpacity.value = withTiming(1, { duration: 150 });
+                        }
+                    }),
+            [handleClose, panY, overlayOpacity, SCREEN_HEIGHT],
+        );
 
         const animatedCardStyle = useAnimatedStyle(() => ({
             transform: [{ translateY: panY.value }],
@@ -105,7 +112,7 @@ export const NoteViewerModal: React.FC<Props> = React.memo(
                 overlayOpacity.value = 0;
                 panY.value = SCREEN_HEIGHT;
                 overlayOpacity.value = withTiming(1, { duration: 250 });
-                panY.value = withSpring(0, { damping: 30, stiffness: 220, mass: 0.8 });
+                panY.value = withSpring(0, theme.animation.springDefault);
             } else {
                 // Animate out smoothly when parent sets visible=false
                 if (!isClosingRef.current) {

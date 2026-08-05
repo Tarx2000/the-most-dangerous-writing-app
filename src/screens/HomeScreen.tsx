@@ -11,12 +11,14 @@ import { FeedScreen } from './FeedScreen';
 import { LiquidGlassNav } from '@/components/ui/LiquidGlassNav';
 import { NoteViewerModal } from '@/components/features/library/NoteViewerModal';
 import { VlogViewerModal } from '@/components/features/library/VlogViewerModal';
-import { usePillars } from '@/lib/hooks/useStorage';
+import { usePillars, useNotes } from '@/lib/hooks/useStorage';
 import { useSecurity } from '@/lib/hooks/useSecurity';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { useHomeModals } from '@/lib/hooks/useHomeModals';
 import { useHomeGestures } from '@/lib/hooks/useHomeGestures';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { theme } from '@/styles/theme';
+import { CONFIG } from '@/config';
 import type { SavedNote, AiJobCategory } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -73,14 +75,30 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     const {
         viewNoteModal,
         viewVlogModal,
+        noteToDelete,
         vlogSourceRect,
         vlogPlayerInst,
         handleOpenNoteModal,
         handleCloseNoteModal,
         handleDeleteNoteModal,
+        clearNoteToDelete,
         handleOpenVlogModal,
         handleCloseVlogModal,
     } = useHomeModals();
+
+    const { deleteNote } = useNotes();
+
+    /** Confirm + execute a note delete from the global (Home) note viewer.
+     *  Previously this was a silent no-op: the modal closed but the note was
+     *  never deleted. */
+    const handleConfirmDeleteNote = useCallback(() => {
+        if (noteToDelete) {
+            deleteNote(noteToDelete).catch(() => {
+                /* error already logged + state rolled back inside deleteNote */
+            });
+        }
+        clearNoteToDelete();
+    }, [noteToDelete, deleteNote, clearNoteToDelete]);
 
     /** Navigate to Library page (scroll right) */
     const goToLibrary = useCallback(() => {
@@ -147,7 +165,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
     );
 
     /** Check-in urgency: show dot when no check-in logs exist OR the last log was > 24 hours ago */
-    const isCheckinUrgent = currentPage === 0 && (!lastLogDate || Date.now() - lastLogDate > 24 * 60 * 60 * 1000);
+    const isCheckinUrgent = currentPage === 0 && (!lastLogDate || Date.now() - lastLogDate > CONFIG.CHECKIN_URGENT_MS);
 
     /**
      * Memoize nav items to prevent LiquidGlassNav re-renders.
@@ -242,6 +260,20 @@ export const HomeScreen: React.FC<Props> = ({ navigation, route }) => {
                 sourceRect={vlogSourceRect}
                 player={vlogPlayerInst}
                 onClose={handleCloseVlogModal}
+            />
+
+            {/* Delete Entry Confirmation (from the global/Home note viewer) */}
+            <ConfirmDialog
+                visible={!!noteToDelete}
+                title="Delete Entry?"
+                message="Are you sure you want to permanently delete this session? This cannot be undone."
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                icon="delete-outline"
+                cancelIcon="close"
+                destructive
+                onConfirm={handleConfirmDeleteNote}
+                onCancel={clearNoteToDelete}
             />
 
             {/* Main Content — Start + Library horizontal scroll.

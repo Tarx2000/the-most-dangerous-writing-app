@@ -73,6 +73,67 @@ const InternalVlogPlayer = React.memo(({ uri, onPlayerReady }: InternalVlogPlaye
     );
 });
 
+/** Format seconds as "m:ss" (module-scope so the countdown badge can reuse it). */
+const formatDuration = (sec: number) => {
+    const totalSeconds = Math.floor(sec);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+interface DurationBadgeProps {
+    player: VideoPlayer | null;
+    durationSec: number;
+}
+
+/**
+ * Live countdown badge, extracted into its OWN component.
+ *
+ * Previously `currentTime` was React state in the parent modal and was updated
+ * on every native `timeUpdate` event + a 500ms poll — re-rendering the ENTIRE
+ * modal (BlurView, morph card, gesture system, compression overlays) on every
+ * tick while a video plays. Now only this tiny badge re-renders; the rest of
+ * the modal stays untouched during playback.
+ */
+const DurationBadge = React.memo(({ player, durationSec }: DurationBadgeProps) => {
+    const [remaining, setRemaining] = useState(() => {
+        try {
+            return Math.max(0, durationSec - (player?.currentTime ?? 0));
+        } catch {
+            return durationSec;
+        }
+    });
+
+    useEffect(() => {
+        if (!player) return undefined;
+        let timeSub: { remove: () => void } | null = null;
+        const pollTimer = setInterval(() => {
+            try {
+                setRemaining(Math.max(0, durationSec - player.currentTime));
+            } catch {
+                /* released player — ignore */
+            }
+        }, 500);
+
+        // Native event listener (primary) — timeUpdate can be sparse on some devices.
+        try {
+            timeSub = player.addListener('timeUpdate', (event) => {
+                const t = typeof event === 'number' ? event : (event?.currentTime ?? 0);
+                setRemaining(Math.max(0, durationSec - t));
+            });
+        } catch {
+            /* listener attach race on first open — polling fallback still active */
+        }
+
+        return () => {
+            timeSub?.remove();
+            clearInterval(pollTimer);
+        };
+    }, [player, durationSec]);
+
+    return <Text style={styles.durationText}>{formatDuration(remaining)}</Text>;
+});
+
 interface VlogPlayerProps {
     uri: string;
     sharedPlayer?: VideoPlayer;
@@ -129,7 +190,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
     const [isPlaying, setIsPlaying] = useState(true);
     const [isMuted, setIsMuted] = useState(false);
     const [showControls, setShowControls] = useState(true);
-    const [currentTime, setCurrentTime] = useState(0);
     const [isDownloading, setIsDownloading] = useState(false);
     const [confirmDownload, setConfirmDownload] = useState(false);
     const [banner, setBanner] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -175,13 +235,11 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             try {
                 setIsPlaying(activePlayer?.playing ?? true);
                 setIsMuted((activePlayer?.volume ?? 1) === 0);
-                setCurrentTime(activePlayer?.currentTime ?? 0);
             } catch {
                 /* activePlayer may be a released shared object —
                    fall back to defaults so the UI doesn't crash. */
                 setIsPlaying(true);
                 setIsMuted(false);
-                setCurrentTime(0);
             }
             setShowControls(true);
             progress.value = 0;
@@ -200,10 +258,9 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible, initialIndex, panX, panY, progress, activePlayer]);
 
-    /** Sync UI with native player.
-     *  We use BOTH timeUpdate events AND a polling fallback because
-     *  expo-video's timeUpdate event frequency varies by platform
-     *  and can be sparse or missing entirely on some devices. */
+    /** Sync the play/pause icon with the native player.
+     *  Note: timeUpdate/polling for the countdown badge lives in the isolated
+     *  <DurationBadge/> component, so playback ticks never re-render this modal. */
     useEffect(() => {
         if (!activePlayer || !visible) return;
 
@@ -212,13 +269,8 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         // Native event listener (primary)
         // Wrap in try/catch because addListener can throw if the native
         // player is not fully initialised yet (race on first open).
-        let timeSub: { remove: () => void } | null = null;
         let playSub: { remove: () => void } | null = null;
         try {
-            timeSub = activePlayer.addListener('timeUpdate', (event) => {
-                const t = typeof event === 'number' ? event : (event?.currentTime ?? 0);
-                setCurrentTime(t);
-            });
             playSub = activePlayer.addListener('playingChange', (event) => {
                 setIsPlaying(event.isPlaying);
             });
@@ -226,24 +278,13 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             logVlog('error', 'Failed to attach player listeners:', e);
         }
 
-        // Polling fallback (500ms) — catches timeUpdate gaps
-        const pollTimer = setInterval(() => {
-            try {
-                setCurrentTime(activePlayer.currentTime);
-            } catch {
-                /* ignore */
-            }
-        }, 500);
-
         return () => {
             logVlog('info', 'Removing player listeners');
             try {
-                timeSub?.remove();
                 playSub?.remove();
             } catch {
                 /* ignore */
             }
-            clearInterval(pollTimer);
         };
     }, [activePlayer, visible, expandedIndex, vlogs]);
 
@@ -318,13 +359,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
         },
         [vlogs.length, expandedIndex],
     );
-
-    const formatDuration = (sec: number) => {
-        const totalSeconds = Math.floor(sec);
-        const m = Math.floor(totalSeconds / 60);
-        const s = totalSeconds % 60;
-        return `${m}:${s.toString().padStart(2, '0')}`;
-    };
 
     const handleManualCompress = async () => {
         const vlog = vlogs[expandedIndex];
@@ -487,7 +521,6 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
             try {
                 const target = Math.max(0, Math.min(activePlayer.duration, activePlayer.currentTime + seconds));
                 activePlayer.currentTime = target;
-                setCurrentTime(target);
                 logVlog(
                     'info',
                     `Skipped ${seconds > 0 ? 'forward' : 'backward'} ${Math.abs(seconds)}s to ${target.toFixed(1)}s`,
@@ -651,11 +684,15 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                                     </View>
                                 )}
 
-                                {/* Live countdown badge — remaining time */}
+                                {/* Live countdown badge — remaining time.
+                                    Isolated in its own component so timeUpdate
+                                    ticks don't re-render this whole modal. */}
                                 <View style={styles.durationBadge} pointerEvents="none">
-                                    <Text style={styles.durationText}>
-                                        {formatDuration(Math.max(0, currentVlog.durationSec - currentTime))}
-                                    </Text>
+                                    <DurationBadge
+                                        key={currentVlog.id}
+                                        player={activePlayer}
+                                        durationSec={currentVlog.durationSec}
+                                    />
                                 </View>
 
                                 {/* Compression trigger / progress overlay */}

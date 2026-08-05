@@ -30,6 +30,11 @@ export function useHomeModals() {
         setNoteToDelete(id);
     }, []);
 
+    /** Clear the pending note-delete state (cancel or after confirmed delete). */
+    const clearNoteToDelete = useCallback(() => {
+        setNoteToDelete(null);
+    }, []);
+
     const handleOpenVlogModal = useCallback((vlog: SavedVlog, rect?: LayoutRect, player?: VideoPlayer) => {
         setVlogSourceRect(rect || null);
         setVlogPlayerInst(player || undefined);
@@ -54,6 +59,7 @@ export function useHomeModals() {
         handleOpenNoteModal,
         handleCloseNoteModal,
         handleDeleteNoteModal,
+        clearNoteToDelete,
         handleOpenVlogModal,
         handleCloseVlogModal,
     };

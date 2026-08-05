@@ -479,7 +479,14 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
     if (isLocked) {
         return (
             <View style={[styles.lockContainer, { paddingTop: Math.max(insets.top, 16) }]}>
-                <Animated.View entering={FadeInUp.duration(350).springify().damping(15)} style={styles.lockGlassPanel}>
+                <Animated.View
+                    entering={FadeInUp.duration(350)
+                        .springify()
+                        .damping(theme.animation.springGentle.damping)
+                        .stiffness(theme.animation.springGentle.stiffness)
+                        .mass(theme.animation.springGentle.mass)}
+                    style={styles.lockGlassPanel}
+                >
                     <MaterialCommunityIcons
                         name="lock-clock"
                         size={64}

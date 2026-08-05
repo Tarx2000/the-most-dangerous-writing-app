@@ -17,54 +17,6 @@ import type { SavedVlog } from '@/types';
 import { generateId } from '@/lib/utils';
 import { insertVlog } from '@/lib/repositories/vlogsRepository';
 
-/** Default storage warning threshold in bytes (2 GB) */
-const DEFAULT_VLOG_STORAGE_CAP_BYTES = 2 * 1024 * 1024 * 1024;
-
-/**
- * Get the total size of all vlog files.
- * Uses metadata sum — faster than reading the filesystem.
- */
-export function getVlogStorageUsage(vlogs: SavedVlog[]): number {
-    return vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
-}
-
-/**
- * Format bytes into a human-readable string.
- * Examples: "1.2 MB", "3.4 GB", "512 KB"
- */
-export function formatStorageSize(bytes: number): string {
-    if (bytes >= 1024 * 1024 * 1024) {
-        return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-    }
-    if (bytes >= 1024 * 1024) {
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    }
-    if (bytes >= 1024) {
-        return `${(bytes / 1024).toFixed(0)} KB`;
-    }
-    return `${bytes} B`;
-}
-
-/**
- * Sort vlogs by timestamp (oldest first).
- * Use this to suggest which vlogs the user might want to delete
- * to free up space — but NEVER auto-delete.
- */
-export function getOldestVlogsFirst(vlogs: SavedVlog[]): SavedVlog[] {
-    return [...vlogs].sort((a, b) => a.timestamp - b.timestamp);
-}
-
-/**
- * Check whether storage is approaching capacity.
- * Returns true if usage exceeds 80% of the cap.
- */
-export function isStorageNearCapacity(
-    currentUsageBytes: number,
-    capBytes: number = DEFAULT_VLOG_STORAGE_CAP_BYTES,
-): boolean {
-    return currentUsageBytes >= capBytes * 0.8;
-}
-
 /**
  * Delete orphaned vlog files that exist on disk but have no corresponding
  * SavedVlog metadata entry. These are safe to remove because the user
@@ -73,9 +25,7 @@ export function isStorageNearCapacity(
  * This is the ONLY automatic cleanup — it removes files the user already
  * chose to delete, not any user content.
  */
-export async function cleanupOrphanedVlogs(
-    knownVlogPaths: Set<string>,
-): Promise<number> {
+export async function cleanupOrphanedVlogs(knownVlogPaths: Set<string>): Promise<number> {
     const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
     let cleaned = 0;
 
@@ -122,9 +72,7 @@ export interface OrphanVlogInfo {
  *
  * NOTE: This is purely diagnostic — it does NOT modify the database.
  */
-export async function scanOrphanVlogFiles(
-    knownVlogPaths: Set<string>,
-): Promise<OrphanVlogInfo[]> {
+export async function scanOrphanVlogFiles(knownVlogPaths: Set<string>): Promise<OrphanVlogInfo[]> {
     const vlogDir = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}`;
     const orphans: OrphanVlogInfo[] = [];
 
@@ -143,9 +91,7 @@ export async function scanOrphanVlogFiles(
             const fileInfo = await FileSystem.getInfoAsync(fullPath);
             if (!fileInfo.exists || !('size' in fileInfo)) continue;
 
-            const modTime = 'modificationTime' in fileInfo
-                ? (fileInfo.modificationTime as number) * 1000
-                : Date.now();
+            const modTime = 'modificationTime' in fileInfo ? (fileInfo.modificationTime as number) * 1000 : Date.now();
 
             orphans.push({
                 filePath: fullPath,
@@ -202,5 +148,4 @@ export async function reattachOrphanVlogFiles(
     }
 
     return { reattached, failed };
-
 }

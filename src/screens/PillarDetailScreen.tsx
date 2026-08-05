@@ -726,11 +726,16 @@ export const PillarDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                     data={pillarNotes}
                     keyExtractor={(item) => item.id}
                     renderItem={renderNoteItem}
-                    ListHeaderComponent={renderListHeader}
-                    ListEmptyComponent={renderListEmpty}
+                    // Pass ELEMENTS (not function refs) so FlatList reconciles the
+                    // header/empty tree in place instead of unmount+remounting the
+                    // graph + gesture system on every render.
+                    ListHeaderComponent={renderListHeader()}
+                    ListEmptyComponent={renderListEmpty()}
                     contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
                     showsVerticalScrollIndicator={false}
-                    extraData={queueState}
+                    // Only re-render cells when processing actually starts/stops,
+                    // NOT on every AI job tick (queueState object changes constantly).
+                    extraData={queueState.isProcessing}
                 />
 
                 {/* Note details pop-up viewer */}

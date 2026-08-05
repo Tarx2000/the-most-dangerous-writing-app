@@ -276,6 +276,11 @@ class CompressionQueueManager {
             this.processing = false;
             this.currentJobId = null;
             this.clearTimeout();
+            // Mark the vlog as no longer pending so the UI never shows a
+            // permanent "Compressing…" overlay (mirrors the retry-exhaustion path).
+            this.updateVlog(job.vlogId, { compressionPending: false }).catch((err) => {
+                this.log('warn', `Failed to clear compressionPending for ${job.vlogId}:`, err);
+            });
             this.persistQueue().then(() => {
                 this.emitState();
                 this.scheduleNext();

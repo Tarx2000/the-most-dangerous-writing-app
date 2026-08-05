@@ -66,3 +66,31 @@ export function formatSessionDate(timestamp: number): string {
     });
     return `${dateStr} ${timeStr}`;
 }
+
+/**
+ * Count words in a text string.
+ *
+ * Single source of truth for word counting — previously the same
+ * `trim().split(/\s+/).filter(Boolean).length` expression was copy-pasted in
+ * 11 places with subtly different null/whitespace handling. Whitespace-only or
+ * empty text counts as 0 words.
+ */
+export function countWords(text: string | null | undefined): number {
+    return (text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * True when a note qualifies for streak credit (won session of >= 3 minutes,
+ * not a quick note, not a tweet).
+ *
+ * Single source of truth shared by `saveNote` (authoritative) and the boot-time
+ * streak recalculation so the two can never drift apart again.
+ */
+export function isStreakEligible(note: {
+    won?: boolean;
+    durationMin?: number;
+    isQuickNote?: boolean;
+    isTweet?: boolean;
+}): boolean {
+    return !!note.won && (note.durationMin ?? 0) >= 3 && !note.isQuickNote && !note.isTweet;
+}

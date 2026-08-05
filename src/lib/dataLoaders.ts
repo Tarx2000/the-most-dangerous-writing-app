@@ -8,7 +8,7 @@ import { getAllPersons } from '@/lib/repositories/personsRepository';
 import { getAllVlogs } from '@/lib/repositories/vlogsRepository';
 import { getAllSettings, setSetting } from '@/lib/repositories/settingsRepository';
 import type { SavedNote, Person, SavedVlog, VisionBoard, AlignmentReflection } from '@/types';
-import { toLocalDateString } from '@/lib/utils';
+import { toLocalDateString, isStreakEligible } from '@/lib/utils';
 import {
     DEFAULT_AI_PROMPTS,
     AI_STORAGE_KEYS,
@@ -80,40 +80,18 @@ export interface LoadContext {
     setAiFavoriteModels: Setter<string[]>;
 }
 
-export async function loadNotes(ctx: LoadContext): Promise<void> {
-    const notes = await getAllNotes();
-    ctx.setSavedNotes(notes);
-}
-
-export async function loadPersons(ctx: LoadContext): Promise<void> {
-    const persons = await getAllPersons();
-    ctx.setPersons(persons);
-}
-
-export async function loadVlogs(ctx: LoadContext): Promise<void> {
-    let vlogs: SavedVlog[] = [];
-    try {
-        vlogs = await getAllVlogs();
-    } catch (err) {
-        logger('error', 'Storage', 'Failed to load vlogs:', err);
-    }
-    ctx.setSavedVlogs(vlogs);
-    const totalBytes = vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
-    ctx.setTotalVlogStorageBytes(totalBytes);
-}
-
 export async function loadAllData(ctx: LoadContext): Promise<void> {
     perfMark('storage.start');
 
-    /* ── Feature Flags ─────────────────────────────────────────────────── */
-    await loadFeatureFlags();
-
     /* ════════════════════════════════════════════════════════════════════
        PHASE 1 — Parallel independent loads
-       Notes + Persons + Settings each load independently (allSettled) so a
-       single malformed domain can never abort the whole startup load.
+       Feature flags, Notes, Persons and Settings all load independently
+       (allSettled) so a single malformed domain can never abort the whole
+       startup load. Feature flags previously serialized this phase — now it
+       overlaps with the SQLite queries.
        ════════════════════════════════════════════════════════════════════ */
-    const [notesResult, personsResult, settingsResult] = await Promise.allSettled([
+    const [flagsResult, notesResult, personsResult, settingsResult] = await Promise.allSettled([
+        loadFeatureFlags(),
         getAllNotes(),
         getAllPersons(),
         getAllSettings(),
@@ -121,6 +99,8 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     const notes = notesResult.status === 'fulfilled' ? notesResult.value : [];
     const persons = personsResult.status === 'fulfilled' ? personsResult.value : [];
     const allSettings = settingsResult.status === 'fulfilled' ? settingsResult.value : {};
+    // loadFeatureFlags() populates module state; a failure must not block boot.
+    void flagsResult;
 
     ctx.setSavedNotes(notes);
     ctx.setPersons(persons);
@@ -133,8 +113,9 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     if (!Number.isNaN(sizeIdx)) ctx.setSizeIndex(sizeIdx);
 
     ctx.setUseBiometrics(safeParse('USE_BIOMETRICS', allSettings['USE_BIOMETRICS'], true));
-    ctx.setEnableHaptics(safeParse('ENABLE_HAPTICS', allSettings['ENABLE_HAPTICS'], true));
-    setGlobalHapticsEnabled(safeParse('ENABLE_HAPTICS', allSettings['ENABLE_HAPTICS'], true));
+    const hapticsEnabled = safeParse('ENABLE_HAPTICS', allSettings['ENABLE_HAPTICS'], true);
+    ctx.setEnableHaptics(hapticsEnabled);
+    setGlobalHapticsEnabled(hapticsEnabled);
 
     const lockTimeout = parseInt(allSettings['LOCK_TIMEOUT_MINS'] ?? '3', 10);
     if (!Number.isNaN(lockTimeout)) ctx.setLockTimeoutMins(lockTimeout);
@@ -252,39 +233,35 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     );
     ctx.setAutoPlayFeedVideos(safeParse('AUTO_PLAY_FEED_VIDEOS', allSettings['AUTO_PLAY_FEED_VIDEOS'], true));
 
-    /* ── Streak History ────────────────────────────────────────────────── */
+    /* ── Streak History + Recalculate ─────────────────────────────────────
+       A single pass over notes builds the streak-eligible days. Uses the same
+       `isStreakEligible` predicate as saveNote so recalculation can never
+       disagree with what was computed at save time. */
     const rawHistory = safeParse<unknown>('STREAK_HISTORY', allSettings['STREAK_HISTORY'], []);
     const streakHistoryArr = Array.isArray(rawHistory) ? (rawHistory as string[]) : [];
-    if (streakHistoryArr.length > 0) {
-        ctx.setStreakHistory(streakHistoryArr);
-    } else {
-        /* Backfill from notes (reuse the notes already loaded in Phase 1) */
-        const historySet = new Set<string>();
-        for (const n of notes) {
-            if (n.won && n.durationMin >= 3 && !n.isQuickNote && !n.isTweet) {
-                const d = new Date(n.timestamp);
-                historySet.add(toLocalDateString(d));
-            }
+    const needsBackfill = streakHistoryArr.length === 0;
+
+    const eligibleDays = new Set<string>();
+    for (const n of notes) {
+        if (isStreakEligible(n)) {
+            eligibleDays.add(toLocalDateString(new Date(n.timestamp)));
         }
-        const backfilled = Array.from(historySet);
+    }
+
+    if (needsBackfill) {
+        const backfilled = Array.from(eligibleDays);
         ctx.setStreakHistory(backfilled);
         await setSetting('STREAK_HISTORY', JSON.stringify(backfilled));
+    } else {
+        ctx.setStreakHistory(streakHistoryArr);
     }
 
     /* ── Recalculate streak if stale ─────────────────────────────────────── */
-    const noteHistory = new Set<string>();
-    for (const n of notes) {
-        if (n.won && n.durationMin >= 3 && !n.isQuickNote) {
-            const d = new Date(n.timestamp);
-            noteHistory.add(toLocalDateString(d));
-        }
-    }
-    if (noteHistory.size > 0 && (storedStreak === 0 || Number.isNaN(storedStreak))) {
-        const histSet = new Set<string>(noteHistory);
+    if (eligibleDays.size > 0 && (storedStreak === 0 || Number.isNaN(storedStreak))) {
         let recalcStreak = 0;
         const checkDate = new Date();
         for (let i = 0; i < 365; i++) {
-            if (histSet.has(toLocalDateString(checkDate))) {
+            if (eligibleDays.has(toLocalDateString(checkDate))) {
                 recalcStreak++;
                 checkDate.setDate(checkDate.getDate() - 1);
             } else {

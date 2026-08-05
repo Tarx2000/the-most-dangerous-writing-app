@@ -80,6 +80,10 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     // Flag to prevent double navigation interception
     const isExitingRef = useRef(false);
 
+    // Guards against double-submit: a rapid double-tap on SAVE previously
+    // fired saveNote twice and committed two duplicate notes.
+    const isSavingRef = useRef(false);
+
     // ── Save Fly-Away Animation Shared Values ──
     const saveTranslateX = useSharedValue(0);
     const saveScale = useSharedValue(1);
@@ -356,6 +360,11 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     };
 
     const handleSave = async () => {
+        // Double-submit guard — set synchronously before any await so a second
+        // tap during the save cannot create a duplicate note.
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
+
         const currentText = textRef.current;
         if (currentText.trim().length === 0) {
             performExitTransition(() => {

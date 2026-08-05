@@ -442,8 +442,11 @@ async function ollamaChatSingle(
         // Cancel token: poll for external abort (e.g. user cancels or queue cancels)
         if (cancelToken) {
             if (cancelToken.aborted) {
-                clearTimeout(timeoutId);
-                return Promise.reject(new AiError('cancelled', 'The request was cancelled.', 'AI request cancelled'));
+                // Settle via the shared `settle` helper — a bare `return Promise.reject(...)`
+                // inside the executor is DISCARDED and would leave the outer promise
+                // pending forever, permanently wedging the AI queue.
+                settle('reject', new AiError('cancelled', 'The request was cancelled.', 'AI request cancelled'));
+                return;
             }
             cancelCheckInterval = setInterval(() => {
                 if (cancelToken && cancelToken.aborted) {

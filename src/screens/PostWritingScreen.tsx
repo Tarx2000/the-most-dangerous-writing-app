@@ -13,7 +13,7 @@
  * If the user leaves before AI finishes, the queue continues processing.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     StyleSheet,
     Platform,
@@ -37,6 +37,7 @@ import Animated, {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StackActions } from '@react-navigation/native';
+import { countWords } from '@/lib/utils';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, classifyError, type GrammarSuggestion } from '@/lib/aiService';
@@ -84,6 +85,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /* ── State ──────────────────────────────────────────────────────── */
     const editableTextRef = useRef('');
     const [renderKey, setRenderKey] = useState(0);
+    /** Live word count of the editable text (kept in state so the header stays fresh). */
+    const [wordCount, setWordCount] = useState(0);
 
     /** Grammar check state (user-triggered, not through queue) */
     const [grammarSuggestions, setGrammarSuggestions] = useState<GrammarSuggestion[]>([]);
@@ -143,6 +146,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
     useEffect(() => {
         if (note && !editableTextRef.current) {
             editableTextRef.current = note.text;
+            setWordCount(countWords(note.text));
             setRenderKey((prev) => prev + 1);
         }
     }, [note]);
@@ -373,6 +377,13 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         opacity: contentOpacity.value,
     }));
 
+    // Android substitute for the iOS blur overlay: Android renders blur on the
+    // CPU, so instead of full-screen blurs we fade in a solid translucent layer
+    // driven by the same blurIntensity progress.
+    const androidBlurOverlayStyle = useAnimatedStyle(() => ({
+        opacity: Math.min((blurIntensity.value ?? 0) / 80, 1),
+    }));
+
     const lockIconAnimatedStyle = useAnimatedStyle(() => ({
         opacity: lockIconOpacity.value,
         transform: [{ scale: lockIconOpacity.value }],
@@ -380,11 +391,8 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     /* ── Render ──────────────────────────────────────────────────────── */
 
-    /** Word count — only recompute when editable text actually changes */
-    const wordCount = useMemo(() => {
-        return editableTextRef.current.trim().split(/\s+/).filter(Boolean).length;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [renderKey]);
+    /** Word count — React state updated on every keystroke (the previous
+     *  renderKey-keyed memo was frozen while the user edited the text). */
     const isTooShortForAi = note?.isTweet || wordCount < MIN_AI_WORDS;
 
     return (
@@ -597,7 +605,10 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                     },
                                 ]}
                                 defaultValue={editableTextRef.current}
-                                onChangeText={(val) => (editableTextRef.current = val)}
+                                onChangeText={(val) => {
+                                    editableTextRef.current = val;
+                                    setWordCount(countWords(val));
+                                }}
                                 multiline
                                 autoFocus
                                 selectionColor={theme.colors.primaryAction}
@@ -709,19 +720,28 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     <View style={{ height: 120 }} />
                 </Animated.ScrollView>
 
-                {/* Animated Double Blur Overlay — stacked to double the native blur strength */}
-                <AnimatedBlurView
-                    intensity={blurIntensity}
-                    tint="dark"
-                    style={StyleSheet.absoluteFillObject}
-                    pointerEvents="none"
-                />
-                <AnimatedBlurView
-                    intensity={blurIntensity}
-                    tint="dark"
-                    style={StyleSheet.absoluteFillObject}
-                    pointerEvents="none"
-                />
+                {/* Blur overlay during save fly-away.
+                    iOS: single native (GPU) blur — stacking two animated blurs
+                    doubles the GPU passes for no visual gain.
+                    Android: blur is CPU-only, so we animate a solid translucent
+                    overlay instead of two full-screen per-frame CPU blurs. */}
+                {Platform.OS === 'ios' ? (
+                    <AnimatedBlurView
+                        intensity={blurIntensity}
+                        tint="dark"
+                        style={StyleSheet.absoluteFillObject}
+                        pointerEvents="none"
+                    />
+                ) : (
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[
+                            StyleSheet.absoluteFillObject,
+                            { backgroundColor: theme.colors.overlayLockAndroid },
+                            androidBlurOverlayStyle,
+                        ]}
+                    />
+                )}
 
                 {/* Centered Lock Animation Overlay */}
                 {showLockIcon && (

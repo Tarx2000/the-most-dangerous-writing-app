@@ -196,33 +196,17 @@ export const VlogCalendarGallery: React.FC<Props> = ({ visible, vlogs, isLocked,
     // Sync SharedValue to lock state changes and manage the unmounting of the lock overlay.
     useEffect(() => {
         if (isAnimatingLock) {
-            unlockProgress.value = withSpring(
-                0,
-                {
-                    damping: 30,
-                    stiffness: 150,
-                    mass: 0.8,
-                },
-                (finished) => {
-                    if (finished) {
-                        runOnJS(setIsAnimatingLock)(false);
-                    }
-                },
-            );
+            unlockProgress.value = withSpring(0, theme.animation.springDefault, (finished) => {
+                if (finished) {
+                    runOnJS(setIsAnimatingLock)(false);
+                }
+            });
         } else if (isAnimatingUnlock) {
-            unlockProgress.value = withSpring(
-                1,
-                {
-                    damping: 30,
-                    stiffness: 150,
-                    mass: 0.8,
-                },
-                (finished) => {
-                    if (finished) {
-                        runOnJS(setIsAnimatingUnlock)(false);
-                    }
-                },
-            );
+            unlockProgress.value = withSpring(1, theme.animation.springDefault, (finished) => {
+                if (finished) {
+                    runOnJS(setIsAnimatingUnlock)(false);
+                }
+            });
         } else {
             unlockProgress.value = isLocked ? 0 : 1;
         }

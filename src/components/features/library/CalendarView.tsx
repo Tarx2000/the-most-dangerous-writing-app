@@ -152,13 +152,13 @@ export const CalendarView = React.memo(function CalendarView({ currentStreak, st
                     if (swipedRight) {
                         runOnJS(commitMonth)('prev');
                         translateX.value = gridWidth * 0.06;
-                        translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
+                        translateX.value = withSpring(0, theme.animation.springDefault);
                     } else if (swipedLeft && canGoForward) {
                         runOnJS(commitMonth)('next');
                         translateX.value = -gridWidth * 0.06;
-                        translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
+                        translateX.value = withSpring(0, theme.animation.springDefault);
                     } else {
-                        translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
+                        translateX.value = withSpring(0, theme.animation.springDefault);
                     }
                 }),
         [canGoForward, commitMonth, translateX, swipeThreshold, velocityThreshold, gridWidth],

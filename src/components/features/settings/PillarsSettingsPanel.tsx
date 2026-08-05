@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TextInput, StyleSheet, Pressable, Platform, Alert, Keyboard } from 'react-native';
 import { usePillars } from '@/lib/hooks/useStorage';
 import { theme } from '@/styles/theme';
@@ -59,6 +59,52 @@ export const PillarsSettingsPanel: React.FC = () => {
             Alert.alert('Error', 'Failed to save Pillar. Please try again.');
         }
     };
+
+    /** Confirm before permanently deleting a mastery (removes all its history). */
+    const confirmDeletePillar = useCallback(
+        (item: Pillar) => {
+            Alert.alert(
+                'Delete Mastery?',
+                `"${item.title}" and all of its check-in history will be permanently deleted. This cannot be undone.`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                            deletePillar(item.id).catch(() => {
+                                Alert.alert('Error', 'Could not delete the mastery. Please try again.');
+                            });
+                        },
+                    },
+                ],
+            );
+        },
+        [deletePillar],
+    );
+
+    /** Confirm before deleting an advice card. */
+    const confirmDeleteAdvice = useCallback(
+        (item: AdviceCard) => {
+            Alert.alert(
+                'Delete Advice Card?',
+                'This advice card and its reflection count will be permanently deleted.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                            deleteAdviceCard(item.id).catch(() => {
+                                Alert.alert('Error', 'Could not delete the advice card. Please try again.');
+                            });
+                        },
+                    },
+                ],
+            );
+        },
+        [deleteAdviceCard],
+    );
 
     const handleAddAdvice = async () => {
         // Dismiss keyboard first to avoid focus or layout glitches on save
@@ -136,7 +182,7 @@ export const PillarsSettingsPanel: React.FC = () => {
                             <Pressable
                                 onPress={() => {
                                     vibrate(10);
-                                    deletePillar(item.id);
+                                    confirmDeletePillar(item);
                                 }}
                                 style={styles.deleteBtn}
                             >
@@ -250,7 +296,7 @@ export const PillarsSettingsPanel: React.FC = () => {
                             <Pressable
                                 onPress={() => {
                                     vibrate(10);
-                                    deleteAdviceCard(item.id);
+                                    confirmDeleteAdvice(item);
                                 }}
                                 style={styles.deleteBtn}
                             >

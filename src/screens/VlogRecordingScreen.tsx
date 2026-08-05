@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, StatusBar, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, Platform, Alert, AppState } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import Animated, {
@@ -80,6 +80,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
     const cameraRef = useRef<CameraView>(null);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
+    const permissionToCountdownRef = useRef<NodeJS.Timeout | null>(null);
     /** Track if recording is active to prevent double-stop */
     const isRecordingRef = useRef(false);
     /** Track actual elapsed seconds for saving real duration */
@@ -123,14 +124,37 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             }
 
             if (camGranted && micGranted) {
-                setTimeout(() => setPhase('countdown'), 500);
+                // Stored in a ref so it can be cleared if the user leaves early
+                // (avoids a post-unmount setPhase and duplicate timers on re-render).
+                if (permissionToCountdownRef.current) clearTimeout(permissionToCountdownRef.current);
+                permissionToCountdownRef.current = setTimeout(() => setPhase('countdown'), 500);
             }
         };
 
         if (phase === 'permissions') {
             checkPermissions();
         }
+
+        // Clear the pending permission→countdown timeout on unmount / phase change
+        return () => {
+            if (permissionToCountdownRef.current) {
+                clearTimeout(permissionToCountdownRef.current);
+                permissionToCountdownRef.current = null;
+            }
+        };
     }, [phase, cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
+
+    /* ── AppState: finalize recording if the app backgrounds mid-recording ─
+       Without this, `recordAsync` can hang forever after a device sleep or app
+       switch, leaving a permanent "recording" spinner and a ticking timer. */
+    useEffect(() => {
+        const sub = AppState.addEventListener('change', (state) => {
+            if (state !== 'active' && isRecordingRef.current) {
+                cameraRef.current?.stopRecording();
+            }
+        });
+        return () => sub.remove();
+    }, []);
 
     /* ── Save the vlog to storage and navigate home ───────────────────── */
     const saveAndNavigateHome = useCallback(

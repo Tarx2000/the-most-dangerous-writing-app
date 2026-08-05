@@ -16,8 +16,9 @@ import { vibrate } from '@/lib/haptics';
 import { logger } from '@/lib/logger';
 import * as FileSystem from 'expo-file-system/legacy';
 import { CONFIG, isTweet as isTweetWordCount } from '@/config';
-import { generateId, toLocalDateString } from '@/lib/utils';
+import { generateId, toLocalDateString, countWords, isStreakEligible } from '@/lib/utils';
 import { cleanupOrphanedVlogs as cleanupOrphanFiles } from '@/lib/storageManager';
+import { storage } from '@/lib/storage';
 import { AI_STORAGE_KEYS, type AiPrompts, type AiProvider } from '@/config/ai';
 import { setGlobalHapticsEnabled } from '@/lib/haptics';
 import { setPerfEnabled } from '@/lib/perf';
@@ -90,7 +91,7 @@ export function createNotesOps(
         const prevHistory = [...streakHistoryRef.current];
 
         // Auto-classify as tweet if word count <= threshold
-        const wordCount = note.text.trim().split(/\s+/).filter(Boolean).length;
+        const wordCount = countWords(note.text);
         const isTweetEntry = isTweetWordCount(wordCount);
         if (isTweetEntry) {
             note.isTweet = true;
@@ -101,7 +102,7 @@ export function createNotesOps(
         let newLastWinDate = prevLastWinDate;
         const newHistory = [...prevHistory];
 
-        if (note.won && note.durationMin >= 3 && !note.isQuickNote && !note.isTweet) {
+        if (isStreakEligible(note)) {
             const todayStr = toLocalDateString(new Date());
             if (!newHistory.includes(todayStr)) newHistory.push(todayStr);
 
@@ -131,15 +132,11 @@ export function createNotesOps(
         setLastWinDate(newLastWinDate);
         setStreakHistory(newHistory);
 
+        // Persist the note. The note INSERT is the single source of truth for the
+        // UI: if it fails we roll back everything; if it succeeds we NEVER roll
+        // back (otherwise the DB keeps the note but the UI shows "not saved").
         try {
             await insertNote(note);
-            if (note.won && note.durationMin >= 3 && !note.isQuickNote && !note.isTweet) {
-                await Promise.all([
-                    setSetting('CURRENT_STREAK', String(updatedStreak)),
-                    setSetting('LAST_WIN_DATE', newLastWinDate),
-                    setSetting('STREAK_HISTORY', JSON.stringify(newHistory)),
-                ]);
-            }
         } catch (error) {
             logger('error', 'Storage', 'Failed to save note:', error);
             vibrate([0, 500]);
@@ -151,6 +148,21 @@ export function createNotesOps(
             setLastWinDate(prevLastWinDate);
             streakHistoryRef.current = prevHistory;
             setStreakHistory(prevHistory);
+            return { streakIncreased: false, newStreak: prevStreak };
+        }
+
+        // Note committed. Streak settings are best-effort secondary writes —
+        // a failure here must NOT roll back the saved note.
+        if (isStreakEligible(note)) {
+            try {
+                await Promise.all([
+                    setSetting('CURRENT_STREAK', String(updatedStreak)),
+                    setSetting('LAST_WIN_DATE', newLastWinDate),
+                    setSetting('STREAK_HISTORY', JSON.stringify(newHistory)),
+                ]);
+            } catch (err) {
+                logger('warn', 'Storage', 'Note saved but streak settings failed to persist:', err);
+            }
         }
 
         return { streakIncreased, newStreak: updatedStreak };
@@ -338,24 +350,27 @@ export function createVlogOps(
             `Deleting vlog ${id}${vlog ? ` (${(vlog.fileSizeBytes / 1024 / 1024).toFixed(1)} MB)` : ''}`,
         );
 
-        if (vlog) {
-            const newBytes = Math.max(0, prevBytes - (vlog.fileSizeBytes || 0));
-            setTotalBytes(newBytes);
-            totalBytesRef.current = newBytes;
-            logger(
-                'info',
-                'Vlog',
-                `Freed ${((vlog.fileSizeBytes || 0) / 1024 / 1024).toFixed(1)} MB, new total ${(newBytes / 1024 / 1024).toFixed(1)} MB`,
-            );
-            FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).then(
-                () => logger('info', 'Vlog', `Deleted vlog file ${vlog.filePath}`),
-                (err: Error) => logger('warn', 'Storage', 'Failed to delete vlog file:', err),
-            );
-        }
-
         try {
+            // Delete the DB row FIRST — only touch the file after the DB delete
+            // committed, otherwise a failed DB delete leaves an orphaned video
+            // file behind (row rolled back, file already gone).
             await repoDeleteVlog(id);
             logger('info', 'Vlog', `Vlog ${id} deleted from DB successfully`);
+
+            if (vlog) {
+                const newBytes = Math.max(0, prevBytes - (vlog.fileSizeBytes || 0));
+                setTotalBytes(newBytes);
+                totalBytesRef.current = newBytes;
+                logger(
+                    'info',
+                    'Vlog',
+                    `Freed ${((vlog.fileSizeBytes || 0) / 1024 / 1024).toFixed(1)} MB, new total ${(newBytes / 1024 / 1024).toFixed(1)} MB`,
+                );
+                FileSystem.deleteAsync(vlog.filePath, { idempotent: true }).then(
+                    () => logger('info', 'Vlog', `Deleted vlog file ${vlog.filePath}`),
+                    (err: Error) => logger('warn', 'Storage', 'Failed to delete vlog file:', err),
+                );
+            }
         } catch (error) {
             logger('error', 'Storage', 'Failed to delete vlog:', error);
             vlogsRef.current = prevVlogs;
@@ -414,14 +429,7 @@ export function createVlogOps(
         return cleanupOrphanFiles(knownPaths);
     };
 
-    const getStorageSummary = () => ({
-        vlogCount: vlogsRef.current.length,
-        vlogBytes: vlogsRef.current.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0),
-        noteCount: 0,
-        personCount: 0,
-    });
-
-    return { saveVlog, deleteVlog, updateVlog, cleanupOrphanedVlogs, getStorageSummary };
+    return { saveVlog, deleteVlog, updateVlog, cleanupOrphanedVlogs };
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1174,6 +1182,27 @@ export function createCrossCuttingOps(
     },
 ) {
     const clearAllData = async () => {
+        // Reset the in-memory queues FIRST so no orphaned AI/compression jobs
+        // can fire against the freshly cleared database. Dynamic import avoids a
+        // circular dependency (queues import storage).
+        try {
+            const { aiQueue } = await import('@/lib/aiQueue');
+            aiQueue.shutdown();
+            const { compressionQueue } = await import('@/lib/compressionQueue');
+            compressionQueue.shutdown();
+        } catch (err) {
+            logger('warn', 'Storage', 'Failed to shut down queues during clear-all:', err);
+        }
+
+        // Wipe AsyncStorage (settings, AI config, PIN, dev mode, persisted queues,
+        // schema version marker). The DB migrations are self-healing, so booting
+        // with a cleared schema marker is safe.
+        try {
+            await storage.clearAll();
+        } catch (err) {
+            logger('warn', 'Storage', 'Failed to clear AsyncStorage:', err);
+        }
+
         await deleteAllNotes();
         await deleteAllPersons();
         await deleteAllVlogs();

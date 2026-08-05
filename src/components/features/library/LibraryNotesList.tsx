@@ -22,7 +22,6 @@ interface Props {
     libraryTab: 'notes' | 'checkins';
     personMap: Map<string, string>;
     isUnlocked: boolean;
-    activeNoteIds: string[];
     isProcessing: boolean;
     isNoteActive: (noteId: string) => boolean;
     isNoteQueued: (noteId: string) => boolean;
@@ -139,7 +138,6 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
         libraryTab,
         personMap,
         isUnlocked,
-        activeNoteIds,
         isNoteActive,
         isNoteQueued,
         activeFont,
@@ -151,6 +149,13 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
         const contentContainerStyle = React.useMemo(
             () => ({ paddingBottom: 120, paddingTop: 12, paddingHorizontal: 20 }),
             [],
+        );
+
+        // Memoized so FlashList cells only re-render when a value they actually
+        // depend on changes (NOT on every parent render / AI queue event).
+        const extraData = React.useMemo(
+            () => ({ isUnlocked, activeFont, personMap }),
+            [isUnlocked, activeFont, personMap],
         );
 
         const renderItem = useCallback(
@@ -186,16 +191,7 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
                     />
                 );
             },
-            [isUnlocked, isNoteActive, isNoteQueued, activeFont, onPressNote, personMap, onVersionPress, activeNoteIds],
-        );
-
-        const getItemLayout = useCallback(
-            (_: ArrayLike<NoteGroupItem> | null | undefined, index: number) => ({
-                length: 120,
-                offset: 120 * index,
-                index,
-            }),
-            [],
+            [isUnlocked, isNoteActive, isNoteQueued, activeFont, onPressNote, personMap, onVersionPress],
         );
 
         const emptyIcon = libraryTab === 'checkins' ? 'pillar' : 'notebook-outline';
@@ -248,16 +244,15 @@ export const LibraryNotesList: React.FC<Props> = React.memo(
                 <FlashList
                     style={flashListStyle}
                     data={groupedNotes}
-                    keyExtractor={(item) =>
-                        item.type === 'header' ? `header-${item.title}` : item.note?.id || `unknown-${Math.random()}`
+                    keyExtractor={(item, index) =>
+                        item.type === 'header' ? `header-${item.title}` : item.note?.id || `unknown-${index}`
                     }
                     getItemType={(item) => item.type}
                     estimatedItemSize={120}
                     contentContainerStyle={contentContainerStyle}
                     showsVerticalScrollIndicator={false}
                     renderItem={renderItem}
-                    getItemLayout={getItemLayout}
-                    extraData={{ activeNoteIds, isUnlocked, activeFont, personMap }}
+                    extraData={extraData}
                 />
             </>
         );

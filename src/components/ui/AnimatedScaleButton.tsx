@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { Pressable, ViewStyle, StyleProp, GestureResponderEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { theme } from '@/styles/theme';
 
 /**
  * AnimatedScaleButton
@@ -29,22 +30,9 @@ const DEFAULT_ACTIVE_SCALE = 0.95;
 /** Opacity when pressed (0 = invisible, 1 = no change) */
 const DEFAULT_ACTIVE_OPACITY = 0.8;
 
-/**
- * Spring physics for the tactile press feel.
- *
- * Higher damping (28) eliminates overshoot oscillations, which were the
- * #1 cause of perceived "boing" lag on slower devices. Combined with a
- * higher stiffness (320), the button settles in ~120ms with zero bounce.
- *
- * Per `.agents/instructions/animations.md` rule: damping must be >= 26
- * for clean, professional transitions that do not pollute the compositor
- * with multiple overshoot frames on throttled GPUs.
- */
-const SPRING_CONFIG = {
-    damping: 28,
-    stiffness: 320,
-    mass: 0.6,
-};
+/* ── Press spring ───────────────────────────────────────────────────────
+   Uses the `springSnappy` theme preset (damping 35) for a clean, non-overshooting
+   press feel — per animations.md, no inline spring configs. */
 
 interface AnimatedScaleButtonProps {
     /** Fires when the button is tapped */
@@ -67,55 +55,57 @@ interface AnimatedScaleButtonProps {
     children?: React.ReactNode;
 }
 
-export const AnimatedScaleButton: React.FC<AnimatedScaleButtonProps> = ({
-    onPress,
-    onLongPress,
-    onPressIn,
-    onPressOut,
-    style,
-    activeScale = DEFAULT_ACTIVE_SCALE,
-    activeOpacity = DEFAULT_ACTIVE_OPACITY,
-    disabled = false,
-    children,
-}) => {
-    /* ── Shared values for UI-thread animation ──────────────────────── */
-    const scale = useSharedValue(1);
-    const opacity = useSharedValue(1);
+export const AnimatedScaleButton: React.FC<AnimatedScaleButtonProps> = React.memo(
+    ({
+        onPress,
+        onLongPress,
+        onPressIn,
+        onPressOut,
+        style,
+        activeScale = DEFAULT_ACTIVE_SCALE,
+        activeOpacity = DEFAULT_ACTIVE_OPACITY,
+        disabled = false,
+        children,
+    }) => {
+        /* ── Shared values for UI-thread animation ──────────────────────── */
+        const scale = useSharedValue(1);
+        const opacity = useSharedValue(1);
 
-    /* ── Press handlers bridge Pressable events to Reanimated ──────── */
-    const handlePressIn = useCallback(
-        (e: GestureResponderEvent) => {
-            scale.value = withSpring(activeScale, SPRING_CONFIG);
-            opacity.value = withTiming(activeOpacity, { duration: 100 });
-            onPressIn?.(e);
-        },
-        [activeScale, activeOpacity, onPressIn, scale, opacity],
-    );
+        /* ── Press handlers bridge Pressable events to Reanimated ──────── */
+        const handlePressIn = useCallback(
+            (e: GestureResponderEvent) => {
+                scale.value = withSpring(activeScale, theme.animation.springSnappy);
+                opacity.value = withTiming(activeOpacity, { duration: 100 });
+                onPressIn?.(e);
+            },
+            [activeScale, activeOpacity, onPressIn, scale, opacity],
+        );
 
-    const handlePressOut = useCallback(
-        (e: GestureResponderEvent) => {
-            scale.value = withSpring(1, SPRING_CONFIG);
-            opacity.value = withTiming(1, { duration: 150 });
-            onPressOut?.(e);
-        },
-        [onPressOut, scale, opacity],
-    );
+        const handlePressOut = useCallback(
+            (e: GestureResponderEvent) => {
+                scale.value = withSpring(1, theme.animation.springSnappy);
+                opacity.value = withTiming(1, { duration: 150 });
+                onPressOut?.(e);
+            },
+            [onPressOut, scale, opacity],
+        );
 
-    /* ── Animated style runs entirely on the UI thread ──────────────── */
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: scale.value }],
-        opacity: opacity.value,
-    }));
+        /* ── Animated style runs entirely on the UI thread ──────────────── */
+        const animatedStyle = useAnimatedStyle(() => ({
+            transform: [{ scale: scale.value }],
+            opacity: opacity.value,
+        }));
 
-    return (
-        <Pressable
-            onPress={onPress}
-            onLongPress={onLongPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            disabled={disabled}
-        >
-            <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>
-        </Pressable>
-    );
-};
+        return (
+            <Pressable
+                onPress={onPress}
+                onLongPress={onLongPress}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                disabled={disabled}
+            >
+                <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>
+            </Pressable>
+        );
+    },
+);

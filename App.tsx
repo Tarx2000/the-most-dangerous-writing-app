@@ -208,7 +208,7 @@ function AppContent() {
         EagleLake_400Regular,
     });
 
-    // Dismiss the splash screen once fonts are loaded to ensure a seamless AMOLED transition
+    // Dismiss the native splash screen once fonts are loaded to ensure a seamless AMOLED transition
     useEffect(() => {
         if (fontsLoaded) {
             SplashScreen.hideAsync().catch(() => {
@@ -217,13 +217,11 @@ function AppContent() {
         }
     }, [fontsLoaded]);
 
-    if (!fontsLoaded) {
-        // Return null while loading since the native splash screen is locked on top.
-        return null;
-    }
-
-    perfMark('fonts.loaded');
-
+    // Performance: the provider tree mounts IMMEDIATELY so StorageProvider's
+    // loadAllData() (SQLite open + migrations + queries) runs IN PARALLEL with
+    // font loading instead of waiting for it. Only the visible UI (NavigationContainer
+    // + modals) is gated on fontsLoaded. This removes the sequential bottleneck
+    // "fonts -> data" from the cold-start critical path.
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <SafeAreaProvider>
@@ -232,7 +230,7 @@ function AppContent() {
                         <SecurityProvider>
                             <AiQueueProvider>
                                 <CompressionQueueProvider>
-                                    <AiConfigGate />
+                                    {fontsLoaded ? <AiConfigGate /> : null}
                                 </CompressionQueueProvider>
                             </AiQueueProvider>
                         </SecurityProvider>

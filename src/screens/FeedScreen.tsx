@@ -438,15 +438,23 @@ const FeedScreenInner: React.FC<Props> = ({
     const feedCommentsRef = useRef(feedComments);
     feedCommentsRef.current = feedComments;
 
-    /** Track visible items for video auto-play — only clips that are on-screen should play */
+    /** Track visible items for video auto-play — only clips that are on-screen should play.
+     *  Performance: we only track `clip` items (the ONLY consumer is FeedVideoCard.autoPlay),
+     *  and we bail out via functional setState when the visible set is unchanged. This stops
+     *  `onViewableItemsChanged` (which fires on EVERY scroll frame at threshold 0) from
+     *  re-rendering the whole feed while scrolling past text-only cards. */
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<FeedItem>[] }) => {
         const newVisibleIds = new Set<string>();
         for (const item of viewableItems) {
             const feedItem = item.item as FeedItem;
-            const id = feedItem?.note?.id || feedItem?.vlog?.id || '';
+            if (feedItem.type !== 'clip') continue;
+            const id = feedItem?.vlog?.id || '';
             if (id) newVisibleIds.add(id);
         }
-        setVisibleItemIds(newVisibleIds);
+        setVisibleItemIds((prev) => {
+            if (prev.size === newVisibleIds.size && [...prev].every((id) => newVisibleIds.has(id))) return prev;
+            return newVisibleIds;
+        });
     }, []);
 
     /** Consider an item visible when ANY part is in the viewport.
@@ -697,16 +705,10 @@ const FeedScreenInner: React.FC<Props> = ({
         ],
     );
 
-    /** getItemLayout: approximate heights for FlashList fast-path layout.
-     *  FlashList corrects actual heights after measurement. */
-    const getFeedItemLayout = useCallback(
-        (_: FeedItem[] | null, index: number) => ({
-            length: 250,
-            offset: 250 * index,
-            index,
-        }),
-        [],
-    );
+    /** getItemLayout REMOVED on purpose: feed cards are highly variable in height
+     *  (9:16 video, 1-3 line story previews, check-ins, expandable comment input).
+     *  A wrong constant layout disables FlashList's measurement-based estimate and
+     *  causes scroll offset jumps. FlashList self-measures with estimatedItemSize. */
 
     /** extraData: lightweight trigger that changes when bookmarks/comments update.
      *  FlashList re-renders visible items when this changes, but the stable
@@ -765,8 +767,9 @@ const FeedScreenInner: React.FC<Props> = ({
                             ListFooterComponent={FeedFooter}
                             ListEmptyComponent={emptyComponent}
                             estimatedItemSize={250}
-                            getItemLayout={getFeedItemLayout}
-                            keyExtractor={(item: FeedItem) => item.note?.id || item.vlog?.id || String(item.timestamp)}
+                            keyExtractor={(item: FeedItem) =>
+                                item.note?.id || item.vlog?.id || `feed-${item.timestamp}`
+                            }
                             bounces={false}
                             overScrollMode="never"
                             scrollEnabled={feedScrollEnabled}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import { storage } from '@/lib/storage';
 import { CONFIG } from '@/config';
 
@@ -11,17 +11,17 @@ import { CONFIG } from '@/config';
 export type PinMode = 'verify' | 'setup_1' | 'setup_2';
 
 interface PinContextType {
-    /** 
-     * Request a PIN from the user. 
+    /**
+     * Request a PIN from the user.
      * Pauses execution until the user enters the correct PIN or cancels.
      */
     requestPin: (promptMessage?: string) => Promise<boolean>;
-    
+
     // State exposed exclusively for PinPadModal
     isVisible: boolean;
     mode: PinMode;
     promptText: string;
-    
+
     // Callbacks for PinPadModal
     onSuccess: () => void;
     onCancel: () => void;
@@ -33,12 +33,22 @@ export const PinProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [isVisible, setIsVisible] = useState(false);
     const [mode, setMode] = useState<PinMode>('verify');
     const [promptText, setPromptText] = useState('Enter PIN');
-    
-    // Store the resolver function so we can manually resolve the promise from the modal
-    const [resolver, setResolver] = useState<((result: boolean) => void) | null>(null);
+
+    // Store the resolver in a ref (not state) — state caused a re-render per
+    // resolve AND stale closures in onSuccess/onCancel. The ref also lets us
+    // reject a previous pending request when a new one arrives.
+    const resolverRef = useRef<((result: boolean) => void) | null>(null);
 
     const requestPin = useCallback(async (promptMessage?: string): Promise<boolean> => {
-        // First, check if a PIN is actually set up in AsyncStorage.
+        // Overlapping requests (e.g. double-tap on an unlock button): reject the
+        // previous caller immediately so its await never hangs forever, then let
+        // the LATEST request own the dialog. Set the resolver synchronously
+        // before the await to avoid a race between two concurrent calls.
+        resolverRef.current?.(false);
+        const promise = new Promise<boolean>((resolve) => {
+            resolverRef.current = resolve;
+        });
+
         try {
             const existingPin = await storage.getItem(CONFIG.SECURITY_PIN_KEY);
             if (!existingPin) {
@@ -52,41 +62,38 @@ export const PinProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (e) {
             console.warn('[PinProvider] Error reading PIN from storage:', e);
             setMode('verify');
+            setPromptText(promptMessage || 'Enter PIN');
         }
 
         setIsVisible(true);
-
-        return new Promise<boolean>((resolve) => {
-            setResolver(() => resolve);
-        });
+        return promise;
     }, []);
 
     const onSuccess = useCallback(() => {
         setIsVisible(false);
-        if (resolver) resolver(true);
-        setResolver(null);
-    }, [resolver]);
+        resolverRef.current?.(true);
+        resolverRef.current = null;
+    }, []);
 
     const onCancel = useCallback(() => {
         setIsVisible(false);
-        if (resolver) resolver(false);
-        setResolver(null);
-    }, [resolver]);
+        resolverRef.current?.(false);
+        resolverRef.current = null;
+    }, []);
 
-    const value = useMemo(() => ({
-        requestPin,
-        isVisible,
-        mode,
-        promptText,
-        onSuccess,
-        onCancel
-    }), [requestPin, isVisible, mode, promptText, onSuccess, onCancel]);
-
-    return (
-        <PinContext.Provider value={value}>
-            {children}
-        </PinContext.Provider>
+    const value = useMemo(
+        () => ({
+            requestPin,
+            isVisible,
+            mode,
+            promptText,
+            onSuccess,
+            onCancel,
+        }),
+        [requestPin, isVisible, mode, promptText, onSuccess, onCancel],
     );
+
+    return <PinContext.Provider value={value}>{children}</PinContext.Provider>;
 };
 
 export const usePinContext = () => {
