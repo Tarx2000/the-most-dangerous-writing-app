@@ -1,5 +1,6 @@
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { storage } from '@/lib/storage';
+import { logger } from '@/lib/logger';
 
 const DB_NAME = 'mda_v2.db';
 let dbInstance: SQLiteDatabase | null = null;
@@ -9,11 +10,19 @@ export async function getDb(): Promise<SQLiteDatabase> {
     if (dbInstance) return dbInstance;
     if (dbOpeningPromise) return dbOpeningPromise;
 
-    dbOpeningPromise = openDatabaseAsync(DB_NAME).then(async (db: SQLiteDatabase) => {
-        await migrate(db);
-        dbInstance = db;
-        return db;
-    });
+    dbOpeningPromise = openDatabaseAsync(DB_NAME)
+        .then(async (db: SQLiteDatabase) => {
+            await migrate(db);
+            dbInstance = db;
+            return db;
+        })
+        .catch((err: unknown) => {
+            // Reset the cached promise so a later call can retry. A permanently
+            // rejected promise would otherwise brick EVERY future DB operation
+            // for the rest of the app session.
+            dbOpeningPromise = null;
+            throw err;
+        });
 
     return dbOpeningPromise;
 }
@@ -37,6 +46,35 @@ type Migration = {
     name: string;
     up: string[];
 };
+
+/**
+ * True when the error message signals a schema change that was ALREADY applied
+ * (e.g. `ALTER TABLE ... ADD COLUMN` on a column that already exists). These are
+ * treated as "already migrated" so a stale schema version can never brick the
+ * app or crash startup with a duplicate-column exception.
+ */
+function isAlreadyAppliedError(err: unknown): boolean {
+    const message =
+        typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message?: string }).message)
+            : String(err);
+    return /duplicate column name/i.test(message) || /already exists/i.test(message);
+}
+
+/**
+ * Read the schema version stored inside the DB file itself (`PRAGMA user_version`).
+ * Unlike AsyncStorage this value lives in the database file, so it survives file
+ * copies and backup restores and can never drift out of sync with the actual schema.
+ */
+async function readPragmaVersion(db: SQLiteDatabase): Promise<number> {
+    try {
+        const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+        const version = Number(row?.user_version);
+        return Number.isFinite(version) && version > 0 ? Math.floor(version) : 0;
+    } catch {
+        return 0;
+    }
+}
 
 const MIGRATIONS: Migration[] = [
     {
@@ -210,19 +248,71 @@ const MIGRATIONS: Migration[] = [
 ];
 
 async function migrate(db: SQLiteDatabase): Promise<void> {
-    const rawVersion = await storage.getItem(SCHEMA_VERSION_KEY);
-    let currentVersion = rawVersion ? parseInt(rawVersion, 10) : 0;
-    if (Number.isNaN(currentVersion)) currentVersion = 0;
+    // The schema version is tracked in TWO places:
+    //  1. PRAGMA user_version  — stored INSIDE the DB file (survives backup restores & file copies).
+    //  2. AsyncStorage key     — legacy tracker from earlier app versions.
+    // We always take the MAX of both so the recorded version can never be lower
+    // than the actual on-disk schema. This is the key guard that prevents a stale
+    // version from re-running ALTER TABLE and crashing on "duplicate column name".
+    const rawVersion = await storage.getItem(SCHEMA_VERSION_KEY).catch(() => null);
+    const parsedAsyncVersion = parseInt(rawVersion ?? '', 10);
+    const asyncVersion = Number.isNaN(parsedAsyncVersion) ? 0 : parsedAsyncVersion;
+    const pragmaVersion = await readPragmaVersion(db);
+    let currentVersion = Math.max(asyncVersion, pragmaVersion);
 
     for (const migration of MIGRATIONS) {
-        if (migration.version > currentVersion) {
+        if (migration.version <= currentVersion) continue;
+
+        try {
             await db.withTransactionAsync(async () => {
                 for (const sql of migration.up) {
-                    await db.execAsync(sql);
+                    try {
+                        await db.execAsync(sql);
+                    } catch (err) {
+                        // Self-heal: if the statement failed because the change was
+                        // already applied (stale version), skip it and move on.
+                        if (isAlreadyAppliedError(err)) {
+                            logger(
+                                'warn',
+                                'Migration',
+                                `Skipping already-applied statement in v${migration.version}: ${sql.slice(0, 60)}…`,
+                                err,
+                            );
+                            continue;
+                        }
+                        throw err;
+                    }
                 }
             });
-            await storage.setItem(SCHEMA_VERSION_KEY, String(migration.version));
             currentVersion = migration.version;
+            logger('info', 'Migration', `Applied migration v${migration.version} (${migration.name})`);
+        } catch (err) {
+            // NEVER brick the app over a migration problem. Log it and continue so
+            // the database is still returned and the app can boot best-effort.
+            logger(
+                'error',
+                'Migration',
+                `Migration v${migration.version} (${migration.name}) failed — continuing`,
+                err,
+            );
+        }
+    }
+
+    // Persist the resolved version in both stores (best-effort; never fatal).
+    // Writing PRAGMA user_version makes future launches self-healing even if the
+    // AsyncStorage key is wiped — the DB file itself remembers its own schema level.
+    if (pragmaVersion < currentVersion) {
+        try {
+            await db.execAsync(`PRAGMA user_version = ${currentVersion};`);
+        } catch (err) {
+            logger('warn', 'Migration', 'Could not persist PRAGMA user_version', err);
+        }
+    }
+    if (asyncVersion < currentVersion) {
+        try {
+            await storage.setItem(SCHEMA_VERSION_KEY, String(currentVersion));
+        } catch (err) {
+            logger('warn', 'Migration', 'Could not persist schema version in AsyncStorage', err);
         }
     }
 }

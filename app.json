@@ -47,7 +47,8 @@
                 }
             ],
             "expo-sharing",
-            "./plugins/withAndroidSigning.js"
+            "./plugins/withAndroidSigning.js",
+            "expo-sqlite"
         ],
         "web": {
             "favicon": "./assets/favicon.png"

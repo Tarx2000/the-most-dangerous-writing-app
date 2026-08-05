@@ -94,12 +94,10 @@ describe('db', () => {
         await getDb();
 
         expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(6);
-        expect(mockDb.execAsync).toHaveBeenCalledTimes(29);
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '1');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '2');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '3');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '4');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '5');
+        // 29 migration statements + 1 PRAGMA user_version sync write
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(30);
+        // The final resolved version is persisted once (not per-migration)
+        expect(storage.setItem).toHaveBeenCalledTimes(1);
         expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '6');
     });
 
@@ -111,11 +109,9 @@ describe('db', () => {
         await getDb();
 
         expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(5);
-        expect(mockDb.execAsync).toHaveBeenCalledTimes(21);
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '2');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '3');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '4');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '5');
+        // 21 statements for migrations 2-6 + 1 PRAGMA user_version sync write
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(22);
+        expect(storage.setItem).toHaveBeenCalledTimes(1);
         expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '6');
     });
 
@@ -127,13 +123,13 @@ describe('db', () => {
         await getDb();
 
         expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(3);
-        expect(mockDb.execAsync).toHaveBeenCalledTimes(17);
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '4');
-        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '5');
+        // 17 statements for migrations 4-6 + 1 PRAGMA user_version sync write
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(18);
+        expect(storage.setItem).toHaveBeenCalledTimes(1);
         expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '6');
     });
 
-    it('migrations: when storage version is 6, none run', async () => {
+    it('migrations: when storage version is 6, no migration runs', async () => {
         const mockDb = createMockDb();
         (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
         (storage.getItem as jest.Mock).mockResolvedValue('6');
@@ -141,8 +137,42 @@ describe('db', () => {
         await getDb();
 
         expect(mockDb.withTransactionAsync).not.toHaveBeenCalled();
-        expect(mockDb.execAsync).not.toHaveBeenCalled();
+        // No migrations run, but the DB-internal version (PRAGMA) is synced up.
+        expect(mockDb.execAsync).toHaveBeenCalledTimes(1);
+        expect(mockDb.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6;');
+        // AsyncStorage is already at the current version — no write needed.
         expect(storage.setItem).not.toHaveBeenCalled();
+    });
+
+    it('migrations: DB already migrated but AsyncStorage version stale — self-heals instead of crashing', async () => {
+        const mockDb = createMockDb();
+        (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
+        // AsyncStorage says version 2, but the DB is actually at v6 schema.
+        // Migrations 3-6 attempt to run; any "duplicate column" errors must be
+        // treated as already-applied instead of rejecting getDb().
+        (storage.getItem as jest.Mock).mockResolvedValue('2');
+        (mockDb.execAsync as jest.Mock).mockRejectedValueOnce(
+            new Error('SQLite error: duplicate column name: is_tweet'),
+        );
+
+        await expect(getDb()).resolves.toBe(mockDb);
+
+        // All pending migrations still attempted (no early crash), version synced to 6.
+        expect(storage.setItem).toHaveBeenCalledWith('__DB_SCHEMA_VERSION__', '6');
+        expect(mockDb.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6;');
+    });
+
+    it('migrations: rejects only if openDatabaseAsync itself fails, and resets for retry', async () => {
+        (openDatabaseAsync as jest.Mock).mockRejectedValueOnce(new Error('native open failed'));
+
+        await expect(getDb()).rejects.toThrow('native open failed');
+
+        // The cached opening promise is reset, so a later call can retry.
+        const mockDb = createMockDb();
+        (openDatabaseAsync as jest.Mock).mockResolvedValue(mockDb);
+        (storage.getItem as jest.Mock).mockResolvedValue('6');
+        await expect(getDb()).resolves.toBe(mockDb);
+        expect(openDatabaseAsync).toHaveBeenCalledTimes(2);
     });
 
     it('sanitizeBindParams preserves strings/numbers and converts null to holes', async () => {

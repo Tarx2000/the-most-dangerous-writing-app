@@ -2,12 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    runOnJS,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { theme } from '@/styles/theme';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -20,13 +15,7 @@ const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 /* ────────────────────────────────────────────────────────────────────────────
  * Helper: Build day cells for a given month
  * ──────────────────────────────────────────────────────────────────────────── */
-function buildMonthCells(
-    year: number,
-    month: number,
-    recordDays: Set<string>,
-    now: Date,
-    daySize: number,
-) {
+function buildMonthCells(year: number, month: number, recordDays: Set<string>, now: Date, daySize: number) {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDayJS = new Date(year, month, 1).getDay();
     const firstDayMon = (firstDayJS + 6) % 7;
@@ -34,16 +23,18 @@ function buildMonthCells(
     const cells: React.ReactNode[] = [];
 
     for (let i = 0; i < firstDayMon; i++) {
-        cells.push(<View key={`e-${i}`} style={[styles.dayCell, { width: daySize, height: daySize, borderRadius: daySize / 2 }]} />);
+        cells.push(
+            <View
+                key={`e-${i}`}
+                style={[styles.dayCell, { width: daySize, height: daySize, borderRadius: daySize / 2 }]}
+            />,
+        );
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${month}-${day}`;
         const hasRecord = recordDays.has(dateStr);
-        const isToday =
-            now.getDate() === day &&
-            now.getMonth() === month &&
-            now.getFullYear() === year;
+        const isToday = now.getDate() === day && now.getMonth() === month && now.getFullYear() === year;
 
         cells.push(
             <View
@@ -86,12 +77,9 @@ interface CalendarViewProps {
 }
 
 /** React.memo prevents re-renders from parent scroll events that don't change streak data */
-export const CalendarView = React.memo(function CalendarView({
-    currentStreak,
-    streakHistory,
-}: CalendarViewProps) {
+export const CalendarView = React.memo(function CalendarView({ currentStreak, streakHistory }: CalendarViewProps) {
     const { width: screenW } = useWindowDimensions();
-    const gridWidth = screenW - 40 - (CALENDAR_PADDING * 2);
+    const gridWidth = screenW - 40 - CALENDAR_PADDING * 2;
     const daySize = Math.floor(gridWidth / 7);
     const swipeThreshold = gridWidth * 0.2;
     const velocityThreshold = 400;
@@ -99,7 +87,7 @@ export const CalendarView = React.memo(function CalendarView({
     const [monthOffset, setMonthOffset] = useState(0);
 
     const recordDays = useMemo(
-        () => new Set<string>(streakHistory),
+        () => new Set<string>(Array.isArray(streakHistory) ? streakHistory : []),
         [streakHistory],
     );
 
@@ -116,9 +104,18 @@ export const CalendarView = React.memo(function CalendarView({
     const nextYear = nextDate.getFullYear();
     const nextMonth = nextDate.getMonth();
 
-    const prevCells = useMemo(() => buildMonthCells(prevYear, prevMonth, recordDays, now, daySize), [prevYear, prevMonth, recordDays, now, daySize]);
-    const currCells = useMemo(() => buildMonthCells(currYear, currMonth, recordDays, now, daySize), [currYear, currMonth, recordDays, now, daySize]);
-    const nextCells = useMemo(() => buildMonthCells(nextYear, nextMonth, recordDays, now, daySize), [nextYear, nextMonth, recordDays, now, daySize]);
+    const prevCells = useMemo(
+        () => buildMonthCells(prevYear, prevMonth, recordDays, now, daySize),
+        [prevYear, prevMonth, recordDays, now, daySize],
+    );
+    const currCells = useMemo(
+        () => buildMonthCells(currYear, currMonth, recordDays, now, daySize),
+        [currYear, currMonth, recordDays, now, daySize],
+    );
+    const nextCells = useMemo(
+        () => buildMonthCells(nextYear, nextMonth, recordDays, now, daySize),
+        [nextYear, nextMonth, recordDays, now, daySize],
+    );
 
     const monthLabel = currDate.toLocaleString('default', { month: 'long' });
     const yearLabel = currDate.getFullYear().toString();
@@ -127,44 +124,45 @@ export const CalendarView = React.memo(function CalendarView({
     /* ── Reanimated ── */
     const translateX = useSharedValue(0);
 
-    const commitMonth = useCallback(
-        (direction: 'prev' | 'next') => {
-            if (direction === 'prev') {
-                setMonthOffset((o) => o + 1);
-            } else {
-                setMonthOffset((o) => Math.max(0, o - 1));
-            }
-        },
-        [],
-    );
+    const commitMonth = useCallback((direction: 'prev' | 'next') => {
+        if (direction === 'prev') {
+            setMonthOffset((o) => o + 1);
+        } else {
+            setMonthOffset((o) => Math.max(0, o - 1));
+        }
+    }, []);
 
     /* ── Gesture (memoized to prevent stale listeners and memory leaks) ── */
-    const panGesture = useMemo(() => Gesture.Pan()
-        .activeOffsetX([-15, 15])
-        .failOffsetY([-15, 15])
-        .onUpdate((e) => {
-            if (!canGoForward && e.translationX < 0) {
-                translateX.value = e.translationX * 0.15;
-            } else {
-                translateX.value = e.translationX;
-            }
-        })
-        .onEnd((e) => {
-            const swipedRight = e.translationX > swipeThreshold || e.velocityX > velocityThreshold;
-            const swipedLeft = e.translationX < -swipeThreshold || e.velocityX < -velocityThreshold;
+    const panGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .activeOffsetX([-15, 15])
+                .failOffsetY([-15, 15])
+                .onUpdate((e) => {
+                    if (!canGoForward && e.translationX < 0) {
+                        translateX.value = e.translationX * 0.15;
+                    } else {
+                        translateX.value = e.translationX;
+                    }
+                })
+                .onEnd((e) => {
+                    const swipedRight = e.translationX > swipeThreshold || e.velocityX > velocityThreshold;
+                    const swipedLeft = e.translationX < -swipeThreshold || e.velocityX < -velocityThreshold;
 
-            if (swipedRight) {
-                runOnJS(commitMonth)('prev');
-                translateX.value = gridWidth * 0.06;
-                translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
-            } else if (swipedLeft && canGoForward) {
-                runOnJS(commitMonth)('next');
-                translateX.value = -gridWidth * 0.06;
-                translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
-            } else {
-                translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
-            }
-        }), [canGoForward, commitMonth, translateX, swipeThreshold, velocityThreshold, gridWidth]);
+                    if (swipedRight) {
+                        runOnJS(commitMonth)('prev');
+                        translateX.value = gridWidth * 0.06;
+                        translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
+                    } else if (swipedLeft && canGoForward) {
+                        runOnJS(commitMonth)('next');
+                        translateX.value = -gridWidth * 0.06;
+                        translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
+                    } else {
+                        translateX.value = withSpring(0, { damping: 30, stiffness: 300, mass: 0.8 });
+                    }
+                }),
+        [canGoForward, commitMonth, translateX, swipeThreshold, velocityThreshold, gridWidth],
+    );
 
     /* ── Animated styles ── */
     const stripStyle = useAnimatedStyle(() => ({
@@ -180,13 +178,13 @@ export const CalendarView = React.memo(function CalendarView({
                 <Text style={styles.heroStreak}>{currentStreak}-day </Text>
                 streak
             </Text>
-            <Text style={styles.heroSubtitle}>
-                Keep it up! Write every day and don't let your streak reset.
-            </Text>
+            <Text style={styles.heroSubtitle}>Keep it up! Write every day and don't let your streak reset.</Text>
 
             {/* ── Month Navigation ── */}
             <View style={styles.monthNav}>
-                <Text style={styles.monthLabel}>{monthLabel} {yearLabel}</Text>
+                <Text style={styles.monthLabel}>
+                    {monthLabel} {yearLabel}
+                </Text>
                 <View style={styles.monthArrows}>
                     <AnimatedScaleButton
                         onPress={() => commitMonth('prev')}
@@ -208,7 +206,9 @@ export const CalendarView = React.memo(function CalendarView({
             {/* ── Week Day Headers ── */}
             <View style={styles.weekRow}>
                 {WEEK_DAYS.map((d, i) => (
-                    <Text key={`wd-${i}`} style={[styles.weekDayLabel, { width: daySize }]}>{d}</Text>
+                    <Text key={`wd-${i}`} style={[styles.weekDayLabel, { width: daySize }]}>
+                        {d}
+                    </Text>
                 ))}
             </View>
 

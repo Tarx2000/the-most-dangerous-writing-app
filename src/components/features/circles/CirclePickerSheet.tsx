@@ -11,14 +11,7 @@
  * - Inline ConfirmDialog before creating
  */
 import React, { useState, useRef, useMemo, useCallback } from 'react';
-import {
-    View,
-    Text,
-    TextInput,
-    Vibration,
-    StyleSheet,
-    ActivityIndicator,
-} from 'react-native';
+import { View, Text, TextInput, Vibration, StyleSheet, ActivityIndicator } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -41,224 +34,243 @@ interface CirclePickerSheetProps {
     setHomeScrollEnabled?: (enabled: boolean) => void;
 }
 
-type ListItem =
-    | { type: 'person'; person: Person }
-    | { type: 'create'; searchText: string };
+type ListItem = { type: 'person'; person: Person } | { type: 'create'; searchText: string };
 
-export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(({
-    visible,
-    onClose,
-    onSelectPerson,
-    persons,
-    addPerson,
-    isCirclesUnlocked,
-    isNotesUnlocked,
-    unlockCircles,
-    setHomeScrollEnabled,
-}) => {
-    const [searchText, setSearchText] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
-    const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
-    const [isCreating, setIsCreating] = useState(false);
-    const [confirmName, setConfirmName] = useState<string | null>(null);
+export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(
+    ({
+        visible,
+        onClose,
+        onSelectPerson,
+        persons,
+        addPerson,
+        isCirclesUnlocked,
+        isNotesUnlocked,
+        unlockCircles,
+        setHomeScrollEnabled,
+    }) => {
+        const [searchText, setSearchText] = useState('');
+        const [debouncedSearch, setDebouncedSearch] = useState('');
+        const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+        const [isCreating, setIsCreating] = useState(false);
+        const [confirmName, setConfirmName] = useState<string | null>(null);
 
-    const filteredPersons = useMemo(() => {
-        if (!debouncedSearch.trim()) return persons;
-        return persons.filter(p =>
-            p.name.toLowerCase().includes(debouncedSearch.toLowerCase())
-        );
-    }, [persons, debouncedSearch]);
+        const filteredPersons = useMemo(() => {
+            if (!debouncedSearch.trim()) return persons;
+            return persons.filter((p) => (p.name || '').toLowerCase().includes(debouncedSearch.toLowerCase()));
+        }, [persons, debouncedSearch]);
 
-    const listData: ListItem[] = useMemo(() => {
-        const items: ListItem[] = filteredPersons.map(p => ({ type: 'person', person: p }));
-        const search = debouncedSearch.trim();
-        if (search) {
-            const exactMatch = persons.some(p =>
-                p.name.toLowerCase() === search.toLowerCase()
-            );
-            if (!exactMatch) {
-                items.push({ type: 'create', searchText: debouncedSearch });
+        const listData: ListItem[] = useMemo(() => {
+            const items: ListItem[] = filteredPersons.map((p) => ({ type: 'person', person: p }));
+            const search = debouncedSearch.trim();
+            if (search) {
+                const exactMatch = persons.some((p) => (p.name || '').toLowerCase() === search.toLowerCase());
+                if (!exactMatch) {
+                    items.push({ type: 'create', searchText: debouncedSearch });
+                }
             }
-        }
-        return items;
-    }, [filteredPersons, debouncedSearch, persons]);
+            return items;
+        }, [filteredPersons, debouncedSearch, persons]);
 
-    const handleSearchChange = useCallback((text: string) => {
-        setSearchText(text);
-        if (searchDebounceRef.current) {
-            clearTimeout(searchDebounceRef.current);
-        }
-        searchDebounceRef.current = setTimeout(() => setDebouncedSearch(text), 150);
-    }, []);
-
-    const handleClose = useCallback(() => {
-        if (searchDebounceRef.current) {
-            clearTimeout(searchDebounceRef.current);
-            searchDebounceRef.current = null;
-        }
-        setSearchText('');
-        setDebouncedSearch('');
-        setIsCreating(false);
-        setConfirmName(null);
-        onClose();
-    }, [onClose]);
-
-    const handleCreatePerson = useCallback(async (name: string) => {
-        const trimmed = name.trim();
-        if (!trimmed || isCreating) return;
-        setIsCreating(true);
-        try {
-            const newId = await addPerson(trimmed);
-            if (newId) {
-                onSelectPerson(newId);
-                handleClose();
+        const handleSearchChange = useCallback((text: string) => {
+            setSearchText(text);
+            if (searchDebounceRef.current) {
+                clearTimeout(searchDebounceRef.current);
             }
-        } finally {
+            searchDebounceRef.current = setTimeout(() => setDebouncedSearch(text), 150);
+        }, []);
+
+        const handleClose = useCallback(() => {
+            if (searchDebounceRef.current) {
+                clearTimeout(searchDebounceRef.current);
+                searchDebounceRef.current = null;
+            }
+            setSearchText('');
+            setDebouncedSearch('');
             setIsCreating(false);
-        }
-    }, [addPerson, onSelectPerson, handleClose, isCreating]);
+            setConfirmName(null);
+            onClose();
+        }, [onClose]);
 
-    const handleSelectPerson = useCallback((personId: string) => {
-        onSelectPerson(personId);
-        handleClose();
-    }, [onSelectPerson, handleClose]);
-
-    const clearSearch = useCallback(() => {
-        setSearchText('');
-        setDebouncedSearch('');
-    }, []);
-
-    const renderItem = useCallback(({ item }: { item: ListItem }) => {
-        if (item.type === 'person') {
-            const p = item.person;
-            return (
-                <AnimatedScaleButton
-                    style={styles.personItem}
-                    onPress={() => handleSelectPerson(p.id)}
-                >
-                    <View style={styles.personAvatar}>
-                        <Text style={styles.personAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.personName}>{p.name}</Text>
-                </AnimatedScaleButton>
-            );
-        }
-
-        const search = item.searchText.trim();
-        return (
-            <AnimatedScaleButton
-                style={styles.createOption}
-                onPress={() => setConfirmName(search)}
-                disabled={isCreating}
-            >
-                {isCreating ? (
-                    <ActivityIndicator size={18} color={theme.colors.primaryAction} />
-                ) : (
-                    <MaterialCommunityIcons name="account-plus" size={20} color={theme.colors.primaryAction} />
-                )}
-                <Text style={styles.createOptionText}>
-                    {isCreating ? 'Adding...' : `Add "${search}"`}
-                </Text>
-            </AnimatedScaleButton>
+        const handleCreatePerson = useCallback(
+            async (name: string) => {
+                const trimmed = name.trim();
+                if (!trimmed || isCreating) return;
+                setIsCreating(true);
+                try {
+                    const newId = await addPerson(trimmed);
+                    if (newId) {
+                        onSelectPerson(newId);
+                        handleClose();
+                    }
+                } finally {
+                    setIsCreating(false);
+                }
+            },
+            [addPerson, onSelectPerson, handleClose, isCreating],
         );
-    }, [handleSelectPerson, isCreating]);
 
-    return (
-        <BaseModal
-            visible={visible}
-            onClose={handleClose}
-            title="Select Person"
-            setHomeScrollEnabled={setHomeScrollEnabled}
-            keyboardAvoiding={false}
-        >
-            {!isCirclesUnlocked && !isNotesUnlocked ? (
-                <View style={styles.lockContainer}>
-                    <MaterialCommunityIcons name="lock-outline" size={48} color={theme.colors.primaryAction} style={{ marginBottom: 16 }} />
-                    <Text style={styles.lockTitle}>Circles Protected</Text>
-                    <Text style={styles.lockHint}>Verify your identity to view your circles</Text>
+        const handleSelectPerson = useCallback(
+            (personId: string) => {
+                onSelectPerson(personId);
+                handleClose();
+            },
+            [onSelectPerson, handleClose],
+        );
+
+        const clearSearch = useCallback(() => {
+            setSearchText('');
+            setDebouncedSearch('');
+        }, []);
+
+        const renderItem = useCallback(
+            ({ item }: { item: ListItem }) => {
+                if (item.type === 'person') {
+                    const p = item.person;
+                    return (
+                        <AnimatedScaleButton style={styles.personItem} onPress={() => handleSelectPerson(p.id)}>
+                            <View style={styles.personAvatar}>
+                                <Text style={styles.personAvatarText}>{(p.name || '?').charAt(0).toUpperCase()}</Text>
+                            </View>
+                            <Text style={styles.personName}>{p.name}</Text>
+                        </AnimatedScaleButton>
+                    );
+                }
+
+                const search = item.searchText.trim();
+                return (
                     <AnimatedScaleButton
-                        style={styles.lockBtn}
-                        onPress={async () => {
-                            const success = await unlockCircles();
-                            if (success) Vibration.vibrate(50);
-                        }}
+                        style={styles.createOption}
+                        onPress={() => setConfirmName(search)}
+                        disabled={isCreating}
                     >
-                        <MaterialCommunityIcons name="fingerprint" size={20} color={theme.colors.textPrimary} style={{ marginRight: 8 }} />
-                        <Text style={styles.lockBtnText}>Unlock Circles</Text>
+                        {isCreating ? (
+                            <ActivityIndicator size={18} color={theme.colors.primaryAction} />
+                        ) : (
+                            <MaterialCommunityIcons name="account-plus" size={20} color={theme.colors.primaryAction} />
+                        )}
+                        <Text style={styles.createOptionText}>{isCreating ? 'Adding...' : `Add "${search}"`}</Text>
                     </AnimatedScaleButton>
-                </View>
-            ) : (
-                <View style={styles.outer}>
-                    {/* Search bar — fixed, never moves */}
-                    <View style={styles.header}>
-                        <View style={styles.searchBox}>
-                            <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textMuted} style={{ marginRight: 10 }} />
-                            <TextInput
-                                style={styles.searchInput}
-                                placeholder="Search your circles..."
-                                placeholderTextColor={theme.colors.textMuted}
-                                value={searchText}
-                                onChangeText={handleSearchChange}
-                                keyboardAppearance="dark"
-                                autoCorrect={false}
-                            />
-                            {searchText.length > 0 && (
-                                <AnimatedScaleButton onPress={clearSearch}>
-                                    <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.textMuted} />
-                                </AnimatedScaleButton>
-                            )}
-                        </View>
-                    </View>
+                );
+            },
+            [handleSelectPerson, isCreating],
+        );
 
-                    {/* Results list */}
-                    <View style={styles.listFlex}>
-                        <FlashList
-                            data={listData}
-                            renderItem={renderItem}
-                            keyExtractor={(item, index) =>
-                                item.type === 'person' ? item.person.id : `footer-${index}`
-                            }
-                            keyboardShouldPersistTaps="handled"
-                            keyboardDismissMode="on-drag"
-                            contentContainerStyle={{
-                                paddingHorizontal: 20,
-                                paddingBottom: 40,
+        return (
+            <BaseModal
+                visible={visible}
+                onClose={handleClose}
+                title="Select Person"
+                setHomeScrollEnabled={setHomeScrollEnabled}
+                keyboardAvoiding={false}
+            >
+                {!isCirclesUnlocked && !isNotesUnlocked ? (
+                    <View style={styles.lockContainer}>
+                        <MaterialCommunityIcons
+                            name="lock-outline"
+                            size={48}
+                            color={theme.colors.primaryAction}
+                            style={{ marginBottom: 16 }}
+                        />
+                        <Text style={styles.lockTitle}>Circles Protected</Text>
+                        <Text style={styles.lockHint}>Verify your identity to view your circles</Text>
+                        <AnimatedScaleButton
+                            style={styles.lockBtn}
+                            onPress={async () => {
+                                const success = await unlockCircles();
+                                if (success) Vibration.vibrate(50);
                             }}
+                        >
+                            <MaterialCommunityIcons
+                                name="fingerprint"
+                                size={20}
+                                color={theme.colors.textPrimary}
+                                style={{ marginRight: 8 }}
+                            />
+                            <Text style={styles.lockBtnText}>Unlock Circles</Text>
+                        </AnimatedScaleButton>
+                    </View>
+                ) : (
+                    <View style={styles.outer}>
+                        {/* Search bar — fixed, never moves */}
+                        <View style={styles.header}>
+                            <View style={styles.searchBox}>
+                                <MaterialCommunityIcons
+                                    name="magnify"
+                                    size={20}
+                                    color={theme.colors.textMuted}
+                                    style={{ marginRight: 10 }}
+                                />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Search your circles..."
+                                    placeholderTextColor={theme.colors.textMuted}
+                                    value={searchText}
+                                    onChangeText={handleSearchChange}
+                                    keyboardAppearance="dark"
+                                    autoCorrect={false}
+                                />
+                                {searchText.length > 0 && (
+                                    <AnimatedScaleButton onPress={clearSearch}>
+                                        <MaterialCommunityIcons
+                                            name="close-circle"
+                                            size={20}
+                                            color={theme.colors.textMuted}
+                                        />
+                                    </AnimatedScaleButton>
+                                )}
+                            </View>
+                        </View>
+
+                        {/* Results list */}
+                        <View style={styles.listFlex}>
+                            <FlashList
+                                data={listData}
+                                renderItem={renderItem}
+                                keyExtractor={(item, index) =>
+                                    item.type === 'person' ? item.person.id : `footer-${index}`
+                                }
+                                keyboardShouldPersistTaps="handled"
+                                keyboardDismissMode="on-drag"
+                                contentContainerStyle={{
+                                    paddingHorizontal: 20,
+                                    paddingBottom: 40,
+                                }}
+                            />
+                        </View>
+
+                        {/* Bottom blur gradient — fades list into keyboard overlap area */}
+                        <LinearGradient
+                            colors={[
+                                'transparent',
+                                theme.colors.overlayLight,
+                                theme.colors.overlaySoft,
+                                theme.colors.surfaceDark,
+                            ]}
+                            style={styles.bottomFade}
+                            pointerEvents="none"
+                        />
+
+                        {/* Confirmation dialog before creating */}
+                        <ConfirmDialog
+                            visible={!!confirmName}
+                            title="New Person"
+                            message={confirmName ? `Create a new circle for "${confirmName}"?` : ''}
+                            confirmLabel="Create"
+                            cancelLabel="Cancel"
+                            icon="account-plus-outline"
+                            cancelIcon="close"
+                            onConfirm={() => {
+                                if (confirmName) handleCreatePerson(confirmName);
+                                setConfirmName(null);
+                            }}
+                            onCancel={() => setConfirmName(null)}
                         />
                     </View>
-
-                    {/* Bottom blur gradient — fades list into keyboard overlap area */}
-                    <LinearGradient
-                        colors={[
-                            'transparent',
-                            theme.colors.overlayLight,
-                            theme.colors.overlaySoft,
-                            theme.colors.surfaceDark,
-                        ]}
-                        style={styles.bottomFade}
-                        pointerEvents="none"
-                    />
-
-                    {/* Confirmation dialog before creating */}
-                    <ConfirmDialog
-                        visible={!!confirmName}
-                        title="New Person"
-                        message={confirmName ? `Create a new circle for "${confirmName}"?` : ''}
-                        confirmLabel="Create"
-                        cancelLabel="Cancel"
-                        icon="account-plus-outline"
-                        cancelIcon="close"
-                        onConfirm={() => {
-                            if (confirmName) handleCreatePerson(confirmName);
-                            setConfirmName(null);
-                        }}
-                        onCancel={() => setConfirmName(null)}
-                    />
-                </View>
-            )}
-        </BaseModal>
-    );
-});
+                )}
+            </BaseModal>
+        );
+    },
+);
 
 const styles = StyleSheet.create({
     outer: {

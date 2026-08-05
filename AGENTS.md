@@ -31,12 +31,13 @@ src/
 - **Android signing keys**: Signing keys for debug and release builds are stored in `credentials/` (tracked in Git) and are automatically copied to native `android/app/` during prebuild via the local config plugin `./plugins/withAndroidSigning.js`. This ensures identical signatures across all dev environments (Windows & macOS) so local updates do not trigger Android signature mismatch errors.
 - **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
 - **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly.
+- **Crash-proof startup**: The app must never crash on launch regardless of stored user data. DB migrations are idempotent/self-healing (schema version via `PRAGMA user_version` + AsyncStorage `max`), `getDb()` resets on failure, `loadAllData()` degrades gracefully (`Promise.allSettled`), and row converters / `safeParse` results are shape-guarded. Details: `.agents/instructions/state-management.md`.
 - **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
 - **Masteries Rebranding**: All user-facing references (headers, modals, lists, settings) are rebranded as **Masteries** (or **Mastery**), whereas code-level imports, hooks (`usePillars`), repositories, and database schemas remain `pillar` and `pillars` to guarantee data integrity and bypass migration corruption.
 
 ## Domain Instructions
 Critical per-domain rules live in `.agents/instructions/*.md`. Read the relevant file before editing that area.
-- `state-management.md` — Split-context pattern, fresh-read, optimistic updates
+- `state-management.md` — Split-context pattern, fresh-read, optimistic updates, crash-proof startup
 - `animations.md` — SharedValue rules, feed transitions, haptics
 - `ai-integration.md` — Singleton queue, streaming, retry logic
 - `theme-system.md` — Color mappings, naming conventions, liquid glass

@@ -126,7 +126,7 @@ export const ExpandablePersonCard: React.FC<Props> = React.memo(
                             handleProfilePress();
                         }}
                     >
-                        <Text style={commonStyles.personAvatarText}>{person.name.charAt(0)}</Text>
+                        <Text style={commonStyles.personAvatarText}>{(person.name || '?').charAt(0)}</Text>
                     </AnimatedScaleButton>
 
                     {/* Name + meta info */}

@@ -44,7 +44,7 @@ export const StreakPopup = React.memo(({ visible, streakHistory = [], onClose }:
     /** Compute which days of the current week have streak records */
     const weekDots = useMemo(() => {
         if (!visible) return [];
-        const histSet = new Set<string>(streakHistory);
+        const histSet = new Set<string>(Array.isArray(streakHistory) ? streakHistory : []);
         const today = new Date();
         const dayOfWeek = today.getDay(); // 0=Sun
         const dots: boolean[] = [];

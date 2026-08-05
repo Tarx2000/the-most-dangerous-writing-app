@@ -210,7 +210,10 @@ export const AiQueueProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         if (!queueInitedRef.current && !aiQueue.isInitialized && configReady) {
             queueInitedRef.current = true;
-            initializeQueue();
+            // Queue init must never crash startup (e.g. corrupt persisted queue).
+            initializeQueue().catch((err) => {
+                console.warn('[AiQueue] initialize failed:', err);
+            });
         }
     }, [initializeQueue, configReady]);
 

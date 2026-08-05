@@ -91,7 +91,12 @@ export async function loadPersons(ctx: LoadContext): Promise<void> {
 }
 
 export async function loadVlogs(ctx: LoadContext): Promise<void> {
-    const vlogs = await getAllVlogs();
+    let vlogs: SavedVlog[] = [];
+    try {
+        vlogs = await getAllVlogs();
+    } catch (err) {
+        logger('error', 'Storage', 'Failed to load vlogs:', err);
+    }
     ctx.setSavedVlogs(vlogs);
     const totalBytes = vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
     ctx.setTotalVlogStorageBytes(totalBytes);
@@ -105,9 +110,17 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
 
     /* ════════════════════════════════════════════════════════════════════
        PHASE 1 — Parallel independent loads
-       Notes + Persons + Settings can all load simultaneously from SQLite.
+       Notes + Persons + Settings each load independently (allSettled) so a
+       single malformed domain can never abort the whole startup load.
        ════════════════════════════════════════════════════════════════════ */
-    const [notes, persons, allSettings] = await Promise.all([getAllNotes(), getAllPersons(), getAllSettings()]);
+    const [notesResult, personsResult, settingsResult] = await Promise.allSettled([
+        getAllNotes(),
+        getAllPersons(),
+        getAllSettings(),
+    ]);
+    const notes = notesResult.status === 'fulfilled' ? notesResult.value : [];
+    const persons = personsResult.status === 'fulfilled' ? personsResult.value : [];
+    const allSettings = settingsResult.status === 'fulfilled' ? settingsResult.value : {};
 
     ctx.setSavedNotes(notes);
     ctx.setPersons(persons);
@@ -131,8 +144,12 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     ctx.setDevMode(safeParse('DEV_MODE', allSettings['DEV_MODE'], false));
     ctx.setDebugLayout(safeParse('DEBUG_LAYOUT', allSettings['DEBUG_LAYOUT'], false));
 
-    const visionBoard = safeParse<VisionBoard | null>('VISION_BOARD', allSettings['VISION_BOARD'], null);
-    ctx.setVisionBoard(visionBoard);
+    const rawVisionBoard = safeParse<unknown>('VISION_BOARD', allSettings['VISION_BOARD'], null);
+    ctx.setVisionBoard(
+        rawVisionBoard && typeof rawVisionBoard === 'object' && !Array.isArray(rawVisionBoard)
+            ? (rawVisionBoard as VisionBoard)
+            : null,
+    );
 
     ctx.setPreferPinAuth(safeParse('PREFER_PIN_AUTH', allSettings['PREFER_PIN_AUTH'], false));
 
@@ -158,7 +175,13 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
        ════════════════════════════════════════════════════════════════════ */
 
     /* ── Vlogs ─────────────────────────────────────────────────────────── */
-    const vlogs = await getAllVlogs();
+    let vlogs: SavedVlog[] = [];
+    try {
+        vlogs = await getAllVlogs();
+    } catch (err) {
+        // A corrupt vlog table must not abort startup — load without vlogs.
+        logger('error', 'Storage', 'Failed to load vlogs:', err);
+    }
     ctx.setSavedVlogs(vlogs);
     const totalBytes = vlogs.reduce((sum, v) => sum + (v.fileSizeBytes || 0), 0);
     ctx.setTotalVlogStorageBytes(totalBytes);
@@ -211,18 +234,29 @@ export async function loadAllData(ctx: LoadContext): Promise<void> {
     ctx.setAiPrompts({ ...DEFAULT_AI_PROMPTS, ...rawPrompts });
     ctx.setAutoGenerateSummaries(safeParse('AUTO_GENERATE_SUMMARIES', allSettings['AUTO_GENERATE_SUMMARIES'], true));
 
-    const storedFavorites = safeParse<string[]>('AI_FAVORITE_MODELS', allSettings[AI_STORAGE_KEYS.FAVORITE_MODELS], []);
-    ctx.setAiFavoriteModels(storedFavorites);
+    const storedFavorites = safeParse<unknown>('AI_FAVORITE_MODELS', allSettings[AI_STORAGE_KEYS.FAVORITE_MODELS], []);
+    ctx.setAiFavoriteModels(Array.isArray(storedFavorites) ? (storedFavorites as string[]) : []);
 
     /* ── Feed ──────────────────────────────────────────────────────────── */
-    ctx.setBookmarkedNoteIds(safeParse<string[]>('BOOKMARKED_NOTE_IDS', allSettings['BOOKMARKED_NOTE_IDS'], []));
-    ctx.setFeedComments(safeParse<Record<string, string>>('FEED_COMMENTS', allSettings['FEED_COMMENTS'], {}));
+    // Guard against legacy/corrupt shapes: BOOKMARKED_NOTE_IDS must be an array
+    // and FEED_COMMENTS must be a plain object, otherwise the UI would throw
+    // (e.g. `new Set(nonIterable)` / `Object.keys(null)`) on every boot.
+    const rawBookmarks = safeParse<unknown>('BOOKMARKED_NOTE_IDS', allSettings['BOOKMARKED_NOTE_IDS'], []);
+    ctx.setBookmarkedNoteIds(Array.isArray(rawBookmarks) ? (rawBookmarks as string[]) : []);
+
+    const rawFeedComments = safeParse<unknown>('FEED_COMMENTS', allSettings['FEED_COMMENTS'], {});
+    ctx.setFeedComments(
+        rawFeedComments && typeof rawFeedComments === 'object' && !Array.isArray(rawFeedComments)
+            ? (rawFeedComments as Record<string, string>)
+            : {},
+    );
     ctx.setAutoPlayFeedVideos(safeParse('AUTO_PLAY_FEED_VIDEOS', allSettings['AUTO_PLAY_FEED_VIDEOS'], true));
 
     /* ── Streak History ────────────────────────────────────────────────── */
-    const rawHistory = safeParse<string[]>('STREAK_HISTORY', allSettings['STREAK_HISTORY'], []);
-    if (rawHistory.length > 0) {
-        ctx.setStreakHistory(rawHistory);
+    const rawHistory = safeParse<unknown>('STREAK_HISTORY', allSettings['STREAK_HISTORY'], []);
+    const streakHistoryArr = Array.isArray(rawHistory) ? (rawHistory as string[]) : [];
+    if (streakHistoryArr.length > 0) {
+        ctx.setStreakHistory(streakHistoryArr);
     } else {
         /* Backfill from notes (reuse the notes already loaded in Phase 1) */
         const historySet = new Set<string>();

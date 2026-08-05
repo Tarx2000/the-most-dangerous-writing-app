@@ -71,7 +71,12 @@ export const CompressionQueueProvider = ({ children }: { children: ReactNode }) 
     useEffect(() => {
         if (!queueInitedRef.current && !compressionQueue.isInitialized) {
             queueInitedRef.current = true;
-            compressionQueue.initialize((id, patch) => updateVlogRef.current(id, patch));
+            // Queue init must never crash startup (e.g. corrupt persisted jobs).
+            compressionQueue
+                .initialize((id, patch) => updateVlogRef.current(id, patch))
+                .catch((err) => {
+                    console.warn('[CompressionQueue] initialize failed:', err);
+                });
         }
     }, [updateVlog]);
 

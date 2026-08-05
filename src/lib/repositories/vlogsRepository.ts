@@ -17,8 +17,14 @@ export interface VlogRow {
 }
 
 function rowToVlog(row: VlogRow): SavedVlog {
-    const videoFileName = row.file_path.substring(row.file_path.lastIndexOf('/') + 1);
-    const correctedFilePath = `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}${videoFileName}`;
+    // A single malformed/legacy row must NEVER reject the whole repository load
+    // (which would abort startup). `file_path` is schema NOT NULL, but we guard
+    // anyway so one bad row can't crash the app on boot.
+    const rawPath = typeof row.file_path === 'string' ? row.file_path : '';
+    const videoFileName = rawPath ? rawPath.substring(rawPath.lastIndexOf('/') + 1) : rawPath;
+    const correctedFilePath = videoFileName
+        ? `${FileSystem.documentDirectory}${CONFIG.VLOG_STORAGE_DIR}${videoFileName}`
+        : rawPath;
 
     let correctedThumbnailPath = row.thumbnail_path ?? undefined;
     if (correctedThumbnailPath) {

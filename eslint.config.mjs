@@ -24,6 +24,7 @@ export default ts.config(
       'android/',
       'ios/',
       'coverage/',
+      'plugins/',
       '**/__mocks__/**',
       '**/*.config.{js,mjs,cjs}',
       '**/*.setup.{js,mjs,cjs}',

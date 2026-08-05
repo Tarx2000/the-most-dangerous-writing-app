@@ -204,7 +204,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(
                 <View style={styles.avatarOuter}>
                     <LinearGradient colors={[...AVATAR_GRADIENT]} style={styles.avatarGradientRing}>
                         <View style={styles.avatarInner}>
-                            <Text style={styles.avatarText}>{person.name.charAt(0).toUpperCase()}</Text>
+                            <Text style={styles.avatarText}>{(person.name || '?').charAt(0).toUpperCase()}</Text>
                         </View>
                     </LinearGradient>
                 </View>
@@ -396,7 +396,7 @@ export const PersonProfileModal: React.FC<Props> = React.memo(
                     <View style={styles.avatarOuter}>
                         <LinearGradient colors={[...AVATAR_GRADIENT]} style={styles.avatarGradientRing}>
                             <View style={styles.avatarInner}>
-                                <Text style={styles.avatarText}>{person.name.charAt(0).toUpperCase()}</Text>
+                                <Text style={styles.avatarText}>{(person.name || '?').charAt(0).toUpperCase()}</Text>
                             </View>
                         </LinearGradient>
                     </View>

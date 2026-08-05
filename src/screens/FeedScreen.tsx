@@ -409,7 +409,11 @@ const FeedScreenInner: React.FC<Props> = ({
     }, [savedNotes, savedVlogs, personMap]);
 
     /** Apply bookmark filter if active (uses Set for O(1) lookups) */
-    const bookmarkSet = useMemo(() => new Set(bookmarkedNoteIds), [bookmarkedNoteIds]);
+    // Defensive guard: never crash on a corrupt/non-array value.
+    const bookmarkSet = useMemo(
+        () => new Set(Array.isArray(bookmarkedNoteIds) ? bookmarkedNoteIds : []),
+        [bookmarkedNoteIds],
+    );
     /** Apply bookmark + type filters */
     const displayItems = useMemo(() => {
         let items = feedItems;
@@ -707,7 +711,10 @@ const FeedScreenInner: React.FC<Props> = ({
     /** extraData: lightweight trigger that changes when bookmarks/comments update.
      *  FlashList re-renders visible items when this changes, but the stable
      *  renderItem reads from refs (no function re-creation). */
-    const commentKeyCount = Object.keys(feedComments).length;
+    const commentKeyCount =
+        feedComments && typeof feedComments === 'object' && !Array.isArray(feedComments)
+            ? Object.keys(feedComments).length
+            : 0;
     const feedExtraData = useMemo(
         () => ({
             bookmarkVersion: bookmarkedNoteIds.length,

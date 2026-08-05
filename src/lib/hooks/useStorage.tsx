@@ -58,7 +58,7 @@ import {
     safeReMigrateAsyncStorage,
     exportAsyncStorageToFile,
 } from '@/lib/dataLoaders';
-import { setLogMode as setGlobalLogMode } from '@/lib/logger';
+import { logger, setLogMode as setGlobalLogMode } from '@/lib/logger';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONTEXT TYPE DEFINITIONS
@@ -473,55 +473,68 @@ export const StorageProvider = ({ children }: { children: ReactNode }) => {
 
     /* ── Load data ------------------------------------------------── */
     const loadAllData = useCallback(async () => {
-        await loadAllDataFromDataLoaders({
-            setSavedNotes,
-            setPersons,
-            setCurrentStreak,
-            setLastWinDate,
-            setStreakHistory,
-            setFontIndex,
-            setSizeIndex,
-            setUseBiometrics,
-            setEnableHaptics,
-            setLockTimeoutMins,
-            setVlogQuality,
-            setCompressionPreset,
-            setDevMode,
-            setDebugLayout,
-            setVisionBoard,
-            setPreferPinAuth,
-            setLogMode,
-            setLastReflectionDate,
-            setSavedVlogs,
-            setTotalVlogStorageBytes,
-            setBookmarkedNoteIds,
-            setFeedComments,
-            setAutoPlayFeedVideos,
-            setAiProvider,
-            setOllamaApiKey,
-            setOllamaBaseUrl,
-            setOllamaModel,
-            setOllamaGrammarModel,
-            setNeuralwattApiKey,
-            setNeuralwattBaseUrl,
-            setNeuralwattModel,
-            setNeuralwattGrammarModel,
-            setAiPrompts,
-            setAutoGenerateSummaries,
-            setAiFavoriteModels,
-        });
+        // Startup must NEVER crash because of stored data. The individual domain
+        // loaders already degrade gracefully (allSettled + try/catch); this outer
+        // guard is the final safety net so no unhandled rejection can escape.
+        try {
+            await loadAllDataFromDataLoaders({
+                setSavedNotes,
+                setPersons,
+                setCurrentStreak,
+                setLastWinDate,
+                setStreakHistory,
+                setFontIndex,
+                setSizeIndex,
+                setUseBiometrics,
+                setEnableHaptics,
+                setLockTimeoutMins,
+                setVlogQuality,
+                setCompressionPreset,
+                setDevMode,
+                setDebugLayout,
+                setVisionBoard,
+                setPreferPinAuth,
+                setLogMode,
+                setLastReflectionDate,
+                setSavedVlogs,
+                setTotalVlogStorageBytes,
+                setBookmarkedNoteIds,
+                setFeedComments,
+                setAutoPlayFeedVideos,
+                setAiProvider,
+                setOllamaApiKey,
+                setOllamaBaseUrl,
+                setOllamaModel,
+                setOllamaGrammarModel,
+                setNeuralwattApiKey,
+                setNeuralwattBaseUrl,
+                setNeuralwattModel,
+                setNeuralwattGrammarModel,
+                setAiPrompts,
+                setAutoGenerateSummaries,
+                setAiFavoriteModels,
+            });
 
-        // Load Pillars, Advice Card, and last check-in log date from SQLite
-        const [activePillars, activeAdvice, latestLogTime] = await Promise.all([
-            getAllPillars(),
-            getAllAdviceCards(),
-            getLatestPillarLogTimestamp(),
-        ]);
-        setPillars(activePillars);
-        pillarsRef.current = activePillars;
-        setAdviceCards(activeAdvice);
-        adviceCardsRef.current = activeAdvice;
-        setLastLogDate(latestLogTime);
+            // Load Pillars, Advice Card, and last check-in log date from SQLite.
+            // These load independently so a missing table can't abort startup.
+            try {
+                const [activePillars, activeAdvice, latestLogTime] = await Promise.all([
+                    getAllPillars(),
+                    getAllAdviceCards(),
+                    getLatestPillarLogTimestamp(),
+                ]);
+                setPillars(activePillars);
+                pillarsRef.current = activePillars;
+                setAdviceCards(activeAdvice);
+                adviceCardsRef.current = activeAdvice;
+                setLastLogDate(latestLogTime);
+            } catch (err) {
+                logger('error', 'Storage', 'Failed to load pillars/advice data:', err);
+            }
+        } catch (err) {
+            // Keep the app usable with whatever loaded successfully.
+            logger('error', 'Storage', 'loadAllData failed:', err);
+        }
     }, []);
 
     useEffect(() => {

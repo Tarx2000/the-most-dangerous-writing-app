@@ -47,6 +47,17 @@ try {
 
 ## Compression Queue Provider
 `CompressionQueueProvider` (`src/lib/hooks/useCompressionQueueProvider.tsx`) is a standalone context provider (not part of useStorage). It wraps `compressionQueue` singleton and auto-initializes with the latest `updateVlog` callback from `useVlogs()`. Use `useCompressionQueueContext()` to access state and actions.
+
+## Crash-Proof Startup (Mandatory)
+The app must **never crash on launch**, regardless of stored user data (legacy/corrupt SQLite rows, stale schema versions, malformed AsyncStorage JSON).
+
+- **Migrations are idempotent + self-healing** (`src/lib/db.ts`): the schema version is tracked in BOTH the DB file (`PRAGMA user_version`) AND AsyncStorage; the effective version is `max(both)`. `ALTER TABLE ... ADD COLUMN` errors like "duplicate column name" are treated as already-applied (skipped), and a failed migration is logged and continued — it must never reject `getDb()`.
+- **`getDb()` resets its cached promise on failure** so a later call can retry. A permanently-rejected promise would brick every future DB query for the session.
+- **Domain loads degrade independently**: `loadAllData` uses `Promise.allSettled` + per-domain `try/catch` and defaults to empty fallbacks. One corrupt table or row can never abort the whole boot.
+- **Shape-guard all `safeParse` results at the load boundary**: arrays must stay arrays, objects must stay objects (e.g. `BOOKMARKED_NOTE_IDS`, `FEED_COMMENTS`, `STREAK_HISTORY`) so UI consumers can rely on typed defaults instead of throwing (`new Set(nonIterable)`, `Object.keys(null)`).
+- **Row converters (`rowToX`) must guard raw nullable columns**: a single malformed/legacy row must never reject the whole repository `.map()` (see `vlogsRepository.rowToVlog` guarding `file_path`).
+- **Queue providers (AI / Compression) must `.catch()` their auto-init**: a corrupt persisted queue must never produce an unhandled rejection at startup.
+
 ## De-coupling Context Subscriptions
 To avoid mass context re-renders:
 - **DO NOT** subscribe to high-frequency or multi-domain storage hooks in root screen containers purely to forward props to modals.
