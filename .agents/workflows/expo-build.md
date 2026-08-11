@@ -106,9 +106,9 @@ cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=
 
 ## Step 5 — Report APK Location
 
-After a successful build, report the APK location to the user with a clickable link:
+After a successful build, report the APK location to the user with a clickable link (use the local absolute path; example below):
 
-**APK output path:** [app-release.apk](file:///c:/Users/Tarik/.gemini/antigravity/scratch/the-most-dangerous-writing-app/android/app/build/outputs/apk/release/app-release.apk)
+**APK output path:** `android/app/build/outputs/apk/release/app-release.apk`
 
 ---
 
