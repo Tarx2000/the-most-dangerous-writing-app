@@ -1,8 +1,0 @@
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:4000",
-    "ANTHROPIC_AUTH_TOKEN": "local_bridge_active",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "minimax-m2.7:cloud"
-  },
-  "effortLevel": "high"
-}
