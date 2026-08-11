@@ -13,6 +13,7 @@ import '../core/haptics.dart';
 import '../core/logger.dart';
 import '../core/utils.dart';
 import '../domain/use_cases/streak_calculator.dart';
+import 'ai_providers.dart';
 import 'app_data.dart';
 import 'database/repositories/notes_repository.dart';
 import 'database/repositories/persons_repository.dart';
@@ -142,6 +143,11 @@ class StorageNotifier extends Notifier<AppData> {
       _loadPillars(),
       _loadFeed(),
     ]);
+
+    // AI config + queue boot (loads persisted jobs, recovers orphans).
+    // Awaited so the boot is deterministic (no dangling futures that could
+    // outlive the DB handle); failure is guarded inside load().
+    await ref.read(aiConfigProvider.notifier).load();
 
     final (pillars, adviceCards, lastLog) = deferred[1] as (List<Pillar>, List<AdviceCard>, int?);
 

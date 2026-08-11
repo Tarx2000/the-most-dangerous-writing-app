@@ -97,6 +97,8 @@ abstract final class AppColors {
   static const green = Color(0xFF4ADE80);
   static const orange = Color(0xFFFF6B35);
   static const suggestionError = Color(0xFFFF6B6B);
+  static const suggestionBackground = Color(0x0FFFD700); // rgba(255,215,0,0.06)
+  static const suggestionBorder = Color(0x1FFFC832); // rgba(255,200,50,0.12)
   static const devBlue = Color(0xFF3296FF);
   static const devPurple = Color(0xFF6464FF);
   static const devOrange = Color(0xFFFFA500);
