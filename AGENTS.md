@@ -28,9 +28,12 @@ src/
 ## Key Constraints
 - **Path alias**: `@/` maps to `src/` (tsconfig + babel)
 - **Build Setup**: Expo Go is used for rapid iterative testing. However, the app is built as a custom native build (e.g., local Android release APK) for distribution/production. Standard Expo Go compatibility must be maintained during testing, but custom native code/builds are supported for the final export.
+- **No Liquid Glass / BlurView**: Liquid-glass blur was deliberately removed app-wide (CPU blur on Android, no benefit on AMOLED). Use solid translucent tokens (`overlayLockAndroid`, `glassSurface*`). See `.agents/instructions/animations.md`.
+- **Status bar hidden everywhere**: `App.tsx` keeps `<StatusBar hidden translucent />`; never re-show it in screens. Android forces dark + hidden bar via `app.json` `androidStatusBar.hidden` and the native theme (see `android/app/src/main/res/values/styles.xml` + `MainActivity.kt` — prebuild-generated, so persist config in `app.json`).
 - **Android signing keys**: Signing keys for debug and release builds are stored in `credentials/` (tracked in Git) and are automatically copied to native `android/app/` during prebuild via the local config plugin `./plugins/withAndroidSigning.js`. This ensures identical signatures across all dev environments (Windows & macOS) so local updates do not trigger Android signature mismatch errors.
 - **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
-- **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly.
+- **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly. This also applies to `src/lib/backupService.ts` (`exec` wrapper exists for parameter-less statements like PRAGMAs).
+- **Backup rules**: Never export secrets (security PIN, PIN counters, AI API keys); the PIN is never restored. Every new DB table must be registered in `SCOPE_TABLES` in `backupService.ts`. Backups are plaintext ZIPs (portability, incl. the future Flutter port). Details: `.agents/instructions/backup-system.md`.
 - **Crash-proof startup**: The app must never crash on launch regardless of stored user data. DB migrations are idempotent/self-healing (schema version via `PRAGMA user_version` + AsyncStorage `max`), `getDb()` resets on failure, `loadAllData()` degrades gracefully (`Promise.allSettled`), and row converters / `safeParse` results are shape-guarded. Details: `.agents/instructions/state-management.md`.
 - **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
 - **Masteries Rebranding**: All user-facing references (headers, modals, lists, settings) are rebranded as **Masteries** (or **Mastery**), whereas code-level imports, hooks (`usePillars`), repositories, and database schemas remain `pillar` and `pillars` to guarantee data integrity and bypass migration corruption.
@@ -40,6 +43,7 @@ Critical per-domain rules live in `.agents/instructions/*.md`. Read the relevant
 - `state-management.md` — Split-context pattern, fresh-read, optimistic updates, crash-proof startup
 - `animations.md` — SharedValue rules, feed transitions, haptics
 - `ai-integration.md` — Singleton queue, streaming, retry logic
+- `backup-system.md` — Backup format v2, scope mapping, verification gates, restore pipeline, secrets policy
 - `theme-system.md` — Color mappings, naming conventions, liquid glass
 - `security.md` — 3-tier biometric, auto-lock rules
 - `typescript-rules.md` — Strict mode, version pinning, code quality

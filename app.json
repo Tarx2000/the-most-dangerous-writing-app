@@ -25,7 +25,16 @@
             "package": "com.anonymous.themostdangerouswritingapp",
             "versionCode": 16,
             "permissions": ["CAMERA", "RECORD_AUDIO", "WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"],
-            "softwareKeyboardLayoutMode": "pan"
+            "softwareKeyboardLayoutMode": "pan",
+            "androidStatusBar": {
+                "hidden": true,
+                "backgroundColor": "#000000",
+                "translucent": true
+            },
+            "androidNavigationBar": {
+                "backgroundColor": "#000000",
+                "barStyle": "light-content"
+            }
         },
         "plugins": [
             [

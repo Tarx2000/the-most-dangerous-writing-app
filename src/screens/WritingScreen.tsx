@@ -316,17 +316,23 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
     /** Reanimated Style: Transforms writing container to a note card and throws to the right */
     const saveAnimatedStyle = useAnimatedStyle(() => {
         return {
-            width: saveWidth.value,
-            height: saveHeight.value,
-            alignSelf: 'center',
+            // Full-size base; the shrink is GPU scaleX/scaleY (combined with the
+            // card's own saveScale) instead of animating width/height/padding,
+            // which forced Yoga to re-layout the live TextInput every frame.
+            width: '100%',
+            height: '100%',
             transform: [
                 { translateX: saveTranslateX.value },
-                { scale: saveScale.value },
+                {
+                    scaleX: (saveWidth.value / screenWidth) * saveScale.value,
+                },
+                {
+                    scaleY: (saveHeight.value / screenHeight) * saveScale.value,
+                },
                 { rotate: `${saveRotate.value}deg` },
             ],
             borderRadius: saveBorderRadius.value,
             borderWidth: saveBorderWidth.value,
-            padding: savePadding.value,
             backgroundColor: saveBgColor.value,
             borderColor: theme.colors.glassBorder,
             overflow: 'hidden',
@@ -627,10 +633,24 @@ export const WritingScreen: React.FC<Props> = ({ route, navigation }) => {
                                     performExitTransition(() => navigation.dispatch(StackActions.popToTop()))
                                 }
                             >
-                                <Text style={commonStyles.floatBtnText}>🏠 Menu</Text>
+                                <View style={commonStyles.floatBtnRow}>
+                                    <MaterialCommunityIcons
+                                        name="home-outline"
+                                        size={16}
+                                        color={theme.colors.textPrimary}
+                                    />
+                                    <Text style={commonStyles.floatBtnText}>Menu</Text>
+                                </View>
                             </AnimatedScaleButton>
                             <AnimatedScaleButton style={commonStyles.floatSaveBtn} onPress={handleSave}>
-                                <Text style={commonStyles.floatBtnText}>💾 Save What's Left</Text>
+                                <View style={commonStyles.floatBtnRow}>
+                                    <MaterialCommunityIcons
+                                        name="content-save-outline"
+                                        size={16}
+                                        color={theme.colors.textPrimary}
+                                    />
+                                    <Text style={commonStyles.floatBtnText}>Save What's Left</Text>
+                                </View>
                             </AnimatedScaleButton>
                         </Animated.View>
                     )}

@@ -13,7 +13,6 @@ import { vibrate } from '@/lib/haptics';
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector, ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -38,14 +37,11 @@ import type { LayoutRect } from '../components/features/library/VlogViewerModal'
 const SCROLL_TOP_SHOW_THRESHOLD = 300;
 
 /**
- * Hoisted outside component to prevent React from unmounting/remounting
- * the list on every parent re-render. Creating animated components inside
- * render is a critical performance anti-pattern (rerender-no-inline-components).
+ * The list is hoisted outside the component to prevent remounts. It is rendered
+ * as a plain FlashList — the previous `Animated.createAnimatedComponent(FlashList)`
+ * wrapper added an extra Reanimated proxy view with no animated props ever
+ * applied to it.
  */
-// Animated.createAnimatedComponent loses generic types — this is a known
-// React Native typing limitation. The component works correctly at runtime.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
 /* ── Stable list sub-components (hoisted to avoid re-create on every render) ─ */
 
@@ -57,9 +53,10 @@ const FeedFooter = React.memo(() => (
 
 interface FeedEmptyProps {
     filterBookmarked: boolean;
+    onStartWriting?: () => void;
 }
 
-const FeedEmpty = React.memo(({ filterBookmarked }: FeedEmptyProps) => (
+const FeedEmpty = React.memo(({ filterBookmarked, onStartWriting }: FeedEmptyProps) => (
     <View style={styles.emptyContainer}>
         <MaterialCommunityIcons name="text-box-outline" size={48} color={theme.colors.textMuted} />
         <Text style={styles.emptyTitle}>{filterBookmarked ? 'No bookmarked entries' : 'Your feed is empty'}</Text>
@@ -68,6 +65,11 @@ const FeedEmpty = React.memo(({ filterBookmarked }: FeedEmptyProps) => (
                 ? 'Bookmark entries to save them here'
                 : 'Complete a writing session to see your entries here'}
         </Text>
+        {!filterBookmarked && onStartWriting && (
+            <AnimatedScaleButton style={styles.emptyCta} onPress={onStartWriting}>
+                <Text style={styles.emptyCtaText}>Start Writing</Text>
+            </AnimatedScaleButton>
+        )}
     </View>
 ));
 
@@ -676,7 +678,10 @@ const FeedScreenInner: React.FC<Props> = ({
     );
 
     /** Precompute stable empty element BEFORE the lock-screen early return */
-    const emptyComponent = useMemo(() => <FeedEmpty filterBookmarked={filterBookmarked} />, [filterBookmarked]);
+    const emptyComponent = useMemo(
+        () => <FeedEmpty filterBookmarked={filterBookmarked} onStartWriting={onClose} />,
+        [filterBookmarked, onClose],
+    );
 
     /** Precompute stable header element — memoized props prevent re-create */
     const feedHeaderElement = useMemo(
@@ -759,7 +764,7 @@ const FeedScreenInner: React.FC<Props> = ({
             <GestureDetector gesture={feedPanGesture}>
                 <View style={styles.gestureArea}>
                     <Animated.View style={[styles.feedContentWrapper, feedContentOpacity]}>
-                        <AnimatedFlashList
+                        <FlashList
                             ref={listRef}
                             renderScrollComponent={RNGHScrollView}
                             data={displayItems}
@@ -788,11 +793,11 @@ const FeedScreenInner: React.FC<Props> = ({
             </GestureDetector>
             {isUnlocked && displayItems.length > 0 && (
                 <Animated.View style={[styles.scrollToTopBtn, scrollToTopButtonStyle]}>
-                    <BlurView intensity={60} tint="dark" style={styles.scrollToTopBlur}>
+                    <View style={styles.scrollToTopBlur}>
                         <AnimatedScaleButton style={styles.scrollToTopBtnInner} onPress={handleScrollToTop}>
                             <MaterialCommunityIcons name="arrow-up" size={24} color={theme.colors.textPrimary} />
                         </AnimatedScaleButton>
-                    </BlurView>
+                    </View>
                 </Animated.View>
             )}
         </View>
@@ -998,6 +1003,18 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
         lineHeight: 20,
+    },
+    emptyCta: {
+        marginTop: 24,
+        backgroundColor: theme.colors.primaryAction,
+        paddingVertical: 12,
+        paddingHorizontal: 28,
+        borderRadius: theme.borderRadius.round,
+    },
+    emptyCtaText: {
+        color: theme.colors.primaryActionText,
+        fontWeight: theme.typography.weightBold,
+        fontSize: 14,
     },
 
     /* ── Footer ─────────────────────────────────────────────────────── */

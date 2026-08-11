@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StatusBar, ScrollView, Platform, StyleSheet, DeviceEventEmitter } from 'react-native';
+import { View, Text, ScrollView, Platform, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { vibrate } from '@/lib/haptics';
 import { AnimatedScaleButton } from '@/components/ui/AnimatedScaleButton';
 import Animated, { FadeInUp, FadeOutUp, FadeIn, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
@@ -192,7 +192,8 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
 
     return (
         <View ref={containerRef} style={commonStyles.startContainer} collapsable={false}>
-            <StatusBar barStyle="light-content" backgroundColor={theme.colors.background} />
+            {/* Status bar is hidden app-wide (App.tsx) — do NOT re-show it here.
+                Re-showing made the Library title collide with the status bar. */}
 
             {/* Dev Mode Toast Notification */}
             {devToast && (
@@ -222,7 +223,7 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                 ]}
             >
                 <AnimatedScaleButton onPress={() => setShowCalendar(true)} style={commonStyles.iconButton}>
-                    <Text style={{ color: theme.colors.danger, fontSize: 16 }}>🔥</Text>
+                    <MaterialCommunityIcons name="fire" size={18} color={theme.colors.danger} />
                     <Text style={commonStyles.streakText}>{streak.currentStreak}</Text>
                 </AnimatedScaleButton>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -244,53 +245,32 @@ const StartScreenInner: React.FC<Props> = ({ navigation, setHomeScrollEnabled, s
                             }
                         }}
                     />
-                    <View style={{ position: 'relative' }}>
-                        <AnimatedScaleButton
-                            onPress={() => setShowSettings(true)}
-                            onPressIn={() => {
-                                // Start 4s timer to unlock dev tools
-                                settingsLongPressTimer.current = setTimeout(() => {
-                                    const newState = !devModeUnlocked;
-                                    setDevModeUnlocked(newState);
-                                    if (newState) {
-                                        vibrate([0, 50, 100, 50, 100, 150]);
-                                    } else {
-                                        vibrate([0, 150, 100, 150]);
-                                    }
-                                    setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
-                                    setTimeout(() => setDevToast(null), CONFIG.DEV_MODE_TOAST_DURATION_MS);
-                                }, CONFIG.DEV_MODE_LONG_PRESS_MS);
-                            }}
-                            onPressOut={() => {
-                                if (settingsLongPressTimer.current) {
-                                    clearTimeout(settingsLongPressTimer.current);
-                                    settingsLongPressTimer.current = null;
+                    <AnimatedScaleButton
+                        onPress={() => setShowSettings(true)}
+                        onPressIn={() => {
+                            // Start 4s timer to unlock dev tools
+                            settingsLongPressTimer.current = setTimeout(() => {
+                                const newState = !devModeUnlocked;
+                                setDevModeUnlocked(newState);
+                                if (newState) {
+                                    vibrate([0, 50, 100, 50, 100, 150]);
+                                } else {
+                                    vibrate([0, 150, 100, 150]);
                                 }
-                            }}
-                            style={commonStyles.iconButton}
-                        >
-                            <Text style={commonStyles.iconButtonText}>⚙️</Text>
-                        </AnimatedScaleButton>
-
-                        <View
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                right: 0,
-                                width: 8,
-                                height: 8,
-                                borderRadius: 4,
-                                backgroundColor:
-                                    queueState.serverOnline === null
-                                        ? theme.colors.textMuted
-                                        : queueState.serverOnline
-                                          ? theme.colors.green
-                                          : theme.colors.danger,
-                                borderWidth: 1,
-                                borderColor: theme.colors.background,
-                            }}
-                        />
-                    </View>
+                                setDevToast(newState ? '🛠 Developer Mode Unlocked' : '🔒 Developer Mode Locked');
+                                setTimeout(() => setDevToast(null), CONFIG.DEV_MODE_TOAST_DURATION_MS);
+                            }, CONFIG.DEV_MODE_LONG_PRESS_MS);
+                        }}
+                        onPressOut={() => {
+                            if (settingsLongPressTimer.current) {
+                                clearTimeout(settingsLongPressTimer.current);
+                                settingsLongPressTimer.current = null;
+                            }
+                        }}
+                        style={commonStyles.iconButton}
+                    >
+                        <MaterialCommunityIcons name="cog-outline" size={20} color={theme.colors.textPrimary} />
+                    </AnimatedScaleButton>
                 </View>
             </View>
 

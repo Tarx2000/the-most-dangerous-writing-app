@@ -10,7 +10,6 @@ import Animated, {
     interpolateColor,
     Easing,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { SavedNote } from '@/types';
 import { commonStyles } from '@/styles/commonStyles';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -240,16 +239,12 @@ export const NoteCard: React.FC<Props> = React.memo(
                         pointerEvents={isLocked ? 'auto' : 'none'}
                         style={[StyleSheet.absoluteFillObject, styles.blurOverlay, blurOverlayStyle]}
                     >
-                        {Platform.OS === 'ios' ? (
-                            <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
-                        ) : (
-                            <View
-                                style={[
-                                    StyleSheet.absoluteFillObject,
-                                    { backgroundColor: theme.colors.overlayLockAndroid },
-                                ]}
-                            />
-                        )}
+                        <View
+                            style={[
+                                StyleSheet.absoluteFillObject,
+                                { backgroundColor: theme.colors.overlayLockAndroid },
+                            ]}
+                        />
                         <View style={styles.lockIconContainer}>
                             <AnimatedLockIcon isUnlocked={false} color={theme.colors.textDim} size={24} />
                         </View>

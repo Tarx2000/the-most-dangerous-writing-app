@@ -417,6 +417,12 @@ export const commonStyles = StyleSheet.create({
         color: theme.colors.primaryActionText,
         fontWeight: theme.typography.weightBold,
     },
+    /** Row wrapper for icon + text inside floating action buttons */
+    floatBtnRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
 
     // ==========================================
     // CIRCLES (PEOPLE JOURNAL) STYLES

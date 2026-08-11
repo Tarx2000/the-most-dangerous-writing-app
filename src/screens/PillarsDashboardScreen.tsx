@@ -261,9 +261,13 @@ const PillarCard: React.FC<PillarCardProps> = React.memo(({ item, refreshKey, on
                             vibrate(10);
                             onToggleActive(item.id, val);
                         }}
-                        trackColor={{ false: 'rgba(255, 255, 255, 0.08)', true: theme.colors.primaryAction }}
+                        trackColor={{ false: theme.colors.glassSurfaceMedium, true: theme.colors.primaryAction }}
                         thumbColor={
-                            Platform.OS === 'ios' ? '#ffffff' : item.isActive ? theme.colors.primaryAction : '#888888'
+                            Platform.OS === 'ios'
+                                ? theme.colors.textPrimary
+                                : item.isActive
+                                  ? theme.colors.primaryAction
+                                  : theme.colors.textMuted
                         }
                         style={Platform.OS === 'ios' ? { transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }] } : undefined}
                     />
@@ -353,7 +357,7 @@ export const PillarsDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
         const cleanTitle = title.trim();
         if (!cleanTitle) {
-            Alert.alert('Title Required', 'Please enter a name for the new growth pillar.');
+            Alert.alert('Title Required', 'Please enter a name for the new growth mastery.');
             return;
         }
 
@@ -399,7 +403,7 @@ export const PillarsDashboardScreen: React.FC<Props> = ({ navigation }) => {
             setRefreshKey((prev) => prev + 1);
         } catch (e) {
             console.error('[PillarsDashboardScreen] Failed creating pillar', e);
-            Alert.alert('Error', 'Unable to create this Pillar. Please try again.');
+            Alert.alert('Error', 'Unable to create this Mastery. Please try again.');
         }
     };
 

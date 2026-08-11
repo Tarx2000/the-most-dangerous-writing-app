@@ -57,6 +57,13 @@ class CompressionQueueManager {
     private jobs: CompressionJob[] = [];
     private processing = false;
     private initialized = false;
+    /**
+     * True while a backup restore is in progress. While paused the queue must
+     * not start new jobs, must not write vlog updates back to the database
+     * (the restored DB must stay pristine) and must not persist its in-memory
+     * job list (it would overwrite the restored AsyncStorage).
+     */
+    private paused = false;
     private updateVlogRef: ((id: string, patch: Partial<SavedVlog>) => Promise<void>) | null = null;
 
     /** In-flight job timeout timer */
@@ -74,6 +81,41 @@ class CompressionQueueManager {
 
     get isInitialized(): boolean {
         return this.initialized;
+    }
+
+    /** True while the queue is paused (backup restore in progress) */
+    get isPaused(): boolean {
+        return this.paused;
+    }
+
+    /**
+     * Pause the queue — called by the backup restore pipeline BEFORE any data
+     * is wiped. The compressor has no cancellation API, so an in-flight
+     * compression keeps running on disk, but all its side effects (DB updates,
+     * AsyncStorage persistence, next-job scheduling) are suppressed until
+     * resume(). The running job is reset to 'queued' so it is re-processed
+     * after the restore.
+     */
+    pause(): void {
+        this.paused = true;
+        this.clearTimeout();
+        this.clearSchedule();
+        const runningJob = this.jobs.find((j) => j.status === 'processing');
+        if (runningJob) {
+            runningJob.status = 'queued';
+            runningJob.startedAt = undefined;
+            runningJob.progress = 0;
+        }
+        this.processing = false;
+        this.currentJobId = null;
+    }
+
+    /** Resume processing after a restore. Restarts the loop if jobs are pending. */
+    resume(): void {
+        this.paused = false;
+        if (this.getPendingJobs().length > 0) {
+            this.startProcessing();
+        }
     }
 
     /**
@@ -103,6 +145,8 @@ class CompressionQueueManager {
 
     /** Update a vlog's metadata through the injected callback */
     private async updateVlog(id: string, patch: Partial<SavedVlog>): Promise<void> {
+        // While paused (backup restore) this would write into the restored DB.
+        if (this.paused) return;
         if (!this.updateVlogRef) {
             this.log('warn', `updateVlog not injected yet, skipping ${id}`);
             return;
@@ -262,7 +306,7 @@ class CompressionQueueManager {
     /* ── Processing Loop ───────────────────────────────────────────── */
 
     private startProcessing(): void {
-        if (this.processing || !this.initialized) return;
+        if (this.processing || !this.initialized || this.paused) return;
         this.processNext();
     }
 
@@ -429,7 +473,7 @@ class CompressionQueueManager {
     }
 
     private scheduleNext(): void {
-        if (!this.initialized) return;
+        if (!this.initialized || this.paused) return;
         this.clearSchedule();
         this.scheduleTimeoutId = setTimeout(() => {
             this.scheduleTimeoutId = null;
@@ -462,6 +506,9 @@ class CompressionQueueManager {
     /* ── Persistence ───────────────────────────────────────────────── */
 
     private async persistQueue(): Promise<void> {
+        // While paused (backup restore) this would overwrite the restored
+        // AsyncStorage with pre-restore job state.
+        if (this.paused) return;
         try {
             const toPersist = this.jobs.filter(
                 (j) => j.status === 'queued' || j.status === 'processing' || j.status === 'failed',

@@ -10,8 +10,9 @@
  * Completely hidden when the queue is idle — zero visual noise.
  */
 
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 import type { CompressionQueueState } from '@/types';
@@ -27,20 +28,15 @@ export const CompressionStatusBar: React.FC<CompressionStatusBarProps> = React.m
     const current = compressionState.currentJob;
     const progress = current?.progress ?? 0;
 
-    // Animate progress bar width — must be called before any early return
-    const progressAnim = useRef(new Animated.Value(0)).current;
+    // Progress bar fill — Reanimated scaleX (GPU) instead of legacy RN Animated
+    // width with useNativeDriver:false (JS-thread layout animation).
+    const progressAnim = useSharedValue(0);
     useEffect(() => {
-        Animated.timing(progressAnim, {
-            toValue: progress,
-            duration: 300,
-            useNativeDriver: false,
-        }).start();
+        progressAnim.value = withTiming(progress, { duration: 300 });
     }, [progress, progressAnim]);
-
-    const widthPct = progressAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-    });
+    const fillStyle = useAnimatedStyle(() => ({
+        transform: [{ scaleX: progressAnim.value }],
+    }));
 
     // Only show when there are queued, processing, or failed jobs
     const hasActivity = compressionState.pendingCount > 0 || compressionState.jobs.some((j) => j.status === 'failed');
@@ -91,12 +87,15 @@ export const CompressionStatusBar: React.FC<CompressionStatusBarProps> = React.m
                         }}
                     >
                         <Animated.View
-                            style={{
-                                height: 5,
-                                width: widthPct,
-                                backgroundColor: theme.colors.primaryAction,
-                                borderRadius: 3,
-                            }}
+                            style={[
+                                {
+                                    width: '100%',
+                                    height: 5,
+                                    backgroundColor: theme.colors.primaryAction,
+                                    borderRadius: 3,
+                                },
+                                fillStyle,
+                            ]}
                         />
                     </View>
                 </View>

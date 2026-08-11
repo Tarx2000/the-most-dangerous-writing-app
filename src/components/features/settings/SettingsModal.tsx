@@ -16,6 +16,7 @@ import { fetchAvailableModels } from '@/lib/aiService';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
 import { isCompressionAvailable } from '@/lib/videoCompressor';
+import { ALL_BACKUP_SCOPES, type BackupScope } from '@/lib/backupService';
 import type { AiLogEntry, AiQueueState, CompressionQueueState } from '@/types';
 import {
     usePreferences,
@@ -106,26 +107,57 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
     const { unlockNotes } = useSecurity();
     const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
+    // Backup scope picker state — which data categories are included in the
+    // next export. Defaults to the full backup (all scopes).
+    const [showBackupScopePicker, setShowBackupScopePicker] = useState(false);
+    const [backupScopes, setBackupScopes] = useState<BackupScope[]>(() => [...ALL_BACKUP_SCOPES]);
+
+    /** Per-scope description + size hint shown in the scope picker. */
+    const BACKUP_SCOPE_LABELS: { scope: BackupScope; title: string; subtitle: string }[] = [
+        { scope: 'settings', title: 'Settings', subtitle: 'Appearance, streak, AI config (keys excluded)' },
+        { scope: 'notes', title: 'Notes & Circles', subtitle: 'Journal entries, circles, feed bookmarks & comments' },
+        { scope: 'masteries', title: 'Masteries', subtitle: 'Pillars, advice cards, logs and versions' },
+        {
+            scope: 'vlogs',
+            title: 'Vlogs',
+            subtitle: `Videos & thumbnails (${(vlogs.totalVlogStorageBytes / (1024 * 1024)).toFixed(1)} MB)`,
+        },
+    ];
+
     const handleExportBackup = async () => {
         vibrate(15);
         const authenticated = await unlockNotes();
         if (!authenticated) return;
+        setShowBackupScopePicker(true);
+    };
 
+    /** Runs the export with the chosen scopes and shows the detailed report. */
+    const runBackupExport = async () => {
+        setShowBackupScopePicker(false);
         setBackupStatus('Initializing export...');
         try {
-            const result = await storageActions.exportBackupZip((status) => {
+            const result = await storageActions.exportBackupZip(backupScopes, (status) => {
                 setBackupStatus(status);
             });
             setBackupStatus(null);
             if (result.success) {
-                if (result.vlogsExcluded) {
-                    Alert.alert(
-                        'Warning',
-                        'Backup ZIP created successfully, but your video vlogs were excluded because they are too large for the Expo Go memory limits. To back up all videos, please use a native production build of the app.',
+                const report = [
+                    `Tables backed up: ${result.tablesIncluded.length}`,
+                    `Videos included: ${result.videosIncluded}`,
+                    `Thumbnails: ${result.thumbnailsIncluded}`,
+                ];
+                if (result.videosExcluded.length > 0) {
+                    report.push(
+                        `Videos excluded: ${result.videosExcluded.map((e) => `${e.vlogId} (${e.reason})`).join(', ')}`,
                     );
-                } else {
-                    Alert.alert('Success', 'Backup ZIP file created and shared successfully.');
                 }
+                if (result.warnings.length > 0) {
+                    report.push('', 'Warnings:', ...result.warnings.map((w) => `• ${w}`));
+                }
+                Alert.alert(
+                    result.verification === 'ok' ? 'Backup created' : 'Backup created with warnings',
+                    report.join('\n'),
+                );
             } else if (result.error !== 'Cancelled') {
                 Alert.alert('Backup Failed', `Error: ${result.error}`);
             }
@@ -142,7 +174,7 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
 
         Alert.alert(
             'Confirm Overwrite',
-            'WARNING: Importing a backup ZIP file will completely delete and overwrite all your current entries, circles, Masteries, settings, and vlogs.\n\nThis cannot be undone. Are you sure you want to proceed?',
+            'WARNING: Importing a backup ZIP file will completely delete and overwrite all your current entries, circles, Masteries, settings, and vlogs.\n\nYour security PIN stays local and is never overwritten. AI API keys are not included in backups and must be re-entered.\n\nThis cannot be undone. Are you sure you want to proceed?',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -156,7 +188,15 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                             });
                             setBackupStatus(null);
                             if (result.success) {
-                                Alert.alert('Success', 'Data restored successfully. App state has been reloaded.');
+                                const message = [
+                                    'Data restored successfully. App state has been reloaded.',
+                                    `Videos restored: ${result.videosIncluded}`,
+                                    `Thumbnails: ${result.thumbnailsIncluded}`,
+                                ];
+                                if (result.warnings.length > 0) {
+                                    message.push('', 'Warnings:', ...result.warnings.map((w) => `• ${w}`));
+                                }
+                                Alert.alert('Restore complete', message.join('\n'));
                             } else if (result.error !== 'Cancelled') {
                                 Alert.alert('Import Failed', `Error: ${result.error}`);
                             }
@@ -971,6 +1011,132 @@ const SettingsModalContent: React.FC<Omit<SettingsModalProps, 'visible'>> = Reac
                         >
                             {backupStatus}
                         </Text>
+                    </View>
+                )}
+
+                {/* Backup Scope Picker — choose which data categories to export */}
+                {showBackupScopePicker && (
+                    <View
+                        style={{
+                            ...StyleSheet.absoluteFillObject,
+                            backgroundColor: theme.colors.overlayMedium,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            paddingHorizontal: 24,
+                            zIndex: 10000,
+                        }}
+                    >
+                        <View
+                            style={{
+                                width: '100%',
+                                backgroundColor: theme.colors.glassBackground,
+                                borderRadius: theme.borderRadius.lg,
+                                padding: 20,
+                                borderWidth: 1,
+                                borderColor: theme.colors.glassBorder,
+                            }}
+                        >
+                            <Text
+                                style={{
+                                    color: theme.colors.textPrimary,
+                                    fontSize: 17,
+                                    fontWeight: 'bold',
+                                    marginBottom: 4,
+                                }}
+                            >
+                                Backup Contents
+                            </Text>
+                            <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 16 }}>
+                                Select what to include. PIN & API keys are never exported.
+                            </Text>
+
+                            {BACKUP_SCOPE_LABELS.map(({ scope, title, subtitle }) => {
+                                const selected = backupScopes.includes(scope);
+                                return (
+                                    <Pressable
+                                        key={scope}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            gap: 10,
+                                            backgroundColor: theme.colors.glassSurfaceMinimal,
+                                            borderRadius: theme.borderRadius.sm,
+                                            padding: 14,
+                                            marginBottom: 10,
+                                        }}
+                                        onPress={() => {
+                                            vibrate(10);
+                                            setBackupScopes((prev) =>
+                                                selected ? prev.filter((s) => s !== scope) : [...prev, scope],
+                                            );
+                                        }}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                                            size={22}
+                                            color={selected ? theme.colors.primaryAction : theme.colors.textMuted}
+                                        />
+                                        <View style={{ flex: 1 }}>
+                                            <Text
+                                                style={{
+                                                    color: theme.colors.textPrimary,
+                                                    fontSize: 14,
+                                                    fontWeight: '600',
+                                                }}
+                                            >
+                                                {title}
+                                            </Text>
+                                            <Text
+                                                style={{
+                                                    color: theme.colors.textMuted,
+                                                    fontSize: 11,
+                                                    marginTop: 2,
+                                                }}
+                                            >
+                                                {subtitle}
+                                            </Text>
+                                        </View>
+                                    </Pressable>
+                                );
+                            })}
+
+                            <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                                <AnimatedScaleButton
+                                    style={{
+                                        flex: 1,
+                                        alignItems: 'center',
+                                        backgroundColor: theme.colors.glassSurfaceMinimal,
+                                        borderRadius: theme.borderRadius.sm,
+                                        paddingVertical: 14,
+                                    }}
+                                    onPress={() => {
+                                        vibrate(10);
+                                        setShowBackupScopePicker(false);
+                                    }}
+                                >
+                                    <Text style={{ color: theme.colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                                </AnimatedScaleButton>
+                                <AnimatedScaleButton
+                                    style={{
+                                        flex: 1,
+                                        alignItems: 'center',
+                                        backgroundColor: theme.colors.primaryAction,
+                                        borderRadius: theme.borderRadius.sm,
+                                        paddingVertical: 14,
+                                    }}
+                                    onPress={runBackupExport}
+                                >
+                                    <Text
+                                        style={{
+                                            color: theme.colors.primaryActionText,
+                                            fontWeight: 'bold',
+                                        }}
+                                    >
+                                        Export ({backupScopes.length})
+                                    </Text>
+                                </AnimatedScaleButton>
+                            </View>
+                        </View>
                     </View>
                 )}
             </BaseModal>

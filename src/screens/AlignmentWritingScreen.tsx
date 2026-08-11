@@ -456,17 +456,23 @@ export const AlignmentWritingScreen: React.FC<Props> = ({ route, navigation }) =
     });
 
     const saveAnimatedStyle = useAnimatedStyle(() => ({
-        width: saveWidth.value,
-        height: saveHeight.value,
-        alignSelf: 'center',
+        // Full-size base; the shrink is GPU scaleX/scaleY (combined with the
+        // card's own saveScale) instead of animating width/height/padding,
+        // which forced Yoga to re-layout the live editor every frame.
+        width: '100%',
+        height: '100%',
         transform: [
             { translateX: saveTranslateX.value },
-            { scale: saveScale.value },
+            {
+                scaleX: (saveWidth.value / screenWidth) * saveScale.value,
+            },
+            {
+                scaleY: (saveHeight.value / screenHeight) * saveScale.value,
+            },
             { rotate: `${saveRotate.value}deg` },
         ],
         borderRadius: saveBorderRadius.value,
         borderWidth: saveBorderWidth.value,
-        padding: savePadding.value,
         backgroundColor: saveBgColor.value,
         borderColor: theme.colors.glassBorder,
         overflow: 'hidden',

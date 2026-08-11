@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '@/styles/theme';
 
@@ -10,11 +10,14 @@ import { theme } from '@/styles/theme';
 /** Width of the pill relative to the screen (0.88 = 88%) */
 const PILL_WIDTH_RATIO = 0.88;
 
-/** Total pill height — increased for icon-only layout */
-const PILL_HEIGHT = 72;
+/** Total pill height — icon + label layout */
+const PILL_HEIGHT = 62;
 
-/** Icon size — larger now that labels are removed */
-const ICON_SIZE = 26;
+/** Icon size */
+const ICON_SIZE = 22;
+
+/** Label size */
+const LABEL_SIZE = 10;
 
 /** Indicator padding from edges */
 const INDICATOR_PADDING = 7;
@@ -38,22 +41,17 @@ const INDICATOR_TIMING = {
 /* ── COMPONENT ────────────────────────────────────────────────────────────── */
 
 /**
- * LiquidGlassNav — Premium floating pill navigation bar (icon-only).
+ * Floating pill navigation bar — icon + text label per tab.
  *
- * Layer architecture (max 3 stacked visible layers, was 7):
+ * Deliberately NOT liquid glass: BlurView was removed entirely because Android
+ * renders blurs on the CPU (stutters on the sliding indicator) and the solid
+ * AMOLED surface is faster on both platforms.
  *
- *   Layer A — Pill background
- *     • iOS:    BlurView (intensity 80, tint dark) — native GPU blur
- *     • Android: solid translucent color (CPU blur kills perf per AGENTS.md)
+ * Layer architecture (max 3 stacked visible layers):
  *
+ *   Layer A — Pill background (solid translucent AMOLED surface)
  *   Layer B — Sliding indicator (the "bubble")
- *     • Animated.View driven by `indicatorX` SharedValue via withTiming
- *
- *   Layer C — Row of Pressable tab icons
- *
- * The previous outer specular border gradient + tint overlay + specular
- * highlight gradient were removed — they added 4 extra compositor layers
- * per frame the indicator moved, but were barely perceptible visually.
+ *   Layer C — Row of Pressable tabs (icon + label)
  */
 interface NavItem {
     id: string;
@@ -71,6 +69,7 @@ interface Props {
 
 const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => {
     const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
     const PILL_WIDTH = React.useMemo(() => SCREEN_WIDTH * PILL_WIDTH_RATIO, [SCREEN_WIDTH]);
 
     const activeIndex = items.findIndex((i) => i.id === activeId);
@@ -100,20 +99,8 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
     }));
 
     return (
-        <View style={styles.wrapper}>
-            {/*
-             * Layer A — Pill background.
-             *   iOS:    BlurView fills the pill (native GPU blur)
-             *   Android: solid translucent color on the container itself
-             *            (Android software blur kills scroll/animation perf
-             *             per .agents/instructions/animations.md:63)
-             *
-             * All visual pill properties (radius, shadow, border) live on
-             * this single layer to maximize view flattening.
-             */}
-            <View style={[styles.pill, { width: PILL_WIDTH }, Platform.OS === 'android' && styles.pillAndroidSolid]}>
-                {Platform.OS === 'ios' && <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />}
-
+        <View style={[styles.wrapper, { bottom: insets.bottom + 14 }]}>
+            <View style={[styles.pill, { width: PILL_WIDTH }]}>
                 {/*
                  * Layer B — Sliding active indicator (the "bubble").
                  * Vertically centered, equal padding top/bottom.
@@ -123,8 +110,8 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
                 />
 
                 {/*
-                 * Layer C — Row of tab items (icon only, no labels).
-                 * Sits above the indicator so active icon color "pops".
+                 * Layer C — Row of tab items (icon + text label).
+                 * Sits above the indicator so the active tab "pops".
                  */}
                 <View style={styles.tabRow}>
                     {items.map((item) => {
@@ -143,6 +130,14 @@ const LiquidGlassNavInner: React.FC<Props> = ({ items, activeId, onSelect }) => 
                                         color={isActive ? theme.colors.navIconActive : theme.colors.navIconInactive}
                                     />
                                 </View>
+                                <Text
+                                    style={[
+                                        styles.tabLabel,
+                                        { color: isActive ? theme.colors.navIconActive : theme.colors.navIconInactive },
+                                    ]}
+                                >
+                                    {item.label}
+                                </Text>
                             </Pressable>
                         );
                     })}
@@ -164,23 +159,23 @@ const styles = StyleSheet.create({
     /** Positioned at the bottom of the screen, layout-only wrapper (no visual layer) */
     wrapper: {
         position: 'absolute',
-        bottom: Platform.OS === 'ios' ? 30 : 16,
         width: '100%',
         alignItems: 'center',
         zIndex: 999,
     },
 
     /**
-     * The glass pill — single visible "Layer A".
+     * The pill — single visible "Layer A".
+     * Solid translucent AMOLED surface (no BlurView — see component comment).
      * Carries border, radius, shadow, and overflow clipping so all visual
      * properties collapse into one native view (maximizes view flattening).
-     * Width is set inline via PILL_WIDTH.
      */
     pill: {
         height: PILL_HEIGHT,
         borderRadius: PILL_HEIGHT / 2,
         borderWidth: 1,
         borderColor: theme.colors.specularBorderStart,
+        backgroundColor: theme.colors.overlayLockAndroid,
         shadowColor: theme.colors.navPillShadow,
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.7,
@@ -191,23 +186,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
 
-    /**
-     * Android fallback — solid translucent background.
-     * Replaces BlurView because Android blurs on the CPU and stutters
-     * every indicator frame. `overlayLockAndroid` is tuned for exactly
-     * this purpose (see theme.ts).
-     */
-    pillAndroidSolid: {
-        backgroundColor: theme.colors.overlayLockAndroid,
-    },
-
     /** Sliding active indicator — "Layer B" */
     indicator: {
         position: 'absolute',
-        top: 7,
+        top: 6,
         left: 0,
-        height: PILL_HEIGHT - 14,
-        borderRadius: (PILL_HEIGHT - 14) / 2,
+        height: PILL_HEIGHT - 12,
+        borderRadius: (PILL_HEIGHT - 12) / 2,
         backgroundColor: theme.colors.navIndicatorBackground,
         borderWidth: 1,
         borderColor: theme.colors.navIndicatorBorder,
@@ -221,7 +206,7 @@ const styles = StyleSheet.create({
         zIndex: 2,
     },
 
-    /** Individual tab — perfectly centered icon (no gap, no label) */
+    /** Individual tab — icon above, label below */
     tab: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -231,6 +216,14 @@ const styles = StyleSheet.create({
     /** Icon wrapper for badge positioning */
     iconContainer: {
         position: 'relative',
+        marginBottom: 2,
+    },
+
+    /** Tab text label */
+    tabLabel: {
+        fontSize: LABEL_SIZE,
+        fontWeight: '600',
+        letterSpacing: 0.2,
     },
 
     /** Urgent notification dot */

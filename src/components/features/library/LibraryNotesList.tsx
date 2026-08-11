@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { commonStyles } from '@/styles/commonStyles';
 import { theme } from '@/styles/theme';
@@ -12,7 +12,6 @@ import { isAlignmentReflection } from '@/types';
 import { getAlignmentScoreDetails } from '@/lib/alignmentScores';
 import type { NoteGroupItem } from '@/lib/hooks/useLibraryNotes';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { AnimatedLockIcon } from '@/components/ui/AnimatedLockIcon';
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
@@ -110,16 +109,12 @@ const ReflectionCard = React.memo(
                         pointerEvents={!isUnlocked ? 'auto' : 'none'}
                         style={[StyleSheet.absoluteFillObject, styles.blurOverlay, blurOverlayStyle]}
                     >
-                        {Platform.OS === 'ios' ? (
-                            <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
-                        ) : (
-                            <View
-                                style={[
-                                    StyleSheet.absoluteFillObject,
-                                    { backgroundColor: theme.colors.overlayLockAndroid },
-                                ]}
-                            />
-                        )}
+                        <View
+                            style={[
+                                StyleSheet.absoluteFillObject,
+                                { backgroundColor: theme.colors.overlayLockAndroid },
+                            ]}
+                        />
                         <View style={styles.lockIconContainer}>
                             <AnimatedLockIcon isUnlocked={false} color={theme.colors.textDim} size={24} />
                         </View>

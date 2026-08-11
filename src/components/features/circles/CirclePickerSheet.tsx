@@ -11,7 +11,7 @@
  * - Inline ConfirmDialog before creating
  */
 import React, { useState, useRef, useMemo, useCallback } from 'react';
-import { View, Text, TextInput, Vibration, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Vibration, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -161,7 +161,9 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(
                 onClose={handleClose}
                 title="Select Person"
                 setHomeScrollEnabled={setHomeScrollEnabled}
-                keyboardAvoiding={false}
+                // Android uses adjustPan (sheet must not double-shift); on iOS the
+                // keyboard covers the list without this, so enable resizing there.
+                keyboardAvoiding={Platform.OS === 'android' ? false : true}
             >
                 {!isCirclesUnlocked && !isNotesUnlocked ? (
                     <View style={styles.lockContainer}>
@@ -234,7 +236,21 @@ export const CirclePickerSheet: React.FC<CirclePickerSheetProps> = React.memo(
                                 contentContainerStyle={{
                                     paddingHorizontal: 20,
                                     paddingBottom: 40,
+                                    flexGrow: 1,
                                 }}
+                                ListEmptyComponent={
+                                    <View style={styles.emptyState}>
+                                        <MaterialCommunityIcons
+                                            name="account-group-outline"
+                                            size={40}
+                                            color={theme.colors.textMuted}
+                                        />
+                                        <Text style={styles.emptyTitle}>No circles yet</Text>
+                                        <Text style={styles.emptyDesc}>
+                                            Start typing a name above to create your first circle.
+                                        </Text>
+                                    </View>
+                                }
                             />
                         </View>
 
@@ -346,6 +362,25 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         borderRadius: theme.borderRadius.md,
         marginBottom: 4,
+    },
+    emptyState: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 48,
+        gap: 8,
+    },
+    emptyTitle: {
+        color: theme.colors.textSecondary,
+        fontSize: 15,
+        fontWeight: theme.typography.weightBold,
+    },
+    emptyDesc: {
+        color: theme.colors.textMuted,
+        fontSize: 13,
+        textAlign: 'center',
+        paddingHorizontal: 24,
+        lineHeight: 18,
     },
     personAvatar: {
         width: 44,

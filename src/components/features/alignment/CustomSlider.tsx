@@ -74,7 +74,9 @@ export const CustomSlider = React.memo(function CustomSlider({ value, onValueCha
     }));
 
     const animatedFillStyle = useAnimatedStyle(() => ({
-        width: translateX.value + THUMB_SIZE / 2,
+        // scaleX (GPU) instead of width (layout) — the fill is a full-width bar
+        // anchored left, so scaling from the origin is a pure compositor op.
+        transform: [{ scaleX: (translateX.value + THUMB_SIZE / 2) / SLIDER_WIDTH }],
     }));
 
     useEffect(() => {
@@ -118,6 +120,8 @@ const sliderStyles = StyleSheet.create({
     },
     trackFill: {
         position: 'absolute',
+        left: 0,
+        width: '100%',
         height: 6,
         backgroundColor: theme.colors.textPrimary,
         borderRadius: 3,

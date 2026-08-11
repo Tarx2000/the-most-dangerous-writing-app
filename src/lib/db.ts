@@ -39,7 +39,7 @@ export async function closeDb(): Promise<void> {
    MIGRATIONS — Schema versioning with per-step transactions
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const SCHEMA_VERSION_KEY = '__DB_SCHEMA_VERSION__';
+export const SCHEMA_VERSION_KEY = '__DB_SCHEMA_VERSION__';
 
 type Migration = {
     version: number;
@@ -324,6 +324,23 @@ async function migrate(db: SQLiteDatabase): Promise<void> {
 export type BindValue = string | number | null | undefined | boolean;
 
 /**
+ * Resolve the schema version the app currently understands.
+ * Takes the MAX of the AsyncStorage tracker and the DB-file-internal
+ * `PRAGMA user_version` — the same rule `migrate()` uses, so the value can
+ * never be lower than the real on-disk schema. Used by the backup system to
+ * reject backups that were created by a NEWER app version (which could
+ * contain columns/tables this install cannot restore safely).
+ */
+export async function getCurrentSchemaVersion(): Promise<number> {
+    const db = await getDb();
+    const rawVersion = await storage.getItem(SCHEMA_VERSION_KEY).catch(() => null);
+    const parsedAsync = parseInt(rawVersion ?? '', 10);
+    const asyncVersion = Number.isNaN(parsedAsync) ? 0 : parsedAsync;
+    const pragmaVersion = await readPragmaVersion(db);
+    return Math.max(asyncVersion, pragmaVersion);
+}
+
+/**
  * Convert `null` bind params into **holes** in a sparse array.
  *
  * expo-sqlite v15 on Android receives bind params as `Map<String, Any>` — a
@@ -367,4 +384,17 @@ export async function getFirst<T>(sql: string, params?: BindValue[]): Promise<T 
     const db = await getDb();
     const row = await db.getFirstAsync<T>(sql, sanitizeBindParams(params) as (string | number | null | boolean)[]);
     return row ?? undefined;
+}
+
+/**
+ * Execute a raw SQL statement that takes no bind parameters
+ * (e.g. `PRAGMA wal_checkpoint(TRUNCATE)`).
+ *
+ * This wrapper exists so the "always use db.ts wrappers, never call
+ * `db.*Async` directly" rule (AGENTS.md) also holds for parameter-less
+ * statements like PRAGMAs, which `run()` cannot express.
+ */
+export async function exec(sql: string): Promise<void> {
+    const db = await getDb();
+    await db.execAsync(sql);
 }

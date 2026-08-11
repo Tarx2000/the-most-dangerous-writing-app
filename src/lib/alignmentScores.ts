@@ -6,23 +6,25 @@
  * should call the function and spread the result.
  */
 
+import { theme } from '@/styles/theme';
+
 export const ALIGNMENT_COLORS = {
-    struggling: '#ff4d4d',
-    drifting: '#ff9933',
-    okay: '#ffcc00',
-    good: '#a2ff66',
-    great: '#66ffcc',
-    aligned: '#00ccff',
+    struggling: theme.colors.alignmentStruggling,
+    drifting: theme.colors.alignmentDrifting,
+    okay: theme.colors.alignmentOkay,
+    good: theme.colors.alignmentGood,
+    great: theme.colors.alignmentGreat,
+    aligned: theme.colors.alignmentAligned,
 } as const;
 
 // Glow variants (semi-transparent versions for shadows/backgrounds)
 const ALIGNMENT_GLOWS = {
-    struggling: 'rgba(255, 77, 77, 0.3)',
-    drifting: 'rgba(255, 153, 51, 0.3)',
-    okay: 'rgba(255, 204, 0, 0.3)',
-    good: 'rgba(162, 255, 102, 0.3)',
-    great: 'rgba(102, 255, 204, 0.3)',
-    aligned: 'rgba(0, 204, 255, 0.3)',
+    struggling: theme.colors.alignmentGlowStruggling,
+    drifting: theme.colors.alignmentGlowDrifting,
+    okay: theme.colors.alignmentGlowOkay,
+    good: theme.colors.alignmentGlowGood,
+    great: theme.colors.alignmentGlowGreat,
+    aligned: theme.colors.alignmentGlowAligned,
 } as const;
 
 // MaterialCommunityIcons names for each tier
@@ -64,7 +66,7 @@ const ALIGNMENT_TEXT_LOWER = {
 } as const;
 
 type ScoreTier = keyof typeof ALIGNMENT_COLORS;
-type AlignmentIcon = typeof ALIGNMENT_ICONS[ScoreTier];
+type AlignmentIcon = (typeof ALIGNMENT_ICONS)[ScoreTier];
 
 function getTier(score: number): ScoreTier {
     if (score <= 2) return 'struggling';

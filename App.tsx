@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
@@ -13,7 +13,7 @@ const navigationTheme = {
     ...DarkTheme,
     colors: {
         ...DarkTheme.colors,
-        background: '#000000',
+        background: theme.colors.background,
     },
 };
 import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
@@ -28,16 +28,15 @@ import { SandboxScreen } from './src/screens/SandboxScreen';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StorageProvider, useAiConfig } from '@/lib/hooks/useStorage';
+import { StorageProvider } from '@/lib/hooks/useStorage';
 import { AiQueueProvider } from '@/lib/hooks/useAiQueueProvider';
 import { CompressionQueueProvider } from '@/lib/hooks/useCompressionQueueProvider';
 import { PinProvider } from '@/lib/hooks/usePinProvider';
 import { SecurityProvider } from '@/lib/hooks/useSecurity';
 import { PinPadModal } from '@/components/ui/PinPadModal';
-import { ApiKeySetupModal } from '@/components/features/settings/ApiKeySetupModal';
 import { ErrorBoundary, withErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useFonts } from 'expo-font';
-import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { PlayfairDisplay_400Regular } from '@expo-google-fonts/playfair-display';
 import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { Caveat_400Regular } from '@expo-google-fonts/caveat';
@@ -48,7 +47,6 @@ import { DMSans_400Regular } from '@expo-google-fonts/dm-sans';
 import { EagleLake_400Regular } from '@expo-google-fonts/eagle-lake';
 import { mark as perfMark } from '@/lib/perf';
 import { theme } from '@/styles/theme';
-import { isApiKeyConfigured } from '@/config/ai';
 
 // Initialize global haptics middleware
 
@@ -98,15 +96,12 @@ if (typeof globalThis !== 'undefined') {
 }
 
 /**
- * Inner gate that shows the API key setup modal on first launch.
- * Lives inside StorageProvider so it can read/write aiConfig.
+ * Root UI gate — renders the navigation tree and global modals.
+ * AI configuration is intentionally NOT shown on first launch anymore: the
+ * first-run API-key setup form was a developer-facing gate on a journaling
+ * product. AI is configured on demand from Settings.
  */
 function AiConfigGate() {
-    const { aiApiKey, aiBaseUrl, aiModel, saveAiApiKey, saveAiBaseUrl, saveAiModel } = useAiConfig();
-    const [hasSkipped, setHasSkipped] = useState(false);
-
-    const showSetup = !hasSkipped && !isApiKeyConfigured({ apiKey: aiApiKey });
-
     return (
         <>
             <NavigationContainer theme={navigationTheme}>
@@ -167,18 +162,6 @@ function AiConfigGate() {
                 </Stack.Navigator>
             </NavigationContainer>
             <PinPadModal />
-            <ApiKeySetupModal
-                visible={showSetup}
-                initialKey={aiApiKey}
-                initialBaseUrl={aiBaseUrl}
-                initialModel={aiModel}
-                onSave={(key, url, m) => {
-                    saveAiApiKey(key);
-                    saveAiBaseUrl(url);
-                    saveAiModel(m);
-                }}
-                onSkip={() => setHasSkipped(true)}
-            />
         </>
     );
 }
@@ -197,7 +180,6 @@ const WrappedSandboxScreen = withErrorBoundary(SandboxScreen);
 function AppContent() {
     const [fontsLoaded] = useFonts({
         ...MaterialCommunityIcons.font,
-        ...Feather.font,
         PlayfairDisplay_400Regular,
         SpaceMono_400Regular,
         Caveat_400Regular,

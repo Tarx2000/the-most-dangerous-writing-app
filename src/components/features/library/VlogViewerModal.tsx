@@ -13,7 +13,6 @@ import Animated, {
     Easing,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
@@ -610,7 +609,7 @@ const VlogViewerModalInner: React.FC<VlogViewerModalProps> = ({
                 <GestureDetector gesture={panGesture}>
                     <Animated.View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
                         <Animated.View style={[styles.expandedCard, cardAnimatedStyle]} pointerEvents="auto">
-                            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+                            {/* Solid tint only (BlurView removed — CPU blur on Android, no benefit on iOS here) */}
                             <View style={styles.expandedTint} />
 
                             {/* Video Player Area with Custom Controls */}

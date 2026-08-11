@@ -107,7 +107,14 @@ export const StreakPopup = React.memo(({ visible, streakHistory = [], onClose }:
     if (!visible) return null;
 
     return (
-        <Modal transparent visible={visible} animationType="none" statusBarTranslucent navigationBarTranslucent>
+        <Modal
+            transparent
+            visible={visible}
+            animationType="none"
+            statusBarTranslucent
+            navigationBarTranslucent
+            onRequestClose={onClose}
+        >
             <Animated.View style={[styles.overlay, overlayStyle]}>
                 <View style={styles.content}>
                     {/* ── Checkmark Icon ── */}

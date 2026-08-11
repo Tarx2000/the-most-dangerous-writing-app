@@ -96,6 +96,14 @@ class AiQueueManager {
     /** Whether a batch cancel has been requested */
     private cancelRequested = false;
 
+    /**
+     * True while a backup restore is in progress. While paused the queue must
+     * not START new jobs, must not persist its in-memory state (it would
+     * overwrite the freshly-restored AsyncStorage) and must not let an
+     * in-flight job write AI metadata back into the restored database.
+     */
+    private paused = false;
+
     /** Cancel token for the currently in-flight AI request */
     private currentCancelToken: AiCancelToken | null = null;
 
@@ -140,6 +148,38 @@ class AiQueueManager {
     /** Check if the queue and health checks have been initialized */
     get isInitialized(): boolean {
         return this.initialized;
+    }
+
+    /** True while the queue is paused (backup restore in progress) */
+    get isPaused(): boolean {
+        return this.paused;
+    }
+
+    /**
+     * Pause the queue — called by the backup restore pipeline BEFORE any data
+     * is wiped. Aborts the in-flight XHR (its reject path then finds the queue
+     * paused and never re-schedules), clears timers and blocks persistQueue so
+     * no stale queue state can be written over the restored AsyncStorage.
+     */
+    async pause(): Promise<void> {
+        this.paused = true;
+        this.clearJobTimeout();
+        if (this.scheduleTimeoutId) {
+            clearTimeout(this.scheduleTimeoutId);
+            this.scheduleTimeoutId = null;
+        }
+        if (this.currentCancelToken) {
+            this.currentCancelToken.abort();
+            this.currentCancelToken = null;
+        }
+    }
+
+    /** Resume processing after a restore. Restarts the loop if jobs are pending. */
+    async resume(): Promise<void> {
+        this.paused = false;
+        if (this.getPendingJobs().length > 0) {
+            this.startProcessing();
+        }
     }
 
     /**
@@ -631,7 +671,7 @@ class AiQueueManager {
 
     /** Start the processing loop if not already running */
     private startProcessing(): void {
-        if (this.processing || !this.initialized) return;
+        if (this.processing || !this.initialized || this.paused) return;
         this.processNext();
     }
 
@@ -1040,10 +1080,10 @@ class AiQueueManager {
 
     /** Schedule the next job with rate limiting delay */
     private scheduleNext(): void {
-        if (!this.initialized) return;
+        if (!this.initialized || this.paused) return;
         if (this.scheduleTimeoutId) clearTimeout(this.scheduleTimeoutId);
         this.scheduleTimeoutId = setTimeout(() => {
-            if (!this.initialized) return;
+            if (!this.initialized || this.paused) return;
             this.scheduleTimeoutId = null;
             this.processNext();
         }, RATE_LIMIT_DELAY_MS);
@@ -1072,6 +1112,9 @@ class AiQueueManager {
 
     /** Save the current queue to storage */
     private async persistQueue(): Promise<void> {
+        // While paused (backup restore) the in-memory queue refers to PRE-restore
+        // notes — writing it would overwrite the restored AsyncStorage state.
+        if (this.paused) return;
         try {
             // Only persist queued and processing jobs (not done/failed)
             const toPersist = this.jobs.filter((j) => j.status === 'queued' || j.status === 'processing');

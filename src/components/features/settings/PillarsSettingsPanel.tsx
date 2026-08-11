@@ -25,7 +25,7 @@ export const PillarsSettingsPanel: React.FC = () => {
         Keyboard.dismiss();
 
         if (!pillarTitle.trim()) {
-            Alert.alert('Error', 'Please enter a title for your Pillar.');
+            Alert.alert('Error', 'Please enter a title for your Mastery.');
             return;
         }
 
@@ -56,7 +56,7 @@ export const PillarsSettingsPanel: React.FC = () => {
             setPillarScope('daily');
             setAdaptiveDays('14');
         } catch {
-            Alert.alert('Error', 'Failed to save Pillar. Please try again.');
+            Alert.alert('Error', 'Failed to save Mastery. Please try again.');
         }
     };
 

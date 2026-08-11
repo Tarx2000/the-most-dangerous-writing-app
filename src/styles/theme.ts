@@ -163,6 +163,21 @@ export const theme = {
         goldFill: 'rgba(255, 215, 0, 0.15)',
         goldFillMedium: 'rgba(255, 215, 0, 0.2)',
 
+        // Alignment score tier colors (single source of truth — was duplicated
+        // in lib/alignmentScores.ts)
+        alignmentStruggling: '#ff4d4d',
+        alignmentDrifting: '#ff9933',
+        alignmentOkay: '#ffcc00',
+        alignmentGood: '#a2ff66',
+        alignmentGreat: '#66ffcc',
+        alignmentAligned: '#00ccff',
+        alignmentGlowStruggling: 'rgba(255, 77, 77, 0.3)',
+        alignmentGlowDrifting: 'rgba(255, 153, 51, 0.3)',
+        alignmentGlowOkay: 'rgba(255, 204, 0, 0.3)',
+        alignmentGlowGood: 'rgba(162, 255, 102, 0.3)',
+        alignmentGlowGreat: 'rgba(102, 255, 204, 0.3)',
+        alignmentGlowAligned: 'rgba(0, 204, 255, 0.3)',
+
         // Orange accents (extended)
         orangeFill: 'rgba(255, 165, 0, 0.15)',
 

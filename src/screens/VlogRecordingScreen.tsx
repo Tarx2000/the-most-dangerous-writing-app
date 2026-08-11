@@ -13,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
-import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
@@ -71,6 +71,7 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     /* ── State machine ─────────────────────────────────────────────────── */
     type RecordingPhase = 'permissions' | 'countdown' | 'recording' | 'canStop' | 'idle';
+    const insets = useSafeAreaInsets();
     const [phase, setPhase] = useState<RecordingPhase>('permissions');
     const [countdownNum, setCountdownNum] = useState(COUNTDOWN_SECONDS);
     const [timeRemaining, setTimeRemaining] = useState(totalDurationSec);
@@ -449,9 +450,9 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
             {(phase === 'recording' || phase === 'canStop') && (
                 <>
                     {/* Top glass bar — Timer + Recording dot */}
-                    <View style={styles.topBarWrapper}>
+                    <View style={[styles.topBarWrapper, { top: insets.top + 12 }]}>
                         <View style={styles.topBar}>
-                            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
+                            {/* Solid tint only (BlurView removed — CPU blur on Android) */}
                             <View style={styles.topBarTint} />
 
                             <View style={styles.topBarContent}>
@@ -489,9 +490,8 @@ export const VlogRecordingScreen: React.FC<Props> = ({ route, navigation }) => {
 
                     {/* Bottom area — Stop button */}
                     {phase === 'canStop' && (
-                        <Animated.View style={[styles.stopBtnWrapper, stopBtnStyle]}>
+                        <Animated.View style={[styles.stopBtnWrapper, { bottom: insets.bottom + 20 }, stopBtnStyle]}>
                             <View style={styles.stopBtnContainer}>
-                                <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
                                 <View style={styles.topBarTint} />
 
                                 <Text style={styles.stopHintText}>

@@ -38,6 +38,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types/navigation.types';
 import { StackActions } from '@react-navigation/native';
 import { countWords } from '@/lib/utils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes, useAiConfig, usePreferences } from '@/lib/hooks/useStorage';
 import { useAiQueueContext } from '@/lib/hooks/useAiQueueProvider';
 import { checkGrammar, classifyError, type GrammarSuggestion } from '@/lib/aiService';
@@ -52,10 +53,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RichText } from '@/components/ui/RichText';
 import type { AiJobCategory } from '@/types';
 import { isAlignmentReflection } from '@/types';
-import { BlurView } from 'expo-blur';
 import { AnimatedLockIcon } from '@/components/ui/AnimatedLockIcon';
-
-const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PostWriting'>;
 
@@ -69,6 +67,7 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     /** User typography — applied to entry text only, not AI chrome */
     const { fontIndex, sizeIndex } = usePreferences();
+    const insets = useSafeAreaInsets();
     const activeFont = CONFIG.FONTS[fontIndex]?.value || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
     const activeSize = CONFIG.SIZES[sizeIndex]?.value || 18;
     const activeLineHeight = CONFIG.SIZES[sizeIndex]?.line || 28;
@@ -356,10 +355,21 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const saveAnimatedStyle = useAnimatedStyle(() => {
         return {
-            width: saveWidth.value,
-            height: saveHeight.value,
-            alignSelf: 'center',
-            transform: [{ translateX: saveTranslateX.value }, { scale: saveScale.value }],
+            // Full-size base card; the shrink is done with GPU scaleX/scaleY
+            // (combined with the card's own saveScale) instead of animating
+            // width/height, which forced Yoga to re-layout the ScrollView
+            // inside on every frame of the fly-away.
+            width: '100%',
+            height: '100%',
+            transform: [
+                { translateX: saveTranslateX.value },
+                {
+                    scaleX: (saveWidth.value / screenWidth) * saveScale.value,
+                },
+                {
+                    scaleY: (saveHeight.value / screenHeight) * saveScale.value,
+                },
+            ],
             opacity: saveOpacity.value,
             borderRadius: saveBorderRadius.value,
             borderWidth: saveBorderWidth.value,
@@ -377,10 +387,9 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
         opacity: contentOpacity.value,
     }));
 
-    // Android substitute for the iOS blur overlay: Android renders blur on the
-    // CPU, so instead of full-screen blurs we fade in a solid translucent layer
-    // driven by the same blurIntensity progress.
-    const androidBlurOverlayStyle = useAnimatedStyle(() => ({
+    // Opacity overlay for the save fly-away — driven by the same blurIntensity
+    // progress value (BlurView removed; solid surface on both platforms).
+    const saveOverlayStyle = useAnimatedStyle(() => ({
         opacity: Math.min((blurIntensity.value ?? 0) / 80, 1),
     }));
 
@@ -411,6 +420,9 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    // iOS: drag to dismiss the keyboard so the Save & Close footer
+                    // becomes reachable without hunting for a Done key.
+                    keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 >
                     {/* ── Header ──────────────────────────────────────── */}
                     <View style={styles.header}>
@@ -720,28 +732,17 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
                     <View style={{ height: 120 }} />
                 </Animated.ScrollView>
 
-                {/* Blur overlay during save fly-away.
-                    iOS: single native (GPU) blur — stacking two animated blurs
-                    doubles the GPU passes for no visual gain.
-                    Android: blur is CPU-only, so we animate a solid translucent
-                    overlay instead of two full-screen per-frame CPU blurs. */}
-                {Platform.OS === 'ios' ? (
-                    <AnimatedBlurView
-                        intensity={blurIntensity}
-                        tint="dark"
-                        style={StyleSheet.absoluteFillObject}
-                        pointerEvents="none"
-                    />
-                ) : (
-                    <Animated.View
-                        pointerEvents="none"
-                        style={[
-                            StyleSheet.absoluteFillObject,
-                            { backgroundColor: theme.colors.overlayLockAndroid },
-                            androidBlurOverlayStyle,
-                        ]}
-                    />
-                )}
+                {/* Solid overlay during save fly-away.
+                    Blur was removed entirely (Android CPU blur; no liquid glass).
+                    The same blurIntensity progress drives opacity on both platforms. */}
+                <Animated.View
+                    pointerEvents="none"
+                    style={[
+                        StyleSheet.absoluteFillObject,
+                        { backgroundColor: theme.colors.overlayLockAndroid },
+                        saveOverlayStyle,
+                    ]}
+                />
 
                 {/* Centered Lock Animation Overlay */}
                 {showLockIcon && (
@@ -766,7 +767,13 @@ export const PostWritingScreen: React.FC<Props> = ({ route, navigation }) => {
             </Animated.View>
 
             {/* ── Floating Save Button ────────────────────────────── */}
-            <Animated.View style={[styles.floatingFooter, animatedFooterStyle]}>
+            <Animated.View
+                style={[
+                    styles.floatingFooter,
+                    { paddingBottom: insets.bottom + (Platform.OS === 'ios' ? 20 : 16) },
+                    animatedFooterStyle,
+                ]}
+            >
                 <AnimatedScaleButton style={styles.saveBtn} onPress={handleSaveAndClose}>
                     <MaterialCommunityIcons name="content-save-check" size={20} color={theme.colors.background} />
                     <Text style={styles.saveBtnText}>Save & Close</Text>

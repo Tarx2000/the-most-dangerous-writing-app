@@ -103,7 +103,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = React.memo(
         if (!visible) return null;
 
         return (
-            <Modal visible transparent animationType="none" statusBarTranslucent navigationBarTranslucent>
+            <Modal
+                visible
+                transparent
+                animationType="none"
+                statusBarTranslucent
+                navigationBarTranslucent
+                onRequestClose={handleCancel}
+            >
                 {/* Scrim backdrop */}
                 <Animated.View style={[styles.scrim, scrimStyle]}>
                     {/* Backdrop tap to dismiss */}

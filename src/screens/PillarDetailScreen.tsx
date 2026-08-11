@@ -711,7 +711,7 @@ export const PillarDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         return (
             <View style={[styles.container, styles.centerAlign, { paddingTop: insets.top }]}>
                 <MaterialCommunityIcons name="alert-circle-outline" size={48} color={theme.colors.danger} />
-                <Text style={styles.errorText}>Pillar not found</Text>
+                <Text style={styles.errorText}>Mastery not found</Text>
                 <AnimatedScaleButton onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <Text style={styles.backBtnText}>Exit Screen</Text>
                 </AnimatedScaleButton>
