@@ -15,8 +15,11 @@ import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/calendar_view.dart';
+import '../../core/widgets/base_modal.dart';
 import '../../core/widgets/morph_icon.dart';
 import '../../core/widgets/tick_dial.dart';
+import '../circles/circle_picker_sheet.dart';
 
 /// Which setup flow the start screen currently offers.
 enum SessionMode { journal, circles, checkin, vlog }
@@ -77,6 +80,30 @@ class _StartScreenState extends ConsumerState<StartScreen> {
     });
   }
 
+  /// Opens the streak calendar (fire pill in the top bar).
+  void _openCalendar() {
+    final streak = ref.read(streakProvider);
+    showBaseModal(
+      context,
+      title: null,
+      heightFactor: 0.9,
+      builder: (close) => SingleChildScrollView(
+        child: CalendarView(
+          currentStreak: streak.currentStreak,
+          streakHistory: streak.streakHistory,
+        ),
+      ),
+    );
+  }
+
+  /// Opens the circle picker for circles mode.
+  Future<void> _openCirclePicker() async {
+    final selected = await showCirclePicker(context, selectedId: _selectedPersonId);
+    if (selected != null) {
+      setState(() => _selectedPersonId = selected);
+    }
+  }
+
   void _startQuickVideo() {
     vibrate(HapticPatterns.dialPress);
     context.push('/vlog', extra: {
@@ -107,7 +134,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
               child: IntrinsicHeight(
                 child: Column(
                   children: [
-                    _TopBar(streak: streak),
+                    _TopBar(streak: streak, onCalendarPress: _openCalendar),
                     const SizedBox(height: 8),
                     // Hero widget (fixed height 200)
                     SizedBox(
@@ -166,6 +193,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                                     persons: persons,
                                     selectedId: _selectedPersonId,
                                     onSelect: (id) => setState(() => _selectedPersonId = id),
+                                    onPress: _openCirclePicker,
                                   )
                                 else if (widget.mode == SessionMode.journal)
                                   _TweetPill(onPress: _startTweet, isCircles: false),
@@ -257,9 +285,10 @@ class _StartScreenState extends ConsumerState<StartScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.streak});
+  const _TopBar({required this.streak, this.onCalendarPress});
 
   final int streak;
+  final VoidCallback? onCalendarPress;
 
   @override
   Widget build(BuildContext context) {
@@ -268,9 +297,9 @@ class _TopBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Streak button (calendar opens in Phase 3)
+          // Streak button → streak calendar
           AnimatedScaleButton(
-            onPress: () {},
+            onPress: onCalendarPress,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -441,11 +470,13 @@ class _PersonPickerPill extends StatelessWidget {
     required this.persons,
     required this.selectedId,
     required this.onSelect,
+    this.onPress,
   });
 
   final List<Person> persons;
   final String? selectedId;
   final ValueChanged<String> onSelect;
+  final VoidCallback? onPress;
 
   @override
   Widget build(BuildContext context) {
@@ -457,11 +488,7 @@ class _PersonPickerPill extends StatelessWidget {
       }
     }
     return AnimatedScaleButton(
-      onPress: () {
-        if (persons.isEmpty) return;
-        // Circle picker sheet lands in Phase 3; for now cycle/pick the first.
-        onSelect((selected ?? persons.first).id);
-      },
+      onPress: onPress,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(

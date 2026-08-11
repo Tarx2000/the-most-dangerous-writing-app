@@ -13,8 +13,11 @@ import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
 import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
+import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import 'library_notes_list.dart';
+import 'note_viewer_modal.dart';
+import 'person_profile_modal.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -26,6 +29,65 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int _tabIndex = 0;
   SortOption _sortBy = SortOption.newest;
+
+  void _openSortSheet() async {
+    final option = await showActionSheet<SortOption>(
+      context,
+      title: 'Sort by',
+      selected: _sortBy,
+      options: [
+        for (final option in SortOption.values)
+          ActionSheetOption(value: option, label: _sortLabel(option), icon: _sortIcon(option)),
+      ],
+    );
+    if (option != null) setState(() => _sortBy = option);
+  }
+
+  static String _sortLabel(SortOption option) {
+    switch (option) {
+      case SortOption.newest:
+        return 'Newest';
+      case SortOption.oldest:
+        return 'Oldest';
+      case SortOption.longest:
+        return 'Longest';
+      case SortOption.shortest:
+        return 'Shortest';
+      case SortOption.longestText:
+        return 'Most Words';
+    }
+  }
+
+  static String _sortIcon(SortOption option) {
+    switch (option) {
+      case SortOption.newest:
+        return 'sortDescending';
+      case SortOption.oldest:
+        return 'sortAscending';
+      case SortOption.longest:
+        return 'timerSandFull';
+      case SortOption.shortest:
+        return 'timerSandEmpty';
+      case SortOption.longestText:
+        return 'formatLetterCase';
+    }
+  }
+
+  void _openNoteViewer(SavedNote note) {
+    showNoteViewer(context, note: note);
+  }
+
+  void _openPersonProfile(Person person) {
+    final overlay = Overlay.of(context);
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) => PersonProfileModal(
+        personId: person.id,
+        onClose: () => entry.remove(),
+      ),
+    );
+    overlay.insert(entry);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +165,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               padding: const EdgeInsets.fromLTRB(24, 14, 24, 4),
               child: _SortRow(
                 sortBy: _sortBy,
-                onChanged: (s) => setState(() => _sortBy = s),
+                onPress: _openSortSheet,
               ),
             ),
           // Tabs
@@ -131,6 +193,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   sortBy: _sortBy,
                   emptyTitle: 'No entries yet',
                   emptySubtitle: 'Complete your first writing session to see it here.',
+                  onNoteTap: _openNoteViewer,
                 ),
                 // Check-ins
                 LibraryNotesList(
@@ -139,9 +202,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   emptyTitle: 'No check-ins yet',
                   emptySubtitle: 'Reflections from your alignment check-ins appear here.',
                   reflectionsOnly: true,
+                  onNoteTap: _openNoteViewer,
                 ),
                 // Circles
-                _CirclesTab(persons: persons),
+                _CirclesTab(persons: persons, onPersonTap: _openPersonProfile),
                 // Vlogs (Phase 6)
                 const _VlogsPlaceholder(),
               ],
@@ -193,10 +257,10 @@ class _LibraryTab extends StatelessWidget {
 }
 
 class _SortRow extends StatelessWidget {
-  const _SortRow({required this.sortBy, required this.onChanged});
+  const _SortRow({required this.sortBy, required this.onPress});
 
   final SortOption sortBy;
-  final ValueChanged<SortOption> onChanged;
+  final VoidCallback onPress;
 
   static const _labels = {
     SortOption.newest: 'Newest',
@@ -209,12 +273,7 @@ class _SortRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedScaleButton(
-      onPress: () {
-        // ActionSheet lands in Phase 3 wave 2; for now cycle through options.
-        final values = SortOption.values;
-        final next = values[(values.indexOf(sortBy) + 1) % values.length];
-        onChanged(next);
-      },
+      onPress: onPress,
       child: Row(
         children: [
           Icon(Mdi.get('sort'), color: AppColors.textSecondary, size: 16),
@@ -229,11 +288,12 @@ class _SortRow extends StatelessWidget {
   }
 }
 
-/// Circles tab — person list (expandable cards land in Phase 3 wave 2).
+/// Circles tab — person list; tap opens the profile modal.
 class _CirclesTab extends StatelessWidget {
-  const _CirclesTab({required this.persons});
+  const _CirclesTab({required this.persons, this.onPersonTap});
 
   final List<Person> persons;
+  final ValueChanged<Person>? onPersonTap;
 
   @override
   Widget build(BuildContext context) {
@@ -250,55 +310,60 @@ class _CirclesTab extends StatelessWidget {
       itemCount: persons.length,
       itemBuilder: (context, index) {
         final person = persons[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceCard,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.glassHighlight,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  person.name.isEmpty ? '?' : person.name[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: AnimatedScaleButton(
+            onPress: onPersonTap == null ? null : () => onPersonTap!(person),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceCard,
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      person.displayName,
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: AppColors.glassHighlight,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      person.name.isEmpty ? '?' : person.name[0].toUpperCase(),
                       style: const TextStyle(
                         color: AppColors.textPrimary,
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    if (person.relationship != null)
-                      Text(
-                        person.relationship!,
-                        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                      ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          person.displayName,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (person.relationship != null)
+                          Text(
+                            person.relationship!,
+                            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Icon(Mdi.get('chevronRight'), color: AppColors.textMuted, size: 18),
+                ],
               ),
-              Icon(Mdi.get('chevronRight'), color: AppColors.textMuted, size: 18),
-            ],
+            ),
           ),
         );
       },
