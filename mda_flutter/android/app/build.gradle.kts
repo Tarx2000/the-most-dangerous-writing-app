@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.anonymous.mda_flutter"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage v11 requires SDK 37 — pin explicitly.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
