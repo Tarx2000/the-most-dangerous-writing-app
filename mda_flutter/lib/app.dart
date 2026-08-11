@@ -11,7 +11,9 @@ import 'package:go_router/go_router.dart';
 
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
+import 'ui/features/alignment/alignment_writing_screen.dart';
 import 'ui/features/home/home_screen.dart';
+import 'ui/features/pillars/pillar_detail_screen.dart';
 import 'ui/features/pillars/pillars_dashboard_screen.dart';
 import 'ui/features/post_writing/post_writing_screen.dart';
 import 'ui/features/writing/writing_screen.dart';
@@ -39,11 +41,18 @@ final GoRouter goRouter = GoRouter(
     GoRoute(
       path: '/masteries',
       pageBuilder: (context, state) => _transparentPage(const PillarsDashboardScreen()),
+      routes: [
+        GoRoute(
+          path: ':pillarId',
+          pageBuilder: (context, state) => _transparentPage(
+            PillarDetailScreen(pillarId: state.pathParameters['pillarId'] ?? ''),
+          ),
+        ),
+      ],
     ),
-    // Phase 2 placeholders (real implementations in Phases 5/6):
     GoRoute(
       path: '/checkin',
-      builder: (context, state) => const _PhasePlaceholder(label: 'Alignment Check-in (Phase 5)'),
+      pageBuilder: (context, state) => _transparentPage(const AlignmentWritingScreen()),
     ),
     GoRoute(
       path: '/vlog',

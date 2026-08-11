@@ -12,6 +12,7 @@ import '../core/config/app_config.dart' show tweetThreshold;
 import '../core/haptics.dart';
 import '../core/logger.dart';
 import '../core/utils.dart';
+import '../domain/use_cases/mastery_logic.dart';
 import '../domain/use_cases/streak_calculator.dart';
 import 'ai_providers.dart';
 import 'app_data.dart';
@@ -445,10 +446,137 @@ class StorageNotifier extends Notifier<AppData> {
     state = state.copyWith(pillars: [pillar, ...state.pillars]);
   }
 
+  /// Saves a mastery (SPEC §10): new pillars get version 1 + an initial
+  /// version row; edits bump the version ONLY when title/description changed.
+  Future<void> upsertPillar(Pillar pillar) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    final existing = state.pillars.where((p) => p.id == pillar.id).firstOrNull;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (existing == null) {
+      await repo.insertPillar(pillar);
+      await repo.insertPillarVersion(PillarVersion(
+        id: '${pillar.id}_v1',
+        pillarId: pillar.id,
+        version: 1,
+        title: pillar.title,
+        description: pillar.description,
+        createdAt: now,
+      ));
+      state = state.copyWith(pillars: [pillar, ...state.pillars]);
+      return;
+    }
+
+    final contentChanged =
+        existing.title != pillar.title || existing.description != pillar.description;
+    final updated = contentChanged
+        ? pillar.copyWith(version: existing.version + 1, lastEditedAt: now)
+        : pillar.copyWith(lastEditedAt: now);
+
+    await repo.updatePillar(updated.id, {
+      'title': updated.title,
+      'description': updated.description,
+      'type': updated.type.name,
+      'scope': updated.scope.name,
+      'adaptive_days': updated.adaptiveDays,
+      'is_active': updated.isActive ? 1 : 0,
+      'last_edited_at': updated.lastEditedAt,
+      'version': updated.version,
+    });
+    if (contentChanged) {
+      await repo.insertPillarVersion(PillarVersion(
+        id: '${updated.id}_v${updated.version}',
+        pillarId: updated.id,
+        version: updated.version,
+        title: updated.title,
+        description: updated.description,
+        createdAt: now,
+      ));
+    }
+    state = state.copyWith(
+      pillars: [
+        for (final p in state.pillars)
+          if (p.id == updated.id) updated else p,
+      ],
+    );
+  }
+
+  /// Hard delete (cascade: pillar + logs + versions).
+  Future<void> deletePillar(String id) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    await repo.hardDeletePillar(id);
+    state = state.copyWith(pillars: [for (final p in state.pillars) if (p.id != id) p]);
+  }
+
+  Future<void> togglePillarActive(String id) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    final pillar = state.pillars.where((p) => p.id == id).firstOrNull;
+    if (pillar == null) return;
+    final next = !pillar.isActive;
+    await repo.updatePillar(id, {'is_active': next ? 1 : 0});
+    state = state.copyWith(
+      pillars: [
+        for (final p in state.pillars) if (p.id == id) p.copyWith(isActive: next) else p,
+      ],
+    );
+  }
+
   Future<void> saveAdviceCard(AdviceCard card) async {
     final repo = ref.read(pillarsRepositoryProvider);
     await repo.insertAdviceCard(card);
     state = state.copyWith(adviceCards: [card, ...state.adviceCards]);
+  }
+
+  Future<void> deleteAdviceCard(String id) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    await repo.deactivateAdviceCard(id);
+    state = state.copyWith(adviceCards: [for (final c in state.adviceCards) if (c.id != id) c]);
+  }
+
+  Future<List<PillarLog>> getPillarLogs(String pillarId) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    return repo.getPillarLogs(pillarId);
+  }
+
+  /// Saves a check-in log and tracks the 3-hour rate limit (SPEC §10).
+  Future<void> savePillarLog(PillarLog log) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    await repo.insertPillarLog(log);
+    state = state.copyWith(
+      lastLogDate: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Future<void> linkPillarLogNote(String logId, String noteId) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    await repo.updatePillarLogNoteId(logId, noteId);
+  }
+
+  Future<void> incrementAdviceReflection(String adviceId) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    await repo.incrementAdviceReflection(adviceId, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  Future<PillarVersion?> getPillarVersion(String pillarId, int version) async {
+    final repo = ref.read(pillarsRepositoryProvider);
+    return repo.getPillarVersion(pillarId, version);
+  }
+
+  /// Weighted random advice card (SPEC §10).
+  AdviceCard? getSmartAdvice() {
+    return pickSmartAdvice(cards: state.adviceCards);
+  }
+
+  /// Check-in pillar pick (SPEC §10): 2 daily / 3 weekly + shuffle.
+  List<Pillar> getPillarsForCheckIn(bool isWeekly) {
+    return pickPillarsForCheckIn(allPillars: state.pillars, isWeekly: isWeekly);
+  }
+
+  /// True when the check-in rate limit (3 h) has not elapsed since the last log.
+  bool isCheckinRateLimited({DateTime? now}) {
+    final last = state.lastLogDate;
+    if (last == null) return false;
+    return (now ?? DateTime.now()).millisecondsSinceEpoch - last < checkinRateLimitMs;
   }
 
   /// Persists and applies a preference change (settings table is the source of truth).
