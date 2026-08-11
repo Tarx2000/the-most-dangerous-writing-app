@@ -20,11 +20,11 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: MdaApp()));
 
     // Initial frame renders (storage boot runs in the background).
-    expect(find.text('Most Dangerous Writing App'), findsOneWidget);
-    expect(find.textContaining('notes: 0'), findsOneWidget);
+    expect(find.text('FREE WRITING'), findsOneWidget);
+    expect(find.text('START WRITING'), findsOneWidget);
 
     // Let the boot complete (critical + deferred loads) — must not crash.
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
-    expect(find.text('Most Dangerous Writing App'), findsOneWidget);
+    expect(find.text('START WRITING'), findsOneWidget);
   });
 }

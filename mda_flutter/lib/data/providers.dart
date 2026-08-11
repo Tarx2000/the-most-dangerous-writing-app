@@ -3,12 +3,16 @@
 /// so widgets re-render only on their domain.
 library;
 
+import 'dart:convert' show jsonEncode;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/config/app_config.dart' show tweetThreshold;
 import '../core/haptics.dart';
 import '../core/logger.dart';
 import '../core/utils.dart';
+import '../domain/use_cases/streak_calculator.dart';
 import 'app_data.dart';
 import 'database/repositories/notes_repository.dart';
 import 'database/repositories/persons_repository.dart';
@@ -66,6 +70,31 @@ final feedDataProvider = Provider<FeedState>((ref) => ref.watch(appDataProvider)
 
 final isAppLoadedProvider = Provider<bool>((ref) => ref.watch(appDataProvider).isLoaded);
 
+/// Streak popup event (set by saveEntry; the StartScreen renders it once and
+/// dismisses). Mirrors the RN `DeviceEventEmitter` 'streakIncreased' channel.
+class StreakPopupData {
+  const StreakPopupData({required this.streak, required this.history});
+
+  final int streak;
+  final List<String> history;
+}
+
+final pendingStreakPopupProvider =
+    StateProvider<StreakPopupData?>((ref) => null);
+
+/// Result of saving an entry (streak side-effects, parity with RN saveNote).
+class SaveEntryResult {
+  const SaveEntryResult({
+    required this.note,
+    required this.streakIncreased,
+    required this.newStreak,
+  });
+
+  final SavedNote note;
+  final bool streakIncreased;
+  final int newStreak;
+}
+
 /// Waits until the storage layer booted (screens gate on this).
 final storageReadyProvider = FutureProvider<void>((ref) async {
   await ref.read(appDataProvider.notifier).loadAll();
@@ -87,11 +116,13 @@ class StorageNotifier extends Notifier<AppData> {
       _loadNotes(),
       _loadPersons(),
       _loadSettings(),
+      _loadStreak(),
     ]);
 
     final notes = results[0] as List<SavedNote>;
     final persons = results[1] as List<Person>;
     final prefs = results[2] as PreferencesState;
+    final streak = results[3] as StreakState;
 
     // Sync global runtime flags from the loaded preferences.
     setGlobalHapticsEnabled(prefs.enableHaptics);
@@ -101,6 +132,7 @@ class StorageNotifier extends Notifier<AppData> {
       notes: notes,
       persons: persons,
       preferences: prefs,
+      streak: streak,
       isLoaded: true,
     );
 
@@ -168,6 +200,24 @@ class StorageNotifier extends Notifier<AppData> {
     }
   }
 
+  /// Loads the persisted streak state (CURRENT_STREAK / LAST_WIN_DATE /
+  /// STREAK_HISTORY) — runs as part of the critical boot phase.
+  Future<StreakState> _loadStreak() async {
+    final service = ref.read(settingsServiceProvider);
+    try {
+      return StreakState(
+        currentStreak: await service.getInt(SettingsKeys.currentStreak, 0),
+        lastWinDate: await service.getString(SettingsKeys.lastWinDate, ''),
+        streakHistory: (await service.getJsonList(SettingsKeys.streakHistory, []))
+            .whereType<String>()
+            .toList(),
+      );
+    } catch (e) {
+      logStorage.error('streak load failed', e);
+      return const StreakState();
+    }
+  }
+
   Future<List<SavedVlog>> _loadVlogs() async {
     try {
       return await ref.read(vlogsRepositoryProvider).getAllVlogs();
@@ -209,6 +259,115 @@ class StorageNotifier extends Notifier<AppData> {
   }
 
   // -- Actions (Phase 2 ports the full optimistic-ops factories) -------------
+
+  /// Saves a completed writing entry and applies the streak rules (SPEC §8).
+  ///
+  /// Commit semantics (parity with RN saveNote): the note INSERT is the source
+  /// of truth — on failure everything rolls back (with error haptic); on
+  /// success streak settings are best-effort secondary writes that never roll
+  /// back the note. Tweet auto-classification: `wordCount <= 45` forces isTweet.
+  Future<SaveEntryResult> saveEntry({
+    required String text,
+    required bool won,
+    required int durationMin,
+    String? personId,
+    bool isQuickNote = false,
+    bool isTweet = false,
+  }) async {
+    final notesRepo = ref.read(notesRepositoryProvider);
+    final settings = ref.read(settingsServiceProvider);
+    final prevStreak = state.streak;
+
+    final classifiedTweet = isTweet || countWords(text) <= tweetThreshold;
+    final todayStr = toLocalDateString(DateTime.now());
+    final note = SavedNote(
+      id: generateId(),
+      text: text,
+      dateStr: todayStr,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      durationMin: durationMin,
+      won: won,
+      personId: personId,
+      isQuickNote: isQuickNote,
+      isTweet: classifiedTweet,
+    );
+
+    final eligible = isStreakEligible(
+      won: won,
+      durationMin: durationMin,
+      isQuickNote: isQuickNote,
+      isTweet: classifiedTweet,
+    );
+    final result = applyNoteToStreak(
+      won: won,
+      durationMin: durationMin,
+      isQuickNote: isQuickNote,
+      isTweet: classifiedTweet,
+      currentStreak: prevStreak.currentStreak,
+      lastWinDate: prevStreak.lastWinDate,
+      streakHistory: prevStreak.streakHistory,
+      now: DateTime.now(),
+    );
+    final newLastWinDate =
+        eligible && prevStreak.lastWinDate != todayStr ? todayStr : prevStreak.lastWinDate;
+
+    // Optimistic UI update.
+    state = state.copyWith(
+      notes: [note, ...state.notes],
+      streak: StreakState(
+        currentStreak: result.streak,
+        lastWinDate: newLastWinDate,
+        streakHistory: result.history,
+      ),
+    );
+
+    // Note insert is the single source of truth — full rollback on failure.
+    try {
+      await notesRepo.insertNote(note);
+    } catch (e) {
+      vibrate([0, 500]);
+      logStorage.error('saveEntry failed, rolling back', e);
+      state = state.copyWith(
+        notes: prevStreak == state.streak ? state.notes : state.notes.where((n) => n.id != note.id).toList(),
+        streak: prevStreak,
+      );
+      // Re-read authoritative state: simplest correct rollback is a reload.
+      state = state.copyWith(
+        notes: await notesRepo.getAllNotes(),
+        streak: prevStreak,
+      );
+      return SaveEntryResult(note: note, streakIncreased: false, newStreak: prevStreak.currentStreak);
+    }
+
+    // Note committed. Streak settings are best-effort secondary writes.
+    if (eligible) {
+      try {
+        await settings.setRaw(SettingsKeys.currentStreak, '${result.streak}');
+        await settings.setRaw(SettingsKeys.lastWinDate, newLastWinDate);
+        await settings.setRaw(SettingsKeys.streakHistory, jsonEncode(result.history));
+      } catch (e) {
+        logStorage.warn('streak settings write failed (note still saved)', e);
+      }
+    }
+
+    if (result.streakIncreased) {
+      ref.read(pendingStreakPopupProvider.notifier).state = StreakPopupData(
+        streak: result.streak,
+        history: result.history,
+      );
+    }
+
+    return SaveEntryResult(
+      note: note,
+      streakIncreased: result.streakIncreased,
+      newStreak: result.streak,
+    );
+  }
+
+  /// Dismisses the pending streak popup (called by the popup's close button).
+  void dismissStreakPopup() {
+    ref.read(pendingStreakPopupProvider.notifier).state = null;
+  }
 
   Future<void> saveNote(SavedNote note) async {
     final repo = ref.read(notesRepositoryProvider);

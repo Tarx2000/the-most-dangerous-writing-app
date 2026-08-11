@@ -1,7 +1,8 @@
-/// App shell — MaterialApp.router + GoRouter.
-/// Routing skeleton: Phase 2+ adds the full stack (Writing, PostWriting,
-/// Pillars, Alignment, VlogRecording, Sandbox) with custom transparent-modal
-/// transitions per SPEC §17.
+/// App shell — MaterialApp.router + GoRouter (SPEC §17).
+///
+/// Transparent-modal screens (Writing, PostWriting) use fade/transparent
+/// transitions matching the RN native-stack config. The Home screen hosts
+/// StartScreen directly until Phase 3 adds the pager + nav + feed layers.
 library;
 
 import 'package:flutter/material.dart';
@@ -11,8 +12,11 @@ import 'package:go_router/go_router.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'ui/features/home/home_screen.dart';
+import 'ui/features/pillars/pillars_dashboard_screen.dart';
+import 'ui/features/post_writing/post_writing_screen.dart';
+import 'ui/features/writing/writing_screen.dart';
 
-/// Root navigator config (go_router). Transparent modal routes come later.
+/// Root navigator config (go_router).
 final GoRouter goRouter = GoRouter(
   initialLocation: '/',
   routes: [
@@ -20,8 +24,69 @@ final GoRouter goRouter = GoRouter(
       path: '/',
       builder: (context, state) => const HomeScreen(),
     ),
+    GoRoute(
+      path: '/writing',
+      pageBuilder: (context, state) => _transparentPage(
+        WritingScreen(params: WritingParams.fromExtra((state.extra as Map?)?.cast<String, dynamic>() ?? {})),
+      ),
+    ),
+    GoRoute(
+      path: '/post-writing',
+      pageBuilder: (context, state) => _transparentPage(
+        PostWritingScreen(noteId: (state.extra as Map?)?['noteId'] as String? ?? ''),
+      ),
+    ),
+    GoRoute(
+      path: '/masteries',
+      pageBuilder: (context, state) => _transparentPage(const PillarsDashboardScreen()),
+    ),
+    // Phase 2 placeholders (real implementations in Phases 5/6):
+    GoRoute(
+      path: '/checkin',
+      builder: (context, state) => const _PhasePlaceholder(label: 'Alignment Check-in (Phase 5)'),
+    ),
+    GoRoute(
+      path: '/vlog',
+      builder: (context, state) => const _PhasePlaceholder(label: 'Vlog Recording (Phase 6)'),
+    ),
   ],
 );
+
+/// Transparent-modal page: the screen fades in over the home content
+/// (parity with the RN `presentation: transparentModal` config).
+Page<void> _transparentPage(Widget child) {
+  return CustomTransitionPage<void>(
+    child: child,
+    opaque: false,
+    barrierColor: Colors.transparent,
+    transitionDuration: const Duration(milliseconds: 220),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(opacity: animation, child: child);
+    },
+  );
+}
+
+/// Simple placeholder for screens whose phases haven't shipped yet.
+class _PhasePlaceholder extends StatelessWidget {
+  const _PhasePlaceholder({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 15),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class MdaApp extends ConsumerWidget {
   const MdaApp({super.key});
