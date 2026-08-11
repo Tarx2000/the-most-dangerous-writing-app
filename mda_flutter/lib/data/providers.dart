@@ -3,7 +3,9 @@
 /// so widgets re-render only on their domain.
 library;
 
+import 'dart:async';
 import 'dart:convert' show jsonEncode;
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,8 +27,12 @@ import 'models/person.dart';
 import 'models/pillar.dart';
 import 'models/saved_note.dart';
 import 'models/saved_vlog.dart';
+import 'queues/compression_queue.dart';
 import 'services/secure_storage_service.dart';
 import 'services/settings_service.dart';
+import 'services/thumbnail_service.dart';
+import 'services/vlog_compressor.dart';
+import 'services/vlog_storage_manager.dart';
 
 // -- Infrastructure providers ----------------------------------------------
 
@@ -47,6 +53,45 @@ final personsRepositoryProvider = Provider<PersonsRepository>((ref) => PersonsRe
 final pillarsRepositoryProvider = Provider<PillarsRepository>((ref) => PillarsRepository());
 
 final vlogsRepositoryProvider = Provider<VlogsRepository>((ref) => VlogsRepository());
+
+final thumbnailServiceProvider = Provider<ThumbnailService>((ref) => ThumbnailService());
+
+final vlogStorageManagerProvider = Provider<VlogStorageManager>((ref) => VlogStorageManager());
+
+final vlogCompressorProvider = Provider<VlogCompressor>((ref) => VlogCompressor());
+
+/// Singleton compression queue (mirror of the AI queue pattern).
+final compressionQueueManagerProvider = Provider<CompressionQueueManager>((ref) {
+  final manager = CompressionQueueManager(
+    compressor: ref.watch(vlogCompressorProvider),
+    deps: CompressionDeps(
+      updateVlog: (vlogId, updates) =>
+          ref.read(vlogsRepositoryProvider).updateVlog(vlogId, updates),
+      deleteVlogFile: (path) async {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      },
+    ),
+  );
+  return manager;
+});
+
+/// Live compression queue state.
+final compressionQueueStateProvider = StreamProvider<CompressionQueueState>((ref) {
+  final manager = ref.watch(compressionQueueManagerProvider);
+  final controller = StreamController<CompressionQueueState>.broadcast();
+  void emit() {
+    if (!controller.isClosed) controller.add(manager.state.value);
+  }
+
+  emit();
+  manager.state.addListener(emit);
+  ref.onDispose(() {
+    manager.state.removeListener(emit);
+    controller.close();
+  });
+  return controller.stream;
+});
 
 // -- Domain providers (derived slices of AppData) ---------------------------
 
@@ -149,6 +194,13 @@ class StorageNotifier extends Notifier<AppData> {
     // Awaited so the boot is deterministic (no dangling futures that could
     // outlive the DB handle); failure is guarded inside load().
     await ref.read(aiConfigProvider.notifier).load();
+
+    // Compression queue boot (mirror pattern, crash-proof).
+    try {
+      await ref.read(compressionQueueManagerProvider).initialize();
+    } catch (e) {
+      logCompressor.warn('compression queue boot failed (continuing)', e);
+    }
 
     final (pillars, adviceCards, lastLog) = deferred[1] as (List<Pillar>, List<AdviceCard>, int?);
 

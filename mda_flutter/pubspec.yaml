@@ -9,11 +9,13 @@ environment:
 dependencies:
   archive: ^4.0.9
   camera: ^0.12.0+2
+  ffmpeg_kit_flutter_new_min_gpl: ^2.6.2
   flutter:
     sdk: flutter
   flutter_riverpod: ^2.6.1
   flutter_secure_storage: ^11.0.0
   gal: ^2.3.3
+  get_thumbnail_video: ^0.7.3
   go_router: ^17.5.0
   http: ^1.6.0
   intl: ^0.20.3

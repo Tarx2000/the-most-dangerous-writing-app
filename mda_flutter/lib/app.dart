@@ -16,6 +16,7 @@ import 'ui/features/home/home_screen.dart';
 import 'ui/features/pillars/pillar_detail_screen.dart';
 import 'ui/features/pillars/pillars_dashboard_screen.dart';
 import 'ui/features/post_writing/post_writing_screen.dart';
+import 'ui/features/vlogs/vlog_recording_screen.dart';
 import 'ui/features/writing/writing_screen.dart';
 
 /// Root navigator config (go_router).
@@ -56,7 +57,13 @@ final GoRouter goRouter = GoRouter(
     ),
     GoRoute(
       path: '/vlog',
-      builder: (context, state) => const _PhasePlaceholder(label: 'Vlog Recording (Phase 6)'),
+      pageBuilder: (context, state) {
+        final extra = (state.extra as Map?)?.cast<String, dynamic>() ?? {};
+        return _transparentPage(VlogRecordingScreen(
+          timeIndex: (extra['timeIndex'] as num?)?.toInt() ?? 0,
+          isQuickVideo: extra['isQuickVideo'] == true,
+        ));
+      },
     ),
   ],
 );
@@ -73,28 +80,6 @@ Page<void> _transparentPage(Widget child) {
       return FadeTransition(opacity: animation, child: child);
     },
   );
-}
-
-/// Simple placeholder for screens whose phases haven't shipped yet.
-class _PhasePlaceholder extends StatelessWidget {
-  const _PhasePlaceholder({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 15),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class MdaApp extends ConsumerWidget {

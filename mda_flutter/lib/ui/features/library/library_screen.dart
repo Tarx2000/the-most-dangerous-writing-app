@@ -15,6 +15,7 @@ import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../vlogs/vlog_calendar_gallery.dart';
 import 'library_notes_list.dart';
 import 'note_viewer_modal.dart';
 import 'person_profile_modal.dart';
@@ -206,8 +207,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
                 // Circles
                 _CirclesTab(persons: persons, onPersonTap: _openPersonProfile),
-                // Vlogs (Phase 6)
-                const _VlogsPlaceholder(),
+                // Vlogs (calendar gallery)
+                const VlogCalendarGallery(),
               ],
             ),
           ),
@@ -367,20 +368,6 @@ class _CirclesTab extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _VlogsPlaceholder extends StatelessWidget {
-  const _VlogsPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Video library arrives with vlog recording (Phase 6)',
-        style: TextStyle(color: AppColors.textMuted, fontSize: 14),
-      ),
     );
   }
 }
