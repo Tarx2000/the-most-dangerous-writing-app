@@ -48,6 +48,10 @@ Critical per-domain rules live in `.agents/instructions/*.md`. Read the relevant
 - `security.md` — 3-tier biometric, auto-lock rules
 - `typescript-rules.md` — Strict mode, version pinning, code quality
 
+## Workflows
+
+- `.agents/workflows/expo-build.md` — canonical Local Android Release Build (lint → test → commit/push → gradle APK). Registered in opencode as `/expo-build` (`.opencode/command/expo-build.md`). **Always run this workflow when the user asks for a build, "expo build", or an APK** — do not improvise a build.
+
 ## Agent Operating Rules (Mandatory)
 
 ### 1. Code Must Be Well-Documented
