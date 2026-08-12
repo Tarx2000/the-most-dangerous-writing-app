@@ -1,11 +1,11 @@
-/// TickDial — Tide-style duration ruler (SPEC §15).
-/// Major tick every 80 px, 4 minor ticks between (16 px), center indicator,
-/// smooth scrollTo snapping, value 44/200 with a scale bounce + haptic on change.
-///
-/// Geometry: the ruler content is `viewport + (count-1) * 80` wide, with tick *i*
-/// drawn at `x = viewport/2 + i * 80`. When scrolled to offset `o`, the tick
-/// under the center indicator is `o / 80`, so each value aligns exactly.
+/// TickDial — Tide-style duration ruler (1:1 port of `TickDial.tsx`, SPEC §15).
+/// SNAP 80 px per data point · 4 minor ticks between (GAP 16) · center
+/// indicator · live value = `data[selectedIndex]` with a scale that grows
+/// across the range (0.95 → 1.10) and a pulse (1.03/90 ms → spring) on
+/// change · smooth animated snap on release · haptic per crossing.
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -15,202 +15,251 @@ import '../../../core/theme/app_colors.dart';
 class TickDial extends StatefulWidget {
   const TickDial({
     super.key,
-    required this.count,
-    required this.valueLabel,
-    this.onChanged,
-    this.initialValue = 0,
+    required this.data,
+    required this.selectedIndex,
+    required this.onSelect,
+    this.unit = 'min',
   });
 
-  /// Number of selectable positions (e.g. 6 session options).
-  final int count;
+  /// The actual selectable values (e.g. `[3, 5, 10, 15, 30, 60]`).
+  final List<int> data;
 
-  /// Label rendered under the big value (e.g. "min").
-  final String valueLabel;
-
-  final ValueChanged<int>? onChanged;
-
-  final int initialValue;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+  final String unit;
 
   @override
   State<TickDial> createState() => _TickDialState();
 }
 
 class _TickDialState extends State<TickDial> {
-  static const double _perStep = 80.0;
+  static const double _snap = 80;
+  static const int _minors = 4;
+  static const double _gap = _snap / (_minors + 1); // 16
 
   late final ScrollController _controller = ScrollController();
-  int _value = 0;
   bool _dragging = false;
-  bool _didInit = false;
+  bool _snapping = false;
+  bool _justSnapped = false;
+  double _currentOffset = 0;
+  double _scalePulse = 1;
+  Timer? _pulseTimer;
 
-  double get _maxOffset => (widget.count - 1) * _perStep;
+  double get _pad => MediaQuery.sizeOf(context).width / 2 - _gap / 2;
 
   @override
   void initState() {
     super.initState();
-    _value = widget.initialValue;
+    _controller.addListener(_onScroll);
+    // Sync scroll position to the selected index (suppressed while dragging).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_dragging && !_justSnapped) {
+        _controller.jumpTo(widget.selectedIndex * _snap);
+      }
+      _justSnapped = false;
+    });
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_didInit) {
-      _didInit = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _controller.jumpTo(_value * _perStep);
-      });
+  void didUpdateWidget(covariant TickDial oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      if (!_dragging && !_justSnapped) {
+        _controller.jumpTo(widget.selectedIndex * _snap);
+      }
+      _justSnapped = false;
+      _pulse();
     }
   }
 
   @override
   void dispose() {
+    _pulseTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
-  int _valueAtOffset(double offset) =>
-      ((offset / _perStep).round()).clamp(0, widget.count - 1);
+  void _pulse() {
+    vibrate(HapticPatterns.tick);
+    setState(() => _scalePulse = 1.03);
+    _pulseTimer?.cancel();
+    _pulseTimer = Timer(const Duration(milliseconds: 90), () {
+      if (mounted) setState(() => _scalePulse = 1.0);
+    });
+  }
 
-  void _updateValue(int value, {bool withHaptics = true}) {
-    if (value == _value) return;
-    setState(() => _value = value);
-    if (withHaptics) vibrate(HapticPatterns.tick);
-    widget.onChanged?.call(value);
+  int _indexFromOffset(double x) =>
+      (x / _snap).round().clamp(0, widget.data.length - 1);
+
+  void _onScroll() {
+    _currentOffset = _controller.offset;
+    if (_dragging || !_snapping) {
+      final index = _indexFromOffset(_currentOffset);
+      if (index != widget.selectedIndex) {
+        widget.onSelect(index);
+      }
+    }
   }
 
   void _snapToNearest() {
-    final target = (_controller.offset / _perStep).round() * _perStep;
+    final index = _indexFromOffset(_currentOffset);
+    _snapping = true;
     _controller.animateTo(
-      target.clamp(0.0, _maxOffset),
-      duration: const Duration(milliseconds: 250),
+      index * _snap,
+      duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-    );
+    ).whenComplete(() {
+      _snapping = false;
+      if (mounted && index != widget.selectedIndex) {
+        _justSnapped = true;
+        widget.onSelect(index);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final viewportWidth = MediaQuery.sizeOf(context).width;
+    final screenW = MediaQuery.sizeOf(context).width;
+    final scaleBase =
+        0.95 + (widget.data.length > 1 ? widget.selectedIndex / (widget.data.length - 1) * 0.15 : 0);
 
-    return SizedBox(
-      height: 128,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Tick ruler (scrolls; ticks painted relative to the viewport center).
-          NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification is ScrollStartNotification) {
-                _dragging = true;
-              } else if (notification is ScrollEndNotification) {
-                if (_dragging) {
-                  _dragging = false;
-                  _snapToNearest();
-                }
-              } else if (notification is ScrollUpdateNotification) {
-                _updateValue(_valueAtOffset(_controller.offset));
-              }
-              return false;
-            },
-            child: Listener(
-              onPointerDown: (_) => _dragging = true,
-              child: SingleChildScrollView(
-                controller: _controller,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: SizedBox(
-                  width: viewportWidth + _maxOffset,
-                  height: 128,
-                  child: CustomPaint(
-                    painter: _TickPainter(
-                      count: widget.count,
-                      centerX: viewportWidth / 2,
-                      perStep: _perStep,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Big value (TextSpan children only — `text` + `children` would
+        // double-render and look like an underline).
+        AnimatedScale(
+          scale: scaleBase * _scalePulse,
+          duration: const Duration(milliseconds: 90),
+          child: Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 44,
+                fontWeight: FontWeight.w200,
+                height: 1.0,
+              ),
+              children: [
+                TextSpan(text: '${widget.data[widget.selectedIndex]}'),
+                TextSpan(
+                  text: ' ${widget.unit}',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Ruler
+        SizedBox(
+          height: 62,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Center indicator (exact screen center)
+              Positioned(
+                left: screenW / 2 - 1.5,
+                top: 10,
+                child: Container(
+                  width: 3,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryAction,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Tick strip
+              NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollStartNotification) {
+                    _dragging = true;
+                    _snapping = false;
+                  } else if (notification is ScrollEndNotification) {
+                    if (_dragging) {
+                      _dragging = false;
+                      _snapToNearest();
+                    }
+                  } else if (notification is OverscrollNotification || notification is ScrollEndNotification) {
+                    // momentum finished → snap (ScrollEnd covers it)
+                  }
+                  return false;
+                },
+                child: Listener(
+                  onPointerDown: (_) => _dragging = true,
+                  child: SingleChildScrollView(
+                    controller: _controller,
+                    scrollDirection: Axis.horizontal,
+                    physics: const ClampingScrollPhysics(),
+                    child: SizedBox(
+                      width: _pad * 2 + (widget.data.length - 1) * _snap,
+                      height: 62,
+                      child: CustomPaint(
+                        painter: _TickPainter(
+                          count: widget.data.length,
+                          pad: _pad,
+                          snap: _snap,
+                          gap: _gap,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-          // Center indicator (exact screen center, red)
-          IgnorePointer(
-            child: Container(
-              width: 3,
-              height: 42,
-              decoration: BoxDecoration(
-                color: AppColors.primaryAction,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          // Value readout (44 / weight 200) + label
-          Positioned(
-            bottom: 4,
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '$_value',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 44,
-                        fontWeight: FontWeight.w200,
-                        height: 1.0,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      widget.valueLabel,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w300,
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+      ],
     );
   }
 }
 
+/// Paints major ticks (28 px) and minor ticks (12 px) per the RN geometry.
 class _TickPainter extends CustomPainter {
   const _TickPainter({
     required this.count,
-    required this.centerX,
-    required this.perStep,
+    required this.pad,
+    required this.snap,
+    required this.gap,
   });
 
   final int count;
-  final double centerX;
-  final double perStep;
+  final double pad;
+  final double snap;
+  final double gap;
 
   @override
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
     for (var i = 0; i < count; i++) {
-      final x = centerX + i * perStep;
-      final paint = Paint()..color = AppColors.lightGrey;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(x, centerY), width: 2.5, height: 28),
-          const Radius.circular(1.5),
-        ),
-        paint,
-      );
+      final majorX = pad + i * snap;
+      _drawTick(canvas, majorX, centerY, major: true);
+      if (i < count - 1) {
+        for (var j = 1; j <= 4; j++) {
+          _drawTick(canvas, majorX + j * gap, centerY, major: false);
+        }
+      }
     }
+  }
+
+  void _drawTick(Canvas canvas, double x, double centerY, {required bool major}) {
+    final w = major ? 2.5 : 1.5;
+    final h = major ? 28.0 : 12.0;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, centerY), width: w, height: h),
+        const Radius.circular(1.5),
+      ),
+      Paint()..color = major ? AppColors.lightGrey : AppColors.glassBorderMedium,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _TickPainter oldDelegate) =>
-      oldDelegate.count != count || oldDelegate.centerX != centerX;
+      oldDelegate.count != count || oldDelegate.pad != pad;
 }

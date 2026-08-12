@@ -117,8 +117,6 @@ class BackupService {
 
       // 4. Media manifest.
       final docs = await _docs();
-      final vlogDir = Directory(p.join(docs, 'vlogs'));
-      final thumbDir = Directory(p.join(docs, 'vlog_thumbnails'));
       final vlogEntries = <Map<String, Object?>>[];
       final thumbEntries = <Map<String, Object?>>[];
       final excluded = <({String vlogId, String reason})>[];
@@ -136,6 +134,7 @@ class BackupService {
         vlogEntries.add({
           'vlogId': id,
           'basename': basename,
+          'sourcePath': path,
           'size': File(path).lengthSync(),
         });
         final thumb = row['thumbnail_path'] as String?;
@@ -143,6 +142,7 @@ class BackupService {
           thumbEntries.add({
             'vlogId': id,
             'basename': _uniqueBasename(usedBasenames, '$id.jpg'),
+            'sourcePath': thumb,
             'size': File(thumb).lengthSync(),
           });
         }
@@ -175,10 +175,22 @@ class BackupService {
         ArchiveFile.bytes('backup_metadata.json', utf8.encode(jsonEncode(metadata))),
       );
       for (final entry in vlogEntries) {
-        encoder.addFile(File(p.join(vlogDir.path, p.basename(entry['basename'] as String))));
+        // STORE streaming: the file content is piped from disk without ever
+        // loading it into Dart memory (1.2 GB backups stay crash-proof).
+        encoder.addArchiveFile(
+          ArchiveFile.stream(
+            'vlogs/${entry['basename'] as String}',
+            InputFileStream(entry['sourcePath'] as String),
+          )..compression = CompressionType.none,
+        );
       }
       for (final entry in thumbEntries) {
-        encoder.addFile(File(p.join(thumbDir.path, p.basename(entry['basename'] as String))));
+        encoder.addArchiveFile(
+          ArchiveFile.stream(
+            'thumbnails/${entry['basename'] as String}',
+            InputFileStream(entry['sourcePath'] as String),
+          )..compression = CompressionType.none,
+        );
       }
       await encoder.close();
       onProgress?.call(0.8);
@@ -259,7 +271,9 @@ class BackupService {
   /// Re-opens the ZIP and checks every included entry against the manifest.
   String _verifyZip(String zipPath, Map<String, Object?> metadata) {
     try {
-      final archive = ZipDecoder().decodeBytes(File(zipPath).readAsBytesSync());
+      // Lazy decode: only entry names/sizes are read (central directory).
+      final input = InputFileStream(zipPath);
+      final archive = ZipDecoder().decodeStream(input, verify: false);
       final entries = <String, int>{};
       for (final file in archive.files) {
         if (file.isFile) entries[file.name] = file.size;
@@ -308,7 +322,10 @@ class BackupService {
   }) async {
     try {
       // 1. Open + normalize metadata (v2; legacy v1 rejected with message).
-      final archive = ZipDecoder().decodeBytes(File(zipPath).readAsBytesSync());
+      // Streaming decode (verify: false): the ZIP is read lazily from disk —
+      // 1.2 GB backups never load into memory (crash-proof by design).
+      final input = InputFileStream(zipPath);
+      final archive = ZipDecoder().decodeStream(input, verify: false);
       final metadataFile =
           archive.files.where((f) => f.name == 'backup_metadata.json').firstOrNull;
       if (metadataFile == null) {
@@ -429,11 +446,10 @@ class BackupService {
     return total;
   }
 
-  Future<int> _freeDiskBytes() async {
-    final docs = await _docs();
-    final stat = await Directory(docs).stat();
-    return stat.size; // approximation; real free space via platform channels
-  }
+  /// Free disk space in bytes. There is no pure-Dart API for this; the
+  /// platform channel (`StatFs` on Android, `NSURLVolumeAvailableCapacityKey`
+  /// on iOS) is a future polish item. Returning -1 disables the gate.
+  Future<int> _freeDiskBytes() async => -1;
 
   Future<Map<String, Object>> _createSnapshots() async {
     final docs = await _docs();
@@ -518,7 +534,8 @@ class BackupService {
       final file = archive.files.where((f) => f.name == 'vlogs/$basename').firstOrNull;
       if (file == null) continue;
       final outPath = p.join(vlogDir.path, basename);
-      await File(outPath).writeAsBytes(file.content as List<int>, flush: true);
+      // Stream the file to disk in chunks (never buffers the whole video).
+      await _writeArchiveFileStreaming(file, outPath);
       pathMap[map['vlogId'] as String] = outPath;
       restored++;
     }
@@ -540,11 +557,22 @@ class BackupService {
       final file = archive.files.where((f) => f.name == 'thumbnails/$basename').firstOrNull;
       if (file == null) continue;
       final outPath = p.join(thumbDir.path, basename);
-      await File(outPath).writeAsBytes(file.content as List<int>, flush: true);
+      await _writeArchiveFileStreaming(file, outPath);
       final vlogId = map['vlogId'] as String;
       await run('UPDATE vlogs SET thumbnail_path = ? WHERE id = ?', [outPath, vlogId]);
     }
     return restored;
+  }
+
+  /// Writes an archive entry to disk via a streaming output (large media
+  /// files never load into Dart memory).
+  Future<void> _writeArchiveFileStreaming(ArchiveFile file, String outPath) async {
+    final output = OutputFileStream(outPath);
+    try {
+      file.writeContent(output, freeMemory: false);
+    } finally {
+      output.close();
+    }
   }
 
   Future<void> _restorePrefsAllowlist(Map<String, dynamic> prefs) async {

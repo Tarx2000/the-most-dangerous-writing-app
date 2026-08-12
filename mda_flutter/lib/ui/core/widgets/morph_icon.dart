@@ -25,11 +25,15 @@ class LiquidMorphIcon extends StatefulWidget {
     required this.icon,
     this.color = AppColors.primaryAction,
     this.size = 42,
+    this.glowColor,
   });
 
   final String icon;
   final Color color;
   final double size;
+
+  /// Optional soft shadow behind the icon (check-in tier glow).
+  final Color? glowColor;
 
   @override
   State<LiquidMorphIcon> createState() => _LiquidMorphIconState();
@@ -81,9 +85,21 @@ class _LiquidMorphIconState extends State<LiquidMorphIcon>
           // Cross-fade both ways.
           final outgoing = Icon(Mdi.get(_displayIcon), color: _displayColor, size: widget.size);
           final incoming = Icon(Mdi.get(widget.icon), color: widget.color, size: widget.size);
-          return SizedBox(
+          return Container(
             width: widget.size + 12,
             height: widget.size + 12,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: widget.glowColor != null
+                  ? [
+                      BoxShadow(
+                        color: widget.glowColor!,
+                        blurRadius: 24,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
             child: Transform.scale(
               scale: scale,
               child: Stack(

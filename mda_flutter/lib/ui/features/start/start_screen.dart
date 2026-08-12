@@ -20,6 +20,7 @@ import '../../core/widgets/base_modal.dart';
 import '../settings/settings_modal.dart';
 import '../../core/widgets/calendar_view.dart';
 import '../../core/widgets/morph_icon.dart';
+import '../../core/widgets/custom_slider.dart';
 import '../../core/widgets/tick_dial.dart';
 import '../circles/circle_picker_sheet.dart';
 
@@ -41,7 +42,7 @@ class StartScreen extends ConsumerStatefulWidget {
 class _StartScreenState extends ConsumerState<StartScreen> {
   int _timeIndex = defaultSessionIndex; // 5 min
   int _diffIndex = defaultDifficultyIndex; // MID
-  final int _checkinScore = 5; // slider lands in Phase 5 (alignment check-in)
+  int _checkinScore = 5;
   String? _selectedPersonId;
 
   void _handleStart() {
@@ -138,32 +139,23 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                   children: [
                     _TopBar(streak: streak, onCalendarPress: _openCalendar),
                     const SizedBox(height: 8),
-                    // Hero widget (fixed height 200)
+                    // Hero widget (fixed height 200, RN parity: "Exact height
+                    // prevents jumps").
                     SizedBox(
                       height: 200,
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          // Glow ring (only checkin mode, per SPEC).
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 400),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: isCheckin
-                                  ? [
-                                      BoxShadow(
-                                        color: AppColors.alignmentTierGlow(_checkinScore),
-                                        blurRadius: 60,
-                                        spreadRadius: 8,
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                          ),
+                          // Glow ring (only checkin mode): subtle shadow on
+                          // the icon container — parity with the RN
+                          // `shadowColor` morph, NOT a huge filled circle.
                           LiquidMorphIcon(
                             icon: _iconForMode(widget.mode),
                             color: tierColor,
                             size: 44,
+                            glowColor: isCheckin
+                                ? AppColors.alignmentTierGlow(_checkinScore)
+                                : null,
                           ),
                           // Mode content (absolutely positioned below the icon).
                           Positioned(
@@ -188,7 +180,23 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                if (isVlog)
+                                if (isCheckin)
+                                  // Check-in slider lives IN the hero (RN parity:
+                                  // scale 0.9, negative margins pull the following
+                                  // sections up so nothing jumps).
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                                    child: Transform.scale(
+                                      scale: 0.9,
+                                      child: CustomSlider(
+                                        value: _checkinScore,
+                                        color: tierColor,
+                                        onChanged: (v) =>
+                                            setState(() => _checkinScore = v),
+                                      ),
+                                    ),
+                                  )
+                                else if (isVlog)
                                   _QuickVideoPill(onPress: _startQuickVideo)
                                 else if (widget.mode == SessionMode.circles)
                                   _PersonPickerPill(
@@ -205,14 +213,14 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                         ],
                       ),
                     ),
-                    // TickDial (session duration)
+                    // TickDial (session duration) — shows the actual minutes.
                     TickDial(
-                      count: isVlog ? vlogSessionOptionsMins.length : sessionOptionsMins.length,
-                      valueLabel: 'min',
-                      initialValue: isVlog ? 0 : _timeIndex,
-                      onChanged: (i) => setState(() => _timeIndex = i),
+                      data: isVlog ? vlogSessionOptionsMins : sessionOptionsMins,
+                      selectedIndex: isVlog ? 0 : _timeIndex,
+                      onSelect: (i) => setState(() => _timeIndex = i),
                     ),
-                    // Difficulty pills (hidden for checkin/vlog)
+                    // Difficulty pills (hidden for checkin/vlog) — RN parity:
+                    // label is just the difficulty name.
                     if (!isCheckin && !isVlog)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -269,7 +277,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
 
   static String _difficultyLabel(int index) {
     const names = ['EASY', 'MID', 'HARD'];
-    return '${names[index]} ${(difficultyLimitsMs[index] / 1000).round()}s';
+    return names[index];
   }
 
   static String _iconForMode(SessionMode mode) {

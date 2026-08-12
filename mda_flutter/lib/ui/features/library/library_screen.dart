@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
@@ -149,17 +150,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Lock button (security lands in Phase 7)
+                    // Lock button — taps LOCK the whole app (RN parity:
+                    // the header lock toggles the notes tier).
                     AnimatedScaleButton(
-                      onPress: () {},
+                      onPress: () {
+                        vibrate(HapticPatterns.lockAll);
+                        ref.read(securityControllerProvider).lockAll();
+                      },
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppColors.glassBackground,
+                          color: locked
+                              ? AppColors.dangerTint
+                              : AppColors.glassBackground,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.glassBorder, width: 1),
+                          border: Border.all(
+                            color: locked
+                                ? AppColors.dangerBorder
+                                : AppColors.glassBorder,
+                            width: 1,
+                          ),
                         ),
-                        child: Icon(Mdi.get('lockOutline'), color: AppColors.textSecondary, size: 18),
+                        child: Icon(
+                          locked ? Mdi.get('lock') : Mdi.get('lockOpenOutline'),
+                          color: locked
+                              ? AppColors.primaryAction
+                              : AppColors.textSecondary,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ],
@@ -230,18 +248,72 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
             ),
           ),
-          // Locked overlay (overlayLockAndroid + centered lock icon, SPEC §15)
+          // Locked overlay (SPEC §15): overlayLockAndroid + unlock prompt.
           if (locked)
             Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  color: AppColors.overlayLockAndroid,
-                  child: Center(
-                    child: Icon(
-                      Mdi.get('lockOutline'),
-                      color: AppColors.textDim,
-                      size: 28,
-                    ),
+              child: Container(
+                color: AppColors.overlayLockAndroid,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Mdi.get('lockOutline'),
+                        color: AppColors.textDim,
+                        size: 32,
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Your library is locked',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Unlock from the start screen (Masteries button).',
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      AnimatedScaleButton(
+                        onPress: () async {
+                          final prefs = ref.read(preferencesProvider);
+                          final ok = await ref
+                              .read(securityControllerProvider)
+                              .unlockNotes(
+                                preferPinAuth: prefs.preferPinAuth,
+                                useBiometrics: prefs.useBiometrics,
+                              );
+                          if (ok && mounted) vibrate(HapticPatterns.unlockSuccess);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 11),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryAction,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Mdi.get('fingerprint'),
+                                  color: AppColors.primaryActionText, size: 17),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Unlock',
+                                style: TextStyle(
+                                  color: AppColors.primaryActionText,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

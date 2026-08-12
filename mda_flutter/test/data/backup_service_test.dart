@@ -157,4 +157,42 @@ void main() {
     final marker = await settings.raw('MARKER');
     expect(marker, 'keep-me');
   });
+
+  test('media roundtrip streams a vlog file through export→import', () async {
+    // Create a ~6 MB pseudo-video file.
+    final vlogDir = Directory(p.join(tempDir.path, 'vlogs'));
+    await vlogDir.create(recursive: true);
+    final videoPath = p.join(vlogDir.path, 'vid1.mp4');
+    final chunk = List<int>.filled(1024 * 1024, 7); // 1 MB
+    final out = File(videoPath).openWrite();
+    for (var i = 0; i < 6; i++) {
+      out.add(chunk);
+    }
+    await out.close();
+    final videoSize = await File(videoPath).length();
+
+    // DB row pointing at the file.
+    await run(
+      'INSERT INTO vlogs (id, file_path, date_str, timestamp, duration_sec, file_size_bytes) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
+      ['v1', videoPath, '2026-08-11', 1, 60, videoSize],
+    );
+
+    final export = await service.exportBackupZip(scopes: ['vlogs']);
+    expect(export.success, isTrue, reason: export.error);
+    expect(export.verification, 'ok');
+
+    // Wipe the media + rows, then import.
+    await run('DELETE FROM vlogs');
+    await File(videoPath).delete();
+
+    final import = await service.importBackupZip(zipPath: export.zipPath!);
+    expect(import.success, isTrue, reason: import.error);
+    expect(import.videosIncluded, 1);
+
+    final restoredPath = (await getFirst('SELECT file_path FROM vlogs WHERE id = ?', ['v1']))
+        ?['file_path'] as String;
+    expect(restoredPath, isNotNull);
+    expect(await File(restoredPath).length(), videoSize);
+  });
 }

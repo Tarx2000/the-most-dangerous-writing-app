@@ -38,6 +38,7 @@ class LiquidGlassNav extends StatefulWidget {
     required this.onSelect,
     this.onFeedToggle,
     this.feedOpen = false,
+    this.feedProgress = 0,
     this.safeBottom = 14,
   });
 
@@ -46,6 +47,9 @@ class LiquidGlassNav extends StatefulWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback? onFeedToggle;
   final bool feedOpen;
+
+  /// 0..1 feed reveal progress (drives the fade/slide).
+  final double feedProgress;
   final double safeBottom;
 
   @override
@@ -67,12 +71,11 @@ class _LiquidGlassNavState extends State<LiquidGlassNav> {
       bottom: widget.safeBottom,
       width: pillWidth,
       height: _height,
-      child: AnimatedSlide(
-        offset: widget.feedOpen ? const Offset(0, 2) : Offset.zero,
-        duration: const Duration(milliseconds: 250),
-        child: AnimatedOpacity(
-          opacity: widget.feedOpen ? 0 : 1,
-          duration: const Duration(milliseconds: 250),
+      child: Transform.translate(
+        // The pill slides DOWN 80 px and fades as the feed opens (SPEC §14).
+        offset: Offset(0, widget.feedProgress * 80),
+        child: Opacity(
+          opacity: (1 - widget.feedProgress).clamp(0.0, 1.0),
           child: Container(
             decoration: BoxDecoration(
               color: AppColors.overlayLockAndroid,
@@ -91,18 +94,17 @@ class _LiquidGlassNavState extends State<LiquidGlassNav> {
               child: Stack(
                 children: [
                   // Layer 1: pill background (already the container)
-                  // Layer 2: sliding indicator bubble
-                  AnimatedAlign(
-                    alignment: Alignment(
-                      _indicatorAlignmentX(widget.tabs, widget.activeId, tabWidth),
-                      0,
-                    ),
+                  // Layer 2: sliding indicator bubble — RN parity:
+                  // `left: 0; top: 6; translateX = index*tabWidth + PADDING`,
+                  // height PILL_HEIGHT−12, width tabWidth − 2×PADDING.
+                  AnimatedPositioned(
+                    left: _indicatorLeft(widget.tabs, widget.activeId, tabWidth),
+                    top: _pillInset,
+                    height: _height - _pillInset * 2,
+                    width: tabWidth - _pillInset * 2,
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOutCubic,
                     child: Container(
-                      width: tabWidth - _pillInset * 2,
-                      height: _height - _pillInset * 2,
-                      margin: const EdgeInsets.symmetric(vertical: _pillInset),
                       decoration: BoxDecoration(
                         color: AppColors.navIndicatorBackground,
                         borderRadius: BorderRadius.circular((_height - _pillInset * 2) / 2),
@@ -136,16 +138,15 @@ class _LiquidGlassNavState extends State<LiquidGlassNav> {
     );
   }
 
-  /// Alignment in [-1, 1] for the indicator (AnimatedAlign coordinate space).
-  static double _indicatorAlignmentX(
+  /// Indicator left offset (RN parity): index × tabWidth + PADDING.
+  static double _indicatorLeft(
     List<NavTabConfig> tabs,
     String activeId,
     double tabWidth,
   ) {
     final index = tabs.indexWhere((t) => t.id == activeId);
-    if (index < 0) return -1;
-    final centerFraction = (index + 0.5) / tabs.length; // 0..1
-    return centerFraction * 2 - 1;
+    if (index < 0) return _pillInset;
+    return index * tabWidth + _pillInset;
   }
 }
 

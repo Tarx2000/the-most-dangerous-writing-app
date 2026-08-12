@@ -62,7 +62,6 @@ class _CalendarViewState extends State<CalendarView> {
         const SizedBox(height: 12),
         Text.rich(
           TextSpan(
-            text: "You're on a\n",
             style: const TextStyle(
               color: AppColors.textPrimary,
               fontSize: 32,
@@ -70,6 +69,7 @@ class _CalendarViewState extends State<CalendarView> {
               height: 1.15,
             ),
             children: [
+              const TextSpan(text: "You're on a\n"),
               TextSpan(
                 text: '${widget.currentStreak}-day ',
                 style: const TextStyle(color: AppColors.primaryAction),

@@ -3,13 +3,17 @@
 ///   Layer B: main content — horizontal pager (Start | Library)
 ///   Layer C: LiquidGlassNav (floats, fades + slides down when feed opens)
 ///
-/// Feed reveal gesture (parity with useHomeGestures.ts): upward-only pan,
+/// Feed reveal gesture (parity with `useHomeGestures.ts`): upward-only pan,
 /// activation ≥ 8 px, fail on |dx| > 20 px, finger 1:1 tracking; commit at
-/// progress ≥ 0.40 or velocity < -3000 px/s; close below 0.70 or
-/// velocity > 3000 px/s.
+/// progress ≥ 0.40 or velocity < -3000 px/s; commit/close both animate with
+/// `springSnappy` (never a hard jump).
+///
+/// IMPORTANT: the nav pill reflects the SESSION MODE (journal/circles/vlog/
+/// checkin) and NEVER moves when the pager is swiped to the Library page.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers.dart';
@@ -26,7 +30,8 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends ConsumerState<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell>
+    with SingleTickerProviderStateMixin {
   static const double _activationOffset = 8;
   static const double _failTolerance = 20;
   static const double _commitProgress = 0.40;
@@ -36,8 +41,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   late final PageController _pager = PageController();
   String _activeTab = HomeTab.journal;
-  double _feedProgress = 0; // 0 = closed, 1 = fully revealed
-  bool _feedOpen = false;
+
+  /// Feed reveal progress 0..1 — drives via drag and animates via spring.
+  late final AnimationController _feedController = AnimationController(
+    vsync: this,
+    value: 0,
+    duration: const Duration(milliseconds: 400),
+  );
+
+  double get _feedProgress => _feedController.value;
+  bool get _feedOpen => _feedController.value > 0.5;
   bool _dragArmed = false;
   double _dragDy = 0;
 
@@ -61,6 +74,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   void dispose() {
     _pager.dispose();
+    _feedController.dispose();
     super.dispose();
   }
 
@@ -71,11 +85,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _pager.jumpToPage(0);
   }
 
+  /// Springs the feed to the target (springSnappy — parity with RN).
   void _commitFeed(bool open) {
-    if (_feedOpen == open) return;
+    final target = open ? 1.0 : 0.0;
+    if (_feedController.value == target) return;
+    _feedController.animateWith(
+      SpringSimulation(
+        const SpringDescription(damping: 35, stiffness: 250, mass: 0.8),
+        _feedController.value,
+        target,
+        0,
+      ),
+    );
     setState(() {
-      _feedOpen = open;
-      _feedProgress = open ? 1.0 : 0.0;
       _dragArmed = false;
       _dragDy = 0;
     });
@@ -90,7 +112,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   void _onOpenDragUpdate(DragUpdateDetails details) {
     if (!_dragArmed || _feedOpen) return;
-    // Fail tolerance: horizontal movement beyond 20 px cancels the gesture.
     if (details.delta.dx.abs() > _failTolerance) {
       _dragArmed = false;
       return;
@@ -100,7 +121,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
     setState(() {
       _dragDy += details.delta.dy;
-      _feedProgress = (_dragDy / -MediaQuery.sizeOf(context).height)
+      _feedController.value = (_dragDy / -MediaQuery.sizeOf(context).height)
           .clamp(0.0, 1.0)
           .toDouble();
     });
@@ -122,7 +143,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (!_feedOpen) return;
     setState(() {
       _dragDy += details.delta.dy;
-      _feedProgress = (1 + _dragDy / MediaQuery.sizeOf(context).height)
+      _feedController.value = (1 + _dragDy / MediaQuery.sizeOf(context).height)
           .clamp(0.0, 1.0)
           .toDouble();
     });
@@ -147,19 +168,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return Stack(
       children: [
         // ---- Layer B: main content (pager Start | Library) ----------------
-        Transform.translate(
-          offset: Offset(0, _feedProgress * -screenHeight),
-          child: PageView(
-            controller: _pager,
-            physics: _feedOpen ? const NeverScrollableScrollPhysics() : null,
-            onPageChanged: (page) {
-              setState(() => _activeTab = page == 0 ? HomeTab.journal : HomeTab.circles);
-            },
-            children: [
-              StartScreen(mode: _modeForTab),
-              const LibraryScreen(),
-            ],
-          ),
+        AnimatedBuilder(
+          animation: _feedController,
+          builder: (context, _) {
+            final progress = _feedProgress;
+            return Transform.translate(
+              offset: Offset(0, progress * -screenHeight),
+              child: PageView(
+                controller: _pager,
+                physics: _feedOpen ? const NeverScrollableScrollPhysics() : null,
+                // NOTE: swiping the pager NEVER changes the nav pill — the
+                // pill reflects the session mode only.
+                children: [
+                  StartScreen(mode: _modeForTab),
+                  const LibraryScreen(),
+                ],
+              ),
+            );
+          },
         ),
 
         // ---- Layer A: feed layer (starts below the viewport) --------------
@@ -175,9 +201,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             child: GestureDetector(
               onVerticalDragUpdate: _onCloseDragUpdate,
               onVerticalDragEnd: _onCloseDragEnd,
-              child: Transform.translate(
-                offset: Offset(0, (1 - _feedProgress) * screenHeight),
-                child: const FeedScreen(),
+              child: AnimatedBuilder(
+                animation: _feedController,
+                builder: (context, _) {
+                  return Transform.translate(
+                    offset: Offset(0, (1 - _feedProgress) * screenHeight),
+                    child: const FeedScreen(),
+                  );
+                },
               ),
             ),
           ),
@@ -195,12 +226,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
 
         // ---- Layer C: LiquidGlassNav --------------------------------------
-        LiquidGlassNav(
-          tabs: defaultNavTabs(checkinUrgent: checkinUrgent),
-          activeId: _activeTab,
-          onSelect: _onNavSelect,
-          feedOpen: _feedOpen,
-          safeBottom: bottomInset + 14,
+        AnimatedBuilder(
+          animation: _feedController,
+          builder: (context, _) {
+            return LiquidGlassNav(
+              tabs: defaultNavTabs(checkinUrgent: checkinUrgent),
+              activeId: _activeTab,
+              onSelect: _onNavSelect,
+              feedOpen: _feedOpen,
+              feedProgress: _feedProgress,
+              safeBottom: bottomInset + 14,
+            );
+          },
         ),
       ],
     );

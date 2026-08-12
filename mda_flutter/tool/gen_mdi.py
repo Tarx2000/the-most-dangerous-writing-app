@@ -15,7 +15,10 @@ def main() -> None:
     lines = [
         "/// Generated icon map for the bundled MaterialCommunityIcons font.",
         "/// Source: MaterialCommunityIcons.json glyphmap (same font the RN app ships).",
-        "/// Regenerate with: python3 tool/gen_mdi.py <glyphmap.json> lib/core/theme/mdi.dart",
+        "/// Regenerate with: `python3 tool/gen_mdi.py <glyphmap.json> lib/core/theme/mdi.dart`.",
+        "/// NOTE: entries are keyed BOTH by kebab-case (the glyphmap's native form)",
+        "/// and camelCase aliases (e.g. `notebook-edit` → `notebookEdit`) so callers",
+        "/// can use either convention.",
         "library;",
         "",
         "import 'package:flutter/widgets.dart';",
@@ -28,8 +31,16 @@ def main() -> None:
         "",
         "  static final Map<String, int> _glyphs = <String, int>{",
     ]
+    seen = set()
     for name in sorted(glyphs):
         lines.append(f"    '{name}': {glyphs[name]},")
+        seen.add(name)
+        # camelCase alias: strip dashes, capitalize following letters.
+        parts = name.split('-')
+        alias = parts[0] + ''.join(p.capitalize() for p in parts[1:])
+        if alias not in seen:
+            lines.append(f"    '{alias}': {glyphs[name]},")
+            seen.add(alias)
     lines += [
         "  };",
         "",
