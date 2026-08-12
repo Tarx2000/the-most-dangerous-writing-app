@@ -2,9 +2,12 @@
 
 React Native (Expo SDK 55) journaling app where stopping typing destroys your text. Extends the core mechanic with social circles, vlog recording, self-tracking growth masteries, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud.
 
-> **Flutter rewrite active**: `mda_flutter/` is the in-progress Flutter port (Phase 1 done).
-> The RN app remains the source of truth; the Flutter project's behavioral contract is
-> `mda_flutter/SPEC_1TO1.md`. Read `mda_flutter/AGENTS.md` before editing Flutter code.
+> **Flutter rewrite complete**: `mda_flutter/` is the Flutter port (all 9 phases
+> done — writing loop, library, circles, AI pipeline, masteries, alignment,
+> vlogs, security, backup v2, feed, settings; 101 tests, release APKs build).
+> The RN app remains the source of truth; the Flutter project's behavioral
+> contract is `mda_flutter/SPEC_1TO1.md`. Read `mda_flutter/AGENTS.md` before
+> editing Flutter code.
 
 ## Tech Stack
 - React 19.2 + React Native 0.83.6 (Expo managed, custom native builds)
