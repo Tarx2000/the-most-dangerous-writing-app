@@ -28,6 +28,7 @@ import 'models/pillar.dart';
 import 'models/saved_note.dart';
 import 'models/saved_vlog.dart';
 import 'queues/compression_queue.dart';
+import 'services/backup_service.dart';
 import 'services/secure_storage_service.dart';
 import 'services/settings_service.dart';
 import 'services/thumbnail_service.dart';
@@ -57,6 +58,10 @@ final vlogsRepositoryProvider = Provider<VlogsRepository>((ref) => VlogsReposito
 final thumbnailServiceProvider = Provider<ThumbnailService>((ref) => ThumbnailService());
 
 final vlogStorageManagerProvider = Provider<VlogStorageManager>((ref) => VlogStorageManager());
+
+final backupServiceProvider = Provider<BackupService>(
+  (ref) => BackupService(settings: ref.watch(settingsServiceProvider)),
+);
 
 final vlogCompressorProvider = Provider<VlogCompressor>((ref) => VlogCompressor());
 
@@ -426,6 +431,83 @@ class StorageNotifier extends Notifier<AppData> {
   /// Dismisses the pending streak popup (called by the popup's close button).
   void dismissStreakPopup() {
     ref.read(pendingStreakPopupProvider.notifier).state = null;
+  }
+
+  // -- Backup (SPEC §13) -------------------------------------------------------
+
+  /// Exports a backup ZIP for the given scopes; returns the result.
+  Future<BackupResult> exportBackupZip(
+    List<String> scopes, {
+    void Function(double progress)? onProgress,
+  }) {
+    return ref.read(backupServiceProvider).exportBackupZip(
+          scopes: scopes,
+          onProgress: onProgress,
+        );
+  }
+
+  /// Imports a backup ZIP (gates + rollback inside the service).
+  Future<BackupResult> importBackupZip(
+    String zipPath, {
+    void Function(double progress)? onProgress,
+  }) async {
+    // Pause both queues for the restore (SPEC §13), reload after success.
+    final aiQueue = ref.read(aiQueueManagerProvider);
+    final compressionQueue = ref.read(compressionQueueManagerProvider);
+    aiQueue.pause();
+    compressionQueue.pause();
+    try {
+      final result = await ref.read(backupServiceProvider).importBackupZip(
+            zipPath: zipPath,
+            onProgress: onProgress,
+          );
+      if (result.success) {
+        await loadAll();
+      }
+      return result;
+    } finally {
+      aiQueue.resume();
+      compressionQueue.resume();
+    }
+  }
+
+  // -- Feed actions (SPEC §14: bookmarks + comments in the settings table) ----
+
+  Future<void> toggleBookmark(String noteId) async {
+    final settings = ref.read(settingsServiceProvider);
+    final bookmarks = [...state.feed.bookmarkedNoteIds];
+    final isBookmarked = bookmarks.contains(noteId);
+    if (isBookmarked) {
+      bookmarks.remove(noteId);
+    } else {
+      bookmarks.add(noteId);
+    }
+    await settings.setRaw(SettingsKeys.bookmarkedNoteIds, jsonEncode(bookmarks));
+    state = state.copyWith(
+      feed: state.feed.copyWith(bookmarkedNoteIds: bookmarks),
+    );
+  }
+
+  Future<void> saveFeedComment(String noteId, String comment) async {
+    final settings = ref.read(settingsServiceProvider);
+    final comments = {...state.feed.feedComments};
+    if (comment.trim().isEmpty) {
+      comments.remove(noteId);
+    } else {
+      comments[noteId] = comment.trim().substring(0, comment.trim().length.clamp(0, 500));
+    }
+    await settings.setRaw(SettingsKeys.feedComments, jsonEncode(comments));
+    state = state.copyWith(
+      feed: state.feed.copyWith(feedComments: comments),
+    );
+  }
+
+  Future<void> toggleAutoPlayFeedVideos(bool enabled) async {
+    final settings = ref.read(settingsServiceProvider);
+    await settings.setRaw(SettingsKeys.autoPlayFeedVideos, '$enabled');
+    state = state.copyWith(
+      feed: state.feed.copyWith(autoPlayFeedVideos: enabled),
+    );
   }
 
   Future<void> saveNote(SavedNote note) async {

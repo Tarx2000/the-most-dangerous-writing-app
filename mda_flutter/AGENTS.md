@@ -45,5 +45,10 @@ lib/
 
 ## Commands
 - `flutter analyze` — must be clean before committing
-- `flutter test` — run after each feature; keep the suite green
-- `flutter run` / `flutter run --profile` (DevTools profiling in Phase 9)
+- `flutter test --concurrency=1` — run after each feature; keep the suite green
+  (testWidgets must NEVER do real DB I/O — FakeAsync blocks on sqlite
+  isolates; override `appDataProvider` with a fake `StorageNotifier` instead)
+- `flutter build apk --release --no-tree-shake-icons --split-per-abi` —
+  canonical release build (runtime `Mdi.get()` IconData prevents tree-shaking
+  — parity with the RN app which bundles the full MDI font)
+- `flutter run` / `flutter run --profile` (DevTools profiling)

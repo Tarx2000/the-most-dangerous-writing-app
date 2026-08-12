@@ -16,8 +16,9 @@ import '../../../data/models/person.dart';
 import '../../../data/providers.dart';
 import '../../../data/security_providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
-import '../../core/widgets/calendar_view.dart';
 import '../../core/widgets/base_modal.dart';
+import '../settings/settings_modal.dart';
+import '../../core/widgets/calendar_view.dart';
 import '../../core/widgets/morph_icon.dart';
 import '../../core/widgets/tick_dial.dart';
 import '../circles/circle_picker_sheet.dart';
@@ -329,19 +330,8 @@ class _TopBar extends StatelessWidget {
               // Vision lock button → Masteries (unlock gate, SPEC §12).
               const _VisionLockButton(),
               const SizedBox(width: 8),
-              // Settings cog (long-press 4 s = dev mode, Phase 8)
-              AnimatedScaleButton(
-                onPress: () {},
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBackground,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: AppColors.glassBorder, width: 1),
-                  ),
-                  child: Icon(Mdi.get('cog'), color: AppColors.textSecondary, size: 20),
-                ),
-              ),
+              // Settings cog (4 s long-press = dev mode toggle)
+              _SettingsCogButton(),
             ],
           ),
         ],
@@ -548,6 +538,67 @@ class _VisionLockButton extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Settings cog: tap opens the settings sheet; 4 s long-press toggles dev mode
+/// (SPEC §2: dev-mode long-press 4000 ms, toast 2000 ms).
+class _SettingsCogButton extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_SettingsCogButton> createState() => _SettingsCogButtonState();
+}
+
+class _SettingsCogButtonState extends ConsumerState<_SettingsCogButton> {
+  bool _devLongPress = false;
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(preferencesProvider.select((p) => p.devMode));
+    final devMode = ref.read(preferencesProvider).devMode;
+
+    return AnimatedScaleButton(
+      onPress: () {
+        vibrate(HapticPatterns.optionSelect);
+        showBaseModal(
+          context,
+          title: 'Settings',
+          heightFactor: 0.92,
+          builder: (close) => SettingsModal(onClose: close),
+        );
+      },
+      onLongPress: () {
+        _devLongPress = true;
+        Future.delayed(const Duration(milliseconds: devModeLongPressMs), () {
+          if (!_devLongPress || !mounted) return;
+          _devLongPress = false;
+          final next = !devMode;
+          ref.read(appDataProvider.notifier).setPreference(devMode: next);
+          vibrate(next ? HapticPatterns.devOn : HapticPatterns.devOff);
+          // ignore: use_build_context_synchronously — guarded by mounted above.
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(next ? 'Developer mode ON' : 'Developer mode OFF'),
+            duration: const Duration(milliseconds: devModeToastMs),
+            backgroundColor: AppColors.surfaceRaised,
+          ));
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppColors.glassBackground,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: devMode ? AppColors.gold : AppColors.glassBorder,
+            width: devMode ? 2 : 1,
+          ),
+        ),
+        child: Icon(
+          Mdi.get('cog'),
+          color: devMode ? AppColors.gold : AppColors.textSecondary,
+          size: 20,
         ),
       ),
     );

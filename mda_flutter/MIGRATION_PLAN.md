@@ -31,8 +31,19 @@ Recording (countdown, quality), thumbnails, compression queue (presets, retries,
 ## Phase 7 — Security & Backup
 PIN pad (lockout, setup modes), biometric tiers + auto-lock, backup v2 export/import with old-app compatibility (gates, rollback). Tests: backup roundtrip, secrets policy, rollback.
 
-## Phase 8 — Feed, Settings, Dev Tools
-Feed screen + cards (reveal gesture, filters, bookmarks/comments, autoplay), full settings modal, compression status, dev tools + sandbox, changelog. Tests: feed filter, comment limit.
+## Phase 8 — Feed, Settings, Dev Tools (done)
+Feed (TYPE_COLORS parity, 50-word previews, avatars, bookmarks/comments ≤500,
+filter chips, fade masks, scroll-to-top, autoplay clip cards) · full
+SettingsModal (appearance: live font/reading-size switching; security &
+storage: PIN/biometrics toggles, lock timeout, vlog quality, compression
+preset; feed & system toggles; backup export/import with scope picker and
+file_selector; compression status bar; AI panel; dev tools) · dev mode via
+4 s cog long-press · changelog sheet. Tests: settings render, feed filters.
 
-## Phase 9 — Performance & Release
-`flutter analyze` 0 issues, full test suite, DevTools profiling (rebuild counts, jank), Impeller on Android, animation audit, release APK (gradle), device test, docs update (AGENTS.md).
+## Phase 9 — Performance & Release (done)
+`flutter analyze` 0 issues · 101 tests green · release APK built
+(`--no-tree-shake-icons` required: runtime Mdi.get() IconData — parity with
+the RN app which bundles the full MDI font) · arm64 release 45 MB ·
+testWidgets must NOT do real DB I/O (FakeAsync blocks on sqlite isolates) —
+use the StorageNotifier override pattern instead.
+

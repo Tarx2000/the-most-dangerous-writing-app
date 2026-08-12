@@ -45,6 +45,30 @@ flutter:
     - family: MaterialCommunityIcons
       fonts:
         - asset: assets/fonts/MaterialCommunityIcons.ttf
+    - family: PlayfairDisplay
+      fonts:
+        - asset: assets/fonts/PlayfairDisplay_400Regular.ttf
+    - family: SpaceMono
+      fonts:
+        - asset: assets/fonts/SpaceMono_400Regular.ttf
+    - family: Caveat
+      fonts:
+        - asset: assets/fonts/Caveat_400Regular.ttf
+    - family: Lora
+      fonts:
+        - asset: assets/fonts/Lora_400Regular.ttf
+    - family: ZillaSlab
+      fonts:
+        - asset: assets/fonts/ZillaSlab_400Regular.ttf
+    - family: CrimsonPro
+      fonts:
+        - asset: assets/fonts/CrimsonPro_400Regular.ttf
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/DMSans_400Regular.ttf
+    - family: EagleLake
+      fonts:
+        - asset: assets/fonts/EagleLake_400Regular.ttf
 
   assets:
     - assets/fonts/
