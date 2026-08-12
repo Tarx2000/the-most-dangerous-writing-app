@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["src/*"]
+        },
+        "esModuleInterop": true,
+        "moduleResolution": "node",
+        "module": "commonjs",
+        "target": "es2020",
+        "jsx": "react-jsx",
+        "types": ["jest"]
+    },
+    "include": ["src/lib/__tests__/**/*", "src/lib/utils.ts", "src/types/**/*", "src/config/**/*"]
+}

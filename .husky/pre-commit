@@ -1,2 +1,1 @@
-npx lint-staged
-npm run typecheck
+cd mda_rn && npx lint-staged && npm run typecheck

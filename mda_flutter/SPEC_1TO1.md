@@ -2,7 +2,7 @@
 
 Single source of truth for replicating **The Most Dangerous Writing App v1.5.8** in Flutter.
 Every number, color, threshold, prompt and flow below was extracted from the RN codebase
-(`App.tsx`, `src/config/*`, `src/styles/theme.ts`, `src/lib/*`, `src/screens/*`, `.agents/instructions/*`).
+(`mda_rn/App.tsx`, `mda_rn/src/config/*`, `mda_rn/src/styles/theme.ts`, `mda_rn/src/lib/*`, `mda_rn/src/screens/*`, `.agents/instructions/*`).
 When in doubt, **the RN code wins** — update this file and port the behavior.
 
 ---
@@ -14,7 +14,7 @@ When in doubt, **the RN code wins** — update this file and port the behavior.
 - Status bar hidden everywhere. Android nav bar black.
 - Icon font: MaterialCommunityIcons (Flutter: `material_design_icons_flutter`, same glyph names).
 
-## 2. Config Values (`src/config/index.ts`)
+## 2. Config Values (`mda_rn/src/config/index.ts`)
 
 | Constant | Value |
 |---|---|
@@ -267,7 +267,7 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 - Batch order: journal → circle → checkin; newest first within category. `enqueueNote` dedupes. Category: `isAlignmentReflection ? checkin : personId ? circle : journal`.
 - AI log: FIFO 200 entries; actions enqueue/start/success/fail/cancel/orphan_recovery/retry/timeout/stall_recovery/init/config. Startup diagnostics banner: masked key (first8...last4 / NOT SET), base URL, models, custom-prompts flag, ping result, pending count.
 - Grammar prompt output: JSON array `{original, suggestion, explanation}` (explanation ≤ 10 words).
-- Default prompts (verbatim semantics, `src/config/ai.ts`): title "EXACTLY 3 to 6 words… no punctuation/quotes… ONLY the title"; summary "empathetic inner voice… 1–2 bullets short → 6–8 long… first person… **bold**… • bullets… never 'the author'"; relationshipTitle 2–5 words, no person name, entry language; relationshipSummary warm narrator + `{{PERSON_NAME}}`/`{{RELATIONSHIP_STATUS}}` templating.
+- Default prompts (verbatim semantics, `mda_rn/src/config/ai.ts`): title "EXACTLY 3 to 6 words… no punctuation/quotes… ONLY the title"; summary "empathetic inner voice… 1–2 bullets short → 6–8 long… first person… **bold**… • bullets… never 'the author'"; relationshipTitle 2–5 words, no person name, entry language; relationshipSummary warm narrator + `{{PERSON_NAME}}`/`{{RELATIONSHIP_STATUS}}` templating.
 
 ## 10. Masteries (Pillars)
 

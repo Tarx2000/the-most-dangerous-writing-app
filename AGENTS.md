@@ -1,15 +1,21 @@
-# The Most Dangerous Writing App — Agent Context
+# The Most Dangerous Writing App — Monorepo Agent Context
 
-React Native (Expo SDK 55) journaling app where stopping typing destroys your text. Extends the core mechanic with social circles, vlog recording, self-tracking growth masteries, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud.
+Monorepo containing **two implementations** of the same journaling app (stopping typing destroys your text; social circles, vlog recording, self-tracking growth masteries, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud):
 
-> **Flutter rewrite complete**: `mda_flutter/` is the Flutter port (all 9 phases
-> done — writing loop, library, circles, AI pipeline, masteries, alignment,
-> vlogs, security, backup v2, feed, settings; 101 tests, release APKs build).
-> The RN app remains the source of truth; the Flutter project's behavioral
-> contract is `mda_flutter/SPEC_1TO1.md`. Read `mda_flutter/AGENTS.md` before
-> editing Flutter code.
+| Folder | Implementation | Role |
+|---|---|---|
+| `mda_rn/` | React Native (Expo SDK 55) | **Source of truth** — the original app |
+| `mda_flutter/` | Flutter (Dart 3.12, Flutter 3.44) | Port — behavioral contract is `mda_flutter/SPEC_1TO1.md` |
 
-## Tech Stack
+> **Flutter rewrite complete**: all 9 phases done (writing loop, library, circles,
+> AI pipeline, masteries, alignment, vlogs, security, backup v2, feed, settings;
+> 101 tests, release APKs build).
+> **The RN app remains the source of truth**; when in doubt, the code in `mda_rn/`
+> wins — update `SPEC_1TO1.md` and port the behavior.
+> Read `mda_flutter/AGENTS.md` before editing Flutter code.
+> **All RN commands (npm, expo, gradle) must be run from `mda_rn/`.**
+
+## Tech Stack (React Native — `mda_rn/`)
 - React 19.2 + React Native 0.83.6 (Expo managed, custom native builds)
 - React Navigation v7 (Native Stack)
 - Reanimated v4 + `react-native-worklets` + Gesture Handler + Flubber
@@ -19,20 +25,24 @@ React Native (Expo SDK 55) journaling app where stopping typing destroys your te
 
 > **Reanimated v4 Babel Requirement**: The worklet compiler plugin must be imported from `react-native-worklets/plugin` (NOT `react-native-reanimated/plugin`, which is the legacy v3 path) and must be the **last** entry in `babel.config.js` `plugins`. Otherwise worklets fall back to JS-thread shims and animations jank on throttled devices.
 
-## Project Structure
+## Project Structure (React Native — `mda_rn/`)
 ```
-App.tsx                    — Entry point (providers and Root Stack Navigator)
-src/
-  config/                  — App configurations (timers, difficulties, fonts, AI config)
-  types/                   — TypeScript type definitions and interfaces
-  lib/                     — Core utilities, hooks, SQLite database access (db.ts), and AI logic
-  screens/                 — Navigation screens (HomeScreen, StartScreen, WritingScreen, LibraryScreen, FeedScreen, VlogRecordingScreen, PillarsDashboardScreen, PillarDetailScreen, AlignmentWritingScreen, SandboxScreen, etc.)
-  components/ui/           — Reusable visual components (LiquidGlassNav, BaseModal, TickDial, PinPadModal, etc.)
-  components/features/     — Domain-specific components (writing/, library/, feed/, circles/, settings/, alignment/)
-  styles/                  — theme.ts (AMOLED tokens and styling utilities)
+mda_rn/
+  App.tsx                    — Entry point (providers and Root Stack Navigator)
+  src/
+    config/                  — App configurations (timers, difficulties, fonts, AI config)
+    types/                   — TypeScript type definitions and interfaces
+    lib/                     — Core utilities, hooks, SQLite database access (db.ts), and AI logic
+    screens/                 — Navigation screens (HomeScreen, StartScreen, WritingScreen, LibraryScreen, FeedScreen, VlogRecordingScreen, PillarsDashboardScreen, PillarDetailScreen, AlignmentWritingScreen, SandboxScreen, etc.)
+    components/ui/           — Reusable visual components (LiquidGlassNav, BaseModal, TickDial, PinPadModal, etc.)
+    components/features/     — Domain-specific components (writing/, library/, feed/, circles/, settings/, alignment/)
+    styles/                  — theme.ts (AMOLED tokens and styling utilities)
+  android/                   — Generated native project (prebuild); used for local release APK builds
+  credentials/               — Android signing keys (tracked, auto-copied during prebuild)
+  plugins/withAndroidSigning.js — Local config plugin that copies signing keys into android/
 ```
 
-## Key Constraints
+## Key Constraints (React Native — `mda_rn/`)
 - **Path alias**: `@/` maps to `src/` (tsconfig + babel)
 - **Build Setup**: Expo Go is used for rapid iterative testing. However, the app is built as a custom native build (e.g., local Android release APK) for distribution/production. Standard Expo Go compatibility must be maintained during testing, but custom native code/builds are supported for the final export.
 - **No Liquid Glass / BlurView**: Liquid-glass blur was deliberately removed app-wide (CPU blur on Android, no benefit on AMOLED). Use solid translucent tokens (`overlayLockAndroid`, `glassSurface*`). See `.agents/instructions/animations.md`.
@@ -40,13 +50,13 @@ src/
 - **Android signing keys**: Signing keys for debug and release builds are stored in `credentials/` (tracked in Git) and are automatically copied to native `android/app/` during prebuild via the local config plugin `./plugins/withAndroidSigning.js`. This ensures identical signatures across all dev environments (Windows & macOS) so local updates do not trigger Android signature mismatch errors.
 - **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
 - **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly. This also applies to `src/lib/backupService.ts` (`exec` wrapper exists for parameter-less statements like PRAGMAs).
-- **Backup rules**: Never export secrets (security PIN, PIN counters, AI API keys); the PIN is never restored. Every new DB table must be registered in `SCOPE_TABLES` in `backupService.ts`. Backups are plaintext ZIPs (portability, incl. the future Flutter port). Details: `.agents/instructions/backup-system.md`.
+- **Backup rules**: Never export secrets (security PIN, PIN counters, AI API keys); the PIN is never restored. Every new DB table must be registered in `SCOPE_TABLES` in `backupService.ts`. Backups are plaintext ZIPs (portability, incl. the Flutter port). Details: `.agents/instructions/backup-system.md`.
 - **Crash-proof startup**: The app must never crash on launch regardless of stored user data. DB migrations are idempotent/self-healing (schema version via `PRAGMA user_version` + AsyncStorage `max`), `getDb()` resets on failure, `loadAllData()` degrades gracefully (`Promise.allSettled`), and row converters / `safeParse` results are shape-guarded. Details: `.agents/instructions/state-management.md`.
 - **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
 - **Masteries Rebranding**: All user-facing references (headers, modals, lists, settings) are rebranded as **Masteries** (or **Mastery**), whereas code-level imports, hooks (`usePillars`), repositories, and database schemas remain `pillar` and `pillars` to guarantee data integrity and bypass migration corruption.
 
 ## Domain Instructions
-Critical per-domain rules live in `.agents/instructions/*.md`. Read the relevant file before editing that area.
+Critical per-domain rules live in `.agents/instructions/*.md` (applies to the RN app in `mda_rn/`). Read the relevant file before editing that area.
 - `state-management.md` — Split-context pattern, fresh-read, optimistic updates, crash-proof startup
 - `animations.md` — SharedValue rules, feed transitions, haptics
 - `ai-integration.md` — Singleton queue, streaming, retry logic
@@ -57,7 +67,7 @@ Critical per-domain rules live in `.agents/instructions/*.md`. Read the relevant
 
 ## Workflows
 
-- `.agents/workflows/expo-build.md` — canonical Local Android Release Build (lint → test → commit/push → gradle APK). Registered in opencode as `/expo-build` (`.opencode/command/expo-build.md`). **Always run this workflow when the user asks for a build, "expo build", or an APK** — do not improvise a build.
+- `.agents/workflows/expo-build.md` — canonical Local Android Release Build (lint → test → commit/push → gradle APK). Registered in opencode as `/expo-build` (`.opencode/command/expo-build.md`). **All commands run inside `mda_rn/`; APK output: `mda_rn/android/app/build/outputs/apk/release/app-release.apk`.** **Always run this workflow when the user asks for a build, "expo build", or an APK** — do not improvise a build.
 
 ## Agent Operating Rules (Mandatory)
 
@@ -68,7 +78,7 @@ Every chunk of code must have good, simple-to-understand documentation. Comments
 Whenever documentation or comments no longer fit the code, **update or remove them immediately**. Do not defer. Outdated documentation is worse than no documentation.
 
 ### 3. Config Variables for Customization
-Define important customizable values as **config variables at the top of the file** or in a dedicated config file (e.g., `src/config/`).
+Define important customizable values as **config variables at the top of the file** or in a dedicated config file (e.g., `mda_rn/src/config/`).
 
 ### 4. List Used Skills in Every Response
 At the top of every answer, list which skills or instructions contributed to the response.

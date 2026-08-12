@@ -2,7 +2,7 @@
 
 Flutter (Dart 3.12, Flutter 3.44) rewrite of the Expo/React Native app. **The behavioral contract is
 `SPEC_1TO1.md`** — every number, color, threshold, prompt and flow must match it. When in doubt, the
-RN codebase at the repo root wins; update `SPEC_1TO1.md` and port the behavior.
+RN codebase at `mda_rn/` wins; update `SPEC_1TO1.md` and port the behavior.
 
 ## Tech Stack
 - Riverpod 2 (`flutter_riverpod`) for state — Notifier/Provider per domain (maps 1:1 to the old split-contexts)

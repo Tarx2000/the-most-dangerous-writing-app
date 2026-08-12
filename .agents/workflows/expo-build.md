@@ -20,6 +20,11 @@ description: Local Android Build — commits pending changes, pushes to remote, 
 
 > **No implementation plan required.** This workflow executes immediately when invoked.
 
+> [!IMPORTANT]
+> **The React Native app lives in `mda_rn/`.** All npm/gradle commands in this
+> workflow run inside `mda_rn/`. Git commands run from the monorepo root.
+> APK output: `mda_rn/android/app/build/outputs/apk/release/app-release.apk`.
+
 ---
 
 ## Step 1 — Lint Check (Zero Errors Required)
@@ -27,7 +32,7 @@ description: Local Android Build — commits pending changes, pushes to remote, 
 Run ESLint. **The build is blocked if any errors are present.**
 
 ```bash
-npm run lint
+cd mda_rn && npm run lint
 ```
 
 > [!CAUTION]
@@ -41,7 +46,7 @@ npm run lint
 Run all project tests. **Every single test must pass before proceeding.**
 
 ```bash
-npm test
+cd mda_rn && npm test
 ```
 
 > [!CAUTION]
@@ -49,7 +54,7 @@ npm test
 > Instead, report the failing tests to the user and help them fix the issues. But dont fix anything yourself! ONLY REPORT THE ISSUE!
 > Only continue to the build step after re-running tests and confirming 100% pass rate.
 
-**What this runs:** `jest` with the project's `jest.config.js`, which discovers all `*.test.ts` / `*.test.tsx` files under `src/lib/__tests__/`.
+**What this runs:** `jest` with the project's `jest.config.js` (in `mda_rn/`), which discovers all `*.test.ts` / `*.test.tsx` files under `src/lib/__tests__/`.
 
 ---
 
@@ -57,7 +62,7 @@ npm test
 
 **All changes must be committed, merged to the primary branch (`master` or `main`), and pushed to the remote repository before building.** This ensures the APK is built from clean, versioned, and merged code.
 
-1. Stage all modified files on your current branch:
+1. Stage all modified files on your current branch (run from the monorepo root):
    ```bash
    git add -A
    ```
@@ -91,12 +96,12 @@ Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a 
 
 **Unix/macOS:**
 ```bash
-cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet
+cd mda_rn/android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet
 ```
 
 **Windows (must use `cmd /c` for `.bat` scripts):**
 ```cmd
-cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet"
+cmd /c "cd /d mda_rn\android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet"
 ```
 
 > [!NOTE]
@@ -108,13 +113,13 @@ cmd /c "cd /d android && gradlew.bat assembleRelease -PreactNativeArchitectures=
 
 After a successful build, report the APK location to the user with a clickable link (use the local absolute path; example below):
 
-**APK output path:** `android/app/build/outputs/apk/release/app-release.apk`
+**APK output path:** `mda_rn/android/app/build/outputs/apk/release/app-release.apk`
 
 ---
 
 ## Hardware Acceleration & Parallelization
 
-To fully utilize PC performance (e.g. bundling 1500+ modules in seconds), ensure `android/gradle.properties` contains:
+To fully utilize PC performance (e.g. bundling 1500+ modules in seconds), ensure `mda_rn/android/gradle.properties` contains:
 
 ```properties
 org.gradle.parallel=true
@@ -128,8 +133,8 @@ org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
 
 - **"App not installed as package conflicts with an existing package"**: When installing a locally built APK over an EAS Cloud build (or vice-versa), Android blocks the installation because the cryptographic signing keys do not match. **Fix:** Simply uninstall the existing version of the app from your smartphone first, then install the new APK.
 - **"ninja: error: manifest 'build.ninja' still dirty after 100 tries" (Windows)**: A notorious bug caused by the Android SDK shipping an outdated Ninja executable (v1.10) that ignores the Windows 260-character Long Path Registry override. **Fix:** Download Ninja v1.12.1+ from GitHub and replace the bundled executable at `%LOCALAPPDATA%\Android\Sdk\cmake\3.22.1\bin\ninja.exe`.
-- **"Metro bundler error after installing native modules"**: Run `npx expo start -c` to clear cache.
-- **"Build fails with missing babel-preset-expo"**: Run `npm install --save-dev babel-preset-expo`.
+- **"Metro bundler error after installing native modules"**: Run `cd mda_rn && npx expo start -c` to clear cache.
+- **"Build fails with missing babel-preset-expo"**: Run `cd mda_rn && npm install --save-dev babel-preset-expo`.
 - **"App crashes on startup after adding reanimated"**: Ensure `babel.config.js` includes `'react-native-reanimated/plugin'` as the LAST plugin.
 - **`gradlew.bat` not recognized on Windows**: Batch files (`.bat`) cannot be executed directly from non-CMD shells. Always use `cmd /c "cd /d android && gradlew.bat ..."` instead of `cd android && gradlew.bat ...`.
 - **Agent appears stuck during build (Windows)**: Gradle prints thousands of task lines. The bash tool truncates output at 51,200 bytes / 2,000 lines, and the buffer flush can take 20–30 seconds after the build actually finished. **Fix:** Always append `--quiet` to the Gradle command (see Step 4). This suppresses the task spam and prevents the buffer overflow hang.

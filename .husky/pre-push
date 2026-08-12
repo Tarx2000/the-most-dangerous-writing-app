@@ -1,1 +1,1 @@
-npm test
+cd mda_rn && npm test
