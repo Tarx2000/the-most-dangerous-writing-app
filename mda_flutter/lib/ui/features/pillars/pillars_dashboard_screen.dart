@@ -13,6 +13,7 @@ import '../../../core/theme/mdi.dart';
 import '../../../core/utils.dart';
 import '../../../data/models/pillar.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../../domain/use_cases/mastery_logic.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
@@ -27,6 +28,22 @@ class PillarsDashboardScreen extends ConsumerStatefulWidget {
 class _PillarsDashboardScreenState extends ConsumerState<PillarsDashboardScreen> {
   @override
   Widget build(BuildContext context) {
+    // Security gate (SPEC §12): the dashboard requires the notes tier.
+    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
+    final security = ref.read(securityControllerProvider);
+    if (!security.isNotesUnlocked) {
+      return _LockedScreen(
+        onUnlock: () async {
+          final prefs = ref.read(preferencesProvider);
+          final ok = await security.unlockNotes(
+            preferPinAuth: prefs.preferPinAuth,
+            useBiometrics: prefs.useBiometrics,
+          );
+          if (ok && mounted) vibrate(HapticPatterns.unlockSuccess);
+        },
+      );
+    }
+
     final pillars = ref.watch(pillarsProvider);
     final active = pillars.where((p) => p.isActive).toList();
     final paused = pillars.where((p) => !p.isActive).toList();
@@ -506,6 +523,79 @@ class _ChoiceChip extends StatelessWidget {
             color: active ? AppColors.primaryAction : AppColors.textSecondary,
             fontSize: 13,
             fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Locked gate for protected screens (SPEC §12 lock pattern: overlayLock
+/// style + fingerprint unlock pill with red glow).
+class _LockedScreen extends StatelessWidget {
+  const _LockedScreen({required this.onUnlock});
+
+  final VoidCallback onUnlock;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Mdi.get('lockOutline'), color: AppColors.dangerIconOverlay, size: 40),
+              const SizedBox(height: 18),
+              const Text(
+                'Masteries Protected',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Unlock with your fingerprint or PIN to see your growth.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+              ),
+              const SizedBox(height: 30),
+              AnimatedScaleButton(
+                onPress: onUnlock,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryAction,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryAction.withValues(alpha: 0.4),
+                        blurRadius: 18,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Mdi.get('fingerprint'), color: AppColors.primaryActionText, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Unlock Masteries',
+                        style: TextStyle(
+                          color: AppColors.primaryActionText,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

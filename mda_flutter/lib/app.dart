@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
+import 'ui/core/widgets/pin_pad_modal.dart';
 import 'ui/features/alignment/alignment_writing_screen.dart';
 import 'ui/features/home/home_screen.dart';
 import 'ui/features/pillars/pillar_detail_screen.dart';
@@ -93,8 +94,17 @@ class MdaApp extends ConsumerWidget {
       theme: buildAppTheme(),
       routerConfig: goRouter,
       builder: (context, child) {
-        // Full-bleed AMOLED background behind every route.
-        return ColoredBox(color: AppColors.background, child: child);
+        // Full-bleed AMOLED background behind every route + the global
+        // PIN pad layer (security is app-wide, rendered above navigation).
+        return ColoredBox(
+          color: AppColors.background,
+          child: Stack(
+            children: [
+              Positioned.fill(child: child ?? const SizedBox()),
+              const PinPadModal(),
+            ],
+          ),
+        );
       },
     );
   }

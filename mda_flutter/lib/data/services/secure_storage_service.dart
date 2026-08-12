@@ -6,40 +6,44 @@ library;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SecureStorageService {
-  SecureStorageService({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+  // ignore: prefer_initializing_formals — nullable-with-lazy-default pattern.
+  SecureStorageService({FlutterSecureStorage? storage}) : _storage = storage;
 
-  final FlutterSecureStorage _storage;
+  FlutterSecureStorage? _storage;
+
+  /// Lazy default so tests can subclass without touching the plugin.
+  FlutterSecureStorage get _effective =>
+      _storage ??= const FlutterSecureStorage();
 
   static const pinKey = '@mda_security_pin';
   static const pinAttemptCountKey = '@mda_pin_attempt_count';
   static const pinLockoutUntilKey = '@mda_pin_lockout_until';
 
-  Future<String?> readPin() => _storage.read(key: pinKey);
+  Future<String?> readPin() => _effective.read(key: pinKey);
 
-  Future<void> writePin(String pin) => _storage.write(key: pinKey, value: pin);
+  Future<void> writePin(String pin) => _effective.write(key: pinKey, value: pin);
 
   Future<int> readAttemptCount() async {
-    final raw = await _storage.read(key: pinAttemptCountKey);
+    final raw = await _effective.read(key: pinAttemptCountKey);
     return int.tryParse(raw ?? '') ?? 0;
   }
 
   Future<void> writeAttemptCount(int count) =>
-      _storage.write(key: pinAttemptCountKey, value: '$count');
+      _effective.write(key: pinAttemptCountKey, value: '$count');
 
   /// Lockout expiry in ms since epoch (0 = no lockout).
   Future<int> readLockoutUntil() async {
-    final raw = await _storage.read(key: pinLockoutUntilKey);
+    final raw = await _effective.read(key: pinLockoutUntilKey);
     return int.tryParse(raw ?? '') ?? 0;
   }
 
   Future<void> writeLockoutUntil(int ms) =>
-      _storage.write(key: pinLockoutUntilKey, value: '$ms');
+      _effective.write(key: pinLockoutUntilKey, value: '$ms');
 
   /// Clears all security-related keys (successful verify / PIN change).
   Future<void> clearPinState() async {
-    await _storage.delete(key: pinKey);
-    await _storage.delete(key: pinAttemptCountKey);
-    await _storage.delete(key: pinLockoutUntilKey);
+    await _effective.delete(key: pinKey);
+    await _effective.delete(key: pinAttemptCountKey);
+    await _effective.delete(key: pinLockoutUntilKey);
   }
 }

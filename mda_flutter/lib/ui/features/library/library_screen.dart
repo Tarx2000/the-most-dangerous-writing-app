@@ -13,6 +13,7 @@ import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
 import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../vlogs/vlog_calendar_gallery.dart';
@@ -92,15 +93,28 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Security gate: the notes tier unlocks the library (SPEC §12).
+    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
+    final locked = !ref.read(securityControllerProvider).isNotesUnlocked;
+
     final notes = ref.watch(notesProvider);
     final persons = ref.watch(personsProvider);
     final checkins = notes.where((n) => n.isAlignmentReflection).toList();
     final journalNotes = notes.where((n) => !n.isAlignmentReflection).toList();
 
     return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
+          // Content (fades + scales down when locked — SPEC §15 pattern).
+          AnimatedOpacity(
+            opacity: locked ? 0.96 : 1,
+            duration: const Duration(milliseconds: 350),
+            child: AnimatedScale(
+              scale: locked ? 0.96 : 1.0,
+              duration: const Duration(milliseconds: 350),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
           // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
@@ -212,6 +226,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ],
             ),
           ),
+                ],
+              ),
+            ),
+          ),
+          // Locked overlay (overlayLockAndroid + centered lock icon, SPEC §15)
+          if (locked)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  color: AppColors.overlayLockAndroid,
+                  child: Center(
+                    child: Icon(
+                      Mdi.get('lockOutline'),
+                      color: AppColors.textDim,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -66,12 +66,12 @@ const String defaultCompressionPreset = 'balanced';
 /// PIN security.
 const int pinMaxAttempts = 3;
 const int pinLockoutDurationMs = 30000;
+const int pinDotDelayMs = 150;
 
 /// Check-in urgency: gold dot on the nav tab after this many days without a check-in.
 const int checkinUrgentDays = 7;
 
 /// Delay before the 4th PIN digit is accepted (lets the fill animation play).
-const int pinDotDelayMs = 150;
 
 /// Camera permission grace delay + countdown interval.
 const int permissionGrantedDelayMs = 500;

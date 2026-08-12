@@ -14,6 +14,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/calendar_view.dart';
 import '../../core/widgets/base_modal.dart';
@@ -325,32 +326,8 @@ class _TopBar extends StatelessWidget {
           ),
           Row(
             children: [
-              // Vision lock button → Masteries (security gating in Phase 7)
-              AnimatedScaleButton(
-                onPress: () => context.push('/masteries'),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBackground,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: AppColors.glassBorder, width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Mdi.get('starOutline'), color: AppColors.gold, size: 18),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Masteries',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // Vision lock button → Masteries (unlock gate, SPEC §12).
+              const _VisionLockButton(),
               const SizedBox(width: 8),
               // Settings cog (long-press 4 s = dev mode, Phase 8)
               AnimatedScaleButton(
@@ -499,6 +476,78 @@ class _PersonPickerPill extends StatelessWidget {
         child: Text(
           selected != null ? '👤 ${selected.name}' : '👤 Choose a person',
           style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+}
+
+/// VisionLockButton — lock ↔ Masteries morphing header button (SPEC §15).
+/// Locked: lock icon + "Locked" (dangerIconOverlay); unlocked: gold star +
+/// "Masteries". Tap unlocks (biometrics → PIN) and opens the dashboard.
+class _VisionLockButton extends ConsumerWidget {
+  const _VisionLockButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Re-evaluate on every tier change.
+    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
+    final security = ref.read(securityControllerProvider);
+    final prefs = ref.read(preferencesProvider);
+    final unlocked = security.isNotesUnlocked;
+
+    return AnimatedScaleButton(
+      onPress: () async {
+        if (unlocked) {
+          vibrate(HapticPatterns.lockAll);
+          security.lockAll();
+          return;
+        }
+        final ok = await security.unlockNotes(
+          preferPinAuth: prefs.preferPinAuth,
+          useBiometrics: prefs.useBiometrics,
+        );
+        if (ok && context.mounted) {
+          vibrate(HapticPatterns.unlockSuccess);
+          context.push('/masteries');
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: unlocked ? AppColors.glassBackground : AppColors.dangerTint,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: unlocked ? AppColors.glassBorder : AppColors.dangerBorder,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Icon(
+                unlocked ? Mdi.get('starOutline') : Mdi.get('lockOutline'),
+                key: ValueKey(unlocked),
+                color: unlocked ? AppColors.gold : AppColors.dangerIconOverlay,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 6),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(
+                unlocked ? 'Masteries' : 'Locked',
+                key: ValueKey(unlocked),
+                style: TextStyle(
+                  color: unlocked ? AppColors.textPrimary : AppColors.dangerIconOverlay,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
