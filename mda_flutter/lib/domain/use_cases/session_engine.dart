@@ -59,12 +59,7 @@ class SaveOutcome {
 }
 
 class SessionEngine {
-  SessionEngine({this.callbacks = const SessionCallbacks()}) {
-    _idleTicker = Timer.periodic(
-      const Duration(milliseconds: tickRateMs),
-      _onIdleTick,
-    );
-  }
+  SessionEngine({this.callbacks = const SessionCallbacks()});
 
   final SessionCallbacks callbacks;
 
@@ -92,11 +87,15 @@ class SessionEngine {
   bool _isContinuingAfterLoss = false;
   bool _isQuickNote = false;
   int _sessionDurationMin = 0;
+  String _lastCountedText = '';
 
   /// True once the user chose "I don't care, let me write".
   bool get isContinuingAfterLoss => _isContinuingAfterLoss;
 
   bool get hasLost => _hasLost;
+
+  /// Quick note flag.
+  bool get isQuickNote => _isQuickNote;
 
   /// Session countdown is still running (excludes deaths and quick notes).
   bool get isSessionRunning =>
@@ -115,7 +114,8 @@ class SessionEngine {
 
   // -- Lifecycle -------------------------------------------------------------
 
-  /// Starts a timed session. [difficultyLimitMs] comes from the difficulty index.
+  /// Starts a session. [difficultyLimitMs] comes from the difficulty index.
+  /// Quick notes and tweets do not run timers or idle death.
   void start({
     required int difficultyLimitMs,
     required int sessionDurationMin,
@@ -132,31 +132,45 @@ class SessionEngine {
     idleTimeMs.value = 0;
     idleRatio.value = 0;
     wordCount.value = 0;
+    _lastCountedText = '';
 
     _idleTicker?.cancel();
-    _idleTicker = Timer.periodic(const Duration(milliseconds: tickRateMs), _onIdleTick);
+    _sessionTicker?.cancel();
+    _deathTimer?.cancel();
+    _wordCountDebounce?.cancel();
 
     if (quickNote) {
-      sessionSecondsRemaining.value = null; // quick notes have no timers
+      sessionSecondsRemaining.value = null; // Quick notes have NO timers
     } else {
       sessionSecondsRemaining.value = sessionDurationMin * 60;
-      _sessionTicker?.cancel();
       _sessionTicker = Timer.periodic(const Duration(seconds: 1), _onSessionTick);
+      _idleTicker = Timer.periodic(const Duration(milliseconds: tickRateMs), _onIdleTick);
     }
     logAi.debug('session started', '$sessionDurationMin min / ${difficultyLimitMs}ms idle');
   }
 
   /// Text edit entry point — resets the idle timer and updates the word count.
-  /// [isInsertion] hints the fast path (append-only); mid-edits fall back to
-  /// the debounced full recount (parity: 400 ms).
   void handleTextChange(String text, {bool isInsertion = true}) {
     if (!_hasLost && !_isContinuingAfterLoss) {
       idleTimeMs.value = 0;
+      idleRatio.value = 0.0;
+      callbacks.onIdleRatioChanged?.call(0.0);
       _resetHaptics();
     }
 
-    if (isInsertion) {
-      _updateWordCountFast(text);
+    if (isInsertion && text.startsWith(_lastCountedText)) {
+      final added = text.substring(_lastCountedText.length);
+      final continuation = _lastCountedText.isNotEmpty &&
+          !_lastCountedText.endsWith(' ') &&
+          !_lastCountedText.endsWith('\n') &&
+          !_lastCountedText.endsWith('\t') &&
+          !added.startsWith(' ') &&
+          !added.startsWith('\n') &&
+          !added.startsWith('\t');
+      final addedWords = countWords(added);
+      final delta = addedWords - (continuation ? 1 : 0);
+      _lastCountedText = text;
+      wordCount.value = (wordCount.value + delta).clamp(0, 999999);
     } else {
       _scheduleFullWordCount(text);
     }
@@ -164,33 +178,20 @@ class SessionEngine {
 
   // -- Word counting -----------------------------------------------------------
 
-  /// O(1) append-only path: count words in the added slice, minus 1 when the
-  /// slice merges into an already-counted word (no leading whitespace AND the
-  /// previous text didn't end with whitespace).
-  void _updateWordCountFast(String text) {
-    final previousLen = _text.length;
-    final added = text.length >= previousLen ? text.substring(previousLen) : text;
-    final continuation = _text.isNotEmpty && !_text.endsWith(' ') && !added.startsWith(' ');
-    final addedWords = countWords(added);
-    final delta = addedWords - (continuation ? 1 : 0);
-    _text = text;
-    wordCount.value = wordCount.value + delta < 0 ? 0 : wordCount.value + delta;
-  }
-
-  String _text = '';
-
   /// Debounced full recount for mid-edits/deletions (400 ms).
   void _scheduleFullWordCount(String text) {
     _wordCountDebounce?.cancel();
     _wordCountDebounce = Timer(const Duration(milliseconds: 400), () {
-      wordCount.value = countWords(text);
+      final newCount = countWords(text);
+      wordCount.value = newCount;
+      _lastCountedText = text;
     });
   }
 
   // -- Timer ticks --------------------------------------------------------------
 
   void _onIdleTick(Timer _) {
-    if (phase.value != SessionPhase.writing) return; // frozen after death
+    if (_isQuickNote || phase.value != SessionPhase.writing) return; // Frozen after death or quick note
     final next = idleTimeMs.value + tickRateMs;
     idleTimeMs.value = next;
     final ratio = next / _difficultyLimitMs;
@@ -248,13 +249,14 @@ class SessionEngine {
     _hasLost = true;
     phase.value = SessionPhase.death;
     _sessionTicker?.cancel();
+    _idleTicker?.cancel();
     idleTimeMs.value = _difficultyLimitMs;
     idleRatio.value = 1.0;
     vibrate(HapticPatterns.death);
     // Text is wiped shortly after the death overlay appears (SPEC: 200 ms).
     _deathTimer?.cancel();
     _deathTimer = Timer(const Duration(milliseconds: 200), () {
-      _text = '';
+      _lastCountedText = '';
       wordCount.value = 0;
     });
     callbacks.onDeath?.call();

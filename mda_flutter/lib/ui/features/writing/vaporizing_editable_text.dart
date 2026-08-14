@@ -59,6 +59,17 @@ class _VaporizingEditableTextState extends EditableTextState {
     );
   }
 
+  /// Non-destructive tokenization that preserves all whitespaces and newlines.
+  static List<String> _tokenize(String text) {
+    if (text.isEmpty) return const [];
+    final tokens = <String>[];
+    final regExp = RegExp(r'\S+|\s+');
+    for (final match in regExp.allMatches(text)) {
+      tokens.add(match.group(0)!);
+    }
+    return tokens;
+  }
+
   /// Last 8 words decay per SPEC §8: word *i* from the end starts fading at
   /// `min(0.85, 0.3 + i*0.05)` and is fully faded at `min(0.95, 0.5 + i*0.05)`
   /// down to opacity 0.3.
@@ -69,7 +80,7 @@ class _VaporizingEditableTextState extends EditableTextState {
     TextStyle base,
   ) {
     if (text.isEmpty) return TextSpan(style: base, text: '');
-    final tokens = text.split(RegExp(r'(\s+)'));
+    final tokens = _tokenize(text);
     final wordCount = tokens.where((t) => RegExp(r'\S').hasMatch(t)).length;
     var indexFromEnd = wordCount - 1;
 

@@ -111,7 +111,7 @@ final aiQueueManagerProvider = Provider<AiQueueManager>((ref) {
     deps: AiQueueDeps(
       loadNotes: () => ref.read(notesRepositoryProvider).getAllNotes(),
       getNote: (id) => ref.read(notesRepositoryProvider).getNoteById(id),
-      updateNote: (id, updates) => ref.read(notesRepositoryProvider).updateNote(id, updates),
+      updateNote: (id, updates) => ref.read(appDataProvider.notifier).updateNote(id, updates),
       getPersonName: (personId) async {
         final person = await ref.read(personsRepositoryProvider).getPersonById(personId);
         if (person == null) return null;

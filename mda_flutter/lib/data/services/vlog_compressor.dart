@@ -67,9 +67,19 @@ class VlogCompressor {
       p.dirname(inputUri),
       'compressed_${generateId()}.mp4',
     );
+
+    final String videoCodec;
+    if (Platform.isAndroid) {
+      videoCodec = 'h264_mediacodec';
+    } else if (Platform.isIOS || Platform.isMacOS) {
+      videoCodec = 'h264_videotoolbox';
+    } else {
+      videoCodec = 'libx264';
+    }
+
     // -2 keeps even dimensions (required by h264); scale caps the height.
     final command =
-        '-i "$inputUri" -c:v h264_mediacodec -preset veryfast -b:v ${preset.bitrate} '
+        '-i "$inputUri" -c:v $videoCodec -preset veryfast -b:v ${preset.bitrate} '
         '-vf "scale=-2:min(${preset.maxSize}\\,ih)" -c:a aac -movflags +faststart '
         '-y "$outputPath"';
 
@@ -78,8 +88,11 @@ class VlogCompressor {
       (completedSession) async {},
       (log) {},
       (statistics) {
-        // ffmpeg statistics report time; derive 0→1 progress from it.
-        onProgress?.call((statistics.getTime() / 1000).clamp(0.0, 1.0));
+        // Normalize time ms if available
+        final timeMs = statistics.getTime();
+        if (timeMs > 0) {
+          onProgress?.call((timeMs / 10000).clamp(0.0, 0.99));
+        }
       },
     );
     final returnCode = await session.getReturnCode();

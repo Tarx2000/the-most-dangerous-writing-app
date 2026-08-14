@@ -65,9 +65,10 @@ class AiService {
   // -- Streaming request -----------------------------------------------------
 
   /// POSTs to `{baseUrl}/chat/completions` (trailing slash stripped) and
-  /// streams SSE `choices[0].delta.content` chunks to [onChunk].
+  /// streams SSE `choices[0].delta.content` chunks, notifying [onChunk] with
+  /// the full accumulated text so far.
   /// Throws [AiError] with the classified kind.
-  Future<void> streamChat({
+  Future<String> streamChat({
     required AiConfig config,
     required String systemPrompt,
     required String userMessage,
@@ -96,7 +97,8 @@ class AiService {
       if (!cancelCompleter.isCompleted) cancelCompleter.complete();
     });
 
-    final responseFuture = _client.send(request);    Future<void> drainLateResponse() async {
+    final responseFuture = _client.send(request);
+    Future<void> drainLateResponse() async {
       try {
         final late = await responseFuture;
         await late.stream.drain<void>();
@@ -117,8 +119,8 @@ class AiService {
         throw classifyHttpStatus(response.statusCode);
       }
 
+      final accumulated = StringBuffer();
       final wordBuffer = StringBuffer();
-      // Flush rule (SPEC §9): whitespace, common/CJK punctuation or CJK chars.
       final flushPattern = _flushPattern;
 
       await for (final chunk in response.stream.transform(utf8.decoder)) {
@@ -131,23 +133,25 @@ class AiService {
           if (payload == '[DONE]') continue;
           final delta = _extractDelta(payload);
           if (delta == null || delta.isEmpty) continue;
+
+          accumulated.write(delta);
           wordBuffer.write(delta);
           final buffer = wordBuffer.toString();
           if (buffer.isNotEmpty && (flushPattern.hasMatch(buffer) || buffer.length >= 12)) {
-            onChunk(buffer);
+            onChunk(accumulated.toString());
             wordBuffer.clear();
           }
         }
       }
 
       // Flush any remaining buffer.
-      final remaining = wordBuffer.toString();
-      if (remaining.isNotEmpty) {
-        onChunk(remaining);
+      if (wordBuffer.isNotEmpty) {
+        onChunk(accumulated.toString());
         wordBuffer.clear();
       }
+
+      return accumulated.toString();
     } on AiError {
-      // Ensure a late-arriving response is drained so the connection closes.
       unawaited(drainLateResponse());
       rethrow;
     } on http.ClientException catch (e) {
@@ -180,15 +184,21 @@ class AiService {
           if (delta is Map<String, dynamic> && delta['content'] is String) {
             return delta['content'] as String;
           }
-          if (choice['message'] is Map<String, dynamic> &&
-              (choice['message'] as Map)['content'] is String) {
-            return (choice['message'] as Map)['content'] as String;
+          final msg = choice['message'];
+          if (msg is Map<String, dynamic> && msg['content'] is String) {
+            return msg['content'] as String;
+          }
+          if (choice['text'] is String) {
+            return choice['text'] as String;
           }
         }
       }
-      final message = decoded['message'];
-      if (message is Map<String, dynamic> && message['content'] is String) {
-        return message['content'] as String;
+      final msg = decoded['message'];
+      if (msg is Map<String, dynamic> && msg['content'] is String) {
+        return msg['content'] as String;
+      }
+      if (decoded['response'] is String) {
+        return decoded['response'] as String;
       }
       return null;
     } catch (_) {
@@ -196,7 +206,7 @@ class AiService {
     }
   }
 
-  // -- Generation helpers -----------------------------------------------------
+  // -- High-level helpers -----------------------------------------------------
 
   /// `generateTitle` — strips surrounding quotes from the result.
   Future<String> generateTitle({
@@ -208,18 +218,14 @@ class AiService {
   }) async {
     if (text.trim().isEmpty) return '';
     final prompt = _promptFor(config, relationship == null ? 'title' : 'relationshipTitle', relationship);
-    var result = '';
-    await streamChat(
+    final result = await streamChat(
       config: config,
       systemPrompt: prompt,
       userMessage: text,
       cancelToken: cancelToken,
-      onChunk: (partial) {
-        result = partial;
-        onChunk(partial);
-      },
+      onChunk: onChunk,
     );
-    return result.replaceAll(RegExp("^[\"']+|[\"']+\$"), '');
+    return result.trim().replaceAll(RegExp(r'''^["']+|["']+$'''), '').trim();
   }
 
   /// `generateSummary` — splits bullets, strips list markers, max 5 bullets.
@@ -232,16 +238,12 @@ class AiService {
   }) async {
     if (text.trim().isEmpty) return const [];
     final prompt = _promptFor(config, relationship == null ? 'summary' : 'relationshipSummary', relationship);
-    var result = '';
-    await streamChat(
+    final result = await streamChat(
       config: config,
       systemPrompt: prompt,
       userMessage: text,
       cancelToken: cancelToken,
-      onChunk: (partial) {
-        result = partial;
-        onChunk(partial);
-      },
+      onChunk: onChunk,
     );
     final bullets = result
         .split('\n')
@@ -259,17 +261,17 @@ class AiService {
     required String text,
   }) async {
     if (text.trim().isEmpty) return const [];
-    var result = '';
-    await streamChat(
+    final result = await streamChat(
       config: config.copyWith(model: config.effectiveGrammarModel),
       systemPrompt: _promptFor(config, 'grammar', null),
       userMessage: text,
-      onChunk: (partial) => result = partial,
+      onChunk: (_) {},
     );
     return _parseGrammar(result);
   }
 
-  static List<GrammarSuggestion> _parseGrammar(String raw) {    var cleaned = raw.trim();
+  static List<GrammarSuggestion> _parseGrammar(String raw) {
+    var cleaned = raw.trim();
     cleaned = cleaned.replaceFirst(RegExp(r'^```json\s*'), '').replaceFirst(RegExp(r'\s*```$'), '');
     if (cleaned.isEmpty) return const [];
     try {

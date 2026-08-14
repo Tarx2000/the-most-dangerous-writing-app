@@ -193,6 +193,7 @@ class AiQueueManager {
   bool _paused = false;
   bool _isRunning = false;
   int _consecutivePingFailures = 0;
+  DateTime _lastProgressAt = DateTime.now();
 
   // -- Lifecycle ---------------------------------------------------------------
 
@@ -583,10 +584,10 @@ class AiQueueManager {
     });
 
     // Stall detection: 60 s without progress → abort, requeue with retries 0.
-    var lastChunkAt = DateTime.now();
+    _lastProgressAt = DateTime.now();
     _stallCheckTimer?.cancel();
     _stallCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (DateTime.now().difference(lastChunkAt).inMilliseconds >= AiTiming.stallDetectionMs) {
+      if (DateTime.now().difference(_lastProgressAt).inMilliseconds >= AiTiming.stallDetectionMs) {
         _activeCancelToken?.cancel();
         _removeJob(job.id);
         _jobs.add(job.copyWith(
@@ -702,11 +703,12 @@ class AiQueueManager {
     }
   }
 
-  /// Legacy single-key queue migration (parity: AI_JOB_QUEUE legacy format).
+  /// Legacy single-key queue migration (parity: PENDING_AI_JOBS legacy format).
   Future<void> _migrateLegacyQueue() async {
     try {
       final sp = await SharedPreferences.getInstance();
-      final legacy = sp.getString(_storageKey);
+      const legacyKey = 'PENDING_AI_JOBS_LEGACY';
+      final legacy = sp.getString(legacyKey);
       if (legacy == null) return;
       final decoded = jsonDecode(legacy);
       if (decoded is List) {
@@ -720,7 +722,7 @@ class AiQueueManager {
           }
         }
       }
-      await sp.remove(_storageKey);
+      await sp.remove(legacyKey);
     } catch (_) {}
   }
 

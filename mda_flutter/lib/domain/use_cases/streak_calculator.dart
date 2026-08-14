@@ -3,6 +3,7 @@
 library;
 
 import '../../core/utils.dart';
+import '../../data/models/saved_note.dart';
 
 /// Result of applying a note to the streak.
 class StreakResult {
@@ -53,7 +54,7 @@ StreakResult applyNoteToStreak({
   }
 
   final yesterday = toLocalDateString((now ?? DateTime.now()).subtract(const Duration(days: 1)));
-  final history = <String>[...streakHistory, today];
+  final history = streakHistory.contains(today) ? streakHistory : [...streakHistory, today];
 
   if (lastWinDate == yesterday) {
     // Consecutive day → streak grows.
@@ -77,4 +78,47 @@ StreakResult applyNoteToStreak({
     streakIncreased: false,
     history: streakHistory,
   );
+}
+
+/// Self-healing streak recalculation from note history (matches RN `dataLoaders.ts`).
+({int streak, List<String> history, String? lastWinDate}) recalculateStreakFromNotes(
+  List<SavedNote> notes, {
+  List<String> existingHistory = const [],
+  int existingStreak = 0,
+  String? existingLastWinDate,
+}) {
+  final eligibleDays = <String>{};
+  for (final note in notes) {
+    if (isStreakEligible(
+      won: note.won,
+      durationMin: note.durationMin,
+      isQuickNote: note.isQuickNote,
+      isTweet: note.isTweet,
+    )) {
+      eligibleDays.add(note.dateStr);
+    }
+  }
+
+  final history = existingHistory.isNotEmpty
+      ? existingHistory
+      : (eligibleDays.toList()..sort());
+
+  var streak = existingStreak;
+  if (eligibleDays.isNotEmpty && existingStreak == 0) {
+    var count = 0;
+    var check = DateTime.now();
+    for (var i = 0; i < 365; i++) {
+      final dateKey = toLocalDateString(check);
+      if (eligibleDays.contains(dateKey)) {
+        count++;
+        check = check.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
+    }
+    streak = count;
+  }
+
+  final lastWin = existingLastWinDate ?? (history.isNotEmpty ? history.last : null);
+  return (streak: streak, history: history, lastWinDate: lastWin);
 }

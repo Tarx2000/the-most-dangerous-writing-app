@@ -129,6 +129,27 @@ Future<void> execScript(String sqlScript) async {
   });
 }
 
+/// Returns the on-disk SQLite database file path.
+Future<String> getDatabaseFilePath() async {
+  if (_dbPathOverride != null) return _dbPathOverride!;
+  final factory = await _resolveFactory();
+  return '${await factory.getDatabasesPath()}/$databaseFileName';
+}
+
+/// Returns the column names of a table via PRAGMA table_info.
+Future<Set<String>> getTableColumns(String table) async {
+  final rows = await getAll('PRAGMA table_info($table)');
+  return rows.map((r) => r['name'] as String).toSet();
+}
+
+/// Returns all user tables currently in the database.
+Future<List<String>> getCurrentUserTables() async {
+  final rows = await getAll(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';",
+  );
+  return rows.map((r) => r['name'] as String).toList();
+}
+
 // ---------------------------------------------------------------------------
 // Migration
 // ---------------------------------------------------------------------------

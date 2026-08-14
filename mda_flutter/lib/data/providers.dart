@@ -60,7 +60,7 @@ final thumbnailServiceProvider = Provider<ThumbnailService>((ref) => ThumbnailSe
 final vlogStorageManagerProvider = Provider<VlogStorageManager>((ref) => VlogStorageManager());
 
 final backupServiceProvider = Provider<BackupService>(
-  (ref) => BackupService(settings: ref.watch(settingsServiceProvider)),
+  (ref) => BackupService(),
 );
 
 final vlogCompressorProvider = Provider<VlogCompressor>((ref) => VlogCompressor());
@@ -71,7 +71,7 @@ final compressionQueueManagerProvider = Provider<CompressionQueueManager>((ref) 
     compressor: ref.watch(vlogCompressorProvider),
     deps: CompressionDeps(
       updateVlog: (vlogId, updates) =>
-          ref.read(vlogsRepositoryProvider).updateVlog(vlogId, updates),
+          ref.read(appDataProvider.notifier).updateVlog(vlogId, updates),
       deleteVlogFile: (path) async {
         final file = File(path);
         if (await file.exists()) await file.delete();

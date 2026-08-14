@@ -52,3 +52,14 @@ lib/
   canonical release build (runtime `Mdi.get()` IconData prevents tree-shaking
   — parity with the RN app which bundles the full MDI font)
 - `flutter run` / `flutter run --profile` (DevTools profiling)
+
+## Android Emulator (Android Studio)
+- **Open `mda_flutter/` itself in Android Studio** (NOT the monorepo root — the root
+  `.idea/` belongs to the RN app and shows no Flutter run configs).
+- Run config `main.dart` already exists (`.idea/runConfigurations/main_dart.xml`);
+  pick the AVD "Samsung_Galaxy_S24_Ultra" and press Run.
+- **If the emulator shows "device offline" / hangs**: the AVD snapshot is corrupt
+  (created under a different GPU renderer). Fix: kill the emulator, delete
+  `~/.android/avd/Samsung_Galaxy_S24_Ultra.avd/snapshots/`, keep `hw.gpu.mode=host`
+  in `config.ini` (already set), restart the AVD (cold boot).
+- Verified: debug build installs + runs on the AVD (API 36, arm64) without crashes.

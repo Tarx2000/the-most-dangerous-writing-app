@@ -35,6 +35,7 @@ abstract final class AppColors {
 
   // Danger / primary action (True Red)
   static const primaryAction = Color(0xFFFF2A2A);
+  static const danger = primaryAction;
   static const primaryActionText = Colors.white;
   static const dangerSubtle = Color(0x0FFF2A2A); // rgba(255,42,42,0.06)
   static const dangerLight = Color(0x14FF2A2A); // 0.08

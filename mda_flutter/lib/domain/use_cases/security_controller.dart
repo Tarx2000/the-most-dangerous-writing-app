@@ -45,6 +45,8 @@ class SecurityController {
   final ValueNotifier<String> shakeKey = ValueNotifier('');
 
   Timer? _lockoutTimer;
+  Timer? _backgroundGraceTimer;
+  Timer? _inactivityTimer;
 
   /// Promise-based PIN request (parity: overlapping requests reject the
   /// previous caller immediately).
@@ -189,49 +191,44 @@ class SecurityController {
   /// Bumped on every tier change so reactive widgets can re-evaluate.
   final ValueNotifier<int> tierVersion = ValueNotifier(0);
 
-  Timer? _inactivityTimer;
-
   /// Central unlock (Vision ★ button). Attempts biometrics, falls back to
   /// PIN per `preferPinAuth` / hardware availability (SPEC §12).
-  Future<bool> unlockNotes({required bool preferPinAuth, required bool useBiometrics}) async {
-    if (preferPinAuth) {
-      return _unlockWithPin();
-    }
-    if (!useBiometrics) {
-      return _unlockWithPin();
+  Future<bool> unlockNotes({required bool preferPinAuth, required bool useBiometrics, int lockTimeoutMins = 3}) async {
+    if (preferPinAuth || !useBiometrics) {
+      return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
     }
     try {
       final available = await _localAuth.isDeviceSupported();
       final canCheck = await _localAuth.canCheckBiometrics;
       if (!available || !canCheck) {
-        return _unlockWithPin();
+        return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
       }
       final success = await _localAuth.authenticate(
         localizedReason: 'Unlock your writing app',
         biometricOnly: true,
       );
       if (success) {
-        _grantAll();
+        _grantAll(lockTimeoutMins: lockTimeoutMins);
         return true;
       }
-      return _unlockWithPin();
+      return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
     } catch (_) {
-      return _unlockWithPin();
+      return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
     }
   }
 
-  Future<bool> _unlockWithPin() async {
+  Future<bool> _unlockWithPin({int lockTimeoutMins = 3}) async {
     final ok = await requestPin(promptMessage: 'Enter your PIN');
-    if (ok) _grantAll();
+    if (ok) _grantAll(lockTimeoutMins: lockTimeoutMins);
     return ok;
   }
 
-  void _grantAll() {
+  void _grantAll({int lockTimeoutMins = 3}) {
     isCirclesUnlocked = true;
     isProfileUnlocked = true;
     isNotesUnlocked = true;
     tierVersion.value++;
-    _startInactivityTimer();
+    _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
   }
 
   /// Tiers (SPEC §12): notes implies everything; profile implies circles.
@@ -252,32 +249,41 @@ class SecurityController {
     isNotesUnlocked = false;
     tierVersion.value++;
     _inactivityTimer?.cancel();
+    _inactivityTimer = null;
+    _backgroundGraceTimer?.cancel();
+    _backgroundGraceTimer = null;
   }
 
   /// Resets the inactivity timer (activity events while unlocked).
-  void keepAlive() {
-    if (isNotesUnlocked) _startInactivityTimer();
+  void keepAlive({int lockTimeoutMins = 3}) {
+    if (isNotesUnlocked) _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
   }
 
-  void _startInactivityTimer() {
+  void _startInactivityTimer({int lockTimeoutMins = 3}) {
     _inactivityTimer?.cancel();
-    _inactivityTimer = null;
+    if (lockTimeoutMins <= 0) return;
+    _inactivityTimer = Timer(Duration(minutes: lockTimeoutMins), () {
+      lockAll();
+    });
   }
 
   /// App-state handling: background → grace timer; foreground → resume.
   void onAppLifecycle(AppLifecycleState state, {required int lockTimeoutMins}) {
     switch (state) {
       case AppLifecycleState.resumed:
-        if (isNotesUnlocked) keepAlive();
+        _backgroundGraceTimer?.cancel();
+        _backgroundGraceTimer = null;
+        if (isNotesUnlocked) keepAlive(lockTimeoutMins: lockTimeoutMins);
       case AppLifecycleState.inactive:
         // Control center / notification overlay → lock immediately (SPEC).
         lockAll();
       case AppLifecycleState.paused:
         if (lockTimeoutMins == 0) {
-          lockAll(); // immediate when the inactivity timer is disabled
+          lockAll(); // Immediate when the inactivity timer is disabled
         } else {
           // 30 s background grace (SPEC §12) — then lock.
-          Timer(const Duration(seconds: 30), () {
+          _backgroundGraceTimer?.cancel();
+          _backgroundGraceTimer = Timer(const Duration(seconds: 30), () {
             lockAll();
           });
         }
@@ -290,6 +296,7 @@ class SecurityController {
   void dispose() {
     _lockoutTimer?.cancel();
     _inactivityTimer?.cancel();
+    _backgroundGraceTimer?.cancel();
     mode.dispose();
     isVisible.dispose();
     promptText.dispose();

@@ -11,14 +11,12 @@ import 'package:go_router/go_router.dart';
 
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
-import 'data/providers.dart';
 import 'ui/core/widgets/pin_pad_modal.dart';
 import 'ui/features/alignment/alignment_writing_screen.dart';
 import 'ui/features/home/home_screen.dart';
 import 'ui/features/pillars/pillar_detail_screen.dart';
 import 'ui/features/pillars/pillars_dashboard_screen.dart';
 import 'ui/features/post_writing/post_writing_screen.dart';
-import 'ui/features/settings/settings_modal.dart' show fontFamilyForIndex;
 import 'ui/features/vlogs/vlog_recording_screen.dart';
 import 'ui/features/writing/writing_screen.dart';
 
@@ -90,15 +88,10 @@ class MdaApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Live font switching (SPEC §4): the selected writing font applies
-    // app-wide; the theme rebuilds only on font changes.
-    final fontIndex = ref.watch(preferencesProvider.select((p) => p.fontIndex));
-    final fontFamily = fontFamilyForIndex(fontIndex);
-
     return MaterialApp.router(
       title: 'The Most Dangerous Writing App',
       debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(fontFamily: fontFamily),
+      theme: buildAppTheme(),
       routerConfig: goRouter,
       builder: (context, child) {
         // Full-bleed AMOLED background behind every route + the global

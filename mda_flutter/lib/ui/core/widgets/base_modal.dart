@@ -32,11 +32,11 @@ class BaseModal extends StatefulWidget {
   final bool showHandle;
 
   @override
-  State<BaseModal> createState() => _BaseModalState();
+  State<BaseModal> createState() => BaseModalState();
 }
 
-class _BaseModalState extends State<BaseModal>
-    with SingleTickerProviderStateMixin {
+class BaseModalState extends State<BaseModal>
+    with TickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 300),
@@ -68,24 +68,25 @@ class _BaseModalState extends State<BaseModal>
     super.dispose();
   }
 
-  void _dismiss() {
+  void dismiss() {
     if (_closing) return;
     _closing = true;
-    // Exit: 300 ms timing on both layers, then onClose.
+    _scrimController.reverse();
     _controller.reverse().whenComplete(() {
       if (mounted) widget.onClose?.call();
     });
-    _scrimController.reverse();
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    setState(() => _dragDy += details.delta.dy);
+    if (details.delta.dy > 0 || _dragDy > 0) {
+      setState(() => _dragDy = (_dragDy + details.delta.dy).clamp(0.0, 500.0));
+    }
   }
 
   void _onPanEnd(DragEndDetails details) {
     final velocity = details.velocity.pixelsPerSecond.dy;
     if (_dragDy > 80 || velocity > 600) {
-      _dismiss();
+      dismiss();
     } else {
       setState(() => _dragDy = 0);
     }
@@ -93,6 +94,8 @@ class _BaseModalState extends State<BaseModal>
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final sheetHeight = screenHeight * widget.heightFactor;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Stack(
@@ -100,7 +103,7 @@ class _BaseModalState extends State<BaseModal>
         // Scrim
         Positioned.fill(
           child: GestureDetector(
-            onTap: _dismiss,
+            onTap: dismiss,
             child: FadeTransition(
               opacity: _scrimController,
               child: const ColoredBox(color: AppColors.overlayDark),
@@ -112,64 +115,69 @@ class _BaseModalState extends State<BaseModal>
           left: 0,
           right: 0,
           bottom: 0,
-          height: MediaQuery.sizeOf(context).height * widget.heightFactor,
-          child: GestureDetector(
-            onVerticalDragUpdate: _onPanUpdate,
-            onVerticalDragEnd: _onPanEnd,
-            behavior: HitTestBehavior.translucent,
-            child: AnimatedBuilder(
-              animation: _slide,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, _dragDy + (1 - _slide.value) * 600),
-                  child: child,
-                );
-              },
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: AppColors.surfaceDark,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  border: Border(
-                    top: BorderSide(color: AppColors.glassBorderMedium),
-                    left: BorderSide(color: AppColors.glassBorderMedium),
-                    right: BorderSide(color: AppColors.glassBorderMedium),
-                  ),
+          height: sheetHeight,
+          child: AnimatedBuilder(
+            animation: _slide,
+            builder: (context, child) {
+              return Transform.translate(
+                offset: Offset(0, _dragDy + (1 - _slide.value) * sheetHeight),
+                child: child,
+              );
+            },
+            child: Container(
+              decoration: const BoxDecoration(
+                color: AppColors.surfaceDark,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(
+                  top: BorderSide(color: AppColors.glassBorderMedium),
+                  left: BorderSide(color: AppColors.glassBorderMedium),
+                  right: BorderSide(color: AppColors.glassBorderMedium),
                 ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  child: Column(
-                    children: [
-                      if (widget.showHandle) ...[
-                        const SizedBox(height: 10),
-                        Container(
-                          width: 40,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: AppColors.grey,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        ),
-                      ],
-                      if (widget.title != null) ...[
-                        const SizedBox(height: 16),
-                        Text(
-                          widget.title!,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.only(bottom: bottomInset + 30),
-                          child: widget.child,
-                        ),
+              ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                child: Column(
+                  children: [
+                    // Handle zone with pan gesture
+                    GestureDetector(
+                      onVerticalDragUpdate: _onPanUpdate,
+                      onVerticalDragEnd: _onPanEnd,
+                      behavior: HitTestBehavior.opaque,
+                      child: Column(
+                        children: [
+                          if (widget.showHandle) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: 40,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: AppColors.grey,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                          ],
+                          if (widget.title != null) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              widget.title!,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: bottomInset + 20),
+                        child: widget.child,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -189,16 +197,26 @@ Future<void> showBaseModal(
 }) {
   final completer = Completer<void>();
   final overlay = Overlay.of(context);
+  final modalKey = GlobalKey<BaseModalState>();
   late final OverlayEntry entry;
+
   entry = OverlayEntry(
     builder: (context) => BaseModal(
+      key: modalKey,
       title: title,
       heightFactor: heightFactor,
       onClose: () {
         entry.remove();
-        completer.complete();
+        if (!completer.isCompleted) completer.complete();
       },
-      child: builder(() => entry.remove()),
+      child: builder(() {
+        if (modalKey.currentState != null) {
+          modalKey.currentState!.dismiss();
+        } else {
+          entry.remove();
+          if (!completer.isCompleted) completer.complete();
+        }
+      }),
     ),
   );
   overlay.insert(entry);

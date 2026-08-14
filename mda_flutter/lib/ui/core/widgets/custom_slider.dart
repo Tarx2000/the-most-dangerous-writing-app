@@ -53,7 +53,7 @@ class _CustomSliderState extends State<CustomSlider> {
   int _valueAt(double width, double dx) {
     final step = (width - _sidePadding * 2 - _thumbSize) / 9;
     final clamped = dx.clamp(_sidePadding.toDouble(), _sidePadding + step * 9);
-    return ((clamped - _sidePadding) / step).round() + 1;
+    return (((clamped - _sidePadding) / step).round() + 1).clamp(1, 10);
   }
 
   @override
@@ -83,9 +83,12 @@ class _CustomSliderState extends State<CustomSlider> {
               Positioned(
                 left: _sidePadding,
                 top: 22,
-                width: _thumbLeft(width, _dragValue) - _sidePadding,
+                width: width <= _sidePadding * 2
+                    ? 0.0
+                    : (_thumbLeft(width, _dragValue) - _sidePadding + _thumbSize / 2)
+                        .clamp(0.0, width - _sidePadding * 2),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
+                  duration: const Duration(milliseconds: 100),
                   height: 4,
                   decoration: BoxDecoration(
                     color: widget.color,
@@ -118,7 +121,7 @@ class _CustomSliderState extends State<CustomSlider> {
               ),
               // Thumb (direct Stack child, positioned by the current value)
               Positioned(
-                left: _thumbLeft(width, _dragValue) - _thumbSize / 2,
+                left: _thumbLeft(width, _dragValue),
                 top: 6,
                 child: Container(
                   width: _thumbSize,
@@ -142,21 +145,27 @@ class _CustomSliderState extends State<CustomSlider> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onHorizontalDragStart: (details) {
+                    final newValue = _valueAt(width, details.localPosition.dx);
+                    if (newValue != _dragValue.round()) {
+                      vibrate(HapticPatterns.tick);
+                    }
                     setState(() {
-                      _dragValue = _valueAt(width, details.localPosition.dx).toDouble();
+                      _dragValue = newValue.toDouble();
                     });
                   },
                   onHorizontalDragUpdate: (details) {
+                    final newValue = _valueAt(width, details.localPosition.dx);
+                    if (newValue != _dragValue.round()) {
+                      vibrate(HapticPatterns.tick);
+                    }
                     setState(() {
-                      _dragValue = _valueAt(width, details.localPosition.dx).toDouble();
+                      _dragValue = newValue.toDouble();
                     });
                   },
                   onHorizontalDragEnd: (details) {
                     final value = _dragValue.round().clamp(1, 10);
-                    if (value != widget.value) {
-                      vibrate(HapticPatterns.tick);
-                      widget.onChanged(value);
-                    }
+                    vibrate(HapticPatterns.tick);
+                    widget.onChanged(value);
                     setState(() => _dragValue = value.toDouble());
                   },
                 ),

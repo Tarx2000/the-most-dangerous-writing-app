@@ -14,6 +14,7 @@ import 'package:mda_flutter/data/services/backup_service.dart';
 import 'package:mda_flutter/data/services/settings_service.dart';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -29,11 +30,11 @@ void main() {
   });
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     setPrefsAccess(() async => {}, (key, value) async {});
     tempDir = await Directory.systemTemp.createTemp('mda_backup_test');
     settings = SettingsService(SettingsRepository());
     service = BackupService(
-      settings: settings,
       documentsDirProvider: () async => tempDir.path,
     );
     // Seed data.
@@ -144,7 +145,11 @@ void main() {
         'schemaVersion': 6,
         'appVersion': '1.5.8',
         'scopes': ['notes'],
-        'sqlite': {'does_not_exist': []},
+        'sqlite': {
+          'notes': [
+            {'id': 'n1', 'text': null}
+          ]
+        },
         'fileManifest': {'vlogs': [], 'thumbnails': []},
       })),
     ));
@@ -194,5 +199,90 @@ void main() {
         ?['file_path'] as String;
     expect(restoredPath, isNotNull);
     expect(await File(restoredPath).length(), videoSize);
+  });
+
+  test('RN backup format compatibility: imports backup with entryPath, sizeBytes, and extra columns', () async {
+    // Create a mock video file inside the temp archive
+    final zipPath = p.join(tempDir.path, 'rn_backup.zip');
+    final encoder = ZipFileEncoder();
+    encoder.create(zipPath);
+
+    final rnMetadata = {
+      'backupVersion': 2,
+      'schemaVersion': 6,
+      'appVersion': '1.5.8',
+      'createdAt': 1723670000000,
+      'scopes': ['notes', 'settings', 'masteries', 'vlogs'],
+      'sqlite': {
+        'notes': [
+          {
+            'id': 'rn_note_1',
+            'text': 'Note exported from React Native with extra columns',
+            'date_str': '2026-08-14',
+            'timestamp': 1723670000000,
+            'duration_min': 5,
+            'won': 1,
+            'ai_title': 'RN Note Title',
+            'future_rn_column_not_in_flutter': 'should_be_ignored_safely',
+          }
+        ],
+        'settings': [
+          {'key': 'USER_FONT_IDX', 'value': '4', 'updated_at': 1723670000000}
+        ],
+        'vlogs': [
+          {
+            'id': 'rn_vlog_1',
+            'file_path': '/old/rn/path/vlogs/rn_vlog_1.mp4',
+            'date_str': '2026-08-14',
+            'timestamp': 1723670000000,
+            'duration_sec': 30,
+            'file_size_bytes': 100,
+          }
+        ],
+      },
+      'asyncStorage': {
+        '__DB_SCHEMA_VERSION__': 6,
+        'FEATURE_FLAGS': {'ENABLE_TWEET_IN_JOURNAL_MODE': true},
+      },
+      'fileManifest': {
+        'vlogs': [
+          {
+            'vlogId': 'rn_vlog_1',
+            'entryPath': 'vlogs/rn_vlog_1.mp4',
+            'kind': 'video',
+            'sizeBytes': 12,
+            'included': true,
+            'reason': null,
+          }
+        ],
+        'thumbnails': [],
+      },
+    };
+
+    encoder.addArchiveFile(ArchiveFile.bytes(
+      'backup_metadata.json',
+      utf8.encode(jsonEncode(rnMetadata)),
+    ));
+    encoder.addArchiveFile(ArchiveFile.bytes(
+      'vlogs/rn_vlog_1.mp4',
+      utf8.encode('dummy_video_'),
+    ));
+    await encoder.close();
+
+    // Import the RN backup
+    final import = await service.importBackupZip(zipPath: zipPath);
+    expect(import.success, isTrue, reason: import.error);
+
+    // Verify notes and column filtering worked
+    final note = await getFirst('SELECT * FROM notes WHERE id = ?', ['rn_note_1']);
+    expect(note, isNotNull);
+    expect(note!['ai_title'], 'RN Note Title');
+    expect(note['text'], contains('Note exported from React Native'));
+
+    // Verify vlogs path was rewritten to local sandbox
+    final vlog = await getFirst('SELECT * FROM vlogs WHERE id = ?', ['rn_vlog_1']);
+    expect(vlog, isNotNull);
+    expect(vlog!['file_path'], contains('vlogs'));
+    expect(File(vlog['file_path'] as String).existsSync(), isTrue);
   });
 }
