@@ -720,13 +720,7 @@ class BackupService {
       dbExists = true;
     }
 
-    // 2. Media directories snapshot
-    final vlogSnapshot = p.join(snapshotDir.path, 'vlogs_snapshot');
-    final thumbSnapshot = p.join(snapshotDir.path, 'thumbs_snapshot');
-    await _copyDir(p.join(docs, 'vlogs'), vlogSnapshot);
-    await _copyDir(p.join(docs, 'vlog_thumbnails'), thumbSnapshot);
-
-    // 3. SharedPreferences snapshot
+    // 2. SharedPreferences snapshot
     final sp = await SharedPreferences.getInstance();
     final prefsPairs = <String, Object?>{
       for (final key in sp.getKeys()) key: sp.get(key),
@@ -736,23 +730,9 @@ class BackupService {
       'dbCopy': dbCopy,
       'dbPath': dbPath,
       'dbExists': dbExists,
-      'vlogSnapshot': vlogSnapshot,
-      'thumbSnapshot': thumbSnapshot,
       'snapshotDir': snapshotDir.path,
       'prefsPairs': prefsPairs,
     };
-  }
-
-  Future<void> _copyDir(String source, String target) async {
-    final src = Directory(source);
-    if (!await src.exists()) return;
-    final dst = Directory(target);
-    await dst.create(recursive: true);
-    await for (final entity in src.list()) {
-      if (entity is File) {
-        await entity.copy(p.join(target, p.basename(entity.path)));
-      }
-    }
   }
 
   /// Restores SQLite in ONE transaction with LIVE COLUMN FILTERING.
@@ -857,7 +837,7 @@ class BackupService {
   Future<void> _writeArchiveFileStreaming(ArchiveFile file, String outPath) async {
     final output = OutputFileStream(outPath);
     try {
-      file.writeContent(output, freeMemory: false);
+      file.writeContent(output, freeMemory: true);
     } finally {
       output.close();
     }
@@ -918,10 +898,6 @@ class BackupService {
         await File(dbCopy).copy(dbPath);
       }
 
-      final docs = await _docs();
-      await _restoreDir(snapshots['vlogSnapshot'] as String, p.join(docs, 'vlogs'));
-      await _restoreDir(snapshots['thumbSnapshot'] as String, p.join(docs, 'vlog_thumbnails'));
-
       // Rollback prefs
       final prefsPairs = snapshots['prefsPairs'] as Map<String, Object?>?;
       if (prefsPairs != null) {
@@ -942,15 +918,6 @@ class BackupService {
     } catch (e) {
       logStorage.warn('Rollback best-effort failed', e);
     }
-  }
-
-  Future<void> _restoreDir(String snapshot, String target) async {
-    final src = Directory(snapshot);
-    if (!await src.exists()) return;
-    final dst = Directory(target);
-    if (await dst.exists()) await dst.delete(recursive: true);
-    await dst.create(recursive: true);
-    await _copyDir(snapshot, target);
   }
 
   Future<int> _freeDiskBytes() async => -1;

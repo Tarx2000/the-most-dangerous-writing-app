@@ -20,6 +20,7 @@ import '../../core/widgets/base_modal.dart';
 import '../settings/settings_modal.dart';
 import '../../core/widgets/calendar_view.dart';
 import '../../core/widgets/morph_icon.dart';
+import '../../core/widgets/animated_symmetrical_ring.dart';
 import '../../core/widgets/custom_slider.dart';
 import '../../core/widgets/tick_dial.dart';
 import '../circles/circle_picker_sheet.dart';
@@ -139,77 +140,80 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                   children: [
                     _TopBar(streak: streak, onCalendarPress: _openCalendar),
                     const SizedBox(height: 8),
-                    // Hero widget (fixed height 200, RN parity: "Exact height
-                    // prevents jumps").
-                    SizedBox(
-                      height: 200,
-                      child: Stack(
-                        alignment: Alignment.center,
+                    // Hero widget (Fixed height container with clean vertical layout without overlapping text)
+                    Container(
+                      height: 180,
+                      alignment: Alignment.topCenter,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Glow ring (only checkin mode): subtle shadow on
-                          // the icon container — parity with the RN
-                          // `shadowColor` morph, NOT a huge filled circle.
-                          LiquidMorphIcon(
-                            icon: _iconForMode(widget.mode),
-                            color: tierColor,
-                            size: 44,
-                            glowColor: isCheckin
-                                ? AppColors.alignmentTierGlow(_checkinScore)
-                                : null,
-                          ),
-                          // Mode content (absolutely positioned below the icon).
-                          Positioned(
-                            top: 104,
-                            left: 0,
-                            right: 0,
-                            child: Column(
+                          // Icon wrapper with AnimatedSymmetricalRing
+                          SizedBox(
+                            width: 72,
+                            height: 72,
+                            child: Stack(
+                              alignment: Alignment.center,
                               children: [
-                                Text(
-                                  isVlog
-                                      ? 'VIDEO JOURNAL'
-                                      : isCheckin
-                                          ? tierLabel
-                                          : widget.mode == SessionMode.circles
-                                              ? 'RELATIONSHIP JOURNAL'
-                                              : 'FREE WRITING',
-                                  style: TextStyle(
-                                    color: isCheckin ? tierColor : AppColors.textSecondary,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1.5,
-                                  ),
+                                AnimatedSymmetricalRing(
+                                  size: 68,
+                                  strokeWidth: 4,
+                                  color: tierColor,
+                                  backgroundColor: isCheckin ? AppColors.background : Colors.transparent,
+                                  isActive: isCheckin,
                                 ),
-                                const SizedBox(height: 8),
-                                if (isCheckin)
-                                  // Check-in slider lives IN the hero (RN parity:
-                                  // scale 0.9, negative margins pull the following
-                                  // sections up so nothing jumps).
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                                    child: Transform.scale(
-                                      scale: 0.9,
-                                      child: CustomSlider(
-                                        value: _checkinScore,
-                                        color: tierColor,
-                                        onChanged: (v) =>
-                                            setState(() => _checkinScore = v),
-                                      ),
-                                    ),
-                                  )
-                                else if (isVlog)
-                                  _QuickVideoPill(onPress: _startQuickVideo)
-                                else if (widget.mode == SessionMode.circles)
-                                  _PersonPickerPill(
-                                    persons: persons,
-                                    selectedId: _selectedPersonId,
-                                    onSelect: (id) => setState(() => _selectedPersonId = id),
-                                    onPress: _openCirclePicker,
-                                  )
-                                else if (widget.mode == SessionMode.journal)
-                                  _TweetPill(onPress: _startTweet, isCircles: false),
+                                LiquidMorphIcon(
+                                  icon: _iconForMode(widget.mode),
+                                  color: isCheckin ? tierColor : AppColors.primaryAction,
+                                  size: isCheckin ? 40 : 42,
+                                  glowColor: isCheckin
+                                      ? AppColors.alignmentTierGlow(_checkinScore)
+                                      : null,
+                                ),
                               ],
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          // Title label
+                          Text(
+                            isVlog
+                                ? 'VIDEO JOURNAL'
+                                : isCheckin
+                                    ? tierLabel
+                                    : widget.mode == SessionMode.circles
+                                        ? 'RELATIONSHIP JOURNAL'
+                                        : 'FREE WRITING',
+                            style: TextStyle(
+                              color: isCheckin ? tierColor : AppColors.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (isCheckin)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 40),
+                              child: Transform.scale(
+                                scale: 0.9,
+                                child: CustomSlider(
+                                  value: _checkinScore,
+                                  color: tierColor,
+                                  onChanged: (v) =>
+                                      setState(() => _checkinScore = v),
+                                ),
+                              ),
+                            )
+                          else if (isVlog)
+                            _QuickVideoPill(onPress: _startQuickVideo)
+                          else if (widget.mode == SessionMode.circles)
+                            _PersonPickerPill(
+                              persons: persons,
+                              selectedId: _selectedPersonId,
+                              onSelect: (id) => setState(() => _selectedPersonId = id),
+                              onPress: _openCirclePicker,
+                            )
+                          else if (widget.mode == SessionMode.journal)
+                            _TweetPill(onPress: _startTweet, isCircles: false),
                         ],
                       ),
                     ),

@@ -16,7 +16,10 @@ import '../library/note_viewer_modal.dart';
 import 'feed_card.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
-  const FeedScreen({super.key});
+  const FeedScreen({super.key, this.onClose, this.onOverscrollPull});
+
+  final VoidCallback? onClose;
+  final ValueChanged<double>? onOverscrollPull;
 
   @override
   ConsumerState<FeedScreen> createState() => _FeedScreenState();
@@ -125,6 +128,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       letterSpacing: -0.5,
                     ),
                   ),
+                  const Spacer(),
+                  if (widget.onClose != null)
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary, size: 28),
+                      onPressed: widget.onClose,
+                    ),
                 ],
               ),
             ),

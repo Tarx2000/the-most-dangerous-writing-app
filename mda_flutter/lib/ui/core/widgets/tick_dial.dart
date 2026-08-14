@@ -51,7 +51,6 @@ class _TickDialState extends State<TickDial> {
   void initState() {
     super.initState();
     _controller.addListener(_onScroll);
-    // Sync scroll position to the selected index (suppressed while dragging).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!_dragging && !_justSnapped) {
@@ -65,8 +64,10 @@ class _TickDialState extends State<TickDial> {
   void didUpdateWidget(covariant TickDial oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedIndex != widget.selectedIndex) {
-      if (!_dragging && !_justSnapped) {
-        _controller.jumpTo(widget.selectedIndex * _snap);
+      if (!_dragging && !_justSnapped && !_snapping) {
+        if (_controller.hasClients) {
+          _controller.jumpTo(widget.selectedIndex * _snap);
+        }
       }
       _justSnapped = false;
       _pulse();
@@ -94,26 +95,34 @@ class _TickDialState extends State<TickDial> {
 
   void _onScroll() {
     _currentOffset = _controller.offset;
-    if (_dragging || !_snapping) {
-      final index = _indexFromOffset(_currentOffset);
-      if (index != widget.selectedIndex) {
-        widget.onSelect(index);
-      }
+    final index = _indexFromOffset(_currentOffset);
+    if (index != widget.selectedIndex) {
+      widget.onSelect(index);
     }
   }
 
   void _snapToNearest() {
+    if (_snapping || !_controller.hasClients) return;
     final index = _indexFromOffset(_currentOffset);
+    final targetOffset = index * _snap;
+    if ((_controller.offset - targetOffset).abs() < 0.5) {
+      if (index != widget.selectedIndex) {
+        widget.onSelect(index);
+      }
+      return;
+    }
     _snapping = true;
     _controller.animateTo(
-      index * _snap,
-      duration: const Duration(milliseconds: 300),
+      targetOffset,
+      duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
     ).whenComplete(() {
       _snapping = false;
-      if (mounted && index != widget.selectedIndex) {
+      if (mounted) {
         _justSnapped = true;
-        widget.onSelect(index);
+        if (index != widget.selectedIndex) {
+          widget.onSelect(index);
+        }
       }
     });
   }
@@ -139,6 +148,7 @@ class _TickDialState extends State<TickDial> {
                 fontSize: 44,
                 fontWeight: FontWeight.w200,
                 height: 1.0,
+                decoration: TextDecoration.none,
               ),
               children: [
                 TextSpan(text: '${widget.data[widget.selectedIndex]}'),
@@ -148,6 +158,7 @@ class _TickDialState extends State<TickDial> {
                     color: AppColors.textSecondary,
                     fontSize: 20,
                     fontWeight: FontWeight.w300,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ],
@@ -180,21 +191,28 @@ class _TickDialState extends State<TickDial> {
                     _dragging = true;
                     _snapping = false;
                   } else if (notification is ScrollEndNotification) {
-                    if (_dragging) {
-                      _dragging = false;
-                      _snapToNearest();
-                    }
-                  } else if (notification is OverscrollNotification || notification is ScrollEndNotification) {
-                    // momentum finished → snap (ScrollEnd covers it)
+                    _dragging = false;
+                    _snapToNearest();
                   }
                   return false;
                 },
                 child: Listener(
-                  onPointerDown: (_) => _dragging = true,
+                  onPointerDown: (_) {
+                    _dragging = true;
+                    _snapping = false;
+                  },
+                  onPointerUp: (_) {
+                    _dragging = false;
+                    _snapToNearest();
+                  },
+                  onPointerCancel: (_) {
+                    _dragging = false;
+                    _snapToNearest();
+                  },
                   child: SingleChildScrollView(
                     controller: _controller,
                     scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
+                    physics: const BouncingScrollPhysics(),
                     child: SizedBox(
                       width: _pad * 2 + (widget.data.length - 1) * _snap,
                       height: 62,

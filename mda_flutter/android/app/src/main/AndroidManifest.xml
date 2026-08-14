@@ -2,6 +2,8 @@
     <!-- Camera + audio: vlog recording (parity with the RN app's permissions) -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Biometrics: fingerprint and face unlock on Android -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <application
         android:label="The Most Dangerous Writing App"

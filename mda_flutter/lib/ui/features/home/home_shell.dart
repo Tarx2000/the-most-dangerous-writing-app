@@ -206,7 +206,9 @@ class _HomeShellState extends ConsumerState<HomeShell>
                 builder: (context, _) {
                   return Transform.translate(
                     offset: Offset(0, (1 - _feedProgress) * screenHeight),
-                    child: const FeedScreen(),
+                    child: FeedScreen(
+                      onClose: () => _commitFeed(false),
+                    ),
                   );
                 },
               ),

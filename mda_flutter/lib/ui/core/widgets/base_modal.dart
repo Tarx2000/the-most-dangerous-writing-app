@@ -98,92 +98,103 @@ class BaseModalState extends State<BaseModal>
     final sheetHeight = screenHeight * widget.heightFactor;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Stack(
-      children: [
-        // Scrim
-        Positioned.fill(
-          child: GestureDetector(
-            onTap: dismiss,
-            child: FadeTransition(
-              opacity: _scrimController,
-              child: const ColoredBox(color: AppColors.overlayDark),
-            ),
-          ),
+    return Material(
+      type: MaterialType.transparency,
+      child: DefaultTextStyle(
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          decoration: TextDecoration.none,
+          fontSize: 15,
         ),
-        // Sheet
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: sheetHeight,
-          child: AnimatedBuilder(
-            animation: _slide,
-            builder: (context, child) {
-              return Transform.translate(
-                offset: Offset(0, _dragDy + (1 - _slide.value) * sheetHeight),
-                child: child,
-              );
-            },
-            child: Container(
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceDark,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                border: Border(
-                  top: BorderSide(color: AppColors.glassBorderMedium),
-                  left: BorderSide(color: AppColors.glassBorderMedium),
-                  right: BorderSide(color: AppColors.glassBorderMedium),
-                ),
-              ),
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                child: Column(
-                  children: [
-                    // Handle zone with pan gesture
-                    GestureDetector(
-                      onVerticalDragUpdate: _onPanUpdate,
-                      onVerticalDragEnd: _onPanEnd,
-                      behavior: HitTestBehavior.opaque,
-                      child: Column(
-                        children: [
-                          if (widget.showHandle) ...[
-                            const SizedBox(height: 10),
-                            Container(
-                              width: 40,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: AppColors.grey,
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                          ],
-                          if (widget.title != null) ...[
-                            const SizedBox(height: 16),
-                            Text(
-                              widget.title!,
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(bottom: bottomInset + 20),
-                        child: widget.child,
-                      ),
-                    ),
-                  ],
+        child: Stack(
+          children: [
+            // Scrim
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: dismiss,
+                child: FadeTransition(
+                  opacity: _scrimController,
+                  child: const ColoredBox(color: AppColors.overlayDark),
                 ),
               ),
             ),
-          ),
+            // Sheet
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: sheetHeight,
+              child: AnimatedBuilder(
+                animation: _slide,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: Offset(0, _dragDy + (1 - _slide.value) * sheetHeight),
+                    child: child,
+                  );
+                },
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.surfaceDark,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    border: Border(
+                      top: BorderSide(color: AppColors.glassBorderMedium),
+                      left: BorderSide(color: AppColors.glassBorderMedium),
+                      right: BorderSide(color: AppColors.glassBorderMedium),
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    child: Column(
+                      children: [
+                        // Handle zone with pan gesture
+                        GestureDetector(
+                          onVerticalDragUpdate: _onPanUpdate,
+                          onVerticalDragEnd: _onPanEnd,
+                          behavior: HitTestBehavior.opaque,
+                          child: Column(
+                            children: [
+                              if (widget.showHandle) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  width: 44,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.grey,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                              ],
+                              if (widget.title != null) ...[
+                                const SizedBox(height: 16),
+                                Text(
+                                  widget.title!,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: bottomInset + 20),
+                            child: widget.child,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -201,22 +212,31 @@ Future<void> showBaseModal(
   late final OverlayEntry entry;
 
   entry = OverlayEntry(
-    builder: (context) => BaseModal(
-      key: modalKey,
-      title: title,
-      heightFactor: heightFactor,
-      onClose: () {
-        entry.remove();
-        if (!completer.isCompleted) completer.complete();
-      },
-      child: builder(() {
-        if (modalKey.currentState != null) {
-          modalKey.currentState!.dismiss();
-        } else {
-          entry.remove();
-          if (!completer.isCompleted) completer.complete();
-        }
-      }),
+    builder: (context) => Material(
+      type: MaterialType.transparency,
+      child: DefaultTextStyle(
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          decoration: TextDecoration.none,
+        ),
+        child: BaseModal(
+          key: modalKey,
+          title: title,
+          heightFactor: heightFactor,
+          onClose: () {
+            entry.remove();
+            if (!completer.isCompleted) completer.complete();
+          },
+          child: builder(() {
+            if (modalKey.currentState != null) {
+              modalKey.currentState!.dismiss();
+            } else {
+              entry.remove();
+              if (!completer.isCompleted) completer.complete();
+            }
+          }),
+        ),
+      ),
     ),
   );
   overlay.insert(entry);
