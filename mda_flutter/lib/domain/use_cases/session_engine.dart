@@ -32,6 +32,7 @@ enum HapticLevel { none, caution, warning, urgent, critical }
 class SessionCallbacks {
   const SessionCallbacks({
     this.onDeath,
+    this.onTextWiped,
     this.onHapticLevel,
     this.onSessionEnd,
     this.onIdleRatioChanged,
@@ -39,6 +40,9 @@ class SessionCallbacks {
 
   /// Fired exactly once when the idle limit is reached.
   final VoidCallback? onDeath;
+
+  /// Fired 200 ms after death when text is destroyed (SPEC §8, parity with RN useSession).
+  final VoidCallback? onTextWiped;
 
   /// Fired once per escalation level crossing (reset on typing).
   final ValueChanged<HapticLevel>? onHapticLevel;
@@ -258,6 +262,7 @@ class SessionEngine {
     _deathTimer = Timer(const Duration(milliseconds: 200), () {
       _lastCountedText = '';
       wordCount.value = 0;
+      callbacks.onTextWiped?.call();
     });
     callbacks.onDeath?.call();
   }

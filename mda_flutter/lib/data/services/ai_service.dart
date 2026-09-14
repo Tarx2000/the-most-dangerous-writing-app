@@ -123,24 +123,24 @@ class AiService {
       final wordBuffer = StringBuffer();
       final flushPattern = _flushPattern;
 
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
         if (cancelToken?.isCancelled == true) {
           throw const AiError(AiErrorKind.cancelled, 'cancelled by token');
         }
-        for (final line in chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          final payload = line.substring(6).trim();
-          if (payload == '[DONE]') continue;
-          final delta = _extractDelta(payload);
-          if (delta == null || delta.isEmpty) continue;
+        if (!line.startsWith('data: ')) continue;
+        final payload = line.substring(6).trim();
+        if (payload == '[DONE]') continue;
+        final delta = _extractDelta(payload);
+        if (delta == null || delta.isEmpty) continue;
 
-          accumulated.write(delta);
-          wordBuffer.write(delta);
-          final buffer = wordBuffer.toString();
-          if (buffer.isNotEmpty && (flushPattern.hasMatch(buffer) || buffer.length >= 12)) {
-            onChunk(accumulated.toString());
-            wordBuffer.clear();
-          }
+        accumulated.write(delta);
+        wordBuffer.write(delta);
+        final buffer = wordBuffer.toString();
+        if (buffer.isNotEmpty && (flushPattern.hasMatch(buffer) || buffer.length >= 12)) {
+          onChunk(accumulated.toString());
+          wordBuffer.clear();
         }
       }
 

@@ -168,6 +168,11 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
       text: text,
       won: true,
       durationMin: _reflectionMinutes,
+      isAlignmentReflection: true,
+      pillarId: item.pillar?.id,
+      adviceId: item.adviceId,
+      pillarValue: item.pillar != null ? _values[item.pillar!.id] : null,
+      pillarVersion: item.pillar?.version,
     );
     final savedNote = result.note;
 
@@ -177,13 +182,6 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
       if (logId != null) {
         await notifier.linkPillarLogNote(logId, savedNote.id);
       }
-      // Reflection notes carry the pillar metadata for version badges.
-      await notifier.updateNote(savedNote.id, {
-        'is_alignment_reflection': 1,
-        'pillar_id': item.pillar!.id,
-        'pillar_value': _values[item.pillar!.id],
-        'pillar_version': item.pillar!.version,
-      });
     } else if (item.adviceId != null) {
       await notifier.incrementAdviceReflection(item.adviceId!);
     }

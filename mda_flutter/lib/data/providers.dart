@@ -116,6 +116,8 @@ final adviceCardsProvider =
 final preferencesProvider =
     Provider<PreferencesState>((ref) => ref.watch(appDataProvider).preferences);
 
+final userPreferencesProvider = preferencesProvider;
+
 final streakProvider = Provider<StreakState>((ref) => ref.watch(appDataProvider).streak);
 
 final feedDataProvider = Provider<FeedState>((ref) => ref.watch(appDataProvider).feed);
@@ -337,6 +339,15 @@ class StorageNotifier extends Notifier<AppData> {
     String? personId,
     bool isQuickNote = false,
     bool isTweet = false,
+    bool isAlignmentReflection = false,
+    String? pillarId,
+    String? adviceId,
+    double? pillarValue,
+    int? pillarVersion,
+    int? alignmentScore,
+    String? stopText,
+    String? startText,
+    String? continueText,
   }) async {
     final notesRepo = ref.read(notesRepositoryProvider);
     final settings = ref.read(settingsServiceProvider);
@@ -354,6 +365,15 @@ class StorageNotifier extends Notifier<AppData> {
       personId: personId,
       isQuickNote: isQuickNote,
       isTweet: classifiedTweet,
+      isAlignmentReflection: isAlignmentReflection,
+      pillarId: pillarId,
+      adviceId: adviceId,
+      pillarValue: pillarValue,
+      pillarVersion: pillarVersion,
+      alignmentScore: alignmentScore,
+      stopText: stopText,
+      startText: startText,
+      continueText: continueText,
     );
 
     final eligible = isStreakEligible(

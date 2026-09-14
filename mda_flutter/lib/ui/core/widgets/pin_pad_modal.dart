@@ -4,6 +4,8 @@
 /// wrong PIN (±10 px, 5×50 ms) · 3 attempts → 30 s lockout banner.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,9 +24,43 @@ class PinPadModal extends ConsumerStatefulWidget {
   ConsumerState<PinPadModal> createState() => _PinPadModalState();
 }
 
-class _PinPadModalState extends ConsumerState<PinPadModal> {
+class _PinPadModalState extends ConsumerState<PinPadModal>
+    with TickerProviderStateMixin {
   String _pin = '';
-  bool _shake = false;
+
+  late final AnimationController _shakeController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 360),
+  );
+  late final Animation<double> _shakeAnim = CurvedAnimation(
+    parent: _shakeController,
+    curve: Curves.linear,
+  );
+
+  late final AnimationController _entranceController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  );
+  late final Animation<double> _slideAnim = Tween<double>(begin: 40.0, end: 0.0).animate(
+    CurvedAnimation(parent: _entranceController, curve: Curves.easeOutCubic),
+  );
+  late final Animation<double> _fadeAnim = CurvedAnimation(
+    parent: _entranceController,
+    curve: Curves.easeOut,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _entranceController.forward();
+  }
+
+  @override
+  void dispose() {
+    _shakeController.dispose();
+    _entranceController.dispose();
+    super.dispose();
+  }
 
   Future<void> _press(String digit) async {
     vibrate(HapticPatterns.dialPress);
@@ -49,13 +85,8 @@ class _PinPadModalState extends ConsumerState<PinPadModal> {
 
   void _wrongPin() {
     vibrate(HapticPatterns.pinError);
-    setState(() {
-      _shake = true;
-      _pin = '';
-    });
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) setState(() => _shake = false);
-    });
+    setState(() => _pin = '');
+    _shakeController.forward(from: 0.0);
   }
 
   void _backspace() {
@@ -87,100 +118,112 @@ class _PinPadModalState extends ConsumerState<PinPadModal> {
             // Sheet
             Align(
               alignment: Alignment.bottomCenter,
-              child: Container(
-                padding: const EdgeInsets.only(bottom: 40),
-                decoration: const BoxDecoration(
-                  color: AppColors.surfaceDark,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-                  border: Border(
-                    top: BorderSide(color: AppColors.glassBorder),
-                    left: BorderSide(color: AppColors.glassBorder),
-                    right: BorderSide(color: AppColors.glassBorder),
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: AnimatedBuilder(
+                  animation: _slideAnim,
+                  builder: (context, child) => Transform.translate(
+                    offset: Offset(0, _slideAnim.value),
+                    child: child,
                   ),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 10),
-                    Container(
-                      width: 40,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: AppColors.grey,
-                        borderRadius: BorderRadius.circular(3),
+                  child: Container(
+                    padding: const EdgeInsets.only(bottom: 40),
+                    decoration: const BoxDecoration(
+                      color: AppColors.surfaceDark,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                      border: Border(
+                        top: BorderSide(color: AppColors.glassBorder),
+                        left: BorderSide(color: AppColors.glassBorder),
+                        right: BorderSide(color: AppColors.glassBorder),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    // Lockout banner
-                    if (lockedOut) ...[
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 32),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: AppColors.dangerTint,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.dangerBorder, width: 1),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 10),
+                        Container(
+                          width: 40,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: AppColors.grey,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Mdi.get('lockClock'), color: AppColors.primaryAction, size: 18),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Too many attempts — wait ${controller.lockoutRemainingSeconds.value}s',
-                              style: const TextStyle(
-                                color: AppColors.primaryAction,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
+                        const SizedBox(height: 18),
+                        // Lockout banner
+                        if (lockedOut) ...[
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 32),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: AppColors.dangerTint,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.dangerBorder, width: 1),
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    Text(
-                      prompt ?? 'Enter your PIN',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    // Dots
-                    AnimatedBuilder(
-                      animation: controller.shakeKey,
-                      builder: (context, _) {
-                        return Transform.translate(
-                          offset: _shake ? const Offset(10, 0) : Offset.zero,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              for (var i = 0; i < 4; i++)
-                                Container(
-                                  width: 14,
-                                  height: 14,
-                                  margin: const EdgeInsets.symmetric(horizontal: 10),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: i < _pin.length
-                                        ? AppColors.textPrimary
-                                        : Colors.transparent,
-                                    border: Border.all(
-                                      color: i < _pin.length
-                                          ? AppColors.textPrimary
-                                          : AppColors.textDim,
-                                      width: 1.5,
-                                    ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Mdi.get('lockClock'), color: AppColors.primaryAction, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Too many attempts — wait ${controller.lockoutRemainingSeconds.value}s',
+                                  style: const TextStyle(
+                                    color: AppColors.primaryAction,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                            ],
+                              ],
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 26),
+                          const SizedBox(height: 16),
+                        ],
+                        Text(
+                          prompt ?? 'Enter your PIN',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        // Dots with critically damped horizontal shake
+                        AnimatedBuilder(
+                          animation: _shakeAnim,
+                          builder: (context, _) {
+                            final t = _shakeAnim.value;
+                            final dx = t == 0.0 || t == 1.0
+                                ? 0.0
+                                : math.sin(t * math.pi * 6) * 12.0 * (1.0 - t);
+                            return Transform.translate(
+                              offset: Offset(dx, 0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  for (var i = 0; i < 4; i++)
+                                    Container(
+                                      width: 14,
+                                      height: 14,
+                                      margin: const EdgeInsets.symmetric(horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: i < _pin.length
+                                            ? AppColors.textPrimary
+                                            : Colors.transparent,
+                                        border: Border.all(
+                                          color: i < _pin.length
+                                              ? AppColors.textPrimary
+                                              : AppColors.textDim,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 26),
                     // Dial
                     Opacity(
                       opacity: lockedOut ? 0.4 : 1,
@@ -222,10 +265,12 @@ class _PinPadModalState extends ConsumerState<PinPadModal> {
                 ),
               ),
             ),
-          ],
+          ),
         ),
-      ),
-    );
+      ],
+    ),
+  ),
+);
   }
 }
 

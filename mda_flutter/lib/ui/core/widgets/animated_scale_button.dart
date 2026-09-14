@@ -37,18 +37,20 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
   ]).animate(
     CurvedAnimation(parent: _controller, curve: Curves.easeOut),
   );
-
-  bool _pressed = false;
+  late final Animation<double> _opacity = Tween<double>(
+    begin: 1.0,
+    end: widget.activeOpacity,
+  ).animate(
+    CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+  );
 
   void _onTapDown(_) {
     if (widget.disabled) return;
-    setState(() => _pressed = true);
     _controller.forward();
   }
 
   void _onTapUp(_) {
     if (widget.disabled) return;
-    setState(() => _pressed = false);
     _controller.reverse();
   }
 
@@ -68,10 +70,10 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
       onLongPress: widget.disabled ? null : widget.onLongPress,
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
-        animation: _scale,
+        animation: _controller,
         builder: (context, child) {
           return Opacity(
-            opacity: _pressed ? widget.activeOpacity : 1.0,
+            opacity: _opacity.value,
             child: Transform.scale(scale: _scale.value, child: child),
           );
         },
@@ -82,7 +84,6 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
 
   void _onTapCancel() {
     if (widget.disabled) return;
-    setState(() => _pressed = false);
     _controller.reverse();
   }
 }

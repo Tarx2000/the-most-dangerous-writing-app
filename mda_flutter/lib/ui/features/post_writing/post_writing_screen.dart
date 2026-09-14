@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
@@ -234,13 +235,21 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
         const SizedBox(height: 24),
         _buildGrammarSection(note),
         const SizedBox(height: 20),
-        Text(
-          note.text,
-          style: const TextStyle(
-            color: AppColors.textBody,
-            fontSize: 18,
-            height: 1.55,
-          ),
+        Builder(
+          builder: (context) {
+            final prefs = ref.watch(userPreferencesProvider);
+            final readingSize = readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
+            final fontFamily = fontFamilyForIndex(prefs.fontIndex);
+            return Text(
+              note.text,
+              style: TextStyle(
+                color: AppColors.textBody,
+                fontFamily: fontFamily,
+                fontSize: readingSize.fontSize,
+                height: readingSize.lineHeight / readingSize.fontSize,
+              ),
+            );
+          },
         ),
       ],
     );
@@ -512,14 +521,26 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
           style: const TextStyle(color: AppColors.textDim, fontSize: 13, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _editController,
-          maxLines: null,
-          style: const TextStyle(color: AppColors.textInput, fontSize: 18, height: 1.55),
-          cursorColor: AppColors.primaryAction,
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-          ),
+        Builder(
+          builder: (context) {
+            final prefs = ref.watch(userPreferencesProvider);
+            final readingSize = readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
+            final fontFamily = fontFamilyForIndex(prefs.fontIndex);
+            return TextField(
+              controller: _editController,
+              maxLines: null,
+              style: TextStyle(
+                color: AppColors.textInput,
+                fontFamily: fontFamily,
+                fontSize: readingSize.fontSize,
+                height: readingSize.lineHeight / readingSize.fontSize,
+              ),
+              cursorColor: AppColors.primaryAction,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+              ),
+            );
+          },
         ),
         const SizedBox(height: 24),
         AnimatedScaleButton(

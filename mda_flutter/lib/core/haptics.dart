@@ -59,6 +59,7 @@ class HapticPatterns {
   static const dialPress = 30;
   static const regenerate = 30;
   static const unlockSuccess = 50;
+  static const success = 50;
   static const lockAll = 50;
   static const openVlogDay = 20;
   static const backupOp = 15;

@@ -183,10 +183,13 @@ class SecurityController {
 
   final LocalAuthentication _localAuth = LocalAuthentication();
 
-  /// Tier flags (SPEC §12: 0 locked → 1 circles → 1.5 profile → 2 notes).
+  /// Tier flags (SPEC §12: 0 locked → 1 circles → 1.5 profile → 2 notes + feed).
   bool isCirclesUnlocked = false;
   bool isProfileUnlocked = false;
   bool isNotesUnlocked = false;
+  bool isFeedUnlocked = false;
+
+  bool _isAuthenticatingBiometrics = false;
 
   /// Bumped on every tier change so reactive widgets can re-evaluate.
   final ValueNotifier<int> tierVersion = ValueNotifier(0);
@@ -203,15 +206,20 @@ class SecurityController {
       if (!available || !canCheck) {
         return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
       }
-      final success = await _localAuth.authenticate(
-        localizedReason: 'Unlock your writing app',
-        biometricOnly: true,
-      );
-      if (success) {
-        _grantAll(lockTimeoutMins: lockTimeoutMins);
-        return true;
+      _isAuthenticatingBiometrics = true;
+      try {
+        final success = await _localAuth.authenticate(
+          localizedReason: 'Unlock your writing app',
+          biometricOnly: true,
+        );
+        if (success) {
+          _grantAll(lockTimeoutMins: lockTimeoutMins);
+          return true;
+        }
+        return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
+      } finally {
+        _isAuthenticatingBiometrics = false;
       }
-      return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
     } catch (_) {
       return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
     }
@@ -227,6 +235,7 @@ class SecurityController {
     isCirclesUnlocked = true;
     isProfileUnlocked = true;
     isNotesUnlocked = true;
+    isFeedUnlocked = true;
     tierVersion.value++;
     _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
   }
@@ -247,6 +256,7 @@ class SecurityController {
     isCirclesUnlocked = false;
     isProfileUnlocked = false;
     isNotesUnlocked = false;
+    isFeedUnlocked = false;
     tierVersion.value++;
     _inactivityTimer?.cancel();
     _inactivityTimer = null;
@@ -275,6 +285,8 @@ class SecurityController {
         _backgroundGraceTimer = null;
         if (isNotesUnlocked) keepAlive(lockTimeoutMins: lockTimeoutMins);
       case AppLifecycleState.inactive:
+        // Do not auto-lock while the OS biometric sheet/dialog is actively displayed
+        if (_isAuthenticatingBiometrics) break;
         // Control center / notification overlay → lock immediately (SPEC).
         lockAll();
       case AppLifecycleState.paused:

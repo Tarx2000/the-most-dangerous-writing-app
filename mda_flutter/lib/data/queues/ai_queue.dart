@@ -363,7 +363,11 @@ class AiQueueManager {
     final jobToProcess = next;
     _isRunning = true;
     _rateLimitTimer?.cancel();
-    _rateLimitTimer = Timer(const Duration(milliseconds: AiTiming.rateLimitDelayMs), () {
+    // Exponential backoff for retries: 1s, 2s (SPEC §9); 500ms rate-limit between standard jobs.
+    final delayMs = jobToProcess.retryCount > 0
+        ? (1000 * (1 << (jobToProcess.retryCount - 1))).clamp(1000, 4000)
+        : AiTiming.rateLimitDelayMs;
+    _rateLimitTimer = Timer(Duration(milliseconds: delayMs), () {
       unawaited(_processNext(jobToProcess));
     });
   }

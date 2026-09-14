@@ -17,7 +17,8 @@ class VaporizingEditableText extends EditableText {
     super.key,
     required super.controller,
     required super.focusNode,
-    required this.idleRatio,
+    this.idleRatio = 0.0,
+    this.idleRatioListenable,
     required this.difficultyLimit,
     required super.style,
     required super.cursorColor,
@@ -31,8 +32,11 @@ class VaporizingEditableText extends EditableText {
     super.onChanged,
   });
 
-  /// 0→1 idle ratio (drives the decay window).
+  /// 0→1 idle ratio (drives the decay window, used when listenable not provided).
   final double idleRatio;
+
+  /// Optional ValueListenable to repaint leaf text span without parent rebuild storms.
+  final ValueNotifier<double>? idleRatioListenable;
 
   final int difficultyLimit;
 
@@ -44,6 +48,33 @@ class _VaporizingEditableTextState extends EditableTextState {
   VaporizingEditableText get _vWidget => widget as VaporizingEditableText;
 
   @override
+  void initState() {
+    super.initState();
+    _vWidget.idleRatioListenable?.addListener(_onIdleTick);
+  }
+
+  @override
+  void didUpdateWidget(covariant EditableText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget is VaporizingEditableText &&
+        oldWidget.idleRatioListenable != _vWidget.idleRatioListenable) {
+      oldWidget.idleRatioListenable?.removeListener(_onIdleTick);
+      _vWidget.idleRatioListenable?.addListener(_onIdleTick);
+    }
+  }
+
+  @override
+  void dispose() {
+    _vWidget.idleRatioListenable?.removeListener(_onIdleTick);
+    super.dispose();
+  }
+
+  void _onIdleTick() {
+    // Only rebuilds this specific EditableText widget on idle tick
+    if (mounted) setState(() {});
+  }
+
+  @override
   TextSpan buildTextSpan() {
     final value = widget.controller.value;
     // Keep the default composing behavior during IME composition.
@@ -51,9 +82,10 @@ class _VaporizingEditableTextState extends EditableTextState {
       return super.buildTextSpan();
     }
     final base = widget.style;
+    final ratio = _vWidget.idleRatioListenable?.value ?? _vWidget.idleRatio;
     return _vaporizedSpan(
       value.text,
-      _vWidget.idleRatio,
+      ratio,
       _vWidget.difficultyLimit,
       base,
     );

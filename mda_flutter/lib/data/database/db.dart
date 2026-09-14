@@ -66,9 +66,8 @@ Future<Database> _openInternal() async {
       // No version → sqflite skips its own version management entirely and
       // leaves `PRAGMA user_version` alone (we run the dual-track migration
       // manually right after opening).
-      onConfigure: (db) async {
-        await db.execute('PRAGMA foreign_keys = ON');
-      },
+      // Note: foreign keys are NOT enforced at connection level, matching
+      // React Native's Expo SQLite configuration and allowing safe multi-table backup restores.
     ),
   );
   _db = db;

@@ -121,3 +121,39 @@ const List<ReadingSize> readingSizes = [
 
 /// Default reading size index.
 const int defaultSizeIndex = 1;
+
+/// Font label list (SPEC §4) — 0..2 system, 3..10 bundled Google fonts.
+const List<String> fontLabels = [
+  'System', 'Serif', 'Casual',
+  'Playfair', 'Mono', 'Hand', 'Lora', 'Zilla', 'Crimson', 'Sans', 'Eagle',
+];
+
+/// Mapping fontIndex → TextStyle family (null = platform default).
+String? fontFamilyForIndex(int index) {
+  switch (index) {
+    case 0:
+      return null;
+    case 1:
+      return 'serif';
+    case 2:
+      return 'casual';
+    case 3:
+      return 'PlayfairDisplay';
+    case 4:
+      return 'SpaceMono';
+    case 5:
+      return 'Caveat';
+    case 6:
+      return 'Lora';
+    case 7:
+      return 'ZillaSlab';
+    case 8:
+      return 'CrimsonPro';
+    case 9:
+      return 'DMSans';
+    case 10:
+      return 'EagleLake';
+    default:
+      return null;
+  }
+}

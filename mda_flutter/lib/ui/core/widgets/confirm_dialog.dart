@@ -40,7 +40,7 @@ class _ConfirmDialogState extends State<ConfirmDialog>
   );
   late final Animation<double> _scale = CurvedAnimation(
     parent: _controller,
-    curve: Curves.easeOutBack,
+    curve: Curves.easeOutCubic,
   );
   late final Animation<double> _opacity = CurvedAnimation(
     parent: _controller,

@@ -63,10 +63,12 @@ class WritingScreen extends ConsumerStatefulWidget {
   ConsumerState<WritingScreen> createState() => _WritingScreenState();
 }
 
-class _WritingScreenState extends ConsumerState<WritingScreen> {
+class _WritingScreenState extends ConsumerState<WritingScreen>
+    with SingleTickerProviderStateMixin {
   late final SessionEngine _engine = SessionEngine(
     callbacks: SessionCallbacks(
       onDeath: _onDeath,
+      onTextWiped: _onTextWiped,
       onSessionEnd: () {},
       onHapticLevel: _onHapticLevel,
     ),
@@ -74,6 +76,15 @@ class _WritingScreenState extends ConsumerState<WritingScreen> {
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+
+  late final AnimationController _flyAwayController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+  late final Animation<double> _flyAwayAnim = CurvedAnimation(
+    parent: _flyAwayController,
+    curve: Curves.easeInCubic,
+  );
 
   /// Test hook: lets widget tests drive the session engine directly.
   @visibleForTesting
@@ -104,7 +115,15 @@ class _WritingScreenState extends ConsumerState<WritingScreen> {
     _engine.dispose();
     _controller.dispose();
     _focusNode.dispose();
+    _flyAwayController.dispose();
     super.dispose();
+  }
+
+  void _onTextWiped() {
+    // 200 ms after death: destroy written text (core premise of the app).
+    _controller.clear();
+    _currentText = '';
+    if (mounted) setState(() {});
   }
 
   void _onHapticLevel(HapticLevel level) {
@@ -173,8 +192,8 @@ class _WritingScreenState extends ConsumerState<WritingScreen> {
 
   /// Tweet fly-away: card shrinks (GPU scale) + throws right, then pops.
   Future<void> _animateTweetFlyAway() async {
-    // Implemented as a lightweight overlay animaton on the whole body.
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    vibrate(HapticPatterns.success);
+    await _flyAwayController.forward();
   }
 
   void _exitToMenu() {
@@ -189,138 +208,160 @@ class _WritingScreenState extends ConsumerState<WritingScreen> {
     final showSave = _engine.canSave || _engine.hasLost;
     final dead = _engine.phase.value == SessionPhase.death;
     final diffLimit = _engine.difficultyLimitMsValue;
-    final fontSize = 18.0;
-    final lineHeight = 28.0;
+
+    final prefs = ref.watch(userPreferencesProvider);
+    final readingSize = readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
+    final fontSize = readingSize.fontSize;
+    final lineHeight = readingSize.lineHeight;
+    final fontFamily = fontFamilyForIndex(prefs.fontIndex);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false, // keyboard "pan" parity
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              // Header: label + countdown + word count
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _isTweetMode
-                          ? 'NEW TWEET'
-                          : _isQuickNoteMode
-                              ? 'QUICK NOTE'
-                              : widget.params.mode == 'circles'
-                                  ? 'CIRCLE WRITE'
-                                  : 'FREE WRITE',
-                      style: const TextStyle(
-                        color: AppColors.primaryAction,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    Text(
-                      _isQuickNoteMode
-                          ? '$wordCount words'
-                          : '${_formatTime(timeLeft)} · $wordCount words',
-                      style: TextStyle(
-                        color: _isTweetMode && wordCount > tweetThreshold - 10
-                            ? AppColors.primaryAction
-                            : AppColors.textDim,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+      body: AnimatedBuilder(
+        animation: _flyAwayAnim,
+        builder: (context, child) {
+          final progress = _flyAwayAnim.value;
+          final screenWidth = MediaQuery.sizeOf(context).width;
+          return Transform.translate(
+            offset: Offset(progress * (screenWidth * 1.1), -progress * 40),
+            child: Transform.scale(
+              scale: 1.0 - (progress * 0.2),
+              child: Opacity(
+                opacity: (1.0 - progress).clamp(0.0, 1.0),
+                child: child,
               ),
-              const Divider(color: AppColors.glassBorderSubtle, height: 1),
-              // Text area
-              Expanded(
-                child: ValueListenableBuilder<double>(
-                  valueListenable: _engine.idleRatio,
-                  builder: (context, idleRatio, _) {
-                    return Stack(
-                      children: [
-                        // Hint (only while empty) — matches placeholder styling.
-                        if (_currentText.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.fromLTRB(20, 22, 20, 0),
-                            child: Text(
-                              'Keep typing...',
-                              style: TextStyle(color: AppColors.placeholder, fontSize: 18),
-                            ),
-                          ),
-                        // EditableText: buildTextSpan enables the inline
-                        // vaporize effect (last 8 words' alpha decay).
+            ),
+          );
+        },
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                // Header: label + countdown + word count
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _isTweetMode
+                            ? 'NEW TWEET'
+                            : _isQuickNoteMode
+                                ? 'QUICK NOTE'
+                                : widget.params.mode == 'circles'
+                                    ? 'CIRCLE WRITE'
+                                    : 'FREE WRITE',
+                        style: const TextStyle(
+                          color: AppColors.primaryAction,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      Text(
+                        _isQuickNoteMode
+                            ? '$wordCount words'
+                            : '${_formatTime(timeLeft)} · $wordCount words',
+                        style: TextStyle(
+                          color: _isTweetMode && wordCount > tweetThreshold - 10
+                              ? AppColors.primaryAction
+                              : AppColors.textDim,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(color: AppColors.glassBorderSubtle, height: 1),
+                // Text area — idleRatioListenable updates text span internally without full-screen rebuilds
+                Expanded(
+                  child: Stack(
+                    children: [
+                      // Hint (only while empty) — matches placeholder styling.
+                      if (_currentText.isEmpty)
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 200),
-                          child: VaporizingEditableText(
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            idleRatio: idleRatio,
-                            difficultyLimit: diffLimit,
+                          padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+                          child: Text(
+                            'Keep typing...',
                             style: TextStyle(
-                              color: AppColors.textInput,
+                              color: AppColors.placeholder,
+                              fontFamily: fontFamily,
                               fontSize: fontSize,
-                              height: lineHeight / fontSize,
                             ),
-                            cursorColor: AppColors.primaryAction,
-                            backgroundCursorColor: AppColors.textMuted,
-                            maxLines: null,
-                            expands: true,
-                            keyboardType: TextInputType.multiline,
-                            autocorrect: true,
-                            enableSuggestions: true,
-                            selectionColor: AppColors.dangerTint,
-                            onChanged: _handleTextChange,
                           ),
                         ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              // Save action (visible when allowed)
-              if (showSave && !dead)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: AnimatedScaleButton(
-                    onPress: _saving ? null : _handleSave,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryAction,
-                        borderRadius: BorderRadius.circular(30),
+                      // EditableText: buildTextSpan enables the inline
+                      // vaporize effect (last 8 words' alpha decay).
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 200),
+                        child: VaporizingEditableText(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          idleRatioListenable: _engine.idleRatio,
+                          difficultyLimit: diffLimit,
+                          style: TextStyle(
+                            color: AppColors.textInput,
+                            fontFamily: fontFamily,
+                            fontSize: fontSize,
+                            height: lineHeight / fontSize,
+                          ),
+                          cursorColor: AppColors.primaryAction,
+                          backgroundCursorColor: AppColors.textMuted,
+                          maxLines: null,
+                          expands: true,
+                          keyboardType: TextInputType.multiline,
+                          autocorrect: true,
+                          enableSuggestions: true,
+                          selectionColor: AppColors.dangerTint,
+                          onChanged: _handleTextChange,
+                        ),
                       ),
-                      child: Text(
-                        _engine.hasLost ? 'SAVE WHAT\'S LEFT' : 'SAVE ENTRY',
-                        style: const TextStyle(
-                          color: AppColors.primaryActionText,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
+                    ],
+                  ),
+                ),
+                // Save action (visible when allowed)
+                if (showSave && !dead)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: AnimatedScaleButton(
+                      onPress: _saving ? null : _handleSave,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryAction,
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: Text(
+                          _engine.hasLost ? 'SAVE WHAT\'S LEFT' : 'SAVE ENTRY',
+                          style: const TextStyle(
+                            color: AppColors.primaryActionText,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-          // Danger ambience (vignette/fog/heartbeat — own layer)
-          DangerOverlay(engine: _engine),
-          // Death overlay
-          DeathOverlay(
-            visible: dead,
-            subtitle: 'You stopped writing for too long.',
-            continueLabel: "I don't care, let me write",
-            onReturnToMenu: _exitToMenu,
-            onContinue: () {
-              _engine.resumeWritingFreely();
-              setState(() {});
-            },
-          ),
-        ],
+              ],
+            ),
+            // Danger ambience (vignette/fog/heartbeat — own layer)
+            DangerOverlay(engine: _engine),
+            // Death overlay
+            DeathOverlay(
+              visible: dead,
+              subtitle: 'You stopped writing for too long.',
+              continueLabel: "I don't care, let me write",
+              onReturnToMenu: _exitToMenu,
+              onSaveWhatsLeft: _currentText.trim().isNotEmpty ? _handleSave : null,
+              onContinue: () {
+                _engine.resumeWritingFreely();
+                setState(() {});
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

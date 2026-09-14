@@ -51,6 +51,12 @@ class BaseModalState extends State<BaseModal>
     duration: const Duration(milliseconds: 300),
   );
 
+  late final AnimationController _snapController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  );
+  Animation<double>? _snapAnimation;
+
   bool _closing = false;
   double _dragDy = 0;
 
@@ -65,6 +71,7 @@ class BaseModalState extends State<BaseModal>
   void dispose() {
     _controller.dispose();
     _scrimController.dispose();
+    _snapController.dispose();
     super.dispose();
   }
 
@@ -88,7 +95,15 @@ class BaseModalState extends State<BaseModal>
     if (_dragDy > 80 || velocity > 600) {
       dismiss();
     } else {
-      setState(() => _dragDy = 0);
+      final startDy = _dragDy;
+      _snapAnimation = Tween<double>(begin: startDy, end: 0.0).animate(
+        CurvedAnimation(parent: _snapController, curve: Curves.easeOutCubic),
+      )..addListener(() {
+          if (mounted) {
+            setState(() => _dragDy = _snapAnimation!.value);
+          }
+        });
+      _snapController.forward(from: 0.0);
     }
   }
 
@@ -98,8 +113,13 @@ class BaseModalState extends State<BaseModal>
     final sheetHeight = screenHeight * widget.heightFactor;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Material(
-      type: MaterialType.transparency,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) dismiss();
+      },
+      child: Material(
+        type: MaterialType.transparency,
       child: DefaultTextStyle(
         style: const TextStyle(
           color: AppColors.textPrimary,
@@ -195,8 +215,9 @@ class BaseModalState extends State<BaseModal>
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 /// Helper to show a BaseModal over the current route.

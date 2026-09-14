@@ -22,6 +22,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:collection/collection.dart';
@@ -459,10 +460,11 @@ class BackupService {
   }) async {
     final warnings = <String>[];
     Map<String, Object>? snapshots;
+    InputFileStream? input;
 
     try {
       onProgress?.call(0.1);
-      final input = InputFileStream(zipPath);
+      input = InputFileStream(zipPath);
       final archive = ZipDecoder().decodeStream(input, verify: false);
 
       final metadataFile =
@@ -475,8 +477,9 @@ class BackupService {
         );
       }
 
+      final metadataBytes = _readArchiveFileBytes(metadataFile);
       final rawJson =
-          jsonDecode(utf8.decode(metadataFile.content as List<int>)) as Map<String, dynamic>;
+          jsonDecode(utf8.decode(metadataBytes)) as Map<String, dynamic>;
 
       // 1. Version Normalization (Supports v2 and v1).
       final version = rawJson['backupVersion'] as num? ?? 1;
@@ -621,12 +624,18 @@ class BackupService {
         error: 'Import failed: $e',
         warnings: warnings,
       );
+    } finally {
+      input?.close();
     }
   }
 
   // ---------------------------------------------------------------------------
   // Internal Helpers
   // ---------------------------------------------------------------------------
+
+  static Uint8List _readArchiveFileBytes(ArchiveFile file) {
+    return file.readBytes() ?? Uint8List(0);
+  }
 
   String _uniqueBasename(String vlogId, String name, Set<String> used) {
     var candidate = name;
@@ -650,8 +659,9 @@ class BackupService {
   }
 
   String _verifyZip(String zipPath, Map<String, dynamic> metadata) {
+    InputFileStream? input;
     try {
-      final input = InputFileStream(zipPath);
+      input = InputFileStream(zipPath);
       final archive = ZipDecoder().decodeStream(input, verify: false);
       final entries = <String, int>{
         for (final file in archive.files)
@@ -682,6 +692,8 @@ class BackupService {
       return 'ok';
     } catch (_) {
       return 'failed';
+    } finally {
+      input?.close();
     }
   }
 
@@ -739,6 +751,10 @@ class BackupService {
   Future<void> _restoreSqliteWithColumnFiltering(Map<String, dynamic> sqlite) async {
     final db = await getDb();
     final currentUserTables = await getCurrentUserTables();
+
+    // Disable foreign keys during restore so tables and records can be cleared
+    // and restored regardless of relational dependency order (matching RN Expo SQLite).
+    await db.execute('PRAGMA foreign_keys = OFF');
 
     await db.transaction((txn) async {
       // 1. Wipe all existing user tables (full-restore semantics).
@@ -867,6 +883,15 @@ class BackupService {
         await sp.setDouble(entry.key, val);
       } else if (val is List<String>) {
         await sp.setStringList(entry.key, val);
+      } else if (val is Map) {
+        // Preserves JSON-encoded preferences such as FEATURE_FLAGS
+        await sp.setString(entry.key, jsonEncode(val));
+      } else if (val is List) {
+        if (val.every((item) => item is String)) {
+          await sp.setStringList(entry.key, val.cast<String>());
+        } else {
+          await sp.setString(entry.key, jsonEncode(val));
+        }
       }
     }
 

@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
@@ -143,6 +144,7 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                             note.text,
                             style: TextStyle(
                               color: AppColors.textInput,
+                              fontFamily: fontFamilyForIndex(prefs.fontIndex),
                               fontSize: prefs.sizeIndex >= 0 && prefs.sizeIndex < 4
                                   ? const [14.0, 18.0, 24.0, 32.0][prefs.sizeIndex]
                                   : 18,

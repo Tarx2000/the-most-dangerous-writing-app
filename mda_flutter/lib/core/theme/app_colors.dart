@@ -106,6 +106,36 @@ abstract final class AppColors {
   static const border = Color(0x1AFFFFFF); // rgba(255,255,255,0.1)
   static const safeBorderColor = Color(0xFF323232); // rgba(50,50,50,1)
 
+  // Video / clip accents
+  static const videoAccentTint = Color(0x1AFF6B35); // rgba(255, 107, 53, 0.1)
+  static const videoAccentBorder = Color(0x26FF6B35); // rgba(255, 107, 53, 0.15)
+  static const videoFlashBackground = Color(0x66000000); // rgba(0, 0, 0, 0.4)
+
+  // Gold accents (dev tools, calendar highlights, badges)
+  static const goldBackground = Color(0x0DFFD700); // rgba(255, 215, 0, 0.05)
+  static const goldBorder = Color(0x4DFFD700); // rgba(255, 215, 0, 0.3)
+  static const goldTint = Color(0x26FFD700); // rgba(255, 215, 0, 0.15)
+  static const goldBorderLight = Color(0x14FFD700); // rgba(255, 215, 0, 0.08)
+  static const goldSubtle = Color(0x14FFD700); // rgba(255, 215, 0, 0.08)
+  static const goldFill = Color(0x26FFD700); // rgba(255, 215, 0, 0.15)
+  static const goldFillMedium = Color(0x33FFD700); // rgba(255, 215, 0, 0.2)
+
+  // Success / green accents
+  static const success = Colors.white;
+  static const successFill = Color(0x1A4ADE80); // rgba(74, 222, 128, 0.1)
+  static const successBorder = Color(0x264ADE80); // rgba(74, 222, 128, 0.15)
+  static const successTint = Color(0x1A4ADE80); // rgba(74, 222, 128, 0.1)
+
+  // Direct alignment score tier constants
+  static const alignmentStruggling = Color(0xFFFF4D4D);
+  static const alignmentDrifting = Color(0xFFFF9933);
+  static const alignmentOkay = Color(0xFFFFCC00);
+  static const alignmentGood = Color(0xFFA2FF66);
+  static const alignmentGreat = Color(0xFF66FFCC);
+  static const alignmentAligned = Color(0xFF00CCFF);
+  static const alignmentGlowStruggling = Color(0x4DFF4D4D);
+  static const alignmentGlowDrifting = Color(0x4DFF9933);
+
   // Blood vignette (danger ambience)
   static const bloodDark = Color(0xFF4A0000);
   static const bloodMedium = Color(0xFF7A0000);

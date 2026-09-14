@@ -5,9 +5,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/models/saved_note.dart';
+import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 
 class LibraryNotesList extends StatelessWidget {
@@ -234,15 +237,22 @@ class _NoteCardItem extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
               ],
-              Text(
-                note.text,
-                maxLines: note.aiTitle != null ? 1 : 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
+              Consumer(
+                builder: (context, ref, _) {
+                  final prefs = ref.watch(userPreferencesProvider);
+                  final fontFamily = fontFamilyForIndex(prefs.fontIndex);
+                  return Text(
+                    note.text,
+                    maxLines: note.aiTitle != null ? 1 : 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontFamily: fontFamily,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  );
+                },
               ),
             ],
           ),

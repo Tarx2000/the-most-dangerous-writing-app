@@ -4,9 +4,13 @@
 /// AI panel · Developer tools.
 library;
 
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/config/app_config.dart';
@@ -23,41 +27,7 @@ import 'ai_settings_panel.dart';
 import 'compression_status_bar.dart';
 import 'developer_tools_panel.dart';
 
-/// Font label list (SPEC §4) — 0..2 system, 3..10 bundled Google fonts.
-const List<String> _fontLabels = [
-  'System', 'Serif', 'Casual',
-  'Playfair', 'Mono', 'Hand', 'Lora', 'Zilla', 'Crimson', 'Sans', 'Eagle',
-];
-
-/// Mapping fontIndex → TextStyle family (null = platform default).
-String? fontFamilyForIndex(int index) {
-  switch (index) {
-    case 0:
-      return null;
-    case 1:
-      return 'serif';
-    case 2:
-      return 'casual';
-    case 3:
-      return 'PlayfairDisplay';
-    case 4:
-      return 'SpaceMono';
-    case 5:
-      return 'Caveat';
-    case 6:
-      return 'Lora';
-    case 7:
-      return 'ZillaSlab';
-    case 8:
-      return 'CrimsonPro';
-    case 9:
-      return 'DMSans';
-    case 10:
-      return 'EagleLake';
-    default:
-      return null;
-  }
-}
+const List<String> _fontLabels = fontLabels;
 
 class SettingsModal extends ConsumerStatefulWidget {
   const SettingsModal({super.key, required this.onClose});
@@ -118,20 +88,57 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       _backupBusy = true;
       _backupStatus = 'Wiping and importing backup...';
     });
-    final result = await ref
-        .read(appDataProvider.notifier)
-        .importBackupZip(file.path);
-    if (!mounted) return;
-    setState(() {
-      _backupBusy = false;
-      _backupStatus = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(result.success
-          ? 'Backup restored successfully.'
-          : (result.error ?? 'Import failed')),
-      backgroundColor: result.success ? AppColors.green : AppColors.primaryAction,
-    ));
+
+    File? tempZipFile;
+    try {
+      String path = file.path;
+      // On Android, openFile returns a content:// URI from the Storage Access Framework (SAF).
+      // Standard POSIX file streams cannot open content:// paths directly.
+      // Copy the picked file bytes to a local temporary cache file first (matching RN copyToCacheDirectory).
+      if (path.startsWith('content://') || !path.startsWith('/')) {
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = p.join(
+          tempDir.path,
+          'mda_backup_import_${DateTime.now().millisecondsSinceEpoch}.zip',
+        );
+        final bytes = await file.readAsBytes();
+        tempZipFile = File(tempPath);
+        await tempZipFile.writeAsBytes(bytes);
+        path = tempPath;
+      }
+
+      final result = await ref
+          .read(appDataProvider.notifier)
+          .importBackupZip(path);
+
+      if (!mounted) return;
+      setState(() {
+        _backupBusy = false;
+        _backupStatus = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result.success
+            ? 'Backup restored successfully.'
+            : (result.error ?? 'Import failed')),
+        backgroundColor: result.success ? AppColors.green : AppColors.primaryAction,
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _backupBusy = false;
+        _backupStatus = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Import failed: $e'),
+        backgroundColor: AppColors.primaryAction,
+      ));
+    } finally {
+      if (tempZipFile != null && await tempZipFile.exists()) {
+        try {
+          await tempZipFile.delete();
+        } catch (_) {}
+      }
+    }
   }
 
   static String _scopeLabel(String scope) {
@@ -216,13 +223,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                 const SizedBox(height: 12),
                 SettingsCard(
                   children: [
-                    SettingsRow(
-                      icon: 'pinOutline',
-                      title: 'Force PIN Auth',
-                      subtitle: 'Prefer the PIN pad over biometrics',
-                      value: '',
-                      onTap: null,
-                    ),
                     _PrefToggleRow(
                       title: 'Force PIN Auth',
                       subtitle: 'Prefer the PIN pad over biometrics',

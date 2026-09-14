@@ -216,9 +216,13 @@ class _HomeShellState extends ConsumerState<HomeShell>
           ),
         ),
 
-        // ---- Feed-open gesture (start page only; below the nav in z-order) -
-        if (!_feedOpen)
-          Positioned.fill(
+        // ---- Feed-open gesture (start page only; bottom strip above the nav) -
+        if (!_feedOpen && (_pager.hasClients ? (_pager.page ?? 0).round() == 0 : true))
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: bottomInset + 60,
+            height: 120,
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onVerticalDragStart: _onOpenDragStart,
