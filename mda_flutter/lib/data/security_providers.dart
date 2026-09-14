@@ -8,18 +8,14 @@ import '../domain/use_cases/security_controller.dart';
 import 'providers.dart';
 
 /// Singleton security controller (PIN + tiers + auto-lock).
-final securityControllerProvider = Provider<SecurityController>((ref) {
-  final controller = SecurityController(storage: ref.watch(secureStorageServiceProvider));
-  ref.onDispose(controller.dispose);
-  return controller;
+final securityControllerProvider =
+    ChangeNotifierProvider<SecurityController>((ref) {
+  return SecurityController(storage: ref.watch(secureStorageServiceProvider));
 });
 
 /// True when the notes tier is unlocked (everything visible).
 final isNotesUnlockedProvider = Provider<bool>((ref) {
   final controller = ref.watch(securityControllerProvider);
-  // Listen to changes: the provider rebuilds when the appData changes;
-  // tier flags are read live in widgets via the controller getters.
-  ref.watch(appDataProvider.select((d) => d.isLoaded));
   return controller.isNotesUnlocked;
 });
 

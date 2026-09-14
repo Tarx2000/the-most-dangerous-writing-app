@@ -91,10 +91,36 @@ class _DangerPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = math.sqrt(size.width * size.width + size.height * size.height) / 2;
 
-    // -- Blood vignette (fades in from 0.15, seeps inward 1.12→1.0) ---------
+    // 1. Dark fog (obscures text underneath above 0.50) — rendered UNDER vignette per RN parity
+    if (ratio > _fogStart) {
+      final fogOpacity = ((ratio - _fogStart) / (1 - _fogStart)) * 0.85;
+      canvas.drawRect(
+        Rect.fromCenter(center: center, width: size.width, height: size.height),
+        Paint()..color = Colors.black.withValues(alpha: fogOpacity),
+      );
+    }
+
+    // Compute heartbeat contraction factor (6% physical contraction above 0.75)
+    var heartbeatContraction = 0.0;
+    if (ratio >= _heartbeatStart && heartbeat > 0) {
+      // Double-thump envelope: first beat ends ~0.15, second ~0.27 of the loop.
+      final t = heartbeat;
+      final double thump;
+      if (t < 0.15) {
+        thump = t / 0.15;
+      } else if (t < 0.27) {
+        thump = (t - 0.15) / 0.12;
+      } else {
+        thump = 0;
+      }
+      heartbeatContraction = thump.clamp(0.0, 1.0) * 0.06;
+    }
+
+    // 2. Blood vignette (fades in from 0.15, seeps inward 1.12→1.0, contracts with heartbeat)
     if (ratio > _vignetteFadeStart) {
       final vignetteOpacity = ((ratio - _vignetteFadeStart) / (1 - _vignetteFadeStart)) * 0.95;
-      final scale = 1.12 - (ratio.clamp(0.0, 1.0)) * 0.12;
+      final baseScale = 1.12 - (ratio.clamp(0.0, 1.0)) * 0.12;
+      final scale = (baseScale - heartbeatContraction).clamp(0.8, 1.2);
       final rect = Rect.fromCircle(center: center, radius: maxRadius * scale);
       final gradient = RadialGradient(
         colors: [
@@ -114,38 +140,18 @@ class _DangerPainter extends CustomPainter {
       );
     }
 
-    // -- Dark fog (obscures text above 0.50) --------------------------------
-    if (ratio > _fogStart) {
-      final fogOpacity = ((ratio - _fogStart) / (1 - _fogStart)) * 0.85;
-      canvas.drawRect(
-        Rect.fromCenter(center: center, width: size.width, height: size.height),
-        Paint()..color = Colors.black.withValues(alpha: fogOpacity),
-      );
-    }
-
-    // -- Heartbeat pulse (6% contraction above 0.75) ------------------------
-    if (ratio >= _heartbeatStart && heartbeat > 0) {
-      // Double-thump envelope: first beat ends ~0.15, second ~0.27 of the loop.
-      final t = heartbeat;
-      final double thump;
-      if (t < 0.15) {
-        thump = t / 0.15;
-      } else if (t < 0.27) {
-        thump = (t - 0.15) / 0.12;
-      } else {
-        thump = 0;
-      }
-      final pulseStrength = thump.clamp(0.0, 1.0) * 0.06;
+    // 3. Heartbeat center glow pulse
+    if (heartbeatContraction > 0) {
       final rect = Rect.fromCircle(
         center: center,
-        radius: maxRadius * (1 - pulseStrength),
+        radius: maxRadius * (1 - heartbeatContraction),
       );
       canvas.drawRect(
         Rect.fromCenter(center: center, width: size.width, height: size.height),
         Paint()
           ..shader = RadialGradient(
             colors: [
-              AppColors.bloodGlow.withValues(alpha: 0.5 * pulseStrength),
+              AppColors.bloodGlow.withValues(alpha: 0.5 * (heartbeatContraction / 0.06)),
               Colors.transparent,
             ],
             stops: const [0.0, 0.6],

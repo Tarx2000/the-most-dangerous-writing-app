@@ -162,8 +162,8 @@ class StorageNotifier extends Notifier<AppData> {
   @override
   AppData build() => const AppData();
 
-  Future<void> loadAll() async {
-    if (state.isLoaded) return;
+  Future<void> loadAll({bool force = false}) async {
+    if (state.isLoaded && !force) return;
 
     // Phase 1 — critical domains (parallel, individually guarded).
     final results = await Future.wait([
@@ -482,7 +482,7 @@ class StorageNotifier extends Notifier<AppData> {
             onProgress: onProgress,
           );
       if (result.success) {
-        await loadAll();
+        await loadAll(force: true);
       }
       return result;
     } finally {

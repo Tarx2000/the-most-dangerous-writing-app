@@ -132,7 +132,12 @@ class _StartScreenState extends ConsumerState<StartScreen> {
         builder: (context, constraints) {
           // Scroll-safe column: fills the viewport when there is room,
           // scrolls when the window is short (responsive-layout rule).
+          // When height is sufficient, disable internal scrolling so parent
+          // upward drag can reveal the feed layer without conflict.
           return SingleChildScrollView(
+            physics: constraints.maxHeight >= 580
+                ? const NeverScrollableScrollPhysics()
+                : const ClampingScrollPhysics(),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: IntrinsicHeight(
@@ -484,34 +489,42 @@ class _PersonPickerPill extends StatelessWidget {
   }
 }
 
-/// VisionLockButton — lock ↔ Masteries morphing header button (SPEC §15).
-/// Locked: lock icon + "Locked" (dangerIconOverlay); unlocked: gold star +
-/// "Masteries". Tap unlocks (biometrics → PIN) and opens the dashboard.
+/// VisionLockButton — lock ↔ Masteries morphing header button (SPEC §15, RN parity).
+/// Locked: lock icon + "Locked" (danger red). Tap triggers unlock in place.
+/// Unlocked: pillar icon + "Masteries" (gold). Short tap navigates to /masteries;
+/// long press locks all tiers immediately.
 class _VisionLockButton extends ConsumerWidget {
   const _VisionLockButton();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Re-evaluate on every tier change.
-    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
+    // Re-evaluate on every tier change reactively.
+    final unlocked = ref.watch(isNotesUnlockedProvider);
     final security = ref.read(securityControllerProvider);
     final prefs = ref.read(preferencesProvider);
-    final unlocked = security.isNotesUnlocked;
 
     return AnimatedScaleButton(
       onPress: () async {
         if (unlocked) {
+          // Unlocked: short tap navigates to Masteries (SPEC §12 & RN parity)
+          vibrate(HapticPatterns.tick);
+          context.push('/masteries');
+        } else {
+          // Locked: short tap unlocks in place
+          final ok = await security.unlockNotes(
+            preferPinAuth: prefs.preferPinAuth,
+            useBiometrics: prefs.useBiometrics,
+          );
+          if (ok && context.mounted) {
+            vibrate(HapticPatterns.unlockSuccess);
+          }
+        }
+      },
+      onLongPress: () {
+        if (unlocked) {
+          // Unlocked: long press locks all tiers (RN parity)
           vibrate(HapticPatterns.lockAll);
           security.lockAll();
-          return;
-        }
-        final ok = await security.unlockNotes(
-          preferPinAuth: prefs.preferPinAuth,
-          useBiometrics: prefs.useBiometrics,
-        );
-        if (ok && context.mounted) {
-          vibrate(HapticPatterns.unlockSuccess);
-          context.push('/masteries');
         }
       },
       child: AnimatedContainer(
@@ -530,7 +543,7 @@ class _VisionLockButton extends ConsumerWidget {
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 250),
               child: Icon(
-                unlocked ? Mdi.get('starOutline') : Mdi.get('lockOutline'),
+                unlocked ? Mdi.get('pillar') : Mdi.get('lockOutline'),
                 key: ValueKey(unlocked),
                 color: unlocked ? AppColors.gold : AppColors.dangerIconOverlay,
                 size: 18,

@@ -144,7 +144,7 @@ Future<Set<String>> getTableColumns(String table) async {
 /// Returns all user tables currently in the database.
 Future<List<String>> getCurrentUserTables() async {
   final rows = await getAll(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';",
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'android_metadata';",
   );
   return rows.map((r) => r['name'] as String).toList();
 }

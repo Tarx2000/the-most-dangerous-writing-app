@@ -23,7 +23,7 @@ class PinRequest {
   final String? promptMessage;
 }
 
-class SecurityController {
+class SecurityController extends ChangeNotifier {
   // ignore: prefer_initializing_formals — named param kept public-shaped.
   SecurityController({required SecureStorageService storage}) : _storage = storage;
 
@@ -77,6 +77,7 @@ class SecurityController {
     isVisible.value = true;
     promptText.value = _promptOverride ??
         (hasPin ? 'Enter your PIN' : 'Create a 4-Digit PIN');
+    notifyListeners();
   }
 
   Future<bool> _isLockedOut() async {
@@ -92,6 +93,7 @@ class SecurityController {
 
   void _startLockoutTimer() {
     isLockedOut.value = true;
+    notifyListeners();
     _lockoutTimer?.cancel();
     _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       final until = await _storage.readLockoutUntil();
@@ -102,6 +104,7 @@ class SecurityController {
         lockoutRemainingSeconds.value = 0;
         await _storage.writeLockoutUntil(0);
         await _storage.writeAttemptCount(0);
+        notifyListeners();
         unawaited(_open());
       } else {
         lockoutRemainingSeconds.value = remaining;
@@ -168,6 +171,7 @@ class SecurityController {
     isVisible.value = false;
     mode.value = null;
     promptText.value = null;
+    notifyListeners();
     final completer = _pendingCompleter;
     _pendingCompleter = null;
     if (completer != null && !completer.isCompleted) {
@@ -238,18 +242,21 @@ class SecurityController {
     isFeedUnlocked = true;
     tierVersion.value++;
     _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
+    notifyListeners();
   }
 
   /// Tiers (SPEC §12): notes implies everything; profile implies circles.
   void unlockCircles() {
     isCirclesUnlocked = true;
     tierVersion.value++;
+    notifyListeners();
   }
 
   void unlockProfile() {
     isCirclesUnlocked = true;
     isProfileUnlocked = true;
     tierVersion.value++;
+    notifyListeners();
   }
 
   void lockAll() {
@@ -262,6 +269,7 @@ class SecurityController {
     _inactivityTimer = null;
     _backgroundGraceTimer?.cancel();
     _backgroundGraceTimer = null;
+    notifyListeners();
   }
 
   /// Resets the inactivity timer (activity events while unlocked).
@@ -305,6 +313,7 @@ class SecurityController {
     }
   }
 
+  @override
   void dispose() {
     _lockoutTimer?.cancel();
     _inactivityTimer?.cancel();
@@ -316,5 +325,6 @@ class SecurityController {
     lockoutRemainingSeconds.dispose();
     shakeKey.dispose();
     tierVersion.dispose();
+    super.dispose();
   }
 }

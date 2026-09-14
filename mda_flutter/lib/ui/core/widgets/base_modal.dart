@@ -202,7 +202,7 @@ class BaseModalState extends State<BaseModal>
                         ),
                         Expanded(
                           child: Padding(
-                            padding: EdgeInsets.only(bottom: bottomInset + 20),
+                            padding: EdgeInsets.fromLTRB(20, 8, 20, bottomInset + 20),
                             child: widget.child,
                           ),
                         ),

@@ -180,7 +180,13 @@ class _HomeShellState extends ConsumerState<HomeShell>
                 // NOTE: swiping the pager NEVER changes the nav pill — the
                 // pill reflects the session mode only.
                 children: [
-                  StartScreen(mode: _modeForTab),
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onVerticalDragStart: _onOpenDragStart,
+                    onVerticalDragUpdate: _onOpenDragUpdate,
+                    onVerticalDragEnd: _onOpenDragEnd,
+                    child: StartScreen(mode: _modeForTab),
+                  ),
                   const LibraryScreen(),
                 ],
               ),
@@ -215,21 +221,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
             ),
           ),
         ),
-
-        // ---- Feed-open gesture (start page only; bottom strip above the nav) -
-        if (!_feedOpen && (_pager.hasClients ? (_pager.page ?? 0).round() == 0 : true))
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: bottomInset + 60,
-            height: 120,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onVerticalDragStart: _onOpenDragStart,
-              onVerticalDragUpdate: _onOpenDragUpdate,
-              onVerticalDragEnd: _onOpenDragEnd,
-            ),
-          ),
 
         // ---- Layer C: LiquidGlassNav --------------------------------------
         AnimatedBuilder(

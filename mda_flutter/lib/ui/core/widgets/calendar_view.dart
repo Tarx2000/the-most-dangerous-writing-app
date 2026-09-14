@@ -115,10 +115,11 @@ class _CalendarViewState extends State<CalendarView> {
         // Weekday headers + grid
         LayoutBuilder(
           builder: (context, constraints) {
-            final daySize = (constraints.maxWidth - 80) / 7;
+            final daySize = (constraints.maxWidth / 7).floorToDouble();
             return Column(
               children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     for (final day in _weekDays)
                       SizedBox(
@@ -260,6 +261,13 @@ class _MonthGrid extends StatelessWidget {
       ));
     }
 
-    return Wrap(spacing: 0, runSpacing: 2, children: cells);
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.start,
+        spacing: 0,
+        runSpacing: 2,
+        children: cells,
+      ),
+    );
   }
 }

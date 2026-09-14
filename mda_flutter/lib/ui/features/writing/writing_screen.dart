@@ -64,7 +64,7 @@ class WritingScreen extends ConsumerStatefulWidget {
 }
 
 class _WritingScreenState extends ConsumerState<WritingScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final SessionEngine _engine = SessionEngine(
     callbacks: SessionCallbacks(
       onDeath: _onDeath,
@@ -85,6 +85,17 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     parent: _flyAwayController,
     curve: Curves.easeInCubic,
   );
+
+  late final AnimationController _shakeController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  );
+  late final Animation<double> _shakeAnim = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 0.0, end: 15.0), weight: 25),
+    TweenSequenceItem(tween: Tween(begin: 15.0, end: -15.0), weight: 25),
+    TweenSequenceItem(tween: Tween(begin: -15.0, end: 15.0), weight: 25),
+    TweenSequenceItem(tween: Tween(begin: 15.0, end: 0.0), weight: 25),
+  ]).animate(_shakeController);
 
   /// Test hook: lets widget tests drive the session engine directly.
   @visibleForTesting
@@ -116,6 +127,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     _controller.dispose();
     _focusNode.dispose();
     _flyAwayController.dispose();
+    _shakeController.dispose();
     super.dispose();
   }
 
@@ -142,6 +154,9 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
   }
 
   void _onDeath() {
+    // RN parity: violent horizontal trauma shake and heavy haptic shock
+    vibrate([0, 200, 100, 200]);
+    _shakeController.forward(from: 0.0);
     setState(() {}); // show death overlay
   }
 
@@ -219,12 +234,12 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false, // keyboard "pan" parity
       body: AnimatedBuilder(
-        animation: _flyAwayAnim,
+        animation: Listenable.merge([_flyAwayAnim, _shakeAnim]),
         builder: (context, child) {
           final progress = _flyAwayAnim.value;
           final screenWidth = MediaQuery.sizeOf(context).width;
           return Transform.translate(
-            offset: Offset(progress * (screenWidth * 1.1), -progress * 40),
+            offset: Offset(_shakeAnim.value + progress * (screenWidth * 1.1), -progress * 40),
             child: Transform.scale(
               scale: 1.0 - (progress * 0.2),
               child: Opacity(

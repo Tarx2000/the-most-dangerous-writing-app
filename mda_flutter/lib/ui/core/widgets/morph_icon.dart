@@ -3,6 +3,8 @@
 /// between journal (quill), circles (bust), vlog (camera), and checkin (4-point star).
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -55,6 +57,7 @@ class _LiquidMorphIconState extends State<LiquidMorphIcon>
       'accountGroup': _buildCirclesPath(),
       'videoOutline': _buildVlogPath(),
       'pillar': _buildCheckinPath(),
+      'starFourPoints': _buildCheckinPath(),
     };
 
     final result = <String, List<Offset>>{};
@@ -93,18 +96,21 @@ class _LiquidMorphIconState extends State<LiquidMorphIcon>
     return p;
   }
 
+  /// Continuous bust outline drawn counter-clockwise to match journal, vlog,
+  /// and checkin winding. Starts at top of head (12, 2) -> left head ->
+  /// left shoulder -> bottom -> right shoulder -> right head -> top of head.
   static Path _buildCirclesPath() {
     final p = Path();
     p.moveTo(12, 2);
-    p.cubicTo(14.76, 2, 17, 4.24, 17, 7);
-    p.cubicTo(17, 8.93, 15.84, 10.56, 14.18, 11.4);
-    p.cubicTo(17.32, 12.44, 20, 14.5, 20, 17.5);
-    p.lineTo(20, 22);
+    p.cubicTo(9.24, 2, 7, 4.24, 7, 7);
+    p.cubicTo(7, 8.93, 8.16, 10.56, 9.82, 11.4);
+    p.cubicTo(6.68, 12.44, 4, 14.5, 4, 17.5);
     p.lineTo(4, 22);
-    p.lineTo(4, 17.5);
-    p.cubicTo(4, 14.5, 6.68, 12.44, 9.82, 11.4);
-    p.cubicTo(8.16, 10.56, 7, 8.93, 7, 7);
-    p.cubicTo(7, 4.24, 9.24, 2, 12, 2);
+    p.lineTo(20, 22);
+    p.lineTo(20, 17.5);
+    p.cubicTo(20, 14.5, 17.32, 12.44, 14.18, 11.4);
+    p.cubicTo(15.84, 10.56, 17, 8.93, 17, 7);
+    p.cubicTo(17, 4.24, 14.76, 2, 12, 2);
     p.close();
     return p;
   }
@@ -174,11 +180,20 @@ class _LiquidMorphIconState extends State<LiquidMorphIcon>
         animation: _controller,
         builder: (context, _) {
           final t = _controller.value;
-          // Scale bounce factor max 1.04 matching RN BOUNCE_SCALES
-          final scale = t < 0.4 ? 1.0 : 1.0 + 0.04 * ((t - 0.4) / 0.6);
+          // Scale bounce factor max 1.04 matching RN BOUNCE_SCALES (damped sine wave)
+          // Returns cleanly to 1.0 at t = 1.0 per animations.md guidelines.
+          final double scale;
+          if (t > 0.4 && t < 1.0) {
+            final x = (t - 0.4) / 0.6;
+            final bounceAmt = math.sin(x * math.pi * 2.2) * math.pow(1.0 - x, 1.2) * 0.04;
+            scale = 1.0 + bounceAmt;
+          } else {
+            scale = 1.0;
+          }
 
           final fromPts = _cachedPoints[_fromIcon] ?? _cachedPoints['journal']!;
-          final toPts = _cachedPoints[_toIcon] ?? _cachedPoints['journal']!;
+          final targetPts = _cachedPoints[_toIcon] ?? _cachedPoints['journal']!;
+          final toPts = _alignPoints(fromPts, targetPts);
           final currentColor = Color.lerp(_fromColor, _toColor, t) ?? widget.color;
 
           return Container(
@@ -214,6 +229,33 @@ class _LiquidMorphIconState extends State<LiquidMorphIcon>
         },
       ),
     );
+  }
+
+  /// Optimal vertex phase alignment: cyclically shifts `to` so that the sum of
+  /// squared Euclidean distances to `from` is minimized, preventing spiderweb twisting.
+  static List<Offset> _alignPoints(List<Offset> from, List<Offset> to) {
+    if (from.length != to.length || from.isEmpty) return to;
+    final n = from.length;
+    var bestShift = 0;
+    var minTotalDistSq = double.infinity;
+
+    for (var shift = 0; shift < n; shift++) {
+      var distSq = 0.0;
+      for (var i = 0; i < n; i++) {
+        final f = from[i];
+        final t = to[(i + shift) % n];
+        final dx = f.dx - t.dx;
+        final dy = f.dy - t.dy;
+        distSq += dx * dx + dy * dy;
+      }
+      if (distSq < minTotalDistSq) {
+        minTotalDistSq = distSq;
+        bestShift = shift;
+      }
+    }
+
+    if (bestShift == 0) return to;
+    return List<Offset>.generate(n, (i) => to[(i + bestShift) % n]);
   }
 }
 

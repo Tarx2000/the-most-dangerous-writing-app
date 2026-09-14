@@ -95,8 +95,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     // Security gate: the notes tier unlocks the library (SPEC §12).
-    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
-    final locked = !ref.read(securityControllerProvider).isNotesUnlocked;
+    final locked = !ref.watch(isNotesUnlockedProvider);
 
     final notes = ref.watch(notesProvider);
     final persons = ref.watch(personsProvider);
@@ -286,7 +285,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 preferPinAuth: prefs.preferPinAuth,
                                 useBiometrics: prefs.useBiometrics,
                               );
-                          if (ok && mounted) vibrate(HapticPatterns.unlockSuccess);
+                          if (ok && mounted) {
+                            vibrate(HapticPatterns.unlockSuccess);
+                            setState(() {});
+                          }
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(

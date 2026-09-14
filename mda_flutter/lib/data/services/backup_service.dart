@@ -467,8 +467,11 @@ class BackupService {
       input = InputFileStream(zipPath);
       final archive = ZipDecoder().decodeStream(input, verify: false);
 
-      final metadataFile =
-          archive.files.where((f) => f.name == 'backup_metadata.json').firstOrNull;
+      final metadataFile = archive.files.where((f) {
+        final name = f.name.replaceAll('\\', '/');
+        return name == 'backup_metadata.json' ||
+            name.endsWith('/backup_metadata.json');
+      }).firstOrNull;
       if (metadataFile == null) {
         return const BackupResult(
           success: false,
@@ -625,7 +628,7 @@ class BackupService {
         warnings: warnings,
       );
     } finally {
-      input?.close();
+      await input?.close();
     }
   }
 
@@ -704,12 +707,19 @@ class BackupService {
   ) {
     final sizes = <String, int>{
       for (final file in archive.files)
-        if (file.isFile) file.name: file.size,
+        if (file.isFile) file.name.replaceAll('\\', '/'): file.size,
     };
 
     for (final entry in [...vlogs, ...thumbs]) {
       if (!entry.included) continue;
-      final actual = sizes[entry.entryPath];
+      final normalizedPath = entry.entryPath.replaceAll('\\', '/');
+      var actual = sizes[normalizedPath];
+      if (actual == null) {
+        final match = sizes.entries
+            .where((e) => e.key.endsWith('/$normalizedPath'))
+            .firstOrNull;
+        if (match != null) actual = match.value;
+      }
       if (actual == null) return false;
       if (entry.sizeBytes > 0 && actual != entry.sizeBytes) return false;
     }
@@ -807,7 +817,11 @@ class BackupService {
 
     // Extract videos
     for (final entry in vlogs) {
-      final file = archive.files.where((f) => f.name == entry.entryPath).firstOrNull;
+      final file = archive.files.where((f) {
+        final name = f.name.replaceAll('\\', '/');
+        final target = entry.entryPath.replaceAll('\\', '/');
+        return name == target || name.endsWith('/$target');
+      }).firstOrNull;
       if (file != null) {
         final outPath = p.join(vlogDir.path, entry.basename);
         await _writeArchiveFileStreaming(file, outPath);
@@ -819,7 +833,11 @@ class BackupService {
 
     // Extract thumbnails
     for (final entry in thumbs) {
-      final file = archive.files.where((f) => f.name == entry.entryPath).firstOrNull;
+      final file = archive.files.where((f) {
+        final name = f.name.replaceAll('\\', '/');
+        final target = entry.entryPath.replaceAll('\\', '/');
+        return name == target || name.endsWith('/$target');
+      }).firstOrNull;
       if (file != null) {
         final outPath = p.join(thumbDir.path, entry.basename);
         await _writeArchiveFileStreaming(file, outPath);
@@ -855,7 +873,7 @@ class BackupService {
     try {
       file.writeContent(output, freeMemory: true);
     } finally {
-      output.close();
+      await output.close();
     }
   }
 

@@ -45,7 +45,12 @@ class _TickDialState extends State<TickDial> {
   double _scalePulse = 1;
   Timer? _pulseTimer;
 
-  double get _pad => MediaQuery.sizeOf(context).width / 2 - _gap / 2;
+  /// Pad offset to center the 0th tick exactly in the middle of the viewport.
+  /// Unlike RN (which centers ticks within 16px slots), Flutter paints ticks
+  /// directly at `pad + i * snap`. Setting `_pad` to `width / 2` aligns Tick 0
+  /// precisely with the red indicator needle (at `width / 2`) and ensures
+  /// `maxScrollExtent` lands exactly on the final tick without clamping bounce.
+  double get _pad => MediaQuery.sizeOf(context).width / 2;
 
   @override
   void initState() {
@@ -85,7 +90,7 @@ class _TickDialState extends State<TickDial> {
     vibrate(HapticPatterns.tick);
     setState(() => _scalePulse = 1.03);
     _pulseTimer?.cancel();
-    _pulseTimer = Timer(const Duration(milliseconds: 90), () {
+    _pulseTimer = Timer(const Duration(milliseconds: 110), () {
       if (mounted) setState(() => _scalePulse = 1.0);
     });
   }

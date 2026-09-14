@@ -18,10 +18,12 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../../data/services/backup_service.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
+import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/settings_primitives.dart';
 import 'ai_settings_panel.dart';
 import 'compression_status_bar.dart';
@@ -80,9 +82,56 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
   Future<void> _openImport() async {
     vibrate(HapticPatterns.backupOp);
-    const typeGroup = XTypeGroup(label: 'ZIP', extensions: ['zip']);
+    const typeGroup = XTypeGroup(
+      label: 'ZIP',
+      extensions: ['zip'],
+      mimeTypes: [
+        'application/zip',
+        'application/x-zip-compressed',
+        'application/octet-stream',
+        'application/x-compressed',
+        'multipart/x-zip',
+      ],
+    );
     final file = await openFile(acceptedTypeGroups: [typeGroup]);
     if (file == null) return;
+
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please select a valid .zip backup file.'),
+        backgroundColor: AppColors.primaryAction,
+      ));
+      return;
+    }
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: AppColors.overlayDark,
+      builder: (ctx) => ConfirmDialog(
+        title: 'Restore Backup?',
+        message:
+            'This will replace your current notes, circles, and settings with the data in this backup archive. This action cannot be undone.',
+        confirmLabel: 'Restore',
+        cancelLabel: 'Cancel',
+        destructive: true,
+        onConfirm: () => Navigator.of(ctx).pop(true),
+        onCancel: () => Navigator.of(ctx).pop(false),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final security = ref.read(securityControllerProvider);
+    final prefs = ref.read(preferencesProvider);
+    if (!security.isNotesUnlocked) {
+      final ok = await security.unlockNotes(
+        preferPinAuth: prefs.preferPinAuth,
+        useBiometrics: prefs.useBiometrics,
+      );
+      if (!ok || !mounted) return;
+    }
 
     setState(() {
       _backupBusy = true;

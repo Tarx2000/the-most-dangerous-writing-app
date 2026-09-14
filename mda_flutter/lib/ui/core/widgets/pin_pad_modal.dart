@@ -94,12 +94,19 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
     if (_pin.isNotEmpty) setState(() => _pin = _pin.substring(0, _pin.length - 1));
   }
 
+  PinPadMode? _lastMode;
+
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(securityControllerProvider);
     final mode = controller.mode.value;
     final prompt = controller.promptText.value;
     final lockedOut = controller.isLockedOut.value;
+
+    if (mode != null && _lastMode == null) {
+      _entranceController.forward(from: 0.0);
+    }
+    _lastMode = mode;
 
     if (mode == null && !lockedOut) return const SizedBox.shrink();
 
