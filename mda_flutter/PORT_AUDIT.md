@@ -51,6 +51,28 @@ now delivers its initial snapshot, and streaming chunks refresh stall detection.
   was caught by the new tests. Proof: new 13-video DEFLATE fixture test
   (~160 MB, same shape as the user's 1.3 GB archive) passes with monotonic
   progress + stage labels; full suite **161 passed**, analyzer clean.
+- Fourth session (still crashing on-device): FIVE further root causes found
+  by re-auditing the whole pipeline + a REAL-archive test (the exact 1.3 GB
+  user ZIP now imports green in-test, byte-exact on all 13 videos):
+  1. `_readEntryBytes` still ran a FULL ZipDecoder pass for the tiny metadata
+     (buffers all videos' compressed bytes; measured +1.1 GB RSS on a single
+     326 MB readBytes) — replaced by offset-based single-entry streaming.
+  2. Nested `Isolate.run` per video inside the worker isolate (measured
+     +166 MB peak, buys nothing) — removed; exactly ONE worker isolate owns
+     the whole import, JSON validation + stat checks run inline (KBs).
+  3. Rename-swap of whole media dirs destroyed user videos before the new
+     ones were verified — replaced by per-file merge with rollback journal
+     (RN parity: merge, never swap).
+  4. Row↔manifest join by vlog id restored the WRONG file for compressed
+     renames (id `mp4pml77_hgi0mlf` ≠ file `compressed_mp4pmmt8_9s0hcpd.mp4`)
+     — now joins on file basename; row `file_size_bytes` refreshed to staged
+     bytes (rows can carry pre-compression sizes, e.g. 9246777 vs 6676818).
+  5. Test helper `readManifestSizes` itself used a full decode (would OOM the
+     test runner the same way) — kept streaming-only.
+  Full suite **162 passed**, analyzer clean. The REAL-archive test IS the
+  crash reproduction: it uses the exact user file and fails (OOM / wrong
+  file / wrong size) on any regression to full-decode, nested isolates,
+  rename-swap or id-join.
 - Library 1:1 (RN `LibraryScreen.tsx` read line-by-line): header tab pills
   REMOVED (RN has none — section is mode-driven only); title 32/w600 +
   subtitle 16/secondary (were w800/-0.5 + 13/muted); live AI badge moved

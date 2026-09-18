@@ -4,6 +4,8 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mda_flutter/data/database/db.dart';
@@ -600,6 +602,134 @@ void main() {
       expect(await existing.exists(), isTrue);
       expect(result.videosIncluded, 0);
     },
+  );
+
+  /// Reads the file manifest of a real backup ZIP without decoding media:
+  /// central-directory scan only (the same streaming path the importer uses).
+  /// Returns entryPath → sizeBytes for vlogs + thumbnails.
+  Future<Map<String, int>> readManifestSizes(String zipPath) async {
+    final input = InputFileStream(zipPath);
+    final names = <String>[];
+    try {
+      final directory = ZipDirectory();
+      directory.read(input);
+      for (final header in directory.fileHeaders) {
+        if (header.filename == 'backup_metadata.json' ||
+            header.filename.endsWith('/backup_metadata.json')) {
+          names.add(header.filename);
+        }
+      }
+    } finally {
+      await input.close();
+    }
+    expect(names, isNotEmpty, reason: 'backup must contain metadata');
+    // Stream the single metadata entry (never a full decode).
+    final metaBytes = await Isolate.run(() {
+      final dirInput = InputFileStream(zipPath);
+      try {
+        final archive = ZipDecoder().decodeStream(dirInput, verify: false);
+        final file = archive.files.firstWhere(
+          (f) => f.isFile && f.name == names.first,
+        );
+        return file.readBytes() ?? Uint8List(0);
+      } finally {
+        dirInput.close();
+      }
+    });
+    final meta = jsonDecode(utf8.decode(metaBytes)) as Map<String, dynamic>;
+    final manifest = meta['fileManifest'] as Map<String, dynamic>;
+    final sizes = <String, int>{};
+    for (final key in ['vlogs', 'thumbnails']) {
+      for (final item in (manifest[key] as List)) {
+        final entry = item as Map<String, dynamic>;
+        sizes[entry['entryPath'] as String] = (entry['sizeBytes'] as num)
+            .toInt();
+      }
+    }
+    return sizes;
+  }
+
+  test(
+    'REAL user archive: the exact 1.3 GB backup imports without crashing',
+    () async {
+      // Uses the user's ACTUAL backup file (repo root,
+      // mda_backup_2026-08-11T19-52-31-966Z.zip): 29 entries, 13 DEFLATE
+      // videos (largest 326 MB), 13 thumbnails, schema v6. This is the file
+      // that crashed the app on-device — if this test passes, the crash is
+      // fixed; if the code regresses to full-archive decode, this test OOMs
+      // exactly like the phone did. Skipped when the file is absent (CI).
+      const userZip =
+          '/Users/tarikkuc/Coding Projektordner/'
+          'MostDangerousWritingApp/mda_backup_2026-08-11T19-52-31-966Z.zip';
+      if (!File(userZip).existsSync()) {
+        markTestSkipped('user backup ZIP not present (local-only test)');
+        return;
+      }
+      final stages = <String>[];
+      var lastProgress = 0.0;
+      final result = await service.importBackupZip(
+        zipPath: userZip,
+        onProgress: (progress) {
+          expect(
+            progress,
+            greaterThanOrEqualTo(lastProgress - 0.001),
+            reason: 'progress must advance monotonically',
+          );
+          lastProgress = progress;
+        },
+        onStage: stages.add,
+      );
+      expect(result.success, isTrue, reason: result.error);
+      expect(result.videosIncluded, 13);
+      expect(result.thumbnailsIncluded, 13);
+      expect(stages, contains('Copying videos…'));
+
+      // All 13 vlog rows exist. Staged files match the FILE MANIFEST (the
+      // source of truth for restore). Two real-archive quirks are asserted
+      // here, not assumed away:
+      // (a) the vlog ROW id need not equal the file basename (compressed
+      //     renames: id `mp4pml77_hgi0mlf` → file
+      //     `compressed_mp4pmmt8_9s0hcpd.mp4`), so the lookup joins the
+      //     row's file_path basename against manifest entryPaths;
+      // (b) row file_size_bytes can be the PRE-compression size (9246777 vs
+      //     6676818 staged) — the importer refreshes it to staged bytes.
+      final manifestSizes = await readManifestSizes(userZip);
+      final rows = await getAll('SELECT * FROM vlogs');
+      expect(rows.length, 13);
+      for (final row in rows) {
+        final path = row['file_path'] as String;
+        expect(File(path).existsSync(), isTrue);
+        final stagedSize = await File(path).length();
+        final base = p.basename(path);
+        String? manifestKey;
+        for (final key in manifestSizes.keys) {
+          if (key == 'vlogs/$base' || p.basename(key) == base) {
+            manifestKey = key;
+            break;
+          }
+        }
+        expect(
+          manifestKey,
+          isNotNull,
+          reason: 'restored file must come from the manifest ($path)',
+        );
+        expect(
+          stagedSize,
+          manifestSizes[manifestKey],
+          reason: 'staged video must match its manifest size ($path)',
+        );
+        expect(
+          stagedSize,
+          row['file_size_bytes'],
+          reason: 'row size must be refreshed to staged size ($path)',
+        );
+      }
+      // Notes/persons/settings from the real archive survived too.
+      expect(await getAll('SELECT * FROM notes'), isNotEmpty);
+      expect(await getAll('SELECT * FROM persons'), isNotEmpty);
+      expect(result.error, isNull);
+    },
+    timeout: const Timeout(Duration(minutes: 10)),
   );
 
   test(

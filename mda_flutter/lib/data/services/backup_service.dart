@@ -219,6 +219,66 @@ abstract final class _ZipMethod {
   static const int deflate = 8;
 }
 
+/// Growable memory sink for [_inflateRange] (metadata path only — never for
+/// videos, which stream to disk). Chunked appends keep this O(n) total.
+class _MemorySink {
+  final BytesBuilder _builder = BytesBuilder();
+
+  void add(List<int> chunk) => _builder.add(chunk);
+
+  Uint8List get bytes => _builder.toBytes();
+}
+
+/// Physical location of one ZIP entry: how to find its data without decoding
+/// the archive. Created via [readLocalHeader], which validates the local
+/// file signature and skips name/extra fields to the data offset.
+class _ZipLocation {
+  const _ZipLocation({
+    required this.method,
+    required this.compressedSize,
+    required this.dataOffset,
+  });
+
+  final int method;
+  final int compressedSize;
+  final int dataOffset;
+
+  /// Reads the 30-byte local file header at [localHeaderOffset] and returns
+  /// the data offset past filename + extra fields. Throws FormatException on
+  /// a bad signature or short read (corrupt/truncated archive).
+  static _ZipLocation readLocalHeader(
+    String zipPath, {
+    required int localHeaderOffset,
+    required int method,
+    required int compressedSize,
+    required String target,
+  }) {
+    final raf = File(zipPath).openSync();
+    try {
+      // Local file header: sig(4) + ver(2) + flag(2) + method(2) + time(2) +
+      // date(2) + crc(4) + compSize(4) + uncompSize(4) + fnLen(2) + exLen(2).
+      raf.setPositionSync(localHeaderOffset);
+      final localHeader = raf.readSync(30);
+      if (localHeader.length < 30 ||
+          localHeader[0] != 0x50 ||
+          localHeader[1] != 0x4B ||
+          localHeader[2] != 0x03 ||
+          localHeader[3] != 0x04) {
+        throw const FormatException('Corrupt backup — bad local header.');
+      }
+      final fnLen = localHeader[26] | (localHeader[27] << 8);
+      final exLen = localHeader[28] | (localHeader[29] << 8);
+      return _ZipLocation(
+        method: method,
+        compressedSize: compressedSize,
+        dataOffset: localHeaderOffset + 30 + fnLen + exLen,
+      );
+    } finally {
+      raf.closeSync();
+    }
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    BACKUP SERVICE IMPLEMENTATION
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -513,12 +573,17 @@ class BackupService {
       onStage?.call('Reading backup archive…');
       // Throws FormatException for missing/oversized metadata (same messages
       // the old inline path returned — corrupt archives never touch user data).
+      // Runs in ONE worker isolate (never nested): _decodeBackup streams the
+      // central directory (~KBs) + the single metadata entry — media bytes
+      // are never loaded here. Nested Isolate.run calls were removed: each
+      // nesting level duplicates peak memory (measured +166 MB per level on
+      // the real 1.3 GB archive) and caused the on-device OOM kill.
       final decodedBackup = await Isolate.run(() => _decodeBackup(zipPath));
       final metadataBytes = decodedBackup.metadataBytes;
       onStage?.call('Checking backup contents…');
-      final rawJson = await Isolate.run(
-        () => _validateMetadata(jsonDecode(utf8.decode(metadataBytes))),
-      );
+      // JSON validation runs inline: metadata is KBs (hard cap 64 MB), so no
+      // isolate is needed — and a nested one would re-duplicate memory.
+      final rawJson = _validateMetadata(jsonDecode(utf8.decode(metadataBytes)));
 
       // 1. Version Normalization (Supports v2 and v1).
       final version = rawJson['backupVersion'] as num? ?? 1;
@@ -781,63 +846,71 @@ class BackupService {
     // (The old code ran a full ZipDecoder.decodeStream here, inflating every
     // video's compressed bytes at once — the 1.3 GB user backup crashed on it.)
     final input = InputFileStream(zipPath);
+    final entries = <_ArchiveEntryRef>[];
+    final String metadataName;
     try {
       final directory = ZipDirectory();
       directory.read(input);
-      String? metadataName;
-      final entries = <_ArchiveEntryRef>[];
+      String? found;
       for (final header in directory.fileHeaders) {
         final name = header.filename.replaceAll('\\', '/');
         if (name.endsWith('/')) continue;
         entries.add(_ArchiveEntryRef(name, header.uncompressedSize, false));
         if (name == 'backup_metadata.json' ||
             name.endsWith('/backup_metadata.json')) {
-          metadataName = header.filename;
+          found = header.filename;
         }
       }
-      if (metadataName == null) {
+      if (found == null) {
         throw const FormatException(
           'Corrupt backup — metadata file (backup_metadata.json) missing.',
         );
       }
-      // Metadata is tiny (KBs): decode just that one entry.
-      final metaBytes = _readEntryBytes(zipPath, metadataName);
-      if (metaBytes.length > maxBackupMetadataBytes) {
-        throw const FormatException('Backup metadata is too large.');
-      }
-      return _DecodedBackup(entries, metaBytes);
+      metadataName = found;
     } finally {
       await input.close();
     }
+    // Metadata is tiny (KBs): stream just that one entry into memory (never
+    // a full ZipDecoder pass — full decode buffers every video's compressed
+    // bytes and OOM-kills the app on 1 GB+ archives; measured +1.1 GB RSS on
+    // a single 326 MB readBytes()). Runs in the caller's isolate context —
+    // no nesting (see importBackupZip).
+    final metaBytes = _streamEntryToBytes(zipPath, metadataName);
+    if (metaBytes.length > maxBackupMetadataBytes) {
+      throw const FormatException('Backup metadata is too large.');
+    }
+    return _DecodedBackup(entries, metaBytes);
   }
 
-  /// Reads + inflates a SINGLE small ZIP entry (metadata). Never used for
-  /// videos — those stream via [_streamEntryToFile] instead.
-  static Uint8List _readEntryBytes(String zipPath, String entryName) {
-    final input = InputFileStream(zipPath);
+  /// Streams ONE small ZIP entry into memory (metadata, never videos).
+  /// Shares the offset-based streaming path with [_streamEntryToFile] so no
+  /// full-archive decode ever happens on the import path again.
+  static Uint8List _streamEntryToBytes(String zipPath, String entryName) {
+    final location = _locateEntry(zipPath, entryName);
+    final raf = File(zipPath).openSync();
     try {
-      final archive = ZipDecoder().decodeStream(input, verify: false);
-      for (final file in archive.files) {
-        if (file.isFile && file.name == entryName) {
-          return _readArchiveFileBytes(file);
-        }
-      }
-      throw const FormatException('Corrupt backup — entry vanished.');
+      raf.setPositionSync(location.dataOffset);
+      final sink = _MemorySink();
+      _inflateRange(
+        raf,
+        sink.add,
+        method: location.method,
+        compressedSize: location.compressedSize,
+        target: entryName,
+      );
+      return sink.bytes;
     } finally {
-      input.close();
+      raf.closeSync();
     }
   }
 
-  static Uint8List _readArchiveFileBytes(ArchiveFile file) {
-    return file.readBytes() ?? Uint8List(0);
-  }
-
   /// Confirms staged media bytes match the manifest (truncated archives can
-  /// pass the header-only gate). Runs off the UI thread; -1 = mismatch.
-  static Future<int> _verifyExtractedSizes(
+  /// pass the header-only gate). Plain stat calls — no isolate needed, no
+  /// memory involved; returns -1 on mismatch.
+  static int _verifyExtractedSizesSync(
     String stagedDir,
     List<Map<String, dynamic>> entries,
-  ) => Isolate.run(() {
+  ) {
     for (final raw in entries) {
       final entry = BackupFileEntry.fromJson(raw);
       final file = File(
@@ -851,7 +924,7 @@ class BackupService {
       if (file.lengthSync() != entry.sizeBytes) return -1;
     }
     return entries.length;
-  });
+  }
 
   String _uniqueBasename(String vlogId, String name, Set<String> used) {
     var candidate = name;
@@ -1141,15 +1214,20 @@ class BackupService {
     // its ZIP offsets straight to disk (STORE = copy, DEFLATE = incremental
     // inflate). Peak memory stays flat no matter the backup size — this is
     // what finally handles the user's 1.3 GB archive.
+    //
+    // NO nested isolates: this method already runs inside the caller's
+    // Isolate.run — a nested Isolate.run per file doubles peak memory
+    // (measured +166 MB on the real archive) and buys nothing.
     for (var i = 0; i < files.length; i++) {
       final single = [files[i]];
-      await Isolate.run(() => _extractMediaWorker(zipPath, stagedDir, single));
+      await _extractMediaWorker(zipPath, stagedDir, single);
       onProgress?.call(files.length <= 1 ? 1.0 : i / files.length);
     }
     onProgress?.call(1.0);
     // A truncated archive can pass the header-only manifest gate; confirm the
-    // staged bytes match the manifest before replacing user media.
-    final stagedOk = await _verifyExtractedSizes(stagedDir, files);
+    // staged bytes match the manifest before replacing user media. Sync stats
+    // (no isolate, no memory) — never nested inside another isolate.
+    final stagedOk = _verifyExtractedSizesSync(stagedDir, files);
     if (stagedOk < 0) {
       throw const FormatException(
         'Corrupt backup — extracted media does not match the manifest.',
@@ -1158,42 +1236,85 @@ class BackupService {
 
     final movedDirectories = <String>[];
     snapshots['mediaDirectories'] = movedDirectories;
-    final folders = <String>{
-      if (vlogs.any((e) => e.included)) 'vlogs',
-      if (thumbs.any((e) => e.included)) 'vlog_thumbnails',
-    };
-    for (final folder in folders) {
-      final current = Directory(p.join(docs, folder));
-      final previous = p.join(snapshotDir, 'original_$folder');
-      if (await current.exists()) await current.rename(previous);
-      movedDirectories.add(folder);
-      await Directory(p.join(stagedDir, folder)).rename(current.path);
+    // RN parity: media files merge INTO the existing media dirs (per-file
+    // copy with rollback journal) — the dirs are never renamed away. The old
+    // rename-swap destroyed the user's videos before the new ones were
+    // verified, and left no recoverable state on a mid-restore kill.
+    final stagedSizes = <String, int>{};
+    for (final entry in [...vlogs, ...thumbs].where((e) => e.included)) {
+      final folder = entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails';
+      final stagedFile = File(p.join(stagedDir, folder, entry.basename));
+      final targetFile = File(p.join(docs, folder, entry.basename));
+      await targetFile.parent.create(recursive: true);
+      // Journal the overwrite so a crash mid-merge can be rolled back.
+      final journal = <String, String?>{};
+      snapshots['mediaJournal'] = journal;
+      if (await targetFile.exists()) {
+        final backupPath = p.join(
+          snapshotDir,
+          'media_orig',
+          folder,
+          entry.basename,
+        );
+        await Directory(p.dirname(backupPath)).create(recursive: true);
+        await targetFile.copy(backupPath);
+        journal[targetFile.path] = backupPath;
+      } else {
+        journal[targetFile.path] = null;
+      }
+      await stagedFile.copy(targetFile.path);
+      // The manifest size is the on-disk truth (RN rows can carry the
+      // pre-compression size, e.g. 9246777 vs 6676818 staged — the app must
+      // report what is actually on disk, never phantom bytes).
+      stagedSizes['${entry.kind}/${entry.vlogId}'] = await targetFile.length();
     }
     final nameByVlog = <String, ({String? video, String? thumb})>{};
+    // Basename → staged size (the merge loop recorded what actually landed
+    // on disk per file). The row update below joins on basename, because RN
+    // backups rename compressed videos: vlog id `mp4pml77_hgi0mlf` ≠ file
+    // `compressed_mp4pmmt8_9s0hcpd.mp4` — matching by row id alone restores
+    // the WRONG file and the WRONG size.
+    final stagedByBasename = <String, int>{};
     for (final entry in [...vlogs, ...thumbs].where((e) => e.included)) {
       final current = nameByVlog[entry.vlogId];
       nameByVlog[entry.vlogId] = entry.kind == 'video'
           ? (video: entry.basename, thumb: current?.thumb)
           : (video: current?.video, thumb: entry.basename);
     }
+    // Rebuild staged-by-basename from the merge journal (target path → size
+    // was recorded per file above; fall back to entry sizes for thumbs).
+    for (final entry in [...vlogs, ...thumbs].where((e) => e.included)) {
+      stagedByBasename[entry.basename] =
+          stagedSizes['${entry.kind}/${entry.vlogId}'] ?? entry.sizeBytes;
+    }
     for (final raw in rawVlogRows) {
       final row = raw as Map;
       final id = row['id']?.toString() ?? '';
       final names = nameByVlog[id];
       // v1 has no vlog IDs in its manifest, so match its original basenames.
-      final videoName =
-          names?.video ??
-          _mediaBasename(row['file_path']?.toString() ?? '$id.mp4');
+      // The row's file_path basename wins over the id mapping whenever a
+      // manifest entry with that exact basename exists (compressed renames).
+      final rowVideoBase = _mediaBasename(row['file_path']?.toString() ?? '');
+      final videoName = stagedByBasename.containsKey(rowVideoBase)
+          ? rowVideoBase
+          : (names?.video ??
+                _mediaBasename(row['file_path']?.toString() ?? '$id.mp4'));
       final thumbName =
           names?.thumb ??
           (row['thumbnail_path'] != null
               ? _mediaBasename(row['thumbnail_path'].toString())
               : null);
+      // The row's size becomes what actually landed for THIS file (joined on
+      // basename — never a size from a different video). Falls back to the
+      // row's own value when the file was excluded from the backup.
+      final stagedSize = stagedByBasename[videoName];
       await run(
-        'UPDATE vlogs SET file_path = ?, thumbnail_path = ? WHERE id = ?',
+        'UPDATE vlogs SET file_path = ?, thumbnail_path = ?, '
+        'file_size_bytes = ? WHERE id = ?',
         [
           p.join(docs, 'vlogs', videoName),
           thumbName != null ? p.join(docs, 'vlog_thumbnails', thumbName) : null,
+          stagedSize ?? row['file_size_bytes'],
           id,
         ],
       );
@@ -1205,6 +1326,98 @@ class BackupService {
     // RN paths are file:// URLs and may contain percent-encoded filenames.
     final uri = Uri.tryParse(path);
     return p.basename(uri?.scheme == 'file' ? uri!.toFilePath() : path);
+  }
+
+  /// A ZIP entry's physical location (central directory): compression method,
+  /// compressed size and DATA offset (past the local header). The single
+  /// source of truth for every streaming read — no full-archive decode
+  /// anywhere on this path.
+  ///
+  /// NOTE on `compressedSize`: the central directory is authoritative for
+  /// extraction bounds. The file MANIFEST (`sizeBytes` = uncompressed size)
+  /// is authoritative for verification. Real RN backups mix both (e.g. a
+  /// compressed video whose row carries the pre-compression size), so never
+  /// use one where the other belongs.
+  static _ZipLocation _locateEntry(String zipPath, String entryPath) {
+    final target = entryPath.replaceAll('\\', '/');
+    final dirInput = InputFileStream(zipPath);
+    final directory = ZipDirectory();
+    try {
+      directory.read(dirInput);
+    } finally {
+      dirInput.close();
+    }
+    for (final header in directory.fileHeaders) {
+      final name = header.filename.replaceAll('\\', '/');
+      if (name == target || name.endsWith('/$target')) {
+        final method = header.compressionMethod;
+        if (method != _ZipMethod.store && method != _ZipMethod.deflate) {
+          throw FormatException(
+            'Unsupported compression in backup ($target, method $method).',
+          );
+        }
+        return _ZipLocation.readLocalHeader(
+          zipPath,
+          localHeaderOffset: header.localHeaderOffset,
+          method: method,
+          compressedSize: header.compressedSize,
+          target: target,
+        );
+      }
+    }
+    throw FormatException('Backup entry missing: $target');
+  }
+
+  /// Inflates [compressedSize] bytes from the already-positioned [raf] into
+  /// [addChunk]. STORE = raw copy, DEFLATE = incremental chunked inflate
+  /// (constant memory). Shared by file + memory streaming — one code path.
+  static void _inflateRange(
+    RandomAccessFile raf,
+    void Function(List<int> chunk) addChunk, {
+    required int method,
+    required int compressedSize,
+    required String target,
+  }) {
+    if (method == _ZipMethod.store) {
+      var left = compressedSize;
+      while (left > 0) {
+        final n = min(left, 1 << 20);
+        final chunk = raf.readSync(n);
+        if (chunk.isEmpty) {
+          throw const FormatException('Corrupt backup — truncated file.');
+        }
+        addChunk(chunk);
+        left -= chunk.length;
+      }
+      return;
+    }
+    if (method == _ZipMethod.deflate) {
+      final outSink = ChunkedConversionSink<List<int>>.withCallback((
+        chunks,
+      ) {
+        for (final chunk in chunks) {
+          addChunk(chunk);
+        }
+      });
+      final inSink = ZLibCodec(
+        raw: true,
+      ).decoder.startChunkedConversion(outSink);
+      var left = compressedSize;
+      while (left > 0) {
+        final n = min(left, 1 << 20);
+        final chunk = raf.readSync(n);
+        if (chunk.isEmpty) {
+          throw const FormatException('Corrupt backup — truncated file.');
+        }
+        inSink.add(chunk);
+        left -= chunk.length;
+      }
+      inSink.close();
+      return;
+    }
+    throw FormatException(
+      'Unsupported compression in backup ($target, method $method).',
+    );
   }
 
   static Future<void> _extractMediaWorker(
@@ -1228,15 +1441,16 @@ class BackupService {
         entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
         entry.basename,
       );
-      await Isolate.run(
-        () => _streamEntryToFile(zipPath, entry.entryPath, outputPath),
-      );
+      // ONE isolate per file (no nesting): _extractMediaWorker itself already
+      // runs inside Isolate.run — a nested Isolate.run per file doubles peak
+      // memory (measured +166 MB on the real archive) and buys nothing.
+      await _streamEntryToFile(zipPath, entry.entryPath, outputPath);
     }
   }
 
   /// Streams ONE zip entry to disk using only its central-directory offsets.
-  /// STORE = raw byte copy; DEFLATE = incremental chunked inflate (constant
-  /// memory). Any other method throws (unsupported, never silently corrupt).
+  /// Single shared code path via [_locateEntry] + [_inflateRange] — no
+  /// duplication with the metadata reader, no full-archive decode.
   ///
   /// Async + awaited close: `IOSink.close()` must be awaited, otherwise the
   /// last buffered chunk never reaches disk and the size check fails.
@@ -1245,97 +1459,19 @@ class BackupService {
     String entryPath,
     String outputPath,
   ) async {
-    final target = entryPath.replaceAll('\\', '/');
-    final dirInput = InputFileStream(zipPath);
-    final directory = ZipDirectory();
-    try {
-      directory.read(dirInput);
-    } finally {
-      dirInput.close();
-    }
-    String? matchedName;
-    var method = -1;
-    var compressedSize = 0;
-    var localOffset = 0;
-    for (final header in directory.fileHeaders) {
-      final name = header.filename.replaceAll('\\', '/');
-      if (name == target || name.endsWith('/$target')) {
-        matchedName = header.filename;
-        method = header.compressionMethod;
-        compressedSize = header.compressedSize;
-        localOffset = header.localHeaderOffset;
-        break;
-      }
-    }
-    if (matchedName == null) {
-      throw FormatException('Backup entry missing: $target');
-    }
-    if (method != _ZipMethod.store && method != _ZipMethod.deflate) {
-      throw FormatException(
-        'Unsupported compression in backup ($target, method $method).',
-      );
-    }
+    final location = _locateEntry(zipPath, entryPath);
     final raf = File(zipPath).openSync();
     try {
-      // Local file header: sig(4) + ver(2) + flag(2) + method(2) + time(2) +
-      // date(2) + crc(4) + compSize(4) + uncompSize(4) + fnLen(2) + exLen(2).
-      raf.setPositionSync(localOffset);
-      final localHeader = raf.readSync(30);
-      if (localHeader.length < 30 ||
-          localHeader[0] != 0x50 ||
-          localHeader[1] != 0x4B ||
-          localHeader[2] != 0x03 ||
-          localHeader[3] != 0x04) {
-        throw const FormatException('Corrupt backup — bad local header.');
-      }
-      final fnLen = localHeader[26] | (localHeader[27] << 8);
-      final exLen = localHeader[28] | (localHeader[29] << 8);
-      raf.setPositionSync(localOffset + 30 + fnLen + exLen);
+      raf.setPositionSync(location.dataOffset);
       final sink = File(outputPath).openWrite();
       try {
-        if (method == _ZipMethod.store) {
-          // STORE: raw copy in 1 MB chunks (RN writes STORE — byte-identical).
-          var left = compressedSize;
-          while (left > 0) {
-            final n = min(left, 1 << 20);
-            final chunk = raf.readSync(n);
-            if (chunk.isEmpty) {
-              throw const FormatException('Corrupt backup — truncated file.');
-            }
-            sink.add(chunk);
-            left -= chunk.length;
-          }
-        } else if (method == _ZipMethod.deflate) {
-          // DEFLATE: incremental raw inflate straight to disk (constant
-          // memory — a 326 MB video never inflates in RAM at once).
-          final outSink = ChunkedConversionSink<List<int>>.withCallback((
-            chunks,
-          ) {
-            for (final chunk in chunks) {
-              sink.add(chunk);
-            }
-          });
-          final inSink = ZLibCodec(
-            raw: true,
-          ).decoder.startChunkedConversion(outSink);
-          var left = compressedSize;
-          while (left > 0) {
-            final n = min(left, 1 << 20);
-            final chunk = raf.readSync(n);
-            if (chunk.isEmpty) {
-              throw const FormatException('Corrupt backup — truncated file.');
-            }
-            inSink.add(chunk);
-            left -= chunk.length;
-          }
-          inSink.close();
-        } else {
-          // Unreachable (gate above) — kept so a future method can never
-          // silently fall through to a corrupt copy.
-          throw FormatException(
-            'Unsupported compression in backup ($target, method $method).',
-          );
-        }
+        _inflateRange(
+          raf,
+          sink.add,
+          method: location.method,
+          compressedSize: location.compressedSize,
+          target: entryPath,
+        );
       } finally {
         await sink.close();
       }
@@ -1408,7 +1544,25 @@ class BackupService {
         await File(dbCopy).copy(dbPath);
       }
 
-      // Restore every directory that was swapped before the failure.
+      // Roll back the per-file media journal: restore overwritten originals,
+      // delete newly added files. (The old rename-swap path is kept for
+      // archives staged by older app versions, then removed.)
+      final journal = snapshots['mediaJournal'] as Map<String, String?>?;
+      if (journal != null) {
+        for (final entry in journal.entries) {
+          final target = File(entry.key);
+          final backupPath = entry.value;
+          try {
+            if (backupPath == null) {
+              if (await target.exists()) await target.delete();
+            } else if (await File(backupPath).exists()) {
+              await File(backupPath).copy(target.path);
+            }
+          } catch (e) {
+            logStorage.warn('media journal rollback entry failed', e);
+          }
+        }
+      }
       final docs = await _docs();
       for (final folder
           in (snapshots['mediaDirectories'] as List<String>? ??
