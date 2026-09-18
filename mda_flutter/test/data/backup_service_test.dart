@@ -160,8 +160,10 @@ void main() {
       );
       final result = await service.importBackupZip(
         zipPath: path,
-        onProgress: (progress) {
-          if (progress == 0.9) throw StateError('Simulated post-media failure');
+        onStage: (stage) {
+          if (stage == 'Restoring settings…') {
+            throw StateError('Simulated post-media failure');
+          }
         },
       );
       expect(result.success, isFalse);

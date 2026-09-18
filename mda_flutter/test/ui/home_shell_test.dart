@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mda_flutter/data/app_data.dart';
 import 'package:mda_flutter/data/providers.dart';
 import 'package:mda_flutter/ui/features/home/home_shell.dart';
+import 'package:mda_flutter/ui/core/widgets/liquid_glass_nav.dart';
 import 'package:mda_flutter/ui/core/widgets/tick_dial.dart';
 
 class _Storage extends StorageNotifier {
@@ -110,6 +111,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('FEED'), findsNothing);
     expect(find.text('Free Writing').hitTestable(), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('nav tabs switch the library in place without leaving the page', (
+    tester,
+  ) async {
+    await _pumpHome(tester);
+    // Swipe horizontally to the Library page.
+    await tester.flingFrom(const Offset(350, 160), const Offset(-320, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(find.text('Library').hitTestable(), findsOneWidget);
+    // Tapping Circles must NOT jump back to Start (RN sessionMode parity).
+    // The library tab chip (13px) and the nav pill label (10px) share the
+    // text — tap the nav pill entry explicitly via LiquidGlassNav.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LiquidGlassNav),
+        matching: find.text('Circles'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Library').hitTestable(), findsOneWidget);
+    expect(find.text('Free Writing'), findsNothing);
+    expect(find.text('Relationship Journal'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 }

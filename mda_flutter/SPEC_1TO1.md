@@ -326,6 +326,7 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 - Export: checkpoint WAL → scope SELECTs (strip secret setting keys `AI_OLLAMA_API_KEY`, `AI_NEURALWATT_API_KEY`) → AsyncStorage allowlist only (`__DB_SCHEMA_VERSION__`, `FEATURE_FLAGS`) → media manifest (missing → `included:false,reason:'missing'`) → ZIP → **post-zip verification** (every included entry exists with exact size; missing metadata = fatal, missing entries = `verification:'warn'`) → share only after verification. Cleanup old `mda_backup_*.zip`.
 - Import gates: `.zip` only → extract → normalize (v2 + legacy v1, else reject) → **schema gate** (`backup.schemaVersion > current` → reject "update the app first") → **manifest gate** (all included present with exact size, else "corrupt backup") → **free-space gate** (`requiredBytes = manifestTotal × 1.1` vs free disk) → pause queues → safety snapshots (prefs pairs + DB file copy + vlog dir + thumbnail dir) → restore SQLite in ONE transaction (DELETE all, column-filtered re-insert) → rewrite media paths to sandbox → restore prefs allowlist (secret keys skipped, schema marker forced local) → restore media files (only media dirs present in the backup are touched; a media-less scoped import keeps existing videos) → success.
 - Media bytes are verified after staged extraction (truncated archives can pass header sizes); the whole ZIP decode runs off the UI isolate.
+- Large restores (1 GB+) extract checkpointed — one isolate pass per media file, flat memory, per-file progress + stage callbacks. Failures always return a user-facing message, never a throw; media-less scoped imports keep existing videos.
 - Rollback: any failure → restore snapshots (closeDb + delete + copy back, dirs, prefs), never throws out of catch. Queues always resumed in `finally`.
 - `BackupResult`: `{success, verification: ok|warn|failed, error?, cancelled?, zipPath?, scopes, tablesIncluded, videosIncluded, videosExcluded[], thumbnailsIncluded, warnings[]}`.
 
@@ -341,6 +342,7 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 ## 14. Feed & Home
 
 - Home = 3 layers: feed layer (starts `translateY = +screenHeight`, slides up), main content (Start | Library pager), LiquidGlassNav (floats, fades + slides down 80 px when feed open).
+- One shared session mode drives both Start hero and Library tab (RN `sessionMode`): nav taps switch content in place on whichever page is visible, never jump pages — the pager moves on horizontal swipe only.
 - Feed reveal: upward-only pan, activation ≥ 8 px, fail on |dx| > 20 px, finger 1:1 tracking; commit ≥ 0.40 progress or velocity < −3000 px/s; spring `springSnappy`; close: progress < 0.70 or velocity > 3000 px/s or projected < 0.5 (factor 0.12).
 - The start page has no inner vertical scroller (RN parity) so the upward pan wins the gesture arena from anywhere on screen; top-edge overscroll carries real fling velocity into the same close decision.
 - Nav: 4 tabs Journal/Circles/Vlog/Check-in; width 88% screen, height 62, bottom = safeBottom + 14; indicator 180 ms cubic-out; gold urgent dot (8 px, top −3, right −5) on Check-in when no check-in in 7 days.

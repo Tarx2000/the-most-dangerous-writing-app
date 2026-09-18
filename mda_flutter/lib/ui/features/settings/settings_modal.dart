@@ -45,6 +45,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
   bool _backupBusy = false;
   String? _backupStatus;
 
+  /// 0..1 restore progress (drives the progress bar during video copying).
+  double _backupProgress = 0;
+
   Future<void> _openExport() async {
     if (_backupBusy) return;
     final scopes = await showDialog<List<String>>(
@@ -162,7 +165,8 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
     setState(() {
       _backupBusy = true;
-      _backupStatus = 'Checking and restoring backup...';
+      _backupStatus = 'Reading backup archive…';
+      _backupProgress = 0;
     });
 
     File? tempZipFile;
@@ -188,25 +192,38 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         path = tempPath;
       }
 
+      // The service never throws — failures arrive as BackupResult with a
+      // user-facing message. The outer catch is only a last-resort net so a
+      // 1 GB+ restore can never kill the app without explanation again.
       final result = await ref
           .read(appDataProvider.notifier)
-          .importBackupZip(path);
+          .importBackupZip(
+            path,
+            onProgress: (progress) {
+              if (mounted) setState(() => _backupProgress = progress);
+            },
+            onStage: (stage) {
+              if (mounted) setState(() => _backupStatus = stage);
+            },
+          );
 
       if (!mounted) return;
       setState(() {
         _backupBusy = false;
         _backupStatus = null;
+        _backupProgress = 0;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             result.success
-                ? 'Backup restored successfully.'
+                ? 'Backup restored: ${result.videosIncluded} videos, ${result.thumbnailsIncluded} thumbnails.'
                 : (result.error ?? 'Import failed'),
           ),
           backgroundColor: result.success
               ? AppColors.green
               : AppColors.primaryAction,
+          duration: Duration(seconds: result.success ? 4 : 8),
         ),
       );
     } catch (e) {
@@ -214,11 +231,15 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       setState(() {
         _backupBusy = false;
         _backupStatus = null;
+        _backupProgress = 0;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Import failed: $e'),
+          content: Text(
+            'The backup could not be restored. Your current data was left untouched. ($e)',
+          ),
           backgroundColor: AppColors.primaryAction,
+          duration: const Duration(seconds: 8),
         ),
       );
     } finally {
@@ -413,14 +434,36 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                             ),
                           ),
                           const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _backupStatus!,
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                           Text(
-                            _backupStatus!,
+                            '${(_backupProgress * 100).round()}%',
                             style: const TextStyle(
-                              color: AppColors.textMuted,
+                              color: AppColors.textSecondary,
                               fontSize: 12,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _backupProgress.clamp(0.0, 1.0),
+                          minHeight: 5,
+                          backgroundColor: AppColors.glassSurface,
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppColors.primaryAction,
+                          ),
+                        ),
                       ),
                     ],
                   ],

@@ -526,21 +526,38 @@ class StorageNotifier extends Notifier<AppData> {
   }
 
   /// Imports a backup ZIP (gates + rollback inside the service).
+  /// Never throws: service failures arrive as `BackupResult(success: false)`.
+  /// Only a queue-drain crash (before the service runs) is caught here so the
+  /// UI always gets a result to display instead of a dead screen.
   Future<BackupResult> importBackupZip(
     String zipPath, {
     void Function(double progress)? onProgress,
+    void Function(String stage)? onStage,
   }) async {
     // Pause both queues for the restore (SPEC §13), reload after success.
     final aiQueue = ref.read(aiQueueManagerProvider);
     final compressionQueue = ref.read(compressionQueueManagerProvider);
-    await Future.wait([
-      aiQueue.pauseAndDrain(),
-      compressionQueue.pauseAndDrain(),
-    ]);
+    try {
+      await Future.wait([
+        aiQueue.pauseAndDrain(),
+        compressionQueue.pauseAndDrain(),
+      ]);
+    } catch (e) {
+      return BackupResult(
+        success: false,
+        verification: 'failed',
+        error:
+            'The app could not pause its background work for the restore. Please restart the app and try again. ($e)',
+      );
+    }
     try {
       final result = await ref
           .read(backupServiceProvider)
-          .importBackupZip(zipPath: zipPath, onProgress: onProgress);
+          .importBackupZip(
+            zipPath: zipPath,
+            onProgress: onProgress,
+            onStage: onStage,
+          );
       if (result.success) {
         await loadAll(force: true);
       }

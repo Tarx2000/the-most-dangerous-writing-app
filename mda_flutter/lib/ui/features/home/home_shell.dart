@@ -40,7 +40,29 @@ class _HomeShellState extends ConsumerState<HomeShell>
   static const double _closeVelocity = 3000;
 
   late final PageController _pager = PageController();
+
+  /// One shared session mode (RN `HomeScreen.sessionMode` parity): the nav
+  /// pill drives BOTH Start hero content and the Library tab. Tapping a tab
+  /// never changes the page — Start and Library switch in place; the pager
+  /// only moves on horizontal swipe.
   String _activeTab = HomeTab.journal;
+
+  SessionMode _modeForTab(String tab) {
+    switch (tab) {
+      case HomeTab.journal:
+        return SessionMode.journal;
+      case HomeTab.circles:
+        return SessionMode.circles;
+      case HomeTab.vlog:
+        return SessionMode.vlog;
+      case HomeTab.checkin:
+        return SessionMode.checkin;
+      default:
+        return SessionMode.journal;
+    }
+  }
+
+  SessionMode get _startMode => _modeForTab(_activeTab);
 
   /// Feed reveal progress 0..1 — drives via drag and animates via spring.
   late final AnimationController _feedController = AnimationController(
@@ -58,21 +80,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
   double _dragStartProgress = 0;
   double _dragDy = 0;
 
-  SessionMode get _modeForTab {
-    switch (_activeTab) {
-      case HomeTab.journal:
-        return SessionMode.journal;
-      case HomeTab.circles:
-        return SessionMode.circles;
-      case HomeTab.vlog:
-        return SessionMode.vlog;
-      case HomeTab.checkin:
-        return SessionMode.checkin;
-      default:
-        return SessionMode.journal;
-    }
-  }
-
   @override
   void dispose() {
     _pager.dispose();
@@ -80,11 +87,11 @@ class _HomeShellState extends ConsumerState<HomeShell>
     super.dispose();
   }
 
+  /// RN parity (`HomeScreen.handleModeChange`): tab taps switch the shared
+  /// session mode in place. No `jumpToPage` — tapping Circles while on the
+  /// Library opens the Circles library, not the Start page.
   void _onNavSelect(String id) {
     setState(() => _activeTab = id);
-    // Nav tabs switch the session mode on the start page (parity with RN);
-    // the library page is reached by swiping the pager.
-    _pager.jumpToPage(0);
   }
 
   /// The spring updates only transforms. Expensive screens stay cached as
@@ -239,7 +246,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
                     onVerticalDragEnd: _onOpenDragEnd,
                     onVerticalDragCancel: _onDragCancel,
                     child: StartScreen(
-                      mode: _modeForTab,
+                      mode: _startMode,
                       onFeedPull: (delta) {
                         if (!_dragArmed) _onOpenDragStart(DragStartDetails());
                         _onOpenDragUpdate(
@@ -252,7 +259,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
                       onFeedPullEnd: () => _onOpenDragEnd(DragEndDetails()),
                     ),
                   ),
-                  const LibraryScreen(),
+                  LibraryScreen(mode: _activeTab),
                 ],
               ),
             ),

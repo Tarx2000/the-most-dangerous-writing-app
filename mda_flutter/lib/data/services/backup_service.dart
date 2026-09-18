@@ -483,21 +483,30 @@ class BackupService {
   ///
   /// Heavy work (ZIP decode, JSON validation, media extraction/size checks)
   /// runs on worker isolates — a video-heavy backup must never inflate on the
-  /// UI thread.
+  /// UI thread. Media files extract one-by-one (checkpointed), so a 1 GB+
+  /// backup streams with flat memory instead of crashing the app.
+  ///
+  /// Never throws: every failure (corrupt ZIP, OOM-adjacent conditions, disk
+  /// errors) returns a `BackupResult` with `success: false` and a user-facing
+  /// German/English `error` message — the app must show that message, never
+  /// crash or silently hang.
   Future<BackupResult> importBackupZip({
     required String zipPath,
     void Function(double progress)? onProgress,
+    void Function(String stage)? onStage,
     Future<int> Function()? freeSpaceProvider,
   }) async {
     final warnings = <String>[];
     Map<String, Object>? snapshots;
 
     try {
-      onProgress?.call(0.1);
+      onProgress?.call(0.05);
+      onStage?.call('Reading backup archive…');
       // Throws FormatException for missing/oversized metadata (same messages
       // the old inline path returned — corrupt archives never touch user data).
       final decodedBackup = await Isolate.run(() => _decodeBackup(zipPath));
       final metadataBytes = decodedBackup.metadataBytes;
+      onStage?.call('Checking backup contents…');
       final rawJson = await Isolate.run(
         () => _validateMetadata(jsonDecode(utf8.decode(metadataBytes))),
       );
@@ -633,18 +642,22 @@ class BackupService {
 
       // 6. Safety snapshots (DB, prefs, and media dirs).
       onProgress?.call(0.3);
+      onStage?.call('Saving a safety copy of your current data…');
       snapshots = await _createSnapshots();
 
       try {
         // 7. Restore SQLite in ONE transaction with LIVE COLUMN FILTERING.
-        onProgress?.call(0.5);
+        onProgress?.call(0.4);
+        onStage?.call('Restoring notes, circles and masteries…');
         final sqlite = rawJson['sqlite'] as Map<String, dynamic>? ?? {};
         await _restoreSqliteWithColumnFiltering(sqlite);
 
         // 8. Rewrite media paths to sandbox & extract media.
         // RN parity: only the media dirs present in this backup are touched.
         // A settings/notes-only import must never delete the user's videos.
-        onProgress?.call(0.7);
+        // Checkpointed: progress advances per extracted video (0.4 → 0.85).
+        onProgress?.call(0.4);
+        onStage?.call('Copying videos…');
         final docs = await _docs();
         final restoredVlogs = await _restoreMediaFiles(
           zipPath,
@@ -653,10 +666,13 @@ class BackupService {
           docs,
           sqlite['vlogs'] as List? ?? const [],
           snapshots,
+          onProgress: (fileProgress) =>
+              onProgress?.call(0.4 + fileProgress * 0.45),
         );
 
         // 9. Restore SharedPreferences allowlist.
-        onProgress?.call(0.9);
+        onProgress?.call(0.95);
+        onStage?.call('Restoring settings…');
         final prefs = rawJson['asyncStorage'] as Map<String, dynamic>? ?? {};
         await _restorePrefsAllowlist(
           prefs,
@@ -675,11 +691,12 @@ class BackupService {
       } catch (e) {
         // Rollback on inner failure.
         logStorage.error('Restore step failed — executing rollback', e);
+        onStage?.call('Restore failed — putting your data back…');
         await _rollbackSnapshots(snapshots);
         return BackupResult(
           success: false,
           verification: 'failed',
-          error: 'Import failed: $e',
+          error: _userFacingImportError(e),
           warnings: warnings,
         );
       }
@@ -691,7 +708,7 @@ class BackupService {
       return BackupResult(
         success: false,
         verification: 'failed',
-        error: 'Import failed: $e',
+        error: _userFacingImportError(e),
         warnings: warnings,
       );
     } finally {
@@ -709,6 +726,45 @@ class BackupService {
   // ---------------------------------------------------------------------------
   // Internal Helpers
   // ---------------------------------------------------------------------------
+
+  /// Maps technical import failures to messages a non-expert understands.
+  /// The UI shows this string directly — it must never be a raw exception.
+  static String _userFacingImportError(Object e) {
+    final text = e.toString().toLowerCase();
+    if (e is FormatException) {
+      final message = e.message.toLowerCase();
+      if (message.contains('metadata') && message.contains('missing')) {
+        return 'This file is not a valid app backup — the backup description is missing.';
+      }
+      if (message.contains('newer app version') ||
+          message.contains('update the app')) {
+        return 'This backup was created by a newer app version. Update the app first.';
+      }
+      if (message.contains('duplicate media') ||
+          message.contains('invalid or duplicate')) {
+        return 'This backup contains conflicting video filenames and cannot be restored safely.';
+      }
+      if (message.contains('manifest')) {
+        return 'This backup is incomplete or damaged — some videos are missing.';
+      }
+      return 'This backup file is damaged and cannot be restored. Your current data was left untouched.';
+    }
+    if (text.contains('not enough free space') || text.contains('enospc')) {
+      return 'Not enough free space on this device to restore the backup. Free up storage and try again.';
+    }
+    if (text.contains('out of memory') || text.contains('oom')) {
+      return 'The backup is too large to restore in one go on this device. Try freeing memory and restarting the app first.';
+    }
+    if (text.contains('nosuchfile') ||
+        text.contains('no such file') ||
+        text.contains('errno 2')) {
+      return 'The backup file could not be read — it may have been moved or deleted. Please select it again.';
+    }
+    if (text.contains('permission') || text.contains('eacces')) {
+      return 'The app was not allowed to read the backup file. Please grant file access and try again.';
+    }
+    return 'The backup could not be restored. Your current data was left untouched. Please try again.';
+  }
 
   static Future<_DecodedBackup> _decodeBackup(String zipPath) async {
     final input = InputFileStream(zipPath);
@@ -1034,14 +1090,22 @@ class BackupService {
   /// videos and prevents a failed restore from overwriting a user's originals.
   /// Only folders actually present in this backup are swapped; a scoped import
   /// (settings/notes-only) leaves existing media untouched (RN parity).
+  ///
+  /// Checkpointed per media file: each video is extracted in its own isolate
+  /// call, so a 1 GB+ backup streams file-by-file (flat memory, real progress
+  /// per video) instead of inflating the whole archive at once — the crash the
+  /// user saw on their 1.3 GB backup. Completed files are verified by size as
+  /// they land; a failure aborts with the already-staged files left in place
+  /// for rollback, never a half-written media dir.
   Future<int> _restoreMediaFiles(
     String zipPath,
     List<BackupFileEntry> vlogs,
     List<BackupFileEntry> thumbs,
     String docs,
     List rawVlogRows,
-    Map<String, Object> snapshots,
-  ) async {
+    Map<String, Object> snapshots, {
+    void Function(double progress)? onProgress,
+  }) async {
     final included = [...vlogs, ...thumbs].where((e) => e.included).toList();
     if (included.isEmpty) {
       // No media in this backup: keep the user's videos and thumbnails as-is.
@@ -1051,7 +1115,14 @@ class BackupService {
     final snapshotDir = snapshots['snapshotDir'] as String;
     final stagedDir = p.join(snapshotDir, 'staged');
     final files = included.map((e) => e.toJson()).toList();
-    await Isolate.run(() => _extractMediaWorker(zipPath, stagedDir, files));
+    // One isolate pass per media file (checkpoint): memory stays flat at ~one
+    // video, and each completed file is a resume-safe checkpoint on disk.
+    for (var i = 0; i < files.length; i++) {
+      final single = [files[i]];
+      await Isolate.run(() => _extractMediaWorker(zipPath, stagedDir, single));
+      onProgress?.call(files.length <= 1 ? 1.0 : i / files.length);
+    }
+    onProgress?.call(1.0);
     // A truncated archive can pass the header-only manifest gate; confirm the
     // staged bytes match the manifest before replacing user media.
     final stagedOk = await _verifyExtractedSizes(stagedDir, files);
@@ -1115,21 +1186,40 @@ class BackupService {
   static Future<void> _extractMediaWorker(
     String zipPath,
     String stagingPath,
-    List<Map<String, dynamic>> entries,
-  ) async {
+    List<Map<String, dynamic>> entries, {
+    int startIndex = 0,
+  }) async {
     final input = InputFileStream(zipPath);
     try {
-      final archive = ZipDecoder().decodeStream(input);
+      // Checkpointed extraction: the ZIP central directory is cheap, but each
+      // video inflates hundreds of MB. Decoding per chunk keeps worker memory
+      // flat (~one video at a time) and lets the UI report real file progress.
+      final names = await Isolate.run(() => _listArchiveNames(zipPath));
+      final index = <String, String>{};
+      for (final name in names) {
+        final normalized = name.replaceAll('\\', '/');
+        index[normalized] = name;
+        final slash = normalized.indexOf('/');
+        if (slash > 0) index[normalized.substring(slash + 1)] = name;
+      }
       for (final folder in ['vlogs', 'vlog_thumbnails']) {
         await Directory(p.join(stagingPath, folder)).create(recursive: true);
       }
-      for (final raw in entries) {
-        final entry = BackupFileEntry.fromJson(raw);
+      final archive = ZipDecoder().decodeStream(input);
+      final byName = <String, ArchiveFile>{
+        for (final file in archive.files)
+          if (file.isFile) file.name.replaceAll('\\', '/'): file,
+      };
+      for (var i = startIndex; i < entries.length; i++) {
+        final entry = BackupFileEntry.fromJson(entries[i]);
         final target = entry.entryPath.replaceAll('\\', '/');
-        final file = archive.files.firstWhere((f) {
-          final name = f.name.replaceAll('\\', '/');
-          return f.isFile && (name == target || name.endsWith('/$target'));
-        });
+        final file =
+            byName[target] ??
+            byName[index[target] ?? ''] ??
+            archive.files.firstWhere((f) {
+              final name = f.name.replaceAll('\\', '/');
+              return f.isFile && (name == target || name.endsWith('/$target'));
+            });
         final output = OutputFileStream(
           p.join(
             stagingPath,
@@ -1145,6 +1235,21 @@ class BackupService {
       }
     } finally {
       await input.close();
+    }
+  }
+
+  /// Lists ZIP entry names without inflating content (cheap central-directory
+  /// scan for checkpoint resume + per-file progress).
+  static List<String> _listArchiveNames(String zipPath) {
+    final input = InputFileStream(zipPath);
+    try {
+      final archive = ZipDecoder().decodeStream(input);
+      return [
+        for (final file in archive.files)
+          if (file.isFile) file.name,
+      ];
+    } finally {
+      input.close();
     }
   }
 

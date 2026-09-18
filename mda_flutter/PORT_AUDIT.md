@@ -37,6 +37,13 @@ now delivers its initial snapshot, and streaming chunks refresh stall detection.
 ## Verification history
 
 - Full suite after the 2026-09-18 repair session: **158 passed**, analyzer **no issues found**.
+- Second session (1.3 GB user backup + 4 UI reports): **159 passed**, analyzer clean.
+- Large-restore design: media extracts checkpointed (one isolate pass per
+  video, flat ~300 MB memory, per-file progress + stage labels in German-safe
+  wording); failures return user-facing messages (never raw exceptions, never
+  a crash); media-less scoped imports preserve existing videos. The user's own
+  1.3 GB archive (29 entries, 13 vlogs + 13 thumbs, schema v6) matches every
+  gate; on-device restore with that file is still the pending proof.
 - Back navigation: **4 passed** (was 3 + 1 foundation-var failure).
 - Backup: **16 passed** (incl. scoped-media + 6 MB roundtrip + RN fixture).
 - Security controller: **18 passed** (incl. circles-only `keepAlive` scope).

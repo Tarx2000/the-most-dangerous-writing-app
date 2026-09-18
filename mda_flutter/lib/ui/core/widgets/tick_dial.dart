@@ -134,7 +134,6 @@ class _TickDialState extends State<TickDial> {
 
   @override
   Widget build(BuildContext context) {
-    final screenW = MediaQuery.sizeOf(context).width;
     final scaleBase =
         0.95 + (widget.data.length > 1 ? widget.selectedIndex / (widget.data.length - 1) * 0.15 : 0);
 
@@ -170,25 +169,15 @@ class _TickDialState extends State<TickDial> {
             ),
           ),
         ),
-        // Ruler
+        // Ruler — the red center needle paints LAST (on top of the ticks).
+        // RN parity (`TickDial.tsx` indicator has zIndex 10): the opaque red
+        // needle must cover the white ticks beneath it, never the other way
+        // round. IgnorePointer keeps horizontal drags reaching the scroller.
         SizedBox(
           height: 62,
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Center indicator (exact screen center)
-              Positioned(
-                left: screenW / 2 - 1.5,
-                top: 10,
-                child: Container(
-                  width: 3,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryAction,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
               // Tick strip
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
@@ -230,6 +219,17 @@ class _TickDialState extends State<TickDial> {
                         ),
                       ),
                     ),
+                  ),
+                ),
+              ),
+              // Center indicator (exact screen center, above the ticks)
+              IgnorePointer(
+                child: Container(
+                  width: 3,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryAction,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
