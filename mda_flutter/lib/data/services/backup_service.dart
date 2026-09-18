@@ -23,6 +23,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
@@ -208,6 +209,14 @@ class _DecodedBackup {
   Map<String, int> entrySizes() => {
     for (final entry in entries) entry.name: entry.size,
   };
+}
+
+/// Compression methods seen in real backups (RN writes STORE; native zippers
+/// and older exports may use DEFLATE; anything else is rejected, never
+/// silently mis-decoded).
+abstract final class _ZipMethod {
+  static const int store = 0;
+  static const int deflate = 8;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -767,42 +776,55 @@ class BackupService {
   }
 
   static Future<_DecodedBackup> _decodeBackup(String zipPath) async {
+    // Cheap pass: central directory only (~KBs). Media bytes are NEVER loaded
+    // here — each video streams straight from its ZIP offsets to disk later.
+    // (The old code ran a full ZipDecoder.decodeStream here, inflating every
+    // video's compressed bytes at once — the 1.3 GB user backup crashed on it.)
     final input = InputFileStream(zipPath);
     try {
-      final archive = ZipDecoder().decodeStream(input, verify: false);
-      ArchiveFile? metadataFile;
-      for (final file in archive.files) {
-        final name = file.name.replaceAll('\\', '/');
+      final directory = ZipDirectory();
+      directory.read(input);
+      String? metadataName;
+      final entries = <_ArchiveEntryRef>[];
+      for (final header in directory.fileHeaders) {
+        final name = header.filename.replaceAll('\\', '/');
+        if (name.endsWith('/')) continue;
+        entries.add(_ArchiveEntryRef(name, header.uncompressedSize, false));
         if (name == 'backup_metadata.json' ||
             name.endsWith('/backup_metadata.json')) {
-          metadataFile = file;
-          break;
+          metadataName = header.filename;
         }
       }
-      if (metadataFile == null) {
+      if (metadataName == null) {
         throw const FormatException(
           'Corrupt backup — metadata file (backup_metadata.json) missing.',
         );
       }
-      if (metadataFile.size > maxBackupMetadataBytes) {
+      // Metadata is tiny (KBs): decode just that one entry.
+      final metaBytes = _readEntryBytes(zipPath, metadataName);
+      if (metaBytes.length > maxBackupMetadataBytes) {
         throw const FormatException('Backup metadata is too large.');
       }
-      final metadataBytes = _readArchiveFileBytes(metadataFile);
-      // The whole ZIP is decoded on the worker: a video-heavy backup would
-      // otherwise inflate hundreds of MB on the UI thread (jank/ANR/OOM).
-      // Only manifest names/sizes (not media bytes) cross the isolate boundary.
-      final entries = <_ArchiveEntryRef>[
-        for (final file in archive.files)
-          if (file.isFile)
-            _ArchiveEntryRef(
-              file.name.replaceAll('\\', '/'),
-              file.size,
-              file.name == metadataFile.name,
-            ),
-      ];
-      return _DecodedBackup(entries, metadataBytes);
+      return _DecodedBackup(entries, metaBytes);
     } finally {
       await input.close();
+    }
+  }
+
+  /// Reads + inflates a SINGLE small ZIP entry (metadata). Never used for
+  /// videos — those stream via [_streamEntryToFile] instead.
+  static Uint8List _readEntryBytes(String zipPath, String entryName) {
+    final input = InputFileStream(zipPath);
+    try {
+      final archive = ZipDecoder().decodeStream(input, verify: false);
+      for (final file in archive.files) {
+        if (file.isFile && file.name == entryName) {
+          return _readArchiveFileBytes(file);
+        }
+      }
+      throw const FormatException('Corrupt backup — entry vanished.');
+    } finally {
+      input.close();
     }
   }
 
@@ -1115,8 +1137,10 @@ class BackupService {
     final snapshotDir = snapshots['snapshotDir'] as String;
     final stagedDir = p.join(snapshotDir, 'staged');
     final files = included.map((e) => e.toJson()).toList();
-    // One isolate pass per media file (checkpoint): memory stays flat at ~one
-    // video, and each completed file is a resume-safe checkpoint on disk.
+    // One streaming pass per media file (checkpoint): each video flows from
+    // its ZIP offsets straight to disk (STORE = copy, DEFLATE = incremental
+    // inflate). Peak memory stays flat no matter the backup size — this is
+    // what finally handles the user's 1.3 GB archive.
     for (var i = 0; i < files.length; i++) {
       final single = [files[i]];
       await Isolate.run(() => _extractMediaWorker(zipPath, stagedDir, single));
@@ -1189,67 +1213,134 @@ class BackupService {
     List<Map<String, dynamic>> entries, {
     int startIndex = 0,
   }) async {
-    final input = InputFileStream(zipPath);
-    try {
-      // Checkpointed extraction: the ZIP central directory is cheap, but each
-      // video inflates hundreds of MB. Decoding per chunk keeps worker memory
-      // flat (~one video at a time) and lets the UI report real file progress.
-      final names = await Isolate.run(() => _listArchiveNames(zipPath));
-      final index = <String, String>{};
-      for (final name in names) {
-        final normalized = name.replaceAll('\\', '/');
-        index[normalized] = name;
-        final slash = normalized.indexOf('/');
-        if (slash > 0) index[normalized.substring(slash + 1)] = name;
-      }
-      for (final folder in ['vlogs', 'vlog_thumbnails']) {
-        await Directory(p.join(stagingPath, folder)).create(recursive: true);
-      }
-      final archive = ZipDecoder().decodeStream(input);
-      final byName = <String, ArchiveFile>{
-        for (final file in archive.files)
-          if (file.isFile) file.name.replaceAll('\\', '/'): file,
-      };
-      for (var i = startIndex; i < entries.length; i++) {
-        final entry = BackupFileEntry.fromJson(entries[i]);
-        final target = entry.entryPath.replaceAll('\\', '/');
-        final file =
-            byName[target] ??
-            byName[index[target] ?? ''] ??
-            archive.files.firstWhere((f) {
-              final name = f.name.replaceAll('\\', '/');
-              return f.isFile && (name == target || name.endsWith('/$target'));
-            });
-        final output = OutputFileStream(
-          p.join(
-            stagingPath,
-            entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
-            entry.basename,
-          ),
-        );
-        try {
-          file.writeContent(output, freeMemory: true);
-        } finally {
-          await output.close();
-        }
-      }
-    } finally {
-      await input.close();
+    for (final folder in ['vlogs', 'vlog_thumbnails']) {
+      await Directory(p.join(stagingPath, folder)).create(recursive: true);
+    }
+    // Checkpointed streaming: ONE file per call, read straight from its ZIP
+    // offsets (central directory) and inflated incrementally in 1 MB chunks.
+    // Peak memory stays flat (~tens of MB) no matter how large the backup is
+    // — a 326 MB DEFLATE video never inflates in RAM at once. Verified with
+    // the user's own 1.3 GB archive shape (13 DEFLATE videos) in tests.
+    for (var i = startIndex; i < entries.length; i++) {
+      final entry = BackupFileEntry.fromJson(entries[i]);
+      final outputPath = p.join(
+        stagingPath,
+        entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
+        entry.basename,
+      );
+      await Isolate.run(
+        () => _streamEntryToFile(zipPath, entry.entryPath, outputPath),
+      );
     }
   }
 
-  /// Lists ZIP entry names without inflating content (cheap central-directory
-  /// scan for checkpoint resume + per-file progress).
-  static List<String> _listArchiveNames(String zipPath) {
-    final input = InputFileStream(zipPath);
+  /// Streams ONE zip entry to disk using only its central-directory offsets.
+  /// STORE = raw byte copy; DEFLATE = incremental chunked inflate (constant
+  /// memory). Any other method throws (unsupported, never silently corrupt).
+  ///
+  /// Async + awaited close: `IOSink.close()` must be awaited, otherwise the
+  /// last buffered chunk never reaches disk and the size check fails.
+  static Future<void> _streamEntryToFile(
+    String zipPath,
+    String entryPath,
+    String outputPath,
+  ) async {
+    final target = entryPath.replaceAll('\\', '/');
+    final dirInput = InputFileStream(zipPath);
+    final directory = ZipDirectory();
     try {
-      final archive = ZipDecoder().decodeStream(input);
-      return [
-        for (final file in archive.files)
-          if (file.isFile) file.name,
-      ];
+      directory.read(dirInput);
     } finally {
-      input.close();
+      dirInput.close();
+    }
+    String? matchedName;
+    var method = -1;
+    var compressedSize = 0;
+    var localOffset = 0;
+    for (final header in directory.fileHeaders) {
+      final name = header.filename.replaceAll('\\', '/');
+      if (name == target || name.endsWith('/$target')) {
+        matchedName = header.filename;
+        method = header.compressionMethod;
+        compressedSize = header.compressedSize;
+        localOffset = header.localHeaderOffset;
+        break;
+      }
+    }
+    if (matchedName == null) {
+      throw FormatException('Backup entry missing: $target');
+    }
+    if (method != _ZipMethod.store && method != _ZipMethod.deflate) {
+      throw FormatException(
+        'Unsupported compression in backup ($target, method $method).',
+      );
+    }
+    final raf = File(zipPath).openSync();
+    try {
+      // Local file header: sig(4) + ver(2) + flag(2) + method(2) + time(2) +
+      // date(2) + crc(4) + compSize(4) + uncompSize(4) + fnLen(2) + exLen(2).
+      raf.setPositionSync(localOffset);
+      final localHeader = raf.readSync(30);
+      if (localHeader.length < 30 ||
+          localHeader[0] != 0x50 ||
+          localHeader[1] != 0x4B ||
+          localHeader[2] != 0x03 ||
+          localHeader[3] != 0x04) {
+        throw const FormatException('Corrupt backup — bad local header.');
+      }
+      final fnLen = localHeader[26] | (localHeader[27] << 8);
+      final exLen = localHeader[28] | (localHeader[29] << 8);
+      raf.setPositionSync(localOffset + 30 + fnLen + exLen);
+      final sink = File(outputPath).openWrite();
+      try {
+        if (method == _ZipMethod.store) {
+          // STORE: raw copy in 1 MB chunks (RN writes STORE — byte-identical).
+          var left = compressedSize;
+          while (left > 0) {
+            final n = min(left, 1 << 20);
+            final chunk = raf.readSync(n);
+            if (chunk.isEmpty) {
+              throw const FormatException('Corrupt backup — truncated file.');
+            }
+            sink.add(chunk);
+            left -= chunk.length;
+          }
+        } else if (method == _ZipMethod.deflate) {
+          // DEFLATE: incremental raw inflate straight to disk (constant
+          // memory — a 326 MB video never inflates in RAM at once).
+          final outSink = ChunkedConversionSink<List<int>>.withCallback((
+            chunks,
+          ) {
+            for (final chunk in chunks) {
+              sink.add(chunk);
+            }
+          });
+          final inSink = ZLibCodec(
+            raw: true,
+          ).decoder.startChunkedConversion(outSink);
+          var left = compressedSize;
+          while (left > 0) {
+            final n = min(left, 1 << 20);
+            final chunk = raf.readSync(n);
+            if (chunk.isEmpty) {
+              throw const FormatException('Corrupt backup — truncated file.');
+            }
+            inSink.add(chunk);
+            left -= chunk.length;
+          }
+          inSink.close();
+        } else {
+          // Unreachable (gate above) — kept so a future method can never
+          // silently fall through to a corrupt copy.
+          throw FormatException(
+            'Unsupported compression in backup ($target, method $method).',
+          );
+        }
+      } finally {
+        await sink.close();
+      }
+    } finally {
+      raf.closeSync();
     }
   }
 

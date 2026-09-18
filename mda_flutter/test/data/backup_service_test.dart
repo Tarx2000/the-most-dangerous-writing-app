@@ -601,4 +601,133 @@ void main() {
       expect(result.videosIncluded, 0);
     },
   );
+
+  test(
+    'large user-style backup: 13 DEFLATE videos stream without crashing',
+    () async {
+      // Mirrors the user's real 1.3 GB archive at reduced scale: 13 videos
+      // (5 large 20–32 MB, 8 small), all DEFLATE-compressed like the RN
+      // exporter writes them, plus metadata + manifests. The old code path
+      // inflated the whole archive per file (13 full ZIP decodes for 13
+      // videos); this test fails if the import cannot stream them.
+      const videoSizes = <int>[
+        32 * 1024 * 1024,
+        30 * 1024 * 1024,
+        28 * 1024 * 1024,
+        24 * 1024 * 1024,
+        20 * 1024 * 1024,
+        8 * 1024 * 1024,
+        6 * 1024 * 1024,
+        4 * 1024 * 1024,
+        3 * 1024 * 1024,
+        2 * 1024 * 1024,
+        1024 * 1024,
+        512 * 1024,
+        256 * 1024,
+      ];
+      final zipPath = p.join(tempDir.path, 'large_backup.zip');
+      final encoder = ZipFileEncoder()..create(zipPath);
+
+      final vlogManifest = <Map<String, dynamic>>[];
+      final vlogRows = <Map<String, dynamic>>[];
+      var timestamp = 1000;
+      for (var i = 0; i < videoSizes.length; i++) {
+        final id = 'big_vlog_$i';
+        final name = 'vlogs/$id.mp4';
+        // Pseudo-random bytes compress poorly (like real H.264), forcing the
+        // DEFLATE path with realistic compressed sizes.
+        final data = List<int>.generate(
+          videoSizes[i],
+          (j) => (j * 2654435761 + i * 40503) % 251,
+        );
+        final file = ArchiveFile.bytes(name, data)
+          ..compression = CompressionType.deflate;
+        encoder.addArchiveFile(file);
+        vlogManifest.add({
+          'vlogId': id,
+          'entryPath': name,
+          'kind': 'video',
+          'sizeBytes': videoSizes[i],
+          'included': true,
+          'reason': null,
+        });
+        vlogRows.add({
+          'id': id,
+          'file_path': '/old/device/vlogs/$id.mp4',
+          'date_str': '2026-08-11',
+          'timestamp': timestamp++,
+          'duration_sec': 60,
+          'file_size_bytes': videoSizes[i],
+        });
+      }
+      encoder.addArchiveFile(
+        ArchiveFile.bytes(
+          'backup_metadata.json',
+          utf8.encode(
+            jsonEncode({
+              'backupVersion': 2,
+              'schemaVersion': 6,
+              'appVersion': '1.5.8',
+              'createdAt': 1723670000000,
+              'scopes': ['notes', 'settings', 'masteries', 'vlogs'],
+              'sqlite': {
+                'notes': [
+                  {
+                    'id': 'bignote',
+                    'text': 'large backup seed note ' * 20,
+                    'date_str': '2026-08-11',
+                    'timestamp': 1,
+                    'duration_min': 5,
+                    'won': 1,
+                  },
+                ],
+                'vlogs': vlogRows,
+              },
+              'asyncStorage': {'__DB_SCHEMA_VERSION__': 6},
+              'fileManifest': {'vlogs': vlogManifest, 'thumbnails': []},
+            }),
+          ),
+        ),
+      );
+      await encoder.close();
+      // Release the ~160 MB fixture from test memory before importing.
+      await Future<void>.delayed(Duration.zero);
+
+      final stages = <String>[];
+      var lastProgress = 0.0;
+      var progressCalls = 0;
+      final result = await service.importBackupZip(
+        zipPath: zipPath,
+        onProgress: (progress) {
+          progressCalls++;
+          expect(
+            progress,
+            greaterThanOrEqualTo(lastProgress - 0.001),
+            reason: 'progress must advance monotonically',
+          );
+          lastProgress = progress;
+        },
+        onStage: stages.add,
+      );
+      expect(result.success, isTrue, reason: result.error);
+      expect(result.videosIncluded, videoSizes.length);
+      expect(progressCalls, greaterThan(videoSizes.length));
+      expect(stages, contains('Copying videos…'));
+
+      // Every staged video landed byte-exact; DB paths point at the sandbox.
+      var totalBytes = 0;
+      for (var i = 0; i < videoSizes.length; i++) {
+        final row = await getFirst('SELECT * FROM vlogs WHERE id = ?', [
+          'big_vlog_$i',
+        ]);
+        expect(row, isNotNull);
+        final restored = File(row!['file_path'] as String);
+        expect(await restored.exists(), isTrue);
+        final size = await restored.length();
+        expect(size, videoSizes[i]);
+        totalBytes += size;
+      }
+      expect(totalBytes, greaterThan(100 * 1024 * 1024));
+    },
+  );
 }

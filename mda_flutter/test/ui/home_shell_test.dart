@@ -123,8 +123,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Library').hitTestable(), findsOneWidget);
     // Tapping Circles must NOT jump back to Start (RN sessionMode parity).
-    // The library tab chip (13px) and the nav pill label (10px) share the
-    // text — tap the nav pill entry explicitly via LiquidGlassNav.
+    // The nav pill entry is tapped explicitly via LiquidGlassNav (no header
+    // tab pills exist in RN — the visible section is mode-driven only).
     await tester.tap(
       find.descendant(
         of: find.byType(LiquidGlassNav),
@@ -135,6 +135,22 @@ void main() {
     expect(find.text('Library').hitTestable(), findsOneWidget);
     expect(find.text('Free Writing'), findsNothing);
     expect(find.text('Relationship Journal'), findsNothing);
+    // The layout must be overflow-free on a 400 px phone (the old header
+    // pills + lock pill overflowed the header row here).
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('library shows no header tab pills (RN parity)', (tester) async {
+    await _pumpHome(tester);
+    await tester.flingFrom(const Offset(350, 160), const Offset(-320, 0), 1200);
+    await tester.pumpAndSettle();
+    // Section content is mode-driven; no Notes/Check-ins/Circles/Vlogs chips.
+    expect(find.text('Notes'), findsNothing);
+    expect(find.text('Check-ins'), findsNothing);
+    expect(find.text('Vlogs'), findsNothing);
+    // The locked overlay shows the RN lock card (per-section copy).
+    expect(find.text('Notes Protected'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 }

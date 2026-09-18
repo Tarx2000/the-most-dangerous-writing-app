@@ -84,20 +84,17 @@ class LibraryNotesList extends StatelessWidget {
       itemBuilder: (context, index) {
         final group = groups[index];
         if (group is _GroupHeader) {
+          // RN parity: plain group title, no divider row (the Divider made
+          // the header Row overflow on narrow phones).
           return Padding(
             padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
-            child: Row(
-              children: [
-                Text(
-                  group.label,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Expanded(child: Divider(color: AppColors.glassBorder, height: 1, thickness: 1)),
-              ],
+            child: Text(
+              group.label,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           );
         }
@@ -197,7 +194,8 @@ class _NoteCardItem extends StatelessWidget {
       child: AnimatedScaleButton(
         onPress: onTap == null ? null : () => onTap!(note),
         activeScale: 0.97,
-        child: Container(          padding: const EdgeInsets.all(14),
+        child: Container(
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: AppColors.cardBackground,
             borderRadius: BorderRadius.circular(20),

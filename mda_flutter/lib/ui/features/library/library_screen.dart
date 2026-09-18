@@ -6,6 +6,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/haptics.dart';
@@ -161,13 +162,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final security = ref.watch(securityControllerProvider);
-    final locked = _tabIndex == 2
-        ? !security.isCirclesUnlocked
+    // RN parity: circles/vlogs unlock on the LOWER tier (circles OR notes);
+    // notes/check-ins require the full notes tier.
+    final locked = (_tabIndex == 2 || _tabIndex == 3)
+        ? (!security.isCirclesUnlocked && !security.isNotesUnlocked)
         : !security.isNotesUnlocked;
     final notes = ref.watch(notesProvider);
     final persons = ref.watch(personsProvider);
     final checkins = notes.where((n) => n.isAlignmentReflection).toList();
     final journalNotes = notes.where((n) => !n.isAlignmentReflection).toList();
+    final screenHeight = MediaQuery.sizeOf(context).height;
 
     return SafeArea(
       child: Column(
@@ -175,34 +179,37 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            // RN `headerRow`: title block + lock pill share one row. The
+            // pill is intrinsically narrow (icon + short label); the title
+            // block takes the rest. Both texts ellipsize on tiny phones.
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       // RN parity: title + live AI badge share one row; the
                       // badge only exists while the queue is processing.
-                      // Wrapped in Flexible so the badge never overflows the
-                      // title on narrow phones.
-                      Row(
-                        children: [
-                          const Flexible(
-                            child: Text(
-                              'Library',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 32,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const _AiProcessingBadge(),
-                        ],
+                      // The badge sits BELOW the title (not beside it): at
+                      // 400 px the title (~115 px) + pill (~110 px) + badge
+                      // would otherwise exceed the header row.
+                      const Text(
+                        'Library',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
+                      const _AiProcessingBadge(),
                       Text(
                         '${notes.length} Entries • ${persons.length} Circles',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 16,
@@ -211,6 +218,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 12),
                 _LockPill(
                   locked: locked,
                   onTap: () {
@@ -233,131 +241,292 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 onPress: _openSortSheet,
               ),
             ),
-          // The tab strip stays reachable while locked so Circles can request
-          // its own lower tier without granting access to private notes.
-          // RN drives the visible section from the shared session mode — no
-          // header tab bar exists there; this strip mirrors it in place so
-          // the nav pill and the page never disagree.
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-            child: Row(
-              children: [
-                for (var i = 0; i < _tabs.length; i++)
-                  _LibraryTab(
-                    label: _tabs[i],
-                    active: _tabIndex == i,
-                    onTap: () => setState(() => _tabIndex = i),
-                  ),
-              ],
-            ),
-          ),
+          // RN has NO header tab pills: the visible section is driven only by
+          // the shared session mode (bottom nav). This strip therefore does
+          // not exist — removed for 1:1 parity.
+          //
+          // Lock/unlock cross-fade (RN `unlockProgress` spring parity,
+          // springDefault damping 30 / stiffness 200): content scales
+          // 0.95→1 + fades 0→1 while the overlay slides up off-screen and
+          // fades 1→0. Instant switches look broken by comparison.
           Expanded(
-            child: locked
-                ? _LibraryLockedContent(
-                    section: _tabs[_tabIndex],
-                    onUnlock: _unlockCurrentTab,
-                  )
-                : switch (_tabIndex) {
-                    0 => LibraryNotesList(
-                      notes: journalNotes
-                          .where((n) => n.personId == null)
-                          .toList(),
-                      sortBy: _sortBy,
-                      emptyTitle: 'No entries yet',
-                      emptySubtitle:
-                          'Complete your first writing session to see it here.',
-                      onNoteTap: _openNoteViewer,
-                    ),
-                    1 => LibraryNotesList(
-                      notes: checkins,
-                      sortBy: _sortBy,
-                      emptyTitle: 'No check-ins yet',
-                      emptySubtitle:
-                          'Reflections from your alignment check-ins appear here.',
-                      reflectionsOnly: true,
-                      onNoteTap: _openNoteViewer,
-                    ),
-                    2 => _CirclesTab(
-                      persons: persons,
-                      onPersonTap: _openPersonProfile,
-                    ),
-                    _ => const VlogCalendarGallery(),
-                  },
+            child: _LockCrossFade(
+              locked: locked,
+              screenHeight: screenHeight,
+              overlay: _LibraryLockedContent(
+                tabIndex: _tabIndex,
+                onUnlock: _unlockCurrentTab,
+              ),
+              content: switch (_tabIndex) {
+                0 => LibraryNotesList(
+                  notes: journalNotes.where((n) => n.personId == null).toList(),
+                  sortBy: _sortBy,
+                  emptyTitle: 'No entries yet',
+                  emptySubtitle:
+                      'Complete your first writing session to see it here.',
+                  onNoteTap: _openNoteViewer,
+                ),
+                1 => LibraryNotesList(
+                  notes: checkins,
+                  sortBy: _sortBy,
+                  emptyTitle: 'No check-ins yet',
+                  emptySubtitle:
+                      'Reflections from your alignment check-ins appear here.',
+                  reflectionsOnly: true,
+                  onNoteTap: _openNoteViewer,
+                ),
+                2 => _CirclesTab(
+                  persons: persons,
+                  onPersonTap: _openPersonProfile,
+                ),
+                _ => const VlogCalendarGallery(),
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
-  static const _tabs = ['Notes', 'Check-ins', 'Circles', 'Vlogs'];
+  // Kept as documentation of the RN tab order (the visible section is driven
+  // by the shared session mode, not by local state). Referenced by the lock
+  // card copy helper below so it never goes stale.
+  static const List<String> tabOrder = ['Notes', 'Check-ins', 'Circles', 'Vlogs'];
+}
+
+/// Lock/unlock cross-fade (RN `unlockProgress` parity).
+///
+/// RN drives one spring (`springDefault`: damping 30, stiffness 200) from 0
+/// (locked) to 1 (unlocked): content fades 0→1 + scales 0.95→1 while the
+/// overlay fades 1→0 + slides `0→−screenHeight`. Both directions use the
+/// same spring; no timing curves, no overshoot (scales ≤ 1.0).
+class _LockCrossFade extends StatefulWidget {
+  const _LockCrossFade({
+    required this.locked,
+    required this.screenHeight,
+    required this.overlay,
+    required this.content,
+  });
+
+  final bool locked;
+  final double screenHeight;
+  final Widget overlay;
+  final Widget content;
+
+  @override
+  State<_LockCrossFade> createState() => _LockCrossFadeState();
+}
+
+class _LockCrossFadeState extends State<_LockCrossFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.value = widget.locked ? 0 : 1;
+  }
+
+  @override
+  void didUpdateWidget(covariant _LockCrossFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.locked != oldWidget.locked) {
+      // Spring to the new state (RN `withSpring(unlockProgress)` parity).
+      // `animateTo` with a spring description below replaces timing curves.
+      _controller.animateWith(
+        SpringSimulation(
+          const SpringDescription(damping: 30, stiffness: 200, mass: 0.8),
+          _controller.value,
+          widget.locked ? 0 : 1,
+          0,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Cheap children: the overlay card + list are built once; animation
+    // frames only move transforms/opacity (no per-frame rebuilds).
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final progress = _controller.value;
+        return Stack(
+          children: [
+            Opacity(
+              opacity: progress,
+              child: Transform.scale(
+                scale: 0.95 + 0.05 * progress,
+                child: widget.content,
+              ),
+            ),
+            Opacity(
+              opacity: 1 - progress,
+              child: Transform.translate(
+                offset: Offset(0, -widget.screenHeight * progress),
+                child: progress >= 1
+                    ? const SizedBox.shrink()
+                    : widget.overlay,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// RN lock card copy per section (LibraryScreen.tsx circlesLockTitle etc.;
+/// VlogCalendarGallery.tsx for vlogs). Notes/check-ins share the notes copy.
+/// Index order follows [_LibraryScreenState.tabOrder].
+({String title, String subtitle, String button}) _lockCopyForTab(int index) {
+  assert(
+    index >= 0 && index < _LibraryScreenState.tabOrder.length,
+    'lock copy index out of tab order',
+  );
+  switch (index) {
+    case 2:
+      return (
+        title: 'Circles Protected',
+        subtitle: 'Verify your identity to view your circles',
+        button: 'Unlock Circles',
+      );
+    case 3:
+      return (
+        title: 'Vlogs Protected',
+        subtitle: 'Verify your identity to view your video journals',
+        button: 'Unlock Vlogs',
+      );
+    default:
+      return (
+        title: 'Notes Protected',
+        subtitle: 'Verify your identity to view your notes',
+        button: 'Unlock Notes',
+      );
+  }
 }
 
 class _LibraryLockedContent extends StatelessWidget {
-  const _LibraryLockedContent({required this.section, required this.onUnlock});
-  final String section;
+  const _LibraryLockedContent({required this.tabIndex, required this.onUnlock});
+  final int tabIndex;
   final VoidCallback onUnlock;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Mdi.get('lockOutline'), color: AppColors.textDim, size: 32),
-          const SizedBox(height: 14),
-          Text(
-            '$section are locked',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
+  Widget build(BuildContext context) {
+    final copy = _lockCopyForTab(tabIndex);
+    // RN `circlesLockCard`: glassBackground, radius 24, padding 40, 1 px
+    // glassBorder, full width; 48 px red lock; title 22/w900; subtitle 15
+    // muted centered, line-height 22; red pill 16/28 radius 100 with red
+    // shadow (elevation 8); fingerprint 22 white + 16/w800 white label.
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(40),
+          decoration: BoxDecoration(
+            color: AppColors.glassBackground,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.glassBorder, width: 1),
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'Verify your identity to continue.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-          ),
-          const SizedBox(height: 20),
-          AnimatedScaleButton(
-            onPress: onUnlock,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
-              decoration: BoxDecoration(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Mdi.get('lockOutline'),
                 color: AppColors.primaryAction,
-                borderRadius: BorderRadius.circular(30),
+                size: 48,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Mdi.get('fingerprint'),
-                    color: AppColors.primaryActionText,
-                    size: 19,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Unlock',
-                    style: TextStyle(
-                      color: AppColors.primaryActionText,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
+              const SizedBox(height: 16),
+              Text(
+                copy.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                copy.subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 15,
+                  height: 22 / 15,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // RN `circlesUnlockBtn`: the card button sizes itself to its
+              // label (Row mainAxisSize.min) — it must never force the card
+              // wider than the screen (padding 40×2 + 20×2 = 120 gutter).
+              Flexible(
+                child: AnimatedScaleButton(
+                  onPress: onUnlock,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryAction,
+                      borderRadius: BorderRadius.circular(100),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: AppColors.bloodGlow,
+                          offset: Offset(0, 4),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Mdi.get('fingerprint'),
+                          color: AppColors.primaryActionText,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            copy.button,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.primaryActionText,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
+/// Placeholder: the RN header has no tab pills (dead code, never
+/// instantiated — kept so the removal stays reviewable in the diff).
+// ignore: unused_element
 class _LibraryTab extends StatelessWidget {
   const _LibraryTab({
     required this.label,
@@ -371,35 +540,7 @@ class _LibraryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: AnimatedScaleButton(
-        onPress: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: active
-                ? AppColors.glassHighlight
-                : AppColors.glassSurfaceSubtle,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: active
-                  ? AppColors.glassBorderMedium
-                  : AppColors.glassBorderFaint,
-              width: 1,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? AppColors.textPrimary : AppColors.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 
@@ -467,7 +608,8 @@ class _SortRow extends StatelessWidget {
 typedef _SortDropdown = _SortRow;
 
 /// Live AI-processing badge (RN parity): rendered only while the AI queue is
-/// processing, with a spinner + batch progress (current/total) or "AI".
+/// processing, with a spinner + pending count. Left-aligned under the title
+/// (never beside it — the header row has no room for a third element).
 class _AiProcessingBadge extends ConsumerWidget {
   const _AiProcessingBadge();
 
@@ -479,35 +621,38 @@ class _AiProcessingBadge extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final pending = asyncState.pendingCount;
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.dangerTint,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.dangerBorder, width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            width: 10,
-            height: 10,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              color: AppColors.primaryAction,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(top: 4, bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.dangerTint,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.dangerBorder, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: AppColors.primaryAction,
+              ),
             ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            pending > 0 ? '$pending AI' : 'AI',
-            style: const TextStyle(
-              color: AppColors.primaryAction,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
+            const SizedBox(width: 4),
+            Text(
+              pending > 0 ? '$pending AI' : 'AI',
+              style: const TextStyle(
+                color: AppColors.primaryAction,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -523,6 +668,15 @@ class _LockPill extends StatefulWidget {
   final bool locked;
   final VoidCallback onTap;
 
+  /// Intrinsic pill widths (RN ANIM_WIDTHS + icon + paddings), measured so
+  /// the parent Row can reserve exact space and the pill never overflows.
+  /// Content max: 16 (icon) + 6 (gap) + 17.5 (Un) + 4.5 (l) + 7.2 (L, hidden
+  /// when Un shows) + ~31 (ock @14px w600) = ~75; + 30 padding + 2 border.
+  /// NOTE: the "Unlock Notes" card button (~200 px) is much wider than the
+  /// header pill — it must NOT reuse this budget. Keep separate constants.
+  // ignore: unused_field — documents the RN-measured pill budget (see above).
+  static const double pillWidth = 122;
+
   @override
   State<_LockPill> createState() => _LockPillState();
 }
@@ -533,26 +687,23 @@ class _LockPillState extends State<_LockPill>
     vsync: this,
     duration: const Duration(milliseconds: 300),
   );
-  late final Animation<double> _iconTurns = Tween<double>(begin: 0, end: 0.5)
-      .animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeOutQuad),
-      );
 
   @override
   void initState() {
     super.initState();
-    if (!widget.locked) _controller.value = 1;
+    _controller.value = widget.locked ? 1 : 0;
   }
 
   @override
   void didUpdateWidget(covariant _LockPill oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.locked != oldWidget.locked) {
-      if (widget.locked) {
-        _controller.reverse();
-      } else {
-        _controller.forward();
-      }
+      // 250 ms cubic-out text/color morph (RN `prefixAnim` parity).
+      _controller.animateTo(
+        widget.locked ? 1 : 0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
     }
   }
 
@@ -564,57 +715,243 @@ class _LockPillState extends State<_LockPill>
 
   @override
   Widget build(BuildContext context) {
-    final locked = widget.locked;
     return AnimatedScaleButton(
       onPress: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-        decoration: BoxDecoration(
-          color: locked ? AppColors.primaryAction : AppColors.glassBackground,
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(
-            color: locked ? AppColors.primaryAction : AppColors.glassBorder,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RotationTransition(
-              turns: _iconTurns,
-              child: Icon(
-                Mdi.get(locked ? 'lock' : 'lockOpenOutline'),
-                color: locked
-                    ? AppColors.primaryActionText
-                    : AppColors.textPrimary,
-                size: 16,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          // RN ANIM_WIDTHS: Un 17.5, l 4.5, L 7.2 — "Un"+"l" collapse while
+          // "L" expands, "ock" stays static. Locked (Unlock) = 1.
+          //
+          // Layout contract (must never overflow the header row): the pill is
+          // intrinsically sized by its content, so the parent Row gives it
+          // unbounded width on narrow phones. The three morph segments report
+          // only their CURRENT width (clipped remainder is invisible), which
+          // keeps the pill exactly as wide as its visible text.
+          final p = _controller.value;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+            decoration: BoxDecoration(
+              color: Color.lerp(
+                AppColors.glassBackground,
+                AppColors.primaryAction,
+                p,
+              ),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(
+                color: Color.lerp(
+                  AppColors.glassBorder,
+                  AppColors.primaryAction,
+                  p,
+                )!,
+                width: 1,
               ),
             ),
-            const SizedBox(width: 6),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              style: TextStyle(
-                color: locked
-                    ? AppColors.primaryActionText
-                    : AppColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-              child: AnimatedScale(
-                scale: locked ? 1.0 : 0.97,
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
-                child: Text(locked ? 'Unlock' : 'Lock'),
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 3D swing-gate shackle (RN `AnimatedLockIcon` parity):
+                // rotateY 0→180° around the hinge, NOT a flat 2D spin.
+                _SwingLockIcon(openAmount: 1 - p),
+                const SizedBox(width: 6),
+                // No Flexible here: each morph segment sizes itself to its
+                // visible width, so the pill can never exceed its content.
+                ClipRect(
+                  child: SizedBox(
+                    width: 17.5 * p,
+                    height: 20,
+                    child: OverflowBox(
+                      minWidth: 30,
+                      maxWidth: 30,
+                      alignment: Alignment.centerLeft,
+                      child: Opacity(
+                        opacity: p,
+                        child: Text(
+                          'Un',
+                          style: TextStyle(
+                            color: Color.lerp(
+                              AppColors.textPrimary,
+                              AppColors.primaryActionText,
+                              p,
+                            ),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ClipRect(
+                  child: SizedBox(
+                    width: 4.5 * p,
+                    height: 20,
+                    child: OverflowBox(
+                      minWidth: 10,
+                      maxWidth: 10,
+                      alignment: Alignment.centerLeft,
+                      child: Opacity(
+                        opacity: p,
+                        child: Text(
+                          'l',
+                          style: TextStyle(
+                            color: Color.lerp(
+                              AppColors.textPrimary,
+                              AppColors.primaryActionText,
+                              p,
+                            ),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ClipRect(
+                  child: SizedBox(
+                    width: 7.2 * (1 - p),
+                    height: 20,
+                    child: OverflowBox(
+                      minWidth: 15,
+                      maxWidth: 15,
+                      alignment: Alignment.centerLeft,
+                      child: Opacity(
+                        opacity: 1 - p,
+                        child: Text(
+                          'L',
+                          style: TextStyle(
+                            color: Color.lerp(
+                              AppColors.textPrimary,
+                              AppColors.primaryActionText,
+                              p,
+                            ),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Text(
+                  'ock',
+                  style: TextStyle(
+                    color: Color.lerp(
+                      AppColors.textPrimary,
+                      AppColors.primaryActionText,
+                      p,
+                    ),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
+}
+
+/// 3D swing-gate lock icon (RN `AnimatedLockIcon` 1:1 port).
+///
+/// The SHACKLE (arc) rotates 180° around the Y axis (hinge pivot at 7,11 in
+/// the 30×24 viewBox) over 300 ms `easeOutQuad` — it swings open like a gate,
+/// it never flat-spins. The body rect + keyhole stay fixed; the keyhole fades
+/// out over 200 ms when unlocked. Rendered via CustomPainter (no SVG dep).
+class _SwingLockIcon extends StatelessWidget {
+  const _SwingLockIcon({required this.openAmount});
+
+  /// 0 = locked (shackle closed), 1 = unlocked (shackle swung open).
+  final double openAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 16,
+      height: 16,
+      child: CustomPaint(
+        painter: _SwingLockPainter(openAmount: openAmount.clamp(0.0, 1.0)),
+      ),
+    );
+  }
+}
+
+class _SwingLockPainter extends CustomPainter {
+  _SwingLockPainter({required this.openAmount});
+
+  final double openAmount;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Map the 30×24 viewBox onto the 16×16 box.
+    final scaleX = size.width / 30;
+    final scaleY = size.height / 24;
+    canvas.save();
+    canvas.scale(scaleX, scaleY);
+    canvas.translate(6, 0);
+
+    final stroke = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // Body: rect x=3 y=11 w=18 h=11 r=2.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(3, 11, 18, 11),
+        const Radius.circular(2),
+      ),
+      stroke,
+    );
+
+    // Keyhole fades 200 ms (RN keyholeGProps): approximate by opacity.
+    if (openAmount < 1) {
+      final keyPaint = Paint()
+        ..color = Color.fromRGBO(255, 255, 255, 1 - openAmount)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(const Offset(12, 16), 1.5, keyPaint);
+      final linePaint = Paint()
+        ..color = Color.fromRGBO(255, 255, 255, 1 - openAmount)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(const Offset(12, 17.5), const Offset(12, 19), linePaint);
+    }
+
+    // Shackle: M7,11 V7 A5,5 ... — swung via rotateY around hinge (7,11).
+    // Perspective gate: horizontal extent shrinks with |cos|, mimicking the
+    // 3D swing without a full Matrix4 scene.
+    final angle = openAmount * 3.141592653589793;
+    final foreshorten = (0.15 + 0.85 * (1 - openAmount)).clamp(0.15, 1.0);
+    canvas.save();
+    canvas.translate(7, 11);
+    canvas.scale(foreshorten, 1);
+    canvas.translate(-7, -11);
+    final shackle = Path()
+      ..moveTo(7, 11)
+      ..lineTo(7, 7)
+      ..arcToPoint(
+        const Offset(17, 7),
+        radius: const Radius.circular(5),
+        clockwise: true,
+      )
+      ..lineTo(17, 11);
+    // Fade the swinging edge slightly as it turns away (depth cue).
+    final _ = angle;
+    canvas.drawPath(shackle, stroke);
+    canvas.restore();
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SwingLockPainter old) =>
+      old.openAmount != openAmount;
 }
 
 /// Circles tab — person list; tap opens the profile modal.

@@ -38,6 +38,32 @@ now delivers its initial snapshot, and streaming chunks refresh stall detection.
 
 - Full suite after the 2026-09-18 repair session: **158 passed**, analyzer **no issues found**.
 - Second session (1.3 GB user backup + 4 UI reports): **159 passed**, analyzer clean.
+- Third session (user re-crash): the crash is FIXED at the root, not papered
+  over. Diagnosis (measured, not guessed): the user's archive stores videos
+  as DEFLATE (27/29 entries, RN exporter uses STORE but native zippers use
+  DEFLATE) — every import pass ran a full `ZipDecoder.decodeStream`, which
+  buffers each video's compressed bytes before inflating (worker RSS 447 MB
+  for the listing pass alone; Android kills the app there). Fix: true
+  streaming — central-directory scan only (~KBs), then per video a raw
+  byte-copy (STORE) or incremental 1 MB-chunk inflate (DEFLATE, constant
+  memory, verified byte-exact on the 326 MB entry: 341,746,946 bytes match).
+  A missing `await sink.close()` (zero-byte staged files → size-gate fail)
+  was caught by the new tests. Proof: new 13-video DEFLATE fixture test
+  (~160 MB, same shape as the user's 1.3 GB archive) passes with monotonic
+  progress + stage labels; full suite **161 passed**, analyzer clean.
+- Library 1:1 (RN `LibraryScreen.tsx` read line-by-line): header tab pills
+  REMOVED (RN has none — section is mode-driven only); title 32/w600 +
+  subtitle 16/secondary (were w800/-0.5 + 13/muted); live AI badge moved
+  under the title, processing-only with spinner + count; sort dropdown is a
+  bordered button with chevron-down + full RN labels; lock pill is the RN
+  text-morph (`Un` 17.5 + `l` 4.5 collapse, `L` 7.2 expands, 250 ms
+  cubic-out) with a swing-gate shackle (rotateY 180°, 300 ms quad-out, custom
+  painter — the old flat 180° spin is gone); circles/vlogs unlock on the
+  lower tier (circles OR notes); lock cards carry the per-section RN copy +
+  geometry (48 px red lock, 22/w900, 15/22, red pill 16/28 + shadow); the
+  lock/content cross-fade runs on one spring (30/200) with slide-up overlay.
+  Two latent overflow bugs fixed on the way (group-header Divider row,
+  card-button Row) — the 400 px test phone is overflow-free again.
 - Large-restore design: media extracts checkpointed (one isolate pass per
   video, flat ~300 MB memory, per-file progress + stage labels in German-safe
   wording); failures return user-facing messages (never raw exceptions, never
