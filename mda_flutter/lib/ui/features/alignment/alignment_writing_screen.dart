@@ -23,6 +23,7 @@ import '../../../domain/use_cases/session_engine.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/custom_slider.dart';
 import '../writing/death_overlay.dart';
+import '../writing/danger_overlay.dart';
 
 /// One reflection deck item (a mastery to reflect on).
 class _DeckItem {
@@ -34,14 +35,17 @@ class _DeckItem {
 }
 
 class AlignmentWritingScreen extends ConsumerStatefulWidget {
-  const AlignmentWritingScreen({super.key});
+  const AlignmentWritingScreen({super.key, this.isWeekly = false});
+
+  final bool isWeekly;
 
   @override
   ConsumerState<AlignmentWritingScreen> createState() =>
       _AlignmentWritingScreenState();
 }
 
-class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen> {
+class _AlignmentWritingScreenState
+    extends ConsumerState<AlignmentWritingScreen> {
   static const int _reflectionMinutes = 1;
 
   // Phase 1 state
@@ -55,11 +59,23 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
   List<_DeckItem> _deck = [];
   int _deckIndex = 0;
   bool _inReflection = false;
+  bool _logged = false;
+  bool _saving = false;
+  late final bool _rateLimited;
+  final Set<int> _completed = {};
 
   late final SessionEngine _engine = SessionEngine(
     callbacks: SessionCallbacks(
       onDeath: () => setState(() {}),
-      onSessionEnd: () {},
+      onSessionEnd: () {
+        if (mounted) setState(() {});
+      },
+      onTextWiped: () {
+        if (mounted) {
+          _textController.clear();
+          setState(() {});
+        }
+      },
     ),
   );
   final TextEditingController _textController = TextEditingController();
@@ -67,6 +83,9 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
   @override
   void initState() {
     super.initState();
+    _rateLimited =
+        ref.read(appDataProvider.notifier).isCheckinRateLimited() &&
+        !ref.read(preferencesProvider).devMode;
     _preparePhase1();
   }
 
@@ -81,8 +100,7 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
 
   void _preparePhase1() {
     final notifier = ref.read(appDataProvider.notifier);
-    final isWeekly = DateTime.now().weekday == DateTime.monday ||
-        DateTime.now().weekday == DateTime.wednesday;
+    final isWeekly = widget.isWeekly;
     final picked = notifier.getPillarsForCheckIn(isWeekly);
     final advice = isWeekly ? notifier.getSmartAdvice() : null;
     setState(() {
@@ -97,48 +115,74 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
           case PillarType.boolean:
             _booleans[pillar.id] = true;
           case PillarType.text:
-            _values[pillar.id] = 5;
+            // RN logs an empty text metric as Number('') = 0; the optional
+            // written reflection carries the meaningful content.
+            _values[pillar.id] = 0;
         }
       }
     });
   }
 
   Future<void> _logAndContinue() async {
-    final picked = _picked ?? const <Pillar>[];
-    if (picked.isEmpty) {
-      _goHome();
-      return;
-    }
-    final notifier = ref.read(appDataProvider.notifier);
-    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_saving || _logged) return;
+    _saving = true;
+    try {
+      final picked = _picked ?? const <Pillar>[];
+      if (picked.isEmpty && _advice == null) {
+        _goHome();
+        return;
+      }
+      final notifier = ref.read(appDataProvider.notifier);
+      final now = DateTime.now().millisecondsSinceEpoch;
 
-    for (final pillar in picked) {
-      final logId = generateId();
-      final boolValue = _booleans[pillar.id];
-      final numValue = pillar.type == PillarType.boolean
-          ? (boolValue == true ? 1.0 : 0.0)
-          : _values[pillar.id];
-      await notifier.savePillarLog(PillarLog(
-        id: logId,
-        pillarId: pillar.id,
-        valueNum: numValue,
-        valueStr: boolValue == null ? '${numValue ?? ''}' : '$boolValue',
-        timestamp: now,
-      ));
-      _logIds[pillar.id] = logId;
-      _values[pillar.id] = numValue ?? 5;
-    }
+      for (final pillar in picked) {
+        final logId = _logIds.putIfAbsent(pillar.id, generateId);
+        final boolValue = _booleans[pillar.id];
+        final numValue = pillar.type == PillarType.boolean
+            ? (boolValue == true ? 1.0 : 0.0)
+            : _values[pillar.id];
+        await notifier.savePillarLog(
+          PillarLog(
+            id: logId,
+            pillarId: pillar.id,
+            valueNum: numValue,
+            valueStr: pillar.type == PillarType.text
+                ? ''
+                : boolValue == null
+                ? '${numValue ?? ''}'
+                : '$boolValue',
+            timestamp: now,
+          ),
+        );
+        _logIds[pillar.id] = logId;
+        _values[pillar.id] = numValue ?? 5;
+      }
 
-    // Build the dangerous deck: picked pillars + the advice card (weekly).
-    setState(() {
-      _deck = [
-        for (final pillar in picked) _DeckItem(pillar: pillar, label: pillar.title),
-        if (_advice != null)
-          _DeckItem(adviceId: _advice!.id, label: _advice!.text),
-      ];
-      _deckIndex = 0;
-    });
-    _startReflection();
+      await notifier.completeCheckin(now);
+
+      // Build the dangerous deck: picked pillars + the advice card (weekly).
+      if (!mounted) return;
+      setState(() {
+        _logged = true;
+        _deck = [
+          for (final pillar in picked)
+            _DeckItem(pillar: pillar, label: pillar.title),
+          if (_advice != null)
+            _DeckItem(adviceId: _advice!.id, label: _advice!.text),
+        ];
+        _deckIndex = 0;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not save your check-in. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      _saving = false;
+    }
   }
 
   // -- Phase 2 (dangerous deck) -------------------------------------------------
@@ -161,36 +205,55 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
 
   Future<void> _saveReflection() async {
     final text = _textController.text.trim();
-    final item = _deck[_deckIndex];
-    final notifier = ref.read(appDataProvider.notifier);
-
-    final result = await notifier.saveEntry(
-      text: text,
-      won: true,
-      durationMin: _reflectionMinutes,
-      isAlignmentReflection: true,
-      pillarId: item.pillar?.id,
-      adviceId: item.adviceId,
-      pillarValue: item.pillar != null ? _values[item.pillar!.id] : null,
-      pillarVersion: item.pillar?.version,
-    );
-    final savedNote = result.note;
-
-    // Link the reflection to its pillar log / advice card (SPEC §10).
-    if (item.pillar != null) {
-      final logId = _logIds[item.pillar!.id];
-      if (logId != null) {
-        await notifier.linkPillarLogNote(logId, savedNote.id);
-      }
-    } else if (item.adviceId != null) {
-      await notifier.incrementAdviceReflection(item.adviceId!);
+    if (_saving || text.isEmpty || _engine.phase.value == SessionPhase.death) {
+      return;
     }
+    _saving = true;
+    _engine.stopTimers();
+    try {
+      final item = _deck[_deckIndex];
+      final notifier = ref.read(appDataProvider.notifier);
 
-    setState(() {
-      _deckIndex++;
-      _inReflection = false;
-    });
-    _startReflection();
+      final result = await notifier.saveEntry(
+        text: text,
+        won: true,
+        durationMin: _reflectionMinutes,
+        isAlignmentReflection: true,
+        pillarId: item.pillar?.id,
+        adviceId: item.adviceId,
+        pillarValue: item.pillar != null ? _values[item.pillar!.id] : null,
+        pillarVersion: item.pillar?.version,
+      );
+      final savedNote = result.note;
+
+      // Link the reflection to its pillar log / advice card (SPEC §10).
+      if (item.pillar != null) {
+        final logId = _logIds[item.pillar!.id];
+        if (logId != null) {
+          await notifier.linkPillarLogNote(logId, savedNote.id);
+        }
+      } else if (item.adviceId != null) {
+        await notifier.incrementAdviceReflection(item.adviceId!);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _completed.add(_deckIndex);
+        _inReflection = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not save your reflection. Your text is still here.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _saving = false;
+    }
   }
 
   void _goHome() {
@@ -202,21 +265,29 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final notifier = ref.read(appDataProvider.notifier);
-    if (notifier.isCheckinRateLimited() && !ref.read(preferencesProvider).devMode) {
+    if (_rateLimited) {
       return _RateLimitScreen(onBack: () => context.pop());
     }
     if (_picked == null) {
       return const Scaffold(
         backgroundColor: AppColors.background,
-        body: Center(child: Text('Preparing check-in...', style: TextStyle(color: AppColors.textMuted))),
+        body: Center(
+          child: Text(
+            'Preparing check-in...',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
+        ),
       );
     }
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: _inReflection ? _buildReflection() : _buildLogPhase(),
+        child: _inReflection
+            ? _buildReflection()
+            : _logged
+            ? _buildDeckPhase()
+            : _buildLogPhase(),
       ),
     );
   }
@@ -251,7 +322,7 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [
-              if (picked.isEmpty) ...[
+              if (picked.isEmpty && _advice == null) ...[
                 const SizedBox(height: 120),
                 const Center(
                   child: Text(
@@ -270,7 +341,10 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
                   decoration: BoxDecoration(
                     color: AppColors.glassSurfaceSubtle,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.glassBorderFaint, width: 1),
+                    border: Border.all(
+                      color: AppColors.glassBorderFaint,
+                      width: 1,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -322,7 +396,10 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
               Center(
                 child: Text(
                   'Next: ${picked.length} reflection${picked.length == 1 ? '' : 's'}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ],
@@ -355,58 +432,133 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
           const SizedBox(height: 14),
           switch (pillar.type) {
             PillarType.rating => CustomSlider(
-                value: (_values[pillar.id] ?? 5).round(),
-                color: AppColors.alignmentTierColor((_values[pillar.id] ?? 5).round()),
-                onChanged: (v) => setState(() => _values[pillar.id] = v.toDouble()),
+              value: (_values[pillar.id] ?? 5).round(),
+              color: AppColors.alignmentTierColor(
+                (_values[pillar.id] ?? 5).round(),
               ),
+              onChanged: (v) =>
+                  setState(() => _values[pillar.id] = v.toDouble()),
+            ),
             PillarType.time => _TimeStepper(
-                value: _values[pillar.id] ?? 7.0,
-                onChanged: (v) => setState(() => _values[pillar.id] = v),
-              ),
+              value: _values[pillar.id] ?? 7.0,
+              onChanged: (v) => setState(() => _values[pillar.id] = v),
+            ),
             PillarType.boolean => Row(
-                children: [
-                  for (final choice in [true, false])
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: AnimatedScaleButton(
-                        onPress: () => setState(() => _booleans[pillar.id] = choice),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-                          decoration: BoxDecoration(
+              children: [
+                for (final choice in [true, false])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: AnimatedScaleButton(
+                      onPress: () =>
+                          setState(() => _booleans[pillar.id] = choice),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (_booleans[pillar.id] ?? true) == choice
+                              ? AppColors.dangerTint
+                              : AppColors.glassSurfaceSubtle,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
                             color: (_booleans[pillar.id] ?? true) == choice
-                                ? AppColors.dangerTint
-                                : AppColors.glassSurfaceSubtle,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: (_booleans[pillar.id] ?? true) == choice
-                                  ? AppColors.dangerBorder
-                                  : AppColors.glassBorderFaint,
-                            ),
+                                ? AppColors.dangerBorder
+                                : AppColors.glassBorderFaint,
                           ),
-                          child: Text(
-                            choice ? 'YES' : 'NO',
-                            style: TextStyle(
-                              color: (_booleans[pillar.id] ?? true) == choice
-                                  ? AppColors.primaryAction
-                                  : AppColors.textSecondary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
+                        ),
+                        child: Text(
+                          choice ? 'YES' : 'NO',
+                          style: TextStyle(
+                            color: (_booleans[pillar.id] ?? true) == choice
+                                ? AppColors.primaryAction
+                                : AppColors.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
+            ),
             PillarType.text => const Text(
-                'Text mastery — reflect in the writing phase.',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-              ),
+              'Text mastery — reflect in the writing phase.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
           },
         ],
       ),
     );
   }
+
+  /// Reflection choice remains with the writer, as in the RN dangerous deck.
+  Widget _buildDeckPhase() => Column(
+    children: [
+      const Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'WRITE REFLECTIONS',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 24),
+        child: Text(
+          'Choose a mastery to reflect on for one minute.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+      ),
+      Expanded(
+        child: ListView.builder(
+          padding: const EdgeInsets.all(20),
+          itemCount: _deck.length,
+          itemBuilder: (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              tileColor: AppColors.surfaceCard,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text(
+                _deck[index].label,
+                style: const TextStyle(color: AppColors.textPrimary),
+              ),
+              subtitle: Text(
+                _completed.contains(index) ? 'Reflection saved' : '1 minute',
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              trailing: Icon(
+                _completed.contains(index)
+                    ? Icons.check_circle_outline
+                    : Icons.chevron_right,
+                color: _completed.contains(index)
+                    ? AppColors.green
+                    : AppColors.primaryAction,
+              ),
+              onTap: _completed.contains(index)
+                  ? null
+                  : () {
+                      _deckIndex = index;
+                      _startReflection();
+                    },
+            ),
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.all(20),
+        child: FilledButton(
+          onPressed: _goHome,
+          child: const Text('Finish Check-in'),
+        ),
+      ),
+    ],
+  );
 
   Widget _buildReflection() {
     final item = _deck[_deckIndex];
@@ -435,7 +587,11 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
                     valueListenable: _engine.sessionSecondsRemaining,
                     builder: (context, seconds, _) => Text(
                       _formatTime(seconds),
-                      style: const TextStyle(color: AppColors.textDim, fontSize: 14, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: AppColors.textDim,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -461,25 +617,40 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(color: AppColors.textInput, fontSize: 18, height: 1.5),
+                  style: const TextStyle(
+                    color: AppColors.textInput,
+                    fontSize: 18,
+                    height: 1.5,
+                  ),
                   cursorColor: AppColors.primaryAction,
                   decoration: const InputDecoration(
                     hintText: 'Reflect on this mastery...',
-                    hintStyle: TextStyle(color: AppColors.placeholder, fontSize: 18),
+                    hintStyle: TextStyle(
+                      color: AppColors.placeholder,
+                      fontSize: 18,
+                    ),
                     border: InputBorder.none,
                   ),
-                  onChanged: (_) => setState(() {}),
+                  autofocus: true,
+                  onChanged: (text) {
+                    _engine.handleTextChange(text);
+                    setState(() {});
+                  },
                 ),
               ),
             ),
-            if (!dead && (_engine.canSave || _textController.text.trim().isNotEmpty))
+            if (!dead &&
+                (_engine.canSave || _textController.text.trim().isNotEmpty))
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Center(
                   child: AnimatedScaleButton(
                     onPress: _saveReflection,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 40,
+                        vertical: 14,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.primaryAction,
                         borderRadius: BorderRadius.circular(30),
@@ -498,6 +669,7 @@ class _AlignmentWritingScreenState extends ConsumerState<AlignmentWritingScreen>
               ),
           ],
         ),
+        Positioned.fill(child: DangerOverlay(engine: _engine)),
         DeathOverlay(
           visible: dead,
           subtitle: 'You stopped reflecting for too long.',
@@ -608,7 +780,10 @@ class _RateLimitScreen extends StatelessWidget {
               AnimatedScaleButton(
                 onPress: onBack,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 13),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 36,
+                    vertical: 13,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primaryAction,
                     borderRadius: BorderRadius.circular(30),

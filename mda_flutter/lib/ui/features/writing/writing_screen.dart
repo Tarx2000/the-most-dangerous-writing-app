@@ -154,8 +154,9 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
   }
 
   void _onDeath() {
-    // RN parity: violent horizontal trauma shake and heavy haptic shock
-    vibrate([0, 200, 100, 200]);
+    // Haptic shock is owned by SessionEngine._triggerDeath (parity: RN
+    // vibrates once in `triggerDeathState`). This handler only starts the
+    // trauma shake and shows the overlay.
     _shakeController.forward(from: 0.0);
     setState(() {}); // show death overlay
   }

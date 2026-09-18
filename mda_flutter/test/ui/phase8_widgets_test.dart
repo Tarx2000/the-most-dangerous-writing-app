@@ -24,22 +24,24 @@ void main() {
 
   group('SettingsModal', () {
     testWidgets('renders all sections', (tester) async {
-      await tester.pumpWidget(ProviderScope(
-        child: MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              height: 700,
-              child: SettingsModal(onClose: () {}),
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appDataProvider.overrideWith(() => _FakeStorageNotifier()),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(height: 700, child: SettingsModal(onClose: () {})),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
-      expect(find.text('APPEARANCE'), findsOneWidget);
-      expect(find.text('SECURITY & STORAGE'), findsOneWidget);
-      expect(find.text('FEED & SYSTEM'), findsOneWidget);
-      expect(find.text('BACKUP & IMPORT'), findsOneWidget);
+      expect(find.text('Appearance'), findsOneWidget);
+      expect(find.text('Security & Storage'), findsOneWidget);
+      expect(find.text('Feed & System'), findsOneWidget);
+      expect(find.text('Backup & Import'), findsOneWidget);
       expect(find.text('AI SETTINGS'), findsOneWidget);
       expect(find.text('DEVELOPER TOOLS'), findsOneWidget);
 
@@ -56,15 +58,17 @@ void main() {
     testWidgets('type chips hide and show items', (tester) async {
       // Fake storage (no DB — testWidgets runs in FakeAsync where real
       // sqlite I/O would block).
-      final container = ProviderContainer(overrides: [
-        appDataProvider.overrideWith(() => _FakeStorageNotifier()),
-      ]);
+      final container = ProviderContainer(
+        overrides: [appDataProvider.overrideWith(() => _FakeStorageNotifier())],
+      );
       addTearDown(container.dispose);
 
-      await tester.pumpWidget(UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: Scaffold(body: FeedScreen())),
-      ));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: Scaffold(body: FeedScreen())),
+        ),
+      );
       await tester.pump();
 
       // Both items visible initially.

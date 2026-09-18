@@ -74,16 +74,16 @@ class AiJob {
   }
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'noteId': noteId,
-        'category': category,
-        'status': status,
-        'createdAt': createdAt,
-        'startedAt': startedAt,
-        'completedAt': completedAt,
-        'error': error,
-        'retryCount': retryCount,
-      };
+    'id': id,
+    'noteId': noteId,
+    'category': category,
+    'status': status,
+    'createdAt': createdAt,
+    'startedAt': startedAt,
+    'completedAt': completedAt,
+    'error': error,
+    'retryCount': retryCount,
+  };
 
   static AiJob? fromJson(Map<String, dynamic> json) {
     try {
@@ -154,7 +154,8 @@ class AiQueueDeps {
 
   final Future<List<SavedNote>> Function() loadNotes;
   final Future<SavedNote?> Function(String id) getNote;
-  final Future<void> Function(String id, Map<String, Object?> updates) updateNote;
+  final Future<void> Function(String id, Map<String, Object?> updates)
+  updateNote;
 
   /// Resolves the relationship context for circle notes (name + status).
   final Future<RelationshipContext?> Function(String personId) getPersonName;
@@ -182,7 +183,8 @@ class AiQueueManager {
   final ValueNotifier<AiQueueState> state = ValueNotifier(const AiQueueState());
 
   /// Emitted per failed job: `{noteId, error, permanent}`.
-  final StreamController<Map<String, Object>> failedJobEvents = StreamController.broadcast();
+  final StreamController<Map<String, Object>> failedJobEvents =
+      StreamController.broadcast();
 
   AiConfig? _config;
   AiCancelToken? _activeCancelToken;
@@ -192,6 +194,8 @@ class AiQueueManager {
   Timer? _jobTimeoutTimer;
   bool _paused = false;
   bool _isRunning = false;
+  Future<void>? _activeTask;
+  Future<void> _pendingPersist = Future.value();
   int _consecutivePingFailures = 0;
   DateTime _lastProgressAt = DateTime.now();
 
@@ -200,6 +204,8 @@ class AiQueueManager {
   /// Boot: load persisted jobs, recover orphans, migrate legacy, start health checks.
   Future<void> initialize(AiConfig config) async {
     _config = config;
+    _jobs.clear();
+    _notifications.clear();
     await _loadPersisted();
     _recoverOrphans();
     await _migrateLegacyQueue();
@@ -212,15 +218,12 @@ class AiQueueManager {
   void _logStartupDiagnostics() {
     final config = _config;
     if (config == null) return;
-    final key = config.apiKey;
-    final masked = key.isEmpty
-        ? 'NOT SET'
-        : key.length <= 12
-            ? '${key.substring(0, key.length ~/ 2)}...'
-            : '${key.substring(0, 8)}...${key.substring(key.length - 4)}';
-    logAiQueue.debug('startup diagnostics',
-        'key=$masked url=${config.baseUrl} model=${config.model} grammar=${config.grammarModel} '
-        'customPrompts=${config.prompts.isNotEmpty} pending=${_jobs.where((j) => j.status != 'done' && j.status != 'failed').length}');
+    final keyStatus = config.apiKey.isEmpty ? 'NOT SET' : 'configured';
+    logAiQueue.debug(
+      'startup diagnostics',
+      'key=$keyStatus url=${config.baseUrl} model=${config.model} grammar=${config.grammarModel} '
+          'customPrompts=${config.prompts.isNotEmpty} pending=${_jobs.where((j) => j.status != 'done' && j.status != 'failed').length}',
+    );
   }
 
   Future<void> shutdown() async {
@@ -235,32 +238,48 @@ class AiQueueManager {
 
   /// Single note enqueue (dedupes: same noteId already queued/processing).
   void enqueueNote(String noteId, String category) {
-    final exists = _jobs.any((j) => j.noteId == noteId && (j.status == 'queued' || j.status == 'processing'));
+    final exists = _jobs.any(
+      (j) =>
+          j.noteId == noteId &&
+          (j.status == 'queued' || j.status == 'processing'),
+    );
     if (exists) return;
-    _addJob(AiJob(
-      id: generateId(),
-      noteId: noteId,
-      category: category,
-      status: 'queued',
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    _addJob(
+      AiJob(
+        id: generateId(),
+        noteId: noteId,
+        category: category,
+        status: 'queued',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   /// Batch enqueue (journal → circle → checkin, newest first; skips tweets
   /// and notes that already have AI metadata unless [forceOverwrite]).
-  Future<void> enqueueBatch({bool forceOverwrite = false}) async {
+  Future<void> enqueueBatch({
+    bool forceOverwrite = false,
+    Set<String>? categories,
+  }) async {
     final notes = await deps.loadNotes();
     final ordered = [...notes]
       ..sort((a, b) {
-        final catCmp = AiJobCategory.orderOf(_categoryFor(a))
-            .compareTo(AiJobCategory.orderOf(_categoryFor(b)));
+        final catCmp = AiJobCategory.orderOf(
+          _categoryFor(a),
+        ).compareTo(AiJobCategory.orderOf(_categoryFor(b)));
         if (catCmp != 0) return catCmp;
         return b.timestamp.compareTo(a.timestamp);
       });
 
     for (final note in ordered) {
-      if (note.isTweet) continue;
-      if (!forceOverwrite && note.aiTitle != null && note.aiSummary != null && note.aiModelUsed != null) {
+      if (note.isTweet || note.wordCount < 45) continue;
+      if (categories != null && !categories.contains(_categoryFor(note))) {
+        continue;
+      }
+      if (!forceOverwrite &&
+          note.aiTitle != null &&
+          note.aiSummary != null &&
+          note.aiModelUsed != null) {
         continue;
       }
       final category = _categoryFor(note);
@@ -280,9 +299,13 @@ class AiQueueManager {
   }
 
   void cancelJob(String jobId) {
-    final job = _jobs.where((j) => j.id == jobId && j.status == 'queued').firstOrNull;
+    final job = _jobs
+        .where((j) => j.id == jobId && j.status == 'queued')
+        .firstOrNull;
     if (job == null) return;
     _removeJob(jobId);
+    _notify();
+    _persist();
   }
 
   void cancelBatch() {
@@ -298,12 +321,14 @@ class AiQueueManager {
   bool isNoteQueued(String noteId) =>
       _jobs.any((j) => j.noteId == noteId && j.status == 'queued');
 
-  int get activeCount =>
-      _jobs.where((j) => j.status == 'queued' || j.status == 'processing').length;
+  int get activeCount => _jobs
+      .where((j) => j.status == 'queued' || j.status == 'processing')
+      .length;
 
   List<AiJob> get jobs => List.unmodifiable(_jobs);
 
-  List<AiFailureNotification> get notifications => List.unmodifiable(_notifications);
+  List<AiFailureNotification> get notifications =>
+      List.unmodifiable(_notifications);
 
   void dismissNotification(String id) {
     _notifications.removeWhere((n) => n.id == id);
@@ -318,6 +343,15 @@ class AiQueueManager {
   void pause() {
     _paused = true;
     _activeCancelToken?.cancel();
+    _rateLimitTimer?.cancel();
+    if (_activeTask == null) _isRunning = false;
+  }
+
+  /// A restore must wait until in-flight database writes have finished.
+  Future<void> pauseAndDrain() async {
+    pause();
+    await _activeTask;
+    await _pendingPersist;
   }
 
   void resume() {
@@ -368,7 +402,13 @@ class AiQueueManager {
         ? (1000 * (1 << (jobToProcess.retryCount - 1))).clamp(1000, 4000)
         : AiTiming.rateLimitDelayMs;
     _rateLimitTimer = Timer(Duration(milliseconds: delayMs), () {
-      unawaited(_processNext(jobToProcess));
+      if (_paused ||
+          !_jobs.any((j) => j.id == jobToProcess.id && j.status == 'queued')) {
+        _isRunning = false;
+        _scheduleNext();
+        return;
+      }
+      _activeTask = _processNext(jobToProcess);
     });
   }
 
@@ -378,6 +418,7 @@ class AiQueueManager {
     } catch (e) {
       logAiQueue.error('queue loop error', e);
     } finally {
+      _activeTask = null;
       _isRunning = false;
       _jobTimeoutTimer?.cancel();
       _stallCheckTimer?.cancel();
@@ -407,8 +448,12 @@ class AiQueueManager {
       return;
     }
     if (config.apiKey.isEmpty || config.baseUrl.isEmpty) {
-      _markFailed(job, 'missing credentials', 'No API key set. Add your key in AI Settings.',
-          permanent: true);
+      _markFailed(
+        job,
+        'missing credentials',
+        'No API key set. Add your key in AI Settings.',
+        permanent: true,
+      );
       return;
     }
 
@@ -419,12 +464,14 @@ class AiQueueManager {
     );
     _replaceJob(processing);
     _startJobWatchdogs(processing);
-    logger.add(AiLogEntry(
-      action: 'start',
-      noteId: note.id,
-      model: config.model,
-      phase: 'both',
-    ));
+    logger.add(
+      AiLogEntry(
+        action: 'start',
+        noteId: note.id,
+        model: config.model,
+        phase: 'both',
+      ),
+    );
     _notify();
 
     final cancelToken = AiCancelToken();
@@ -444,6 +491,7 @@ class AiQueueManager {
         text: note.text,
         relationship: relationship,
         cancelToken: cancelToken,
+        onProgress: () => _lastProgressAt = DateTime.now(),
       );
 
       if (cancelToken.isCancelled) {
@@ -451,7 +499,10 @@ class AiQueueManager {
       }
       if (result.failed) {
         // Empty results are retryable server errors (SPEC §9).
-        throw const AiError(AiErrorKind.server, 'AI processing returned empty results.');
+        throw const AiError(
+          AiErrorKind.server,
+          'AI processing returned empty results.',
+        );
       }
 
       await deps.updateNote(note.id, {
@@ -477,6 +528,12 @@ class AiQueueManager {
     // Internal cancellations (pause/stall/offline) reset the job to queued
     // without a failure notification (SPEC: cancel is not a failure).
     if (error.kind == AiErrorKind.cancelled) {
+      // Watchdogs may already have failed/requeued this attempt. Its cancelled
+      // request must not overwrite that newer decision with stale job state.
+      final current = _jobs
+          .where((current) => current.id == job.id)
+          .firstOrNull;
+      if (current?.status != 'processing') return;
       _replaceJob(job.copyWith(status: 'queued'));
       _persist();
       _notify();
@@ -499,74 +556,104 @@ class AiQueueManager {
         break;
     }
 
-    logger.add(AiLogEntry(
-      action: willRetry ? 'retry' : 'fail',
-      noteId: job.noteId,
-      model: _config?.model ?? '',
-      phase: 'both',
-      durationMs: durationMs,
-      error: error.message,
-    ));
+    logger.add(
+      AiLogEntry(
+        action: willRetry ? 'retry' : 'fail',
+        noteId: job.noteId,
+        model: _config?.model ?? '',
+        phase: 'both',
+        durationMs: durationMs,
+        error: error.message,
+      ),
+    );
 
     if (willRetry) {
       // Move to the END of the queue with retryCount + 1 (SPEC).
       _removeJob(job.id);
-      _jobs.add(job.copyWith(
-        status: 'queued',
-        error: () => error.message,
-        retryCount: job.retryCount + 1,
-      ));
+      _jobs.add(
+        job.copyWith(
+          status: 'queued',
+          error: () => error.message,
+          retryCount: job.retryCount + 1,
+        ),
+      );
       _notify();
       _persist();
     } else {
-      _markFailed(job, error.message, error.uiMessage,
-          permanent: permanent,
-          errorKind: error.kind.name,
-          durationMs: durationMs);
+      _markFailed(
+        job,
+        error.message,
+        error.uiMessage,
+        permanent: permanent,
+        errorKind: error.kind.name,
+        durationMs: durationMs,
+      );
     }
   }
 
-  void _markFailed(AiJob job, String technical, String userFacing,
-      {bool permanent = true, String? errorKind, int? durationMs}) {
-    _replaceJob(job.copyWith(
-      status: 'failed',
-      completedAt: DateTime.now().millisecondsSinceEpoch,
-      error: () => technical,
-    ));
-    _notifications.add(AiFailureNotification(
-      id: generateId(),
-      noteId: job.noteId,
-      message: userFacing,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-      isPermanent: permanent,
-      errorKind: errorKind,
-    ));
+  void _markFailed(
+    AiJob job,
+    String technical,
+    String userFacing, {
+    bool permanent = true,
+    String? errorKind,
+    int? durationMs,
+  }) {
+    _replaceJob(
+      job.copyWith(
+        status: 'failed',
+        completedAt: DateTime.now().millisecondsSinceEpoch,
+        error: () => technical,
+      ),
+    );
+    _notifications.add(
+      AiFailureNotification(
+        id: generateId(),
+        noteId: job.noteId,
+        message: userFacing,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        isPermanent: permanent,
+        errorKind: errorKind,
+      ),
+    );
     if (_notifications.length > 5) _notifications.removeAt(0);
-    logger.add(AiLogEntry(
-      action: 'fail',
-      noteId: job.noteId,
-      model: _config?.model ?? '',
-      phase: 'both',
-      durationMs: durationMs,
-      error: technical,
-    ));
+    logger.add(
+      AiLogEntry(
+        action: 'fail',
+        noteId: job.noteId,
+        model: _config?.model ?? '',
+        phase: 'both',
+        durationMs: durationMs,
+        error: technical,
+      ),
+    );
     _notify();
     _persist();
-    failedJobEvents.add({'noteId': job.noteId, 'error': userFacing, 'permanent': permanent});
+    failedJobEvents.add({
+      'noteId': job.noteId,
+      'error': userFacing,
+      'permanent': permanent,
+    });
   }
 
   void _markDone(AiJob job, String reason, {DateTime? started}) {
-    _replaceJob(job.copyWith(
-      status: 'done',
-      completedAt: DateTime.now().millisecondsSinceEpoch,
-    ));
-    logger.add(AiLogEntry(
-      action: 'success',
-      noteId: job.noteId,
-      model: _config?.model ?? '',
-      phase: 'both',
-      durationMs: started != null ? DateTime.now().difference(started).inMilliseconds : null,
-    ));
+    _replaceJob(
+      job.copyWith(
+        status: 'done',
+        completedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    logger.add(
+      AiLogEntry(
+        action: 'success',
+        noteId: job.noteId,
+        model: _config?.model ?? '',
+        phase: 'both',
+        durationMs: started != null
+            ? DateTime.now().difference(started).inMilliseconds
+            : null,
+      ),
+    );
     _notify();
     _persist();
   }
@@ -575,36 +662,50 @@ class AiQueueManager {
 
   void _startJobWatchdogs(AiJob job) {
     _jobTimeoutTimer?.cancel();
-    _jobTimeoutTimer = Timer(const Duration(milliseconds: AiTiming.jobTimeoutMs), () {
-      _activeCancelToken?.cancel();
-      _markFailed(job, 'Job timed out', 'AI processing timed out.',
-          permanent: true);
-      logger.add(AiLogEntry(
-        action: 'timeout',
-        noteId: job.noteId,
-        model: _config?.model ?? '',
-        phase: 'both',
-      ));
-    });
+    _jobTimeoutTimer = Timer(
+      const Duration(milliseconds: AiTiming.jobTimeoutMs),
+      () {
+        _activeCancelToken?.cancel();
+        _markFailed(
+          job,
+          'Job timed out',
+          'AI processing timed out.',
+          permanent: true,
+        );
+        logger.add(
+          AiLogEntry(
+            action: 'timeout',
+            noteId: job.noteId,
+            model: _config?.model ?? '',
+            phase: 'both',
+          ),
+        );
+      },
+    );
 
     // Stall detection: 60 s without progress → abort, requeue with retries 0.
     _lastProgressAt = DateTime.now();
     _stallCheckTimer?.cancel();
     _stallCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (DateTime.now().difference(_lastProgressAt).inMilliseconds >= AiTiming.stallDetectionMs) {
+      if (DateTime.now().difference(_lastProgressAt).inMilliseconds >=
+          AiTiming.stallDetectionMs) {
         _activeCancelToken?.cancel();
         _removeJob(job.id);
-        _jobs.add(job.copyWith(
-          status: 'queued',
-          retryCount: 0,
-          error: () => 'stall detected',
-        ));
-        logger.add(AiLogEntry(
-          action: 'stall_recovery',
-          noteId: job.noteId,
-          model: _config?.model ?? '',
-          phase: 'both',
-        ));
+        _jobs.add(
+          job.copyWith(
+            status: 'queued',
+            retryCount: 0,
+            error: () => 'stall detected',
+          ),
+        );
+        logger.add(
+          AiLogEntry(
+            action: 'stall_recovery',
+            noteId: job.noteId,
+            model: _config?.model ?? '',
+            phase: 'both',
+          ),
+        );
         _notify();
         _persist();
         timer.cancel();
@@ -685,11 +786,21 @@ class AiQueueManager {
     }
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist() {
+    _pendingPersist = _pendingPersist.then((_) => _writePersisted());
+    return _pendingPersist;
+  }
+
+  Future<void> _writePersisted() async {
     try {
       final sp = await SharedPreferences.getInstance();
-      final jobs = _jobs.where((j) => j.status == 'queued' || j.status == 'processing').toList();
-      await sp.setString(_storageKey, jsonEncode([for (final j in jobs) j.toJson()]));
+      final jobs = _jobs
+          .where((j) => j.status == 'queued' || j.status == 'processing')
+          .toList();
+      await sp.setString(
+        _storageKey,
+        jsonEncode([for (final j in jobs) j.toJson()]),
+      );
     } catch (_) {}
   }
 
@@ -702,7 +813,9 @@ class AiQueueManager {
       }
     }
     if (recovered > 0) {
-      logger.add(AiLogEntry(action: 'orphan_recovery', model: '', phase: 'both'));
+      logger.add(
+        AiLogEntry(action: 'orphan_recovery', model: '', phase: 'both'),
+      );
       _persist();
     }
   }
@@ -719,7 +832,8 @@ class AiQueueManager {
         for (final item in decoded) {
           if (item is Map<String, dynamic>) {
             final noteId = item['noteId'] ?? item['note_id'];
-            final category = item['category'] as String? ?? AiJobCategory.journal;
+            final category =
+                item['category'] as String? ?? AiJobCategory.journal;
             if (noteId is String && noteId.isNotEmpty) {
               enqueueNote(noteId, category);
             }
@@ -739,17 +853,20 @@ class AiQueueManager {
   }
 
   void _addJob(AiJob job) {
+    _jobs.removeWhere((j) => j.status == 'done' || j.status == 'failed');
     if (_jobs.length >= AiTiming.maxQueueSize) {
       logAiQueue.warn('queue full, dropping job', job.noteId);
       return;
     }
     _jobs.add(job);
-    logger.add(AiLogEntry(
-      action: 'enqueue',
-      noteId: job.noteId,
-      model: _config?.model ?? '',
-      phase: 'both',
-    ));
+    logger.add(
+      AiLogEntry(
+        action: 'enqueue',
+        noteId: job.noteId,
+        model: _config?.model ?? '',
+        phase: 'both',
+      ),
+    );
     _notify();
     _persist();
     _scheduleNext();

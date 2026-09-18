@@ -245,7 +245,8 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 - Death overlay: "YOU DIED" / "You stopped writing for too long." → "Return to Menu" | "I don't care, let me write" (`resumeWritingFreely`, note saves `won: false`).
 - Idle vaporize preview after `min(1500, limit*0.2)` ms; last **8 words** fade to opacity 0.3; word *i* from end starts fading at `min(0.85, 0.3 + i*0.05)`, fully faded at `min(0.95, 0.5 + i*0.05)`; white `rgba(255,255,255,o)`.
 - Danger overlay: vignette fade starts at ratio 0.15 (opacity `((r−0.15)/0.85)*0.95`, scale 1.12→1.0); fog above 0.50 (`((r−0.5)/0.5)*0.85`); heartbeat above 0.75 (lub 120 → 0 → dub 100 → 0 → pause 600, infinite; contraction 6%; SVG radial gradient: transparent core → 45%, blood 0.7@55%, 0.85@85%, 1.0@100%).
-- Haptic escalation (once per level, reset on typing): 0.70 → `vibrate(20)`; 0.80 → `[0,30,50,30]`; 0.90 → `[0,40,25,40]`; 0.95 → `[0,50,25,50,25,50,25,80]`.
+- Death vibrates once (`[0,200,100,200]`), owned by the session engine (RN `triggerDeathState`); the death screen owns the shake/overlay only and must not vibrate again.
+- Haptic escalation (once per level, reset on typing, sequential — a jump from calm to 0.90 fires `warning` first): 0.70 → `vibrate(20)`; 0.80 → `[0,30,50,30]`; 0.90 → `[0,40,25,40]`; 0.95 → `[0,50,25,50,25,50,25,80]`.
 - Word count: O(1) append-only fast path + 400 ms debounced full recount; tweet mode blocks typing past 45 words, counter red > 35.
 - No autosave. Save only when time up / continuing after loss / quick note. `durationMin = sessionMins (0 quick)`, `won = !hasLost && !isContinuingAfterLoss`; auto-tag `isTweet` if `wc <= 45`. Empty text → exit without saving.
 - Streak: eligible = `won && durationMin >= 3 && !isQuickNote && !isTweet`; today added to history; `lastWin == yesterday → streak+1`; else gap → 1; same-day no change. Tweets & vlogs never count.
@@ -265,7 +266,12 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 - Title: strip surrounding quotes; max 5 summary bullets (strip `^[\s•\-*]+`); grammar: strip ```json fences, require original/suggestion/explanation strings, `[]` = valid "no issues", garbage → throw `AiError('parse')`.
 - Ollama models: `kimi-k2.5:cloud`, `kimi-k2.6:cloud`, `qwen3.5:397b-cloud`, `glm-5:cloud`, `minimax-m2.7:cloud`, `nemotron-3-super:cloud`, `gemma4:31b-cloud`. Neuralwatt: `glm-5.2`.
 - Batch order: journal → circle → checkin; newest first within category. `enqueueNote` dedupes. Category: `isAlignmentReflection ? checkin : personId ? circle : journal`.
-- AI log: FIFO 200 entries; actions enqueue/start/success/fail/cancel/orphan_recovery/retry/timeout/stall_recovery/init/config. Startup diagnostics banner: masked key (first8...last4 / NOT SET), base URL, models, custom-prompts flag, ping result, pending count.
+- AI log: FIFO 200 entries; actions enqueue/start/success/fail/cancel/orphan_recovery/retry/timeout/stall_recovery/init/config. Startup diagnostics banner: key presence only (configured / NOT SET; never key fragments), base URL, models, custom-prompts flag, ping result, pending count.
+- Flutter AI views observe live queue state and current saved-note data. The
+  reader's Generate/Retry action enqueues real work; completion replaces the title
+  and summary without reopening. Cancelling a queued job notifies and persists.
+- Streaming chunks refresh the stall watchdog. A watchdog decision (failed or
+  requeued) must survive the cancelled request completing later.
 - Grammar prompt output: JSON array `{original, suggestion, explanation}` (explanation ≤ 10 words).
 - Default prompts (verbatim semantics, `mda_rn/src/config/ai.ts`): title "EXACTLY 3 to 6 words… no punctuation/quotes… ONLY the title"; summary "empathetic inner voice… 1–2 bullets short → 6–8 long… first person… **bold**… • bullets… never 'the author'"; relationshipTitle 2–5 words, no person name, entry language; relationshipSummary warm narrator + `{{PERSON_NAME}}`/`{{RELATIONSHIP_STATUS}}` templating.
 
@@ -279,12 +285,19 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 - Check-in pick: weekly → scope weekly|adaptive, limit **3**; else daily|adaptive, limit **2**; random shuffle; weekly adds 1 advice card. Rate limit: **3 hours** since `MAX(timestamp) FROM pillar_logs` (dev-mode bypass).
 - Reflection: 1-minute session, EASY (12 s idle); save `{won:true, durationMin:1, pillarId|adviceId, pillarValue, pillarVersion, isAlignmentReflection:true}`; then `linkPillarLogNote(logId, noteId)` or increment advice reflection. Death overlay text: "You stopped reflecting for too long." / "Cancel Reflection" / "Let me finish". Reflections don't extend streak.
 
+- Logging completes `LAST_REFLECTION_DATE` even for weekly advice-only check-ins;
+  the home reminder uses that preference. Text masteries initially log an empty
+  string with numeric zero, matching RN, and offer their optional reflection.
+
 ## 11. Vlogs & Compression
 
 - Recording: front camera, video, quality pref (1080p default), bitrate map above, keep-awake, 3-2-1 countdown (1 s ticks, spring scale, vibrate 50 ms), regular countdown `MM:SS`, at 0 → vibrate `[0,100,50,100]` + stop button springs up; quick video = unlimited elapsed. AppState background → stop recording. Cancel deletes temp file.
 - Save: move to `vlogs/{id}.mp4`, `durationSec = elapsed`, `compressionPreset` set, enqueue compression if preset ≠ off. No streak credit.
 - Thumbnails: frame at **1000 ms**, JPEG quality 0.7, `vlog_thumbnails/{id}.jpg`, persisted, in-flight dedup.
 - Compression queue: sequential; 500 ms rate limit; 2 retries; 5-min hard timeout (clears `compressionPending`); progress 0→1; active jobs NOT cancellable; dedupe by vlog; orphan recovery on boot (processing→queued); legacy `PENDING_COMPRESSIONS` migration; done/cancelled pruned after 5 min; on success update file path/size + delete old file (iOS-safe: never overwrite existing path).
+- Flutter compression timeout retains ownership until native encoding settles.
+  Late progress/results cannot resurrect a failed job or replace the original;
+  discard a late compressed output and drain watchdog persistence before restore.
 - Disk monitoring: `cleanupOrphanedVlogs` (delete files without DB row — never user content), `scanOrphanVlogFiles` (skip .jpg/.png), `reattachOrphanVlogFiles` (size+mtime recovered).
 - Path rewriting in vlog row converter: rebase `file_path`/`thumbnail_path` to current documentDirectory + `vlogs/` / `vlog_thumbnails/`.
 
@@ -292,9 +305,17 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 
 - PIN: 4 digits, plaintext in old app → **Flutter: flutter_secure_storage** (Keychain/Keystore); never in backups; `allowBackup=false`.
 - PinPadModal: dots 14 px, dials 72 px (glassSurfaceSubtle + glassBorderSubtle border, digits 28 px, pressed glassHighlight), vibrate 30 ms per press; 4th digit after 150 ms delay; wrong → shake ±10 px 5×50 ms + vibrate `[0,50,50,50]`; 3 attempts → 30 s lockout banner (danger, pad opacity 0.4, lock-clock icon).
-- Modes: `setup_1` ("Create a 4-Digit PIN") → `setup_2` (confirm, mismatch → shake + back) → `verify`. `requestPin(prompt?) → Future<bool>`, overlapping requests reject previous.
+- Modes: `setup_1` ("Create a 4-Digit PIN") → `setup_2` ("Confirm PIN"; mismatch → shake + "PINs do not match. Try again." + back to setup_1) → `verify`. `requestPin(prompt?) → Future<bool>`, overlapping requests reject previous.
 - Biometric tiers: 0 locked → 1 `isCirclesUnlocked` → 1.5 `isProfileUnlocked` → 2 `isNotesUnlocked` (implies all; starts inactivity timer). Vision ★ button = central unlock. `keepAlive` resets timer.
 - Auto-lock: `lockTimeoutMins` default 3 (0 disables); background grace 30 s (immediate if timeout 0); Inactive state (control center) → immediate; foreground resumes inactivity timer.
+- The inactivity countdown runs for the full (Stage 2) unlock only. Circles/profile-only unlocks persist until background or manual lock; activity while only circles are open must not start a full-lock timer.
+
+- Flutter native authentication: Android uses an AppCompat activity theme; iOS
+  declares Face ID usage. Check enrolled biometrics and native device credentials
+  before app-PIN fallback. User cancellation stays cancelled. Simultaneous unlock
+  requests share one attempt; manual lock invalidates late results.
+- The global PIN consumes system Back before underlying sheets/routes. Protected
+  library/profile content must unmount when its tier locks.
 
 ## 13. Backup (format v2 — import/export compatible with old app)
 
@@ -303,17 +324,37 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
   - `vlogs/<basename>` (unique basename: `${vlogId}_` prefix, then `${vlogId}_${n}_`), `thumbnails/<basename>`.
 - Scope → tables: settings→`settings`; notes→`notes,persons,feed_bookmarks,feed_comments`; masteries→`pillars,advice_cards,pillar_logs,pillar_versions`; vlogs→`vlogs`; system (always)→`ai_jobs,ai_logs`.
 - Export: checkpoint WAL → scope SELECTs (strip secret setting keys `AI_OLLAMA_API_KEY`, `AI_NEURALWATT_API_KEY`) → AsyncStorage allowlist only (`__DB_SCHEMA_VERSION__`, `FEATURE_FLAGS`) → media manifest (missing → `included:false,reason:'missing'`) → ZIP → **post-zip verification** (every included entry exists with exact size; missing metadata = fatal, missing entries = `verification:'warn'`) → share only after verification. Cleanup old `mda_backup_*.zip`.
-- Import gates: `.zip` only → extract → normalize (v2 + legacy v1, else reject) → **schema gate** (`backup.schemaVersion > current` → reject "update the app first") → **manifest gate** (all included present with exact size, else "corrupt backup") → **free-space gate** (`requiredBytes = manifestTotal × 1.1` vs free disk) → pause queues → safety snapshots (prefs pairs + DB file copy + vlog dir + thumbnail dir) → restore SQLite in ONE transaction (DELETE all, column-filtered re-insert) → rewrite media paths to sandbox → restore prefs allowlist (secret keys skipped, schema marker forced local) → restore media files → success.
+- Import gates: `.zip` only → extract → normalize (v2 + legacy v1, else reject) → **schema gate** (`backup.schemaVersion > current` → reject "update the app first") → **manifest gate** (all included present with exact size, else "corrupt backup") → **free-space gate** (`requiredBytes = manifestTotal × 1.1` vs free disk) → pause queues → safety snapshots (prefs pairs + DB file copy + vlog dir + thumbnail dir) → restore SQLite in ONE transaction (DELETE all, column-filtered re-insert) → rewrite media paths to sandbox → restore prefs allowlist (secret keys skipped, schema marker forced local) → restore media files (only media dirs present in the backup are touched; a media-less scoped import keeps existing videos) → success.
+- Media bytes are verified after staged extraction (truncated archives can pass header sizes); the whole ZIP decode runs off the UI isolate.
 - Rollback: any failure → restore snapshots (closeDb + delete + copy back, dirs, prefs), never throws out of catch. Queues always resumed in `finally`.
 - `BackupResult`: `{success, verification: ok|warn|failed, error?, cancelled?, zipPath?, scopes, tablesIncluded, videosIncluded, videosExcluded[], thumbnailsIncluded, warnings[]}`.
+
+- Flutter restore implementation: validate required SQLite data, table row shapes,
+  manifests, and supported versions before destructive work. Reject malformed
+  archives without changing current data. Secret settings are excluded on import
+  too; the local secure PIN remains independent. Stream media into staging; keep
+  original media/prefs/DB snapshots until commit and preserve recovery files if
+  rollback itself fails. Export compression and media extraction run off the UI
+  isolate. Await AI/compression active jobs plus queued persistence before restore.
+- Backup export scope selection permits multiple scopes and defaults to all four.
 
 ## 14. Feed & Home
 
 - Home = 3 layers: feed layer (starts `translateY = +screenHeight`, slides up), main content (Start | Library pager), LiquidGlassNav (floats, fades + slides down 80 px when feed open).
 - Feed reveal: upward-only pan, activation ≥ 8 px, fail on |dx| > 20 px, finger 1:1 tracking; commit ≥ 0.40 progress or velocity < −3000 px/s; spring `springSnappy`; close: progress < 0.70 or velocity > 3000 px/s or projected < 0.5 (factor 0.12).
+- The start page has no inner vertical scroller (RN parity) so the upward pan wins the gesture arena from anywhere on screen; top-edge overscroll carries real fling velocity into the same close decision.
 - Nav: 4 tabs Journal/Circles/Vlog/Check-in; width 88% screen, height 62, bottom = safeBottom + 14; indicator 180 ms cubic-out; gold urgent dot (8 px, top −3, right −5) on Check-in when no check-in in 7 days.
 - Feed items: `story` (journal + AI title, 50-word preview, star avatar), `tweet` (full text, bird badge), `checkin` (score emoji + `{n}/10` + tier, 40-word truncate), `clip` (vlog, orange accent). Sort newest first. Filters: All/Bookmarked + type checkboxes (journals/tweets/vlogs/checkins, all default on). Comments ≤ 500 chars. Autoplay when pref on + item visible (threshold 0) + feed progress ≥ 0.95. Scroll-to-top button after 300 px.
 - Duration labels: `${min} min` / 🐦 / "Quick Note" / vlog `ceil(durationSec/60) min`.
+
+- Gesture implementation: crossing halfway never changes gesture ownership.
+  Closing starts from the actual progress and accumulated downward movement;
+  cancellation returns to committed state. Downward overscroll at the top of the
+  feed closes it; regular feed scrolling retains list ownership. Reduced-motion
+  mode settles the feed immediately. Closing releases the feed's media resources.
+- Vlog bookmarks/comments use the vlog ID, matching RN. Inline videos have portrait
+  9:16 frames, retain video aspect ratio, begin muted, and expose a fullscreen
+  action. Autoplay also pauses when a reader covers the route or the app backgrounds.
 
 ## 15. UI Component Inventory (spec)
 
@@ -333,7 +374,8 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 - **Calendar**: 7-col Monday-first; cell `(w−48)/7`, thumb height ×1.15; empty = 32 px circle; today = 2 px primaryAction ring; vlog days = dangerFill + dangerBorderMedium (today red border), day number 11/800, duration badge "m:ss", stack counter red 16; month swipe with spring commit ±6%.
 - **NoteViewerModal**: `overlayVideoStrong` backdrop, `surfaceMedium` sheet radius 32, height 88%+20; meta "123 words • 5 min • v2" red uppercase; swipe-dismiss 150 px / 1000 px/s.
 - **VlogViewerModal**: morph-expand 350 ms quad-out from source rect; play/pause flash, mute (0.6 black circle), countdown badge overlayVideoStrong, swipe between same-day vlogs.
-- **Settings cards**: glassBackground radius 20 padding 20 marginBottom 20 border glassBorder; active (dev) = 2 px gold border.
+- **Settings cards**: glassBackground radius 20 padding 20 marginBottom 20 border glassBorder; active (dev) = 2 px gold border. Card rows are separated by a 1 px glassBorder hairline; picker rows show the value in w800 red with a `chevron-down` 16 red (opens a picker below, not a new screen).
+- **ConfirmDialog**: `modalBackground` scrim, `surfaceRaised` card radius 20, padding 28, border `glassBorderMedium`, shadow 0/12/30 @0.5, maxWidth min(380, w−48); title 22/800; card enters 0.9→1 (never 0→1); buttons row (radius 14, cancel glassHighlight / confirm primaryAction, destructive danger + pressed dangerPressed), pressed via scale 0.97 (no Material ripple).
 - **Toggle**: 44×26 track, 22 px knob, red when on.
 
 ## 16. Haptic Patterns (`haptics.ts`)
@@ -366,3 +408,9 @@ Queues persisted separately (not in backups): `COMPRESSION_JOBS_QUEUE`, `AI_JOB_
 ## 18. Feature Flags (all default true, key `FEATURE_FLAGS`)
 
 `ENABLE_TWEET_IN_JOURNAL_MODE`, `ENABLE_TWEET_IN_CIRCLE_MODE`, `ENABLE_TWEET_FILTER_IN_FEED`, `ENABLE_CIRCLE_TWEET_FEED`.
+
+## Repair Verification
+
+`PORT_AUDIT.md` records implementation evidence and remaining device/visual checks.
+This contract describes intended behavior; it is not a claim that every item has
+been verified on physical Android and iOS devices.

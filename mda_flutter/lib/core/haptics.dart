@@ -2,6 +2,9 @@
 /// Honors the global `enableHaptics` preference; all app haptics go through here.
 library;
 
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 
 /// Global haptics toggle (mirrored from the settings store).
@@ -9,6 +12,12 @@ bool hapticsEnabled = true;
 
 /// True when the platform can run the legacy vibrate-pattern API.
 bool _patternSupported = false;
+
+// Native selection/light impacts feel crisp on both platforms. Throttle dial
+// ticks so a fast drag cannot queue a long tail of vibration after release.
+const _microTickInterval = Duration(milliseconds: 35);
+final _hapticClock = Stopwatch()..start();
+Duration? _lastMicroTick;
 
 /// Initializes the haptics backend (call once at startup).
 Future<void> initHaptics() async {
@@ -23,8 +32,23 @@ Future<void> initHaptics() async {
 /// Single pulse of [ms] duration, or a full pattern `[delay, duration, delay, ...]`.
 /// Mirrors `vibrate(pattern)` in haptics.ts — no-op when haptics are disabled.
 Future<void> vibrate(Object pattern) async {
-  if (!hapticsEnabled || !_patternSupported) return;
+  if (!hapticsEnabled) return;
   try {
+    if (pattern is int && pattern > 0 && pattern <= 30) {
+      final now = _hapticClock.elapsed;
+      if (_lastMicroTick != null &&
+          now - _lastMicroTick! < _microTickInterval) {
+        return;
+      }
+      _lastMicroTick = now;
+      if (pattern <= 10) {
+        await HapticFeedback.selectionClick();
+      } else {
+        await HapticFeedback.lightImpact();
+      }
+      return;
+    }
+    if (!_patternSupported) return;
     if (pattern is List) {
       final list = pattern;
       if (list.length == 1) {
@@ -49,7 +73,11 @@ Future<void> cancel() async {
 }
 
 /// Sets the global enabled flag (used by the settings store on boot).
-void setGlobalHapticsEnabled(bool enabled) => hapticsEnabled = enabled;
+void setGlobalHapticsEnabled(bool enabled) {
+  hapticsEnabled = enabled;
+  _lastMicroTick = null;
+  if (!enabled) unawaited(cancel());
+}
 
 /// Micro-tick haptics table (SPEC §16) — named for reuse.
 class HapticPatterns {

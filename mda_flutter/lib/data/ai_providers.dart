@@ -46,11 +46,15 @@ class AiConfigState {
   final List<String> favoriteModels;
   final bool autoGenerateSummaries;
 
-  String get apiKey => provider == AiProvider.neuralwatt ? neuralwattApiKey : ollamaApiKey;
-  String get baseUrl => provider == AiProvider.neuralwatt ? neuralwattBaseUrl : ollamaBaseUrl;
-  String get model => provider == AiProvider.neuralwatt ? neuralwattModel : ollamaModel;
-  String get grammarModel =>
-      provider == AiProvider.neuralwatt ? neuralwattGrammarModel : ollamaGrammarModel;
+  String get apiKey =>
+      provider == AiProvider.neuralwatt ? neuralwattApiKey : ollamaApiKey;
+  String get baseUrl =>
+      provider == AiProvider.neuralwatt ? neuralwattBaseUrl : ollamaBaseUrl;
+  String get model =>
+      provider == AiProvider.neuralwatt ? neuralwattModel : ollamaModel;
+  String get grammarModel => provider == AiProvider.neuralwatt
+      ? neuralwattGrammarModel
+      : ollamaGrammarModel;
 
   /// Resolves to the runtime config used by the queue/service.
   AiConfig toRuntimeConfig() {
@@ -87,17 +91,21 @@ class AiConfigState {
       neuralwattApiKey: neuralwattApiKey ?? this.neuralwattApiKey,
       neuralwattBaseUrl: neuralwattBaseUrl ?? this.neuralwattBaseUrl,
       neuralwattModel: neuralwattModel ?? this.neuralwattModel,
-      neuralwattGrammarModel: neuralwattGrammarModel ?? this.neuralwattGrammarModel,
+      neuralwattGrammarModel:
+          neuralwattGrammarModel ?? this.neuralwattGrammarModel,
       customPrompts: customPrompts ?? this.customPrompts,
       favoriteModels: favoriteModels ?? this.favoriteModels,
-      autoGenerateSummaries: autoGenerateSummaries ?? this.autoGenerateSummaries,
+      autoGenerateSummaries:
+          autoGenerateSummaries ?? this.autoGenerateSummaries,
     );
   }
 }
 
 // -- Providers ----------------------------------------------------------------------
 
-final aiConfigProvider = NotifierProvider<AiConfigNotifier, AiConfigState>(AiConfigNotifier.new);
+final aiConfigProvider = NotifierProvider<AiConfigNotifier, AiConfigState>(
+  AiConfigNotifier.new,
+);
 
 final aiLoggerProvider = Provider<AiLogger>((ref) => AiLogger());
 
@@ -111,9 +119,12 @@ final aiQueueManagerProvider = Provider<AiQueueManager>((ref) {
     deps: AiQueueDeps(
       loadNotes: () => ref.read(notesRepositoryProvider).getAllNotes(),
       getNote: (id) => ref.read(notesRepositoryProvider).getNoteById(id),
-      updateNote: (id, updates) => ref.read(appDataProvider.notifier).updateNote(id, updates),
+      updateNote: (id, updates) =>
+          ref.read(appDataProvider.notifier).updateNote(id, updates),
       getPersonName: (personId) async {
-        final person = await ref.read(personsRepositoryProvider).getPersonById(personId);
+        final person = await ref
+            .read(personsRepositoryProvider)
+            .getPersonById(personId);
         if (person == null) return null;
         return RelationshipContext(
           personName: person.displayName,
@@ -128,7 +139,9 @@ final aiQueueManagerProvider = Provider<AiQueueManager>((ref) {
 /// Live queue state (bridged from the manager's ValueNotifier).
 final aiQueueStateProvider = StreamProvider<AiQueueState>((ref) {
   final manager = ref.watch(aiQueueManagerProvider);
-  final controller = StreamController<AiQueueState>.broadcast();
+  // Riverpod owns the one stream subscription. Buffer the initial snapshot
+  // until it subscribes; a broadcast stream would silently drop that event.
+  final controller = StreamController<AiQueueState>();
   void emit() {
     if (!controller.isClosed) controller.add(manager.state.value);
   }
@@ -143,7 +156,9 @@ final aiQueueStateProvider = StreamProvider<AiQueueState>((ref) {
 });
 
 /// Failure notifications (last 5).
-final aiFailureNotificationsProvider = Provider<List<AiFailureNotification>>((ref) {
+final aiFailureNotificationsProvider = Provider<List<AiFailureNotification>>((
+  ref,
+) {
   ref.watch(aiQueueStateProvider);
   return ref.watch(aiQueueManagerProvider).notifications;
 });
@@ -160,28 +175,54 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
     try {
       final service = ref.read(settingsServiceProvider);
       final state = AiConfigState(
-        provider: await service.getString(SettingsKeys.aiProvider, AiProvider.ollama),
-        ollamaApiKey:
-            await service.getString(SettingsKeys.aiOllamaApiKey, AiDefaults.ollamaApiKey),
-        ollamaBaseUrl:
-            await service.getString(SettingsKeys.aiOllamaBaseUrl, AiDefaults.ollamaBaseUrl),
-        ollamaModel:
-            await service.getString(SettingsKeys.aiOllamaModel, AiDefaults.ollamaModel),
-        ollamaGrammarModel: await service.getString(SettingsKeys.aiOllamaGrammarModel, ''),
-        neuralwattApiKey: await service.getString(SettingsKeys.aiNeuralwattApiKey, ''),
-        neuralwattBaseUrl: await service
-            .getString(SettingsKeys.aiNeuralwattBaseUrl, AiDefaults.neuralwattBaseUrl),
-        neuralwattModel:
-            await service.getString(SettingsKeys.aiNeuralwattModel, AiDefaults.neuralwattModel),
-        neuralwattGrammarModel:
-            await service.getString(SettingsKeys.aiNeuralwattGrammarModel, ''),
-        customPrompts: (await service.getJsonMap(SettingsKeys.aiCustomPrompts, {}))
-            .map((k, v) => MapEntry(k, '$v')),
-        favoriteModels: (await service.getJsonList(SettingsKeys.aiFavoriteModels, []))
-            .whereType<String>()
-            .toList(),
-        autoGenerateSummaries:
-            await service.getBool(SettingsKeys.autoGenerateSummaries, true),
+        provider: await service.getString(
+          SettingsKeys.aiProvider,
+          AiProvider.ollama,
+        ),
+        ollamaApiKey: await service.getString(
+          SettingsKeys.aiOllamaApiKey,
+          AiDefaults.ollamaApiKey,
+        ),
+        ollamaBaseUrl: await service.getString(
+          SettingsKeys.aiOllamaBaseUrl,
+          AiDefaults.ollamaBaseUrl,
+        ),
+        ollamaModel: await service.getString(
+          SettingsKeys.aiOllamaModel,
+          AiDefaults.ollamaModel,
+        ),
+        ollamaGrammarModel: await service.getString(
+          SettingsKeys.aiOllamaGrammarModel,
+          '',
+        ),
+        neuralwattApiKey: await service.getString(
+          SettingsKeys.aiNeuralwattApiKey,
+          '',
+        ),
+        neuralwattBaseUrl: await service.getString(
+          SettingsKeys.aiNeuralwattBaseUrl,
+          AiDefaults.neuralwattBaseUrl,
+        ),
+        neuralwattModel: await service.getString(
+          SettingsKeys.aiNeuralwattModel,
+          AiDefaults.neuralwattModel,
+        ),
+        neuralwattGrammarModel: await service.getString(
+          SettingsKeys.aiNeuralwattGrammarModel,
+          '',
+        ),
+        customPrompts: (await service.getJsonMap(
+          SettingsKeys.aiCustomPrompts,
+          {},
+        )).map((k, v) => MapEntry(k, '$v')),
+        favoriteModels: (await service.getJsonList(
+          SettingsKeys.aiFavoriteModels,
+          [],
+        )).whereType<String>().toList(),
+        autoGenerateSummaries: await service.getBool(
+          SettingsKeys.autoGenerateSummaries,
+          true,
+        ),
       );
       this.state = state;
 
@@ -205,7 +246,10 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 
   Future<void> saveApiKey(String key) async {
     final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(isNeural ? SettingsKeys.aiNeuralwattApiKey : SettingsKeys.aiOllamaApiKey, key);
+    await _save(
+      isNeural ? SettingsKeys.aiNeuralwattApiKey : SettingsKeys.aiOllamaApiKey,
+      key,
+    );
     state = isNeural
         ? state.copyWith(neuralwattApiKey: key)
         : state.copyWith(ollamaApiKey: key);
@@ -214,7 +258,12 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 
   Future<void> saveBaseUrl(String url) async {
     final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(isNeural ? SettingsKeys.aiNeuralwattBaseUrl : SettingsKeys.aiOllamaBaseUrl, url);
+    await _save(
+      isNeural
+          ? SettingsKeys.aiNeuralwattBaseUrl
+          : SettingsKeys.aiOllamaBaseUrl,
+      url,
+    );
     state = isNeural
         ? state.copyWith(neuralwattBaseUrl: url)
         : state.copyWith(ollamaBaseUrl: url);
@@ -223,7 +272,10 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 
   Future<void> saveModel(String model) async {
     final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(isNeural ? SettingsKeys.aiNeuralwattModel : SettingsKeys.aiOllamaModel, model);
+    await _save(
+      isNeural ? SettingsKeys.aiNeuralwattModel : SettingsKeys.aiOllamaModel,
+      model,
+    );
     state = isNeural
         ? state.copyWith(neuralwattModel: model)
         : state.copyWith(ollamaModel: model);
@@ -233,8 +285,11 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
   Future<void> saveGrammarModel(String model) async {
     final isNeural = state.provider == AiProvider.neuralwatt;
     await _save(
-        isNeural ? SettingsKeys.aiNeuralwattGrammarModel : SettingsKeys.aiOllamaGrammarModel,
-        model);
+      isNeural
+          ? SettingsKeys.aiNeuralwattGrammarModel
+          : SettingsKeys.aiOllamaGrammarModel,
+      model,
+    );
     state = isNeural
         ? state.copyWith(neuralwattGrammarModel: model)
         : state.copyWith(ollamaGrammarModel: model);
@@ -285,7 +340,10 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 // -- Exported helper: category for a note (SPEC §9) --------------------------------
 
 /// AI job category for a saved note.
-String aiCategoryForNote({required bool isAlignmentReflection, required String? personId}) {
+String aiCategoryForNote({
+  required bool isAlignmentReflection,
+  required String? personId,
+}) {
   if (isAlignmentReflection) return AiJobCategory.checkin;
   if (personId != null) return AiJobCategory.circle;
   return AiJobCategory.journal;

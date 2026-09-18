@@ -164,7 +164,11 @@ class _CustomSliderState extends State<CustomSlider> {
                   },
                   onHorizontalDragEnd: (details) {
                     final value = _dragValue.round().clamp(1, 10);
-                    vibrate(HapticPatterns.tick);
+                    // Only tick when the release actually changed the value —
+                    // an unchanged release already ticked during the drag.
+                    if (value != widget.value) {
+                      vibrate(HapticPatterns.tick);
+                    }
                     widget.onChanged(value);
                     setState(() => _dragValue = value.toDouble());
                   },

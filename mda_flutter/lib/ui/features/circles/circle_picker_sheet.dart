@@ -12,6 +12,7 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
 
@@ -25,6 +26,7 @@ Future<String?> showCirclePicker(BuildContext context, {String? selectedId}) {
     builder: (close) => CirclePickerBody(
       selectedId: selectedId,
       onSelect: (id) {
+        if (completer.isCompleted) return;
         vibrate(HapticPatterns.optionSelect);
         close();
         completer.complete(id);
@@ -37,7 +39,11 @@ Future<String?> showCirclePicker(BuildContext context, {String? selectedId}) {
 }
 
 class CirclePickerBody extends ConsumerWidget {
-  const CirclePickerBody({super.key, required this.selectedId, required this.onSelect});
+  const CirclePickerBody({
+    super.key,
+    required this.selectedId,
+    required this.onSelect,
+  });
 
   final String? selectedId;
   final ValueChanged<String> onSelect;
@@ -45,6 +51,34 @@ class CirclePickerBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final persons = ref.watch(personsProvider);
+    final security = ref.watch(securityControllerProvider);
+    if (!security.isCirclesUnlocked) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Mdi.get('lockOutline'), color: AppColors.textDim, size: 36),
+            const SizedBox(height: 16),
+            const Text(
+              'Circles are locked',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                final prefs = ref.read(preferencesProvider);
+                security.unlockCircles(
+                  preferPinAuth: prefs.preferPinAuth,
+                  useBiometrics: prefs.useBiometrics,
+                  lockTimeoutMins: prefs.lockTimeoutMins,
+                );
+              },
+              child: const Text('Unlock'),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Column(
       children: [
@@ -55,7 +89,9 @@ class CirclePickerBody extends ConsumerWidget {
             onPress: () async {
               final name = await _promptForName(context);
               if (name != null && name.trim().isNotEmpty) {
-                final id = await ref.read(appDataProvider.notifier).addPerson(name.trim());
+                final id = await ref
+                    .read(appDataProvider.notifier)
+                    .addPerson(name.trim());
                 if (id != null) onSelect(id);
               }
             },
@@ -68,11 +104,19 @@ class CirclePickerBody extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Mdi.get('accountPlusOutline'), color: AppColors.primaryAction, size: 22),
+                  Icon(
+                    Mdi.get('accountPlusOutline'),
+                    color: AppColors.primaryAction,
+                    size: 22,
+                  ),
                   const SizedBox(width: 12),
                   const Text(
                     'Add Person',
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -100,9 +144,14 @@ class CirclePickerBody extends ConsumerWidget {
                       child: AnimatedScaleButton(
                         onPress: () => onSelect(person.id),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                           decoration: BoxDecoration(
-                            color: active ? AppColors.dangerTint : Colors.transparent,
+                            color: active
+                                ? AppColors.dangerTint
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Row(
@@ -116,7 +165,9 @@ class CirclePickerBody extends ConsumerWidget {
                                   shape: BoxShape.circle,
                                 ),
                                 child: Text(
-                                  person.name.isEmpty ? '?' : person.name[0].toUpperCase(),
+                                  person.name.isEmpty
+                                      ? '?'
+                                      : person.name[0].toUpperCase(),
                                   style: const TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 15,
@@ -129,16 +180,24 @@ class CirclePickerBody extends ConsumerWidget {
                                 child: Text(
                                   person.displayName,
                                   style: TextStyle(
-                                    color: active ? AppColors.primaryAction : AppColors.textPrimary,
+                                    color: active
+                                        ? AppColors.primaryAction
+                                        : AppColors.textPrimary,
                                     fontSize: 16,
-                                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                                    fontWeight: active
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
                                   ),
                                 ),
                               ),
                               Icon(
-                                active ? Mdi.get('check') : Mdi.get('chevronRight'),
+                                active
+                                    ? Mdi.get('check')
+                                    : Mdi.get('chevronRight'),
                                 size: 20,
-                                color: active ? AppColors.primaryAction : AppColors.textMuted,
+                                color: active
+                                    ? AppColors.primaryAction
+                                    : AppColors.textMuted,
                               ),
                             ],
                           ),

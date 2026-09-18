@@ -2,7 +2,7 @@
 ///
 /// Transparent-modal screens (Writing, PostWriting) use fade/transparent
 /// transitions matching the RN native-stack config. The Home screen hosts
-/// StartScreen directly until Phase 3 adds the pager + nav + feed layers.
+/// StartScreen alongside the library pager, navigation, and feed layers.
 library;
 
 import 'package:flutter/material.dart';
@@ -11,7 +11,9 @@ import 'package:go_router/go_router.dart';
 
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
+import 'data/security_providers.dart';
 import 'ui/core/widgets/pin_pad_modal.dart';
+import 'ui/core/widgets/security_boundary.dart';
 import 'ui/features/alignment/alignment_writing_screen.dart';
 import 'ui/features/home/home_screen.dart';
 import 'ui/features/pillars/pillar_detail_screen.dart';
@@ -24,46 +26,58 @@ import 'ui/features/writing/writing_screen.dart';
 final GoRouter goRouter = GoRouter(
   initialLocation: '/',
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const HomeScreen(),
-    ),
+    GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
     GoRoute(
       path: '/writing',
       pageBuilder: (context, state) => _transparentPage(
-        WritingScreen(params: WritingParams.fromExtra((state.extra as Map?)?.cast<String, dynamic>() ?? {})),
+        WritingScreen(
+          params: WritingParams.fromExtra(
+            (state.extra as Map?)?.cast<String, dynamic>() ?? {},
+          ),
+        ),
       ),
     ),
     GoRoute(
       path: '/post-writing',
       pageBuilder: (context, state) => _transparentPage(
-        PostWritingScreen(noteId: (state.extra as Map?)?['noteId'] as String? ?? ''),
+        PostWritingScreen(
+          noteId: (state.extra as Map?)?['noteId'] as String? ?? '',
+        ),
       ),
     ),
     GoRoute(
       path: '/masteries',
-      pageBuilder: (context, state) => _transparentPage(const PillarsDashboardScreen()),
+      pageBuilder: (context, state) =>
+          _transparentPage(const PillarsDashboardScreen()),
       routes: [
         GoRoute(
           path: ':pillarId',
           pageBuilder: (context, state) => _transparentPage(
-            PillarDetailScreen(pillarId: state.pathParameters['pillarId'] ?? ''),
+            PillarDetailScreen(
+              pillarId: state.pathParameters['pillarId'] ?? '',
+            ),
           ),
         ),
       ],
     ),
     GoRoute(
       path: '/checkin',
-      pageBuilder: (context, state) => _transparentPage(const AlignmentWritingScreen()),
+      pageBuilder: (context, state) => _transparentPage(
+        AlignmentWritingScreen(
+          isWeekly: (state.extra as Map?)?['isWeekly'] == true,
+        ),
+      ),
     ),
     GoRoute(
       path: '/vlog',
       pageBuilder: (context, state) {
         final extra = (state.extra as Map?)?.cast<String, dynamic>() ?? {};
-        return _transparentPage(VlogRecordingScreen(
-          timeIndex: (extra['timeIndex'] as num?)?.toInt() ?? 0,
-          isQuickVideo: extra['isQuickVideo'] == true,
-        ));
+        return _transparentPage(
+          VlogRecordingScreen(
+            timeIndex: (extra['timeIndex'] as num?)?.toInt() ?? 0,
+            isQuickVideo: extra['isQuickVideo'] == true,
+          ),
+        );
       },
     ),
   ],
@@ -83,6 +97,24 @@ Page<void> _transparentPage(Widget child) {
   );
 }
 
+/// The PIN layer sits above the navigator, so route-local PopScope cannot see
+/// it. Consume Back here before it reaches (and exits) the underlying route.
+final _backDispatcherProvider = Provider<RootBackButtonDispatcher>(
+  (ref) => _SecurityBackDispatcher(() {
+    final security = ref.read(securityControllerProvider);
+    if (security.mode.value == null) return false;
+    security.cancel();
+    return true;
+  }),
+);
+
+class _SecurityBackDispatcher extends RootBackButtonDispatcher {
+  _SecurityBackDispatcher(this.dismissPin);
+  final bool Function() dismissPin;
+  @override
+  Future<bool> didPopRoute() async => dismissPin() || await super.didPopRoute();
+}
+
 class MdaApp extends ConsumerWidget {
   const MdaApp({super.key});
 
@@ -92,17 +124,22 @@ class MdaApp extends ConsumerWidget {
       title: 'The Most Dangerous Writing App',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      routerConfig: goRouter,
+      routerDelegate: goRouter.routerDelegate,
+      routeInformationParser: goRouter.routeInformationParser,
+      routeInformationProvider: goRouter.routeInformationProvider,
+      backButtonDispatcher: ref.watch(_backDispatcherProvider),
       builder: (context, child) {
         // Full-bleed AMOLED background behind every route + the global
         // PIN pad layer (security is app-wide, rendered above navigation).
-        return ColoredBox(
-          color: AppColors.background,
-          child: Stack(
-            children: [
-              Positioned.fill(child: child ?? const SizedBox()),
-              const PinPadModal(),
-            ],
+        return SecurityBoundary(
+          child: ColoredBox(
+            color: AppColors.background,
+            child: Stack(
+              children: [
+                Positioned.fill(child: child ?? const SizedBox()),
+                const PinPadModal(),
+              ],
+            ),
           ),
         );
       },

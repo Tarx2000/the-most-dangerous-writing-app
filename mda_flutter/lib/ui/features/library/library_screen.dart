@@ -1,8 +1,8 @@
 /// LibraryScreen — the library (SPEC §15, §14).
 /// Header (title + AI badge + count) · sort row · 4 tabs:
 /// Notes / Check-ins / Circles / Vlogs.
-/// Phase 3 ships Notes + Check-ins + Circles list; Vlogs tab arrives with
-/// the calendar gallery in Phase 6.
+/// Each section observes its security tier; protected content is not mounted
+/// while locked, so accessibility cannot expose it behind an overlay.
 library;
 
 import 'package:flutter/material.dart';
@@ -40,7 +40,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       selected: _sortBy,
       options: [
         for (final option in SortOption.values)
-          ActionSheetOption(value: option, label: _sortLabel(option), icon: _sortIcon(option)),
+          ActionSheetOption(
+            value: option,
+            label: _sortLabel(option),
+            icon: _sortIcon(option),
+          ),
       ],
     );
     if (option != null) setState(() => _sortBy = option);
@@ -80,7 +84,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     showNoteViewer(context, note: note);
   }
 
-  void _openPersonProfile(Person person) {
+  Future<void> _openPersonProfile(Person person) async {
+    final security = ref.read(securityControllerProvider);
+    final prefs = ref.read(preferencesProvider);
+    final allowed = await security.unlockProfile(
+      preferPinAuth: prefs.preferPinAuth,
+      useBiometrics: prefs.useBiometrics,
+      lockTimeoutMins: prefs.lockTimeoutMins,
+    );
+    if (!allowed || !mounted) return;
     final overlay = Overlay.of(context);
     late final OverlayEntry entry;
     entry = OverlayEntry(
@@ -92,94 +104,102 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     overlay.insert(entry);
   }
 
+  Future<void> _unlockCurrentTab() async {
+    final security = ref.read(securityControllerProvider);
+    final prefs = ref.read(preferencesProvider);
+    final unlocked = _tabIndex == 2
+        ? await security.unlockCircles(
+            preferPinAuth: prefs.preferPinAuth,
+            useBiometrics: prefs.useBiometrics,
+            lockTimeoutMins: prefs.lockTimeoutMins,
+          )
+        : await security.unlockNotes(
+            preferPinAuth: prefs.preferPinAuth,
+            useBiometrics: prefs.useBiometrics,
+            lockTimeoutMins: prefs.lockTimeoutMins,
+          );
+    if (unlocked) vibrate(HapticPatterns.unlockSuccess);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Security gate: the notes tier unlocks the library (SPEC §12).
-    final locked = !ref.watch(isNotesUnlockedProvider);
-
+    final security = ref.watch(securityControllerProvider);
+    final locked = _tabIndex == 2
+        ? !security.isCirclesUnlocked
+        : !security.isNotesUnlocked;
     final notes = ref.watch(notesProvider);
     final persons = ref.watch(personsProvider);
     final checkins = notes.where((n) => n.isAlignmentReflection).toList();
     final journalNotes = notes.where((n) => !n.isAlignmentReflection).toList();
 
     return SafeArea(
-      child: Stack(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Content (fades + scales down when locked — SPEC §15 pattern).
-          AnimatedOpacity(
-            opacity: locked ? 0.96 : 1,
-            duration: const Duration(milliseconds: 350),
-            child: AnimatedScale(
-              scale: locked ? 0.96 : 1.0,
-              duration: const Duration(milliseconds: 350),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Library',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
+                const Expanded(
+                  child: Text(
+                    'Library',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
                   ),
                 ),
-                Row(
-                  children: [
-                    // AI badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.dangerTint,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Text(
-                        'AI',
-                        style: TextStyle(
-                          color: AppColors.primaryAction,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.dangerTint,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Text(
+                    'AI',
+                    style: TextStyle(
+                      color: AppColors.primaryAction,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedScaleButton(
+                  onPress: () {
+                    if (locked) {
+                      _unlockCurrentTab();
+                    } else {
+                      vibrate(HapticPatterns.lockAll);
+                      security.lockAll();
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: locked
+                          ? AppColors.dangerTint
+                          : AppColors.glassBackground,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: locked
+                            ? AppColors.dangerBorder
+                            : AppColors.glassBorder,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    // Lock button — taps LOCK the whole app (RN parity:
-                    // the header lock toggles the notes tier).
-                    AnimatedScaleButton(
-                      onPress: () {
-                        vibrate(HapticPatterns.lockAll);
-                        ref.read(securityControllerProvider).lockAll();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: locked
-                              ? AppColors.dangerTint
-                              : AppColors.glassBackground,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: locked
-                                ? AppColors.dangerBorder
-                                : AppColors.glassBorder,
-                            width: 1,
-                          ),
-                        ),
-                        child: Icon(
-                          locked ? Mdi.get('lock') : Mdi.get('lockOpenOutline'),
-                          color: locked
-                              ? AppColors.primaryAction
-                              : AppColors.textSecondary,
-                          size: 18,
-                        ),
-                      ),
+                    child: Icon(
+                      Mdi.get(locked ? 'lock' : 'lockOpenOutline'),
+                      color: locked
+                          ? AppColors.primaryAction
+                          : AppColors.textSecondary,
+                      size: 20,
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -191,17 +211,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
           ),
-          // Sort row (notes + checkins tabs only)
           if (_tabIndex <= 1)
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 14, 24, 4),
-              child: _SortRow(
-                sortBy: _sortBy,
-                onPress: _openSortSheet,
-              ),
+              child: _SortRow(sortBy: _sortBy, onPress: _openSortSheet),
             ),
-          // Tabs
-          Padding(
+          // Tabs remain reachable while locked so Circles can request its own
+          // lower tier without granting access to the user's private notes.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(24, 10, 24, 8),
             child: Row(
               children: [
@@ -214,112 +232,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ],
             ),
           ),
-          // Content
           Expanded(
-            child: IndexedStack(
-              index: _tabIndex,
-              children: [
-                // Notes
-                LibraryNotesList(
-                  notes: journalNotes.where((n) => n.personId == null).toList(),
-                  sortBy: _sortBy,
-                  emptyTitle: 'No entries yet',
-                  emptySubtitle: 'Complete your first writing session to see it here.',
-                  onNoteTap: _openNoteViewer,
-                ),
-                // Check-ins
-                LibraryNotesList(
-                  notes: checkins,
-                  sortBy: _sortBy,
-                  emptyTitle: 'No check-ins yet',
-                  emptySubtitle: 'Reflections from your alignment check-ins appear here.',
-                  reflectionsOnly: true,
-                  onNoteTap: _openNoteViewer,
-                ),
-                // Circles
-                _CirclesTab(persons: persons, onPersonTap: _openPersonProfile),
-                // Vlogs (calendar gallery)
-                const VlogCalendarGallery(),
-              ],
-            ),
+            child: locked
+                ? _LibraryLockedContent(
+                    section: _tabs[_tabIndex],
+                    onUnlock: _unlockCurrentTab,
+                  )
+                : switch (_tabIndex) {
+                    0 => LibraryNotesList(
+                      notes: journalNotes
+                          .where((n) => n.personId == null)
+                          .toList(),
+                      sortBy: _sortBy,
+                      emptyTitle: 'No entries yet',
+                      emptySubtitle:
+                          'Complete your first writing session to see it here.',
+                      onNoteTap: _openNoteViewer,
+                    ),
+                    1 => LibraryNotesList(
+                      notes: checkins,
+                      sortBy: _sortBy,
+                      emptyTitle: 'No check-ins yet',
+                      emptySubtitle:
+                          'Reflections from your alignment check-ins appear here.',
+                      reflectionsOnly: true,
+                      onNoteTap: _openNoteViewer,
+                    ),
+                    2 => _CirclesTab(
+                      persons: persons,
+                      onPersonTap: _openPersonProfile,
+                    ),
+                    _ => const VlogCalendarGallery(),
+                  },
           ),
-                ],
-              ),
-            ),
-          ),
-          // Locked overlay (SPEC §15): overlayLockAndroid + unlock prompt.
-          if (locked)
-            Positioned.fill(
-              child: Container(
-                color: AppColors.overlayLockAndroid,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Mdi.get('lockOutline'),
-                        color: AppColors.textDim,
-                        size: 32,
-                      ),
-                      const SizedBox(height: 14),
-                      const Text(
-                        'Your library is locked',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Unlock from the start screen (Masteries button).',
-                        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                      ),
-                      const SizedBox(height: 16),
-                      AnimatedScaleButton(
-                        onPress: () async {
-                          final prefs = ref.read(preferencesProvider);
-                          final ok = await ref
-                              .read(securityControllerProvider)
-                              .unlockNotes(
-                                preferPinAuth: prefs.preferPinAuth,
-                                useBiometrics: prefs.useBiometrics,
-                              );
-                          if (ok && mounted) {
-                            vibrate(HapticPatterns.unlockSuccess);
-                            setState(() {});
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 11),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryAction,
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Mdi.get('fingerprint'),
-                                  color: AppColors.primaryActionText, size: 17),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Unlock',
-                                style: TextStyle(
-                                  color: AppColors.primaryActionText,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -328,8 +273,77 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   static const _tabs = ['Notes', 'Check-ins', 'Circles', 'Vlogs'];
 }
 
+class _LibraryLockedContent extends StatelessWidget {
+  const _LibraryLockedContent({required this.section, required this.onUnlock});
+  final String section;
+  final VoidCallback onUnlock;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Mdi.get('lockOutline'), color: AppColors.textDim, size: 32),
+          const SizedBox(height: 14),
+          Text(
+            '$section are locked',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Verify your identity to continue.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          AnimatedScaleButton(
+            onPress: onUnlock,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+              decoration: BoxDecoration(
+                color: AppColors.primaryAction,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Mdi.get('fingerprint'),
+                    color: AppColors.primaryActionText,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Unlock',
+                    style: TextStyle(
+                      color: AppColors.primaryActionText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _LibraryTab extends StatelessWidget {
-  const _LibraryTab({required this.label, required this.active, required this.onTap});
+  const _LibraryTab({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
 
   final String label;
   final bool active;
@@ -344,10 +358,14 @@ class _LibraryTab extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: active ? AppColors.glassHighlight : AppColors.glassSurfaceSubtle,
+            color: active
+                ? AppColors.glassHighlight
+                : AppColors.glassSurfaceSubtle,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: active ? AppColors.glassBorderMedium : AppColors.glassBorderFaint,
+              color: active
+                  ? AppColors.glassBorderMedium
+                  : AppColors.glassBorderFaint,
               width: 1,
             ),
           ),
@@ -389,7 +407,11 @@ class _SortRow extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             'Sort by: ${_labels[sortBy]}',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -464,12 +486,19 @@ class _CirclesTab extends StatelessWidget {
                         if (person.relationship != null)
                           Text(
                             person.relationship!,
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
                           ),
                       ],
                     ),
                   ),
-                  Icon(Mdi.get('chevronRight'), color: AppColors.textMuted, size: 18),
+                  Icon(
+                    Mdi.get('chevronRight'),
+                    color: AppColors.textMuted,
+                    size: 18,
+                  ),
                 ],
               ),
             ),

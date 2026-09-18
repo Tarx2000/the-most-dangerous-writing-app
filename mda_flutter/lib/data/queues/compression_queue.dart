@@ -66,18 +66,18 @@ class CompressionJob {
   }
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'vlogId': vlogId,
-        'filePath': filePath,
-        'presetId': presetId,
-        'status': status,
-        'progress': progress,
-        'createdAt': createdAt,
-        'startedAt': startedAt,
-        'completedAt': completedAt,
-        'error': error,
-        'retryCount': retryCount,
-      };
+    'id': id,
+    'vlogId': vlogId,
+    'filePath': filePath,
+    'presetId': presetId,
+    'status': status,
+    'progress': progress,
+    'createdAt': createdAt,
+    'startedAt': startedAt,
+    'completedAt': completedAt,
+    'error': error,
+    'retryCount': retryCount,
+  };
 
   static CompressionJob? fromJson(Map<String, dynamic> json) {
     try {
@@ -116,19 +116,20 @@ class CompressionQueueState {
 
 /// Callbacks the queue needs (injected for testability).
 class CompressionDeps {
-  const CompressionDeps({required this.updateVlog, required this.deleteVlogFile});
+  const CompressionDeps({
+    required this.updateVlog,
+    required this.deleteVlogFile,
+  });
 
-  final Future<void> Function(String vlogId, Map<String, Object?> updates) updateVlog;
+  final Future<void> Function(String vlogId, Map<String, Object?> updates)
+  updateVlog;
 
   /// Deletes the ORIGINAL file after a successful compression swap.
   final Future<void> Function(String path) deleteVlogFile;
 }
 
 class CompressionQueueManager {
-  CompressionQueueManager({
-    required this.compressor,
-    required this.deps,
-  });
+  CompressionQueueManager({required this.compressor, required this.deps});
 
   static const int _rateLimitMs = 500;
   static const int _maxRetries = 2;
@@ -139,16 +140,22 @@ class CompressionQueueManager {
   final CompressionDeps deps;
 
   final List<CompressionJob> _jobs = [];
-  final ValueNotifier<CompressionQueueState> state = ValueNotifier(const CompressionQueueState());
+  final ValueNotifier<CompressionQueueState> state = ValueNotifier(
+    const CompressionQueueState(),
+  );
 
   bool _paused = false;
   bool _isRunning = false;
+  Future<void>? _activeTask;
+  Future<void>? _watchdogTask;
+  Future<void> _pendingPersist = Future.value();
   Timer? _rateLimitTimer;
   Timer? _timeoutTimer;
 
   // -- Lifecycle -----------------------------------------------------------------
 
   Future<void> initialize() async {
+    _jobs.clear();
     await _loadPersisted();
     _recoverOrphans();
     await _migrateLegacy();
@@ -168,7 +175,8 @@ class CompressionQueueManager {
   bool isVlogQueued(String vlogId) =>
       _jobs.any((j) => j.vlogId == vlogId && j.status == 'queued');
 
-  bool isVlogInQueue(String vlogId) => isVlogActive(vlogId) || isVlogQueued(vlogId);
+  bool isVlogInQueue(String vlogId) =>
+      isVlogActive(vlogId) || isVlogQueued(vlogId);
 
   CompressionJob? getJobForVlog(String vlogId) {
     for (final job in _jobs) {
@@ -177,7 +185,9 @@ class CompressionQueueManager {
     return null;
   }
 
-  int get activeCount => _jobs.where((j) => j.status == 'queued' || j.status == 'processing').length;
+  int get activeCount => _jobs
+      .where((j) => j.status == 'queued' || j.status == 'processing')
+      .length;
 
   List<CompressionJob> get jobs => List.unmodifiable(_jobs);
 
@@ -188,14 +198,16 @@ class CompressionQueueManager {
       logCompressor.warn('queue full, dropping job', vlogId);
       return;
     }
-    _jobs.add(CompressionJob(
-      id: generateId(),
-      vlogId: vlogId,
-      filePath: filePath,
-      presetId: presetId,
-      status: 'queued',
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    _jobs.add(
+      CompressionJob(
+        id: generateId(),
+        vlogId: vlogId,
+        filePath: filePath,
+        presetId: presetId,
+        status: 'queued',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
     _notify();
     _persist();
     _scheduleNext();
@@ -203,7 +215,9 @@ class CompressionQueueManager {
 
   /// Only queued jobs can be cancelled (no native cancel API — SPEC §11).
   void cancelJob(String jobId) {
-    final index = _jobs.indexWhere((j) => j.id == jobId && j.status == 'queued');
+    final index = _jobs.indexWhere(
+      (j) => j.id == jobId && j.status == 'queued',
+    );
     if (index < 0) return;
     _jobs[index] = _jobs[index].copyWith(status: 'cancelled');
     _notify();
@@ -211,7 +225,9 @@ class CompressionQueueManager {
   }
 
   void retryJob(String jobId) {
-    final index = _jobs.indexWhere((j) => j.id == jobId && (j.status == 'failed' || j.status == 'cancelled'));
+    final index = _jobs.indexWhere(
+      (j) => j.id == jobId && (j.status == 'failed' || j.status == 'cancelled'),
+    );
     if (index < 0) return;
     _jobs[index] = _jobs[index].copyWith(status: 'queued', error: () => null);
     _notify();
@@ -228,6 +244,15 @@ class CompressionQueueManager {
 
   void pause() {
     _paused = true;
+    _rateLimitTimer?.cancel();
+    if (_activeTask == null) _isRunning = false;
+  }
+
+  /// Finish the current file swap before a restore replaces media/database.
+  Future<void> pauseAndDrain() async {
+    pause();
+    await _activeTask;
+    await _pendingPersist;
   }
 
   void resume() {
@@ -255,13 +280,22 @@ class CompressionQueueManager {
     _isRunning = true;
     _rateLimitTimer?.cancel();
     _rateLimitTimer = Timer(const Duration(milliseconds: _rateLimitMs), () {
-      unawaited(_processJob(jobToProcess));
+      if (_paused ||
+          !_jobs.any((j) => j.id == jobToProcess.id && j.status == 'queued')) {
+        _isRunning = false;
+        _scheduleNext();
+        return;
+      }
+      _activeTask = _processJob(jobToProcess);
     });
   }
 
   Future<void> _processJob(CompressionJob job) async {
     try {
-      final processing = job.copyWith(status: 'processing', startedAt: DateTime.now().millisecondsSinceEpoch);
+      final processing = job.copyWith(
+        status: 'processing',
+        startedAt: DateTime.now().millisecondsSinceEpoch,
+      );
       _replaceJob(processing);
       _startTimeoutWatchdog(processing);
 
@@ -269,10 +303,28 @@ class CompressionQueueManager {
         job.filePath,
         job.presetId,
         (progress) {
-          _replaceJob(processing.copyWith(progress: progress.clamp(0.0, 1.0)));
+          // A late progress event must not resurrect a timed-out job.
+          if (getJobForVlog(job.vlogId)?.status == 'processing') {
+            _replaceJob(
+              processing.copyWith(progress: progress.clamp(0.0, 1.0)),
+            );
+          }
         },
       );
 
+      if (!_jobs.any(
+        (current) => current.id == job.id && current.status == 'processing',
+      )) {
+        // Native compression cannot be cancelled. Discard its late output, keep
+        // the original, and never replace media after the watchdog marked failure.
+        if (result.wasCompressed && result.outputUri != job.filePath) {
+          await deps.deleteVlogFile(result.outputUri);
+        }
+        return;
+      }
+      // Compression finished: only native encoding is subject to the watchdog.
+      // The subsequent database/file swap is drained before backup restoration.
+      _timeoutTimer?.cancel();
       // Success → metadata update, delete the ORIGINAL, advance the queue.
       await deps.updateVlog(job.vlogId, {
         'file_path': result.outputUri,
@@ -285,26 +337,37 @@ class CompressionQueueManager {
         await deps.deleteVlogFile(job.filePath);
       }
 
-      _replaceJob(processing.copyWith(
-        status: 'done',
-        progress: 1,
-        completedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      _replaceJob(
+        processing.copyWith(
+          status: 'done',
+          progress: 1,
+          completedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
     } catch (e) {
       logCompressor.warn('compression failed', e);
+      if (!_jobs.any(
+        (current) => current.id == job.id && current.status == 'processing',
+      )) {
+        return;
+      }
       final willRetry = job.retryCount < _maxRetries;
       if (willRetry) {
-        _replaceJob(job.copyWith(
-          status: 'queued',
-          error: () => '$e',
-          retryCount: job.retryCount + 1,
-        ));
+        _replaceJob(
+          job.copyWith(
+            status: 'queued',
+            error: () => '$e',
+            retryCount: job.retryCount + 1,
+          ),
+        );
       } else {
-        _replaceJob(job.copyWith(
-          status: 'failed',
-          error: () => '$e',
-          completedAt: DateTime.now().millisecondsSinceEpoch,
-        ));
+        _replaceJob(
+          job.copyWith(
+            status: 'failed',
+            error: () => '$e',
+            completedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
         // Clear compressionPending so no permanent "Compressing…" overlay.
         try {
           await deps.updateVlog(job.vlogId, {'compression_pending': 0});
@@ -312,6 +375,9 @@ class CompressionQueueManager {
       }
     } finally {
       _timeoutTimer?.cancel();
+      await _watchdogTask;
+      _watchdogTask = null;
+      _activeTask = null;
       _isRunning = false;
       _notify();
       _persist();
@@ -321,21 +387,26 @@ class CompressionQueueManager {
 
   void _startTimeoutWatchdog(CompressionJob job) {
     _timeoutTimer?.cancel();
-    _timeoutTimer = Timer(const Duration(milliseconds: _timeoutMs), () async {
-      // Hard timeout → failed (SPEC §11), clears compressionPending.
-      _replaceJob(job.copyWith(
+    _timeoutTimer = Timer(const Duration(milliseconds: _timeoutMs), () {
+      _watchdogTask = _markTimedOut(job);
+    });
+  }
+
+  Future<void> _markTimedOut(CompressionJob job) async {
+    _replaceJob(
+      job.copyWith(
         status: 'failed',
         error: () => 'compression timed out',
         completedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
-      try {
-        await deps.updateVlog(job.vlogId, {'compression_pending': 0});
-      } catch (_) {}
-      _isRunning = false;
-      _notify();
-      _persist();
-      _scheduleNext();
-    });
+      ),
+    );
+    try {
+      await deps.updateVlog(job.vlogId, {'compression_pending': 0});
+    } catch (_) {}
+    // Retain ownership until the native job settles. Starting the next job here
+    // would overlap compressors and let pauseAndDrain miss the old file operation.
+    _notify();
+    await _persist();
   }
 
   // -- Persistence -------------------------------------------------------------------
@@ -351,7 +422,9 @@ class CompressionQueueManager {
         if (item is Map<String, dynamic>) {
           final job = CompressionJob.fromJson(item);
           if (job != null &&
-              (job.status == 'queued' || job.status == 'processing' || job.status == 'failed')) {
+              (job.status == 'queued' ||
+                  job.status == 'processing' ||
+                  job.status == 'failed')) {
             _jobs.add(job);
           }
         }
@@ -361,12 +434,24 @@ class CompressionQueueManager {
     }
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist() {
+    _pendingPersist = _pendingPersist.then((_) => _writePersisted());
+    return _pendingPersist;
+  }
+
+  Future<void> _writePersisted() async {
     try {
       final sp = await SharedPreferences.getInstance();
-      final keep = _jobs.where((j) =>
-          j.status == 'queued' || j.status == 'processing' || j.status == 'failed');
-      await sp.setString('COMPRESSION_JOBS_QUEUE', jsonEncode([for (final j in keep) j.toJson()]));
+      final keep = _jobs.where(
+        (j) =>
+            j.status == 'queued' ||
+            j.status == 'processing' ||
+            j.status == 'failed',
+      );
+      await sp.setString(
+        'COMPRESSION_JOBS_QUEUE',
+        jsonEncode([for (final j in keep) j.toJson()]),
+      );
     } catch (_) {}
   }
 
@@ -391,7 +476,9 @@ class CompressionQueueManager {
           if (item is Map<String, dynamic>) {
             final vlogId = item['vlogId'] ?? item['vlog_id'];
             final filePath = item['filePath'] ?? item['file_path'];
-            if (vlogId is String && filePath is String && !isVlogInQueue(vlogId)) {
+            if (vlogId is String &&
+                filePath is String &&
+                !isVlogInQueue(vlogId)) {
               enqueueVlog(vlogId, filePath, 'balanced');
             }
           }
@@ -404,8 +491,11 @@ class CompressionQueueManager {
   /// Prunes done/cancelled jobs older than 5 minutes (SPEC §11).
   void _prune() {
     final cutoff = DateTime.now().millisecondsSinceEpoch - 5 * 60 * 1000;
-    _jobs.removeWhere((j) =>
-        (j.status == 'done' || j.status == 'cancelled') && (j.completedAt ?? 0) < cutoff);
+    _jobs.removeWhere(
+      (j) =>
+          (j.status == 'done' || j.status == 'cancelled') &&
+          (j.completedAt ?? 0) < cutoff,
+    );
   }
 
   void _replaceJob(CompressionJob job) {

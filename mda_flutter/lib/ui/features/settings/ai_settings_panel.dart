@@ -18,6 +18,7 @@ import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
 import '../../core/widgets/shimmer_line.dart';
+import 'ai_model_picker.dart';
 
 class AiSettingsPanel extends ConsumerStatefulWidget {
   const AiSettingsPanel({super.key});
@@ -28,6 +29,8 @@ class AiSettingsPanel extends ConsumerStatefulWidget {
 
 class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
   bool _testing = false;
+  bool _overwrite = false;
+  final Set<String> _categories = {'journal', 'circle', 'checkin'};
   String? _testResult;
   bool _testSuccess = false;
   late final TextEditingController _apiKeyController;
@@ -76,7 +79,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
         setState(() {
           _testing = false;
           _testSuccess = true;
-          _testResult = 'Connected! Server is reachable.';
+          _testResult = 'Connected. Server is reachable.';
         });
       }
     } on AiError catch (e) {
@@ -98,34 +101,65 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
     }
   }
 
-  Future<void> _pickModel({required bool grammar}) async {
-    final config = ref.read(aiConfigProvider);
-    final isOllama = config.provider == AiProvider.ollama;
-    final models = isOllama ? AiDefaults.ollamaModels : AiDefaults.neuralwattModels;
-    final selected = grammar ? config.grammarModel : config.model;
+  Future<void> _pickModel({required bool grammar}) => showBaseModal(
+    context,
+    title: grammar ? 'Grammar Model' : 'AI Model',
+    heightFactor: 0.8,
+    builder: (close) => AiModelPicker(grammar: grammar, onClose: close),
+  );
 
-    final choice = await showActionSheet<String>(
-      context,
-      title: grammar ? 'Grammar Model' : 'AI Model',
-      selected: selected.isEmpty ? models.first : selected,
-      options: [
-        for (final model in models)
-          ActionSheetOption(
-            value: model,
-            label: model,
-            icon: 'brain',
-            favorite: config.favoriteModels.contains(model),
-          ),
-      ],
+  Future<void> _editPrompt(String key) async {
+    final config = ref.read(aiConfigProvider);
+    final controller = TextEditingController(
+      text: config.customPrompts[key] ?? defaultAiPrompts[key],
     );
-    if (choice == null) return;
-    final notifier = ref.read(aiConfigProvider.notifier);
-    if (grammar) {
-      await notifier.saveGrammarModel(choice);
-    } else {
-      await notifier.saveModel(choice);
-      await notifier.toggleFavoriteModel(choice);
-    }
+    await showBaseModal(
+      context,
+      title: 'Custom Prompt',
+      heightFactor: 0.85,
+      builder: (close) => Column(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              expands: true,
+              minLines: null,
+              maxLines: null,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: const InputDecoration(border: InputBorder.none),
+            ),
+          ),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () {
+                  controller.text = defaultAiPrompts[key] ?? '';
+                },
+                child: const Text('Reset to default'),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: () async {
+                  final prompts = {...ref.read(aiConfigProvider).customPrompts};
+                  final value = controller.text.trim();
+                  if (value.isEmpty || value == defaultAiPrompts[key]) {
+                    prompts.remove(key);
+                  } else {
+                    prompts[key] = value;
+                  }
+                  await ref
+                      .read(aiConfigProvider.notifier)
+                      .savePrompts(prompts);
+                  close();
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
   }
 
   @override
@@ -142,6 +176,18 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
         const SizedBox(height: 12),
         _SettingsCard(
           children: [
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Auto-generate summaries',
+                style: TextStyle(fontSize: 15),
+              ),
+              value: config.autoGenerateSummaries,
+              onChanged: (enabled) => ref
+                  .read(aiConfigProvider.notifier)
+                  .updateAutoGenerateSummaries(enabled),
+            ),
+            const _Divider(),
             // Provider switch
             _Row(
               icon: 'serverNetwork',
@@ -153,12 +199,22 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                   title: 'AI Provider',
                   selected: config.provider,
                   options: const [
-                    ActionSheetOption(value: 'ollama', label: 'Ollama Cloud', icon: 'cloudOutline'),
-                    ActionSheetOption(value: 'neuralwatt', label: 'Neuralwatt', icon: 'lightningBolt'),
+                    ActionSheetOption(
+                      value: 'ollama',
+                      label: 'Ollama Cloud',
+                      icon: 'cloudOutline',
+                    ),
+                    ActionSheetOption(
+                      value: 'neuralwatt',
+                      label: 'Neuralwatt',
+                      icon: 'lightningBolt',
+                    ),
                   ],
                 );
                 if (choice != null) {
-                  await ref.read(aiConfigProvider.notifier).saveProvider(choice);
+                  await ref
+                      .read(aiConfigProvider.notifier)
+                      .saveProvider(choice);
                 }
               },
             ),
@@ -167,9 +223,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
             _Row(
               icon: 'keyVariant',
               title: 'API Key',
-              value: config.apiKey.isEmpty
-                  ? 'Not set'
-                  : '${config.apiKey.substring(0, config.apiKey.length ~/ 2)}...',
+              value: config.apiKey.isEmpty ? 'Not set' : '••••••••',
               onTap: () => _editKey(),
             ),
             _Divider(),
@@ -192,7 +246,9 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
             _Row(
               icon: 'spellcheck',
               title: 'Grammar Model',
-              value: config.grammarModel.isEmpty ? 'Same as model' : config.grammarModel,
+              value: config.grammarModel.isEmpty
+                  ? 'Same as model'
+                  : config.grammarModel,
               onTap: () => _pickModel(grammar: true),
             ),
             _Divider(),
@@ -207,6 +263,34 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
           ],
         ),
 
+        const SizedBox(height: 16),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: const Text(
+            'Custom Prompts',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          children: [
+            for (final entry in const {
+              'title': 'Journal title',
+              'summary': 'Journal summary',
+              'grammar': 'Grammar check',
+              'relationshipTitle': 'Circle title',
+              'relationshipSummary': 'Circle summary',
+            }.entries)
+              _Row(
+                icon: 'textBoxOutline',
+                title: entry.value,
+                value: config.customPrompts.containsKey(entry.key)
+                    ? 'Customized'
+                    : 'Default',
+                onTap: () => _editPrompt(entry.key),
+              ),
+          ],
+        ),
         // AI status + failures
         const SizedBox(height: 16),
         _SectionHeader('AI STATUS', icon: 'informationOutline'),
@@ -214,10 +298,20 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
         _SettingsCard(
           children: [
             _StatusRow(
-              icon: queueState?.serverOnline ?? true ? 'checkCircle' : 'alertCircle',
-              iconColor: queueState?.serverOnline ?? true ? AppColors.green : AppColors.primaryAction,
-              title: queueState?.serverOnline ?? true ? 'Server Online' : 'Server Unreachable',
-              subtitle: queueState?.lastError ?? (queueState?.isProcessing ?? false ? 'Processing...' : 'Idle'),
+              icon: queueState?.serverOnline ?? true
+                  ? 'checkCircle'
+                  : 'alertCircle',
+              iconColor: queueState?.serverOnline ?? true
+                  ? AppColors.green
+                  : AppColors.primaryAction,
+              title: queueState?.serverOnline ?? true
+                  ? 'Server Online'
+                  : 'Server Unreachable',
+              subtitle:
+                  queueState?.lastError ??
+                  (queueState?.isProcessing ?? false
+                      ? 'Processing...'
+                      : 'Idle'),
             ),
             if (notifications.isNotEmpty) ...[
               const _Divider(),
@@ -235,22 +329,67 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
           children: [
             Row(
               children: [
-                Icon(Mdi.get('layersTripleOutline'), color: AppColors.textSecondary, size: 18),
+                Icon(
+                  Mdi.get('layersTripleOutline'),
+                  color: AppColors.textSecondary,
+                  size: 18,
+                ),
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
                     'Process all entries without AI metadata',
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final entry in const {
+                  'journal': 'Journals',
+                  'circle': 'Circles',
+                  'checkin': 'Check-ins',
+                }.entries)
+                  FilterChip(
+                    label: Text(entry.value),
+                    selected: _categories.contains(entry.key),
+                    onSelected: (selected) => setState(() {
+                      if (selected) {
+                        _categories.add(entry.key);
+                      } else {
+                        _categories.remove(entry.key);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Overwrite existing metadata',
+                style: TextStyle(fontSize: 13),
+              ),
+              value: _overwrite,
+              onChanged: (value) => setState(() => _overwrite = value),
+            ),
             AnimatedScaleButton(
-              onPress: () async {
-                vibrate(HapticPatterns.dialPress);
-                await ref.read(aiQueueManagerProvider).enqueueBatch();
-              },
+              onPress: _categories.isEmpty
+                  ? null
+                  : () async {
+                      vibrate(HapticPatterns.dialPress);
+                      await ref
+                          .read(aiQueueManagerProvider)
+                          .enqueueBatch(
+                            forceOverwrite: _overwrite,
+                            categories: {..._categories},
+                          );
+                    },
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -262,7 +401,11 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Mdi.get('creation'), color: AppColors.primaryAction, size: 16),
+                    Icon(
+                      Mdi.get('creation'),
+                      color: AppColors.primaryAction,
+                      size: 16,
+                    ),
                     const SizedBox(width: 8),
                     const Text(
                       'PROCESS ALL',
@@ -276,15 +419,26 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                 ),
               ),
             ),
-            if (queueState != null && (queueState.isProcessing || queueState.pendingCount > 0)) ...[
+            if (queueState != null &&
+                (queueState.isProcessing || queueState.pendingCount > 0)) ...[
               const SizedBox(height: 14),
               Row(
                 children: [
                   const ShimmerLine(width: 90, height: 12),
                   const SizedBox(width: 10),
-                  Text(
-                    '${queueState.pendingCount} queued',
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  Expanded(
+                    child: Text(
+                      '${queueState.pendingCount} queued',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        ref.read(aiQueueManagerProvider).cancelBatch(),
+                    child: const Text('Cancel'),
                   ),
                 ],
               ),
@@ -297,6 +451,8 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
   }
 
   Future<void> _editKey() async {
+    // Read the active provider each time; switching providers changes credentials.
+    _apiKeyController.text = ref.read(aiConfigProvider).apiKey;
     final notifier = ref.read(aiConfigProvider.notifier);
     await _promptField(
       title: 'API Key',
@@ -307,6 +463,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
   }
 
   Future<void> _editBaseUrl() async {
+    _baseUrlController.text = ref.read(aiConfigProvider).baseUrl;
     final notifier = ref.read(aiConfigProvider.notifier);
     await _promptField(
       title: 'Base URL',
@@ -327,48 +484,53 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
       heightFactor: 0.4,
       builder: (close) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              obscureText: obscure,
-              style: const TextStyle(color: AppColors.textInput, fontSize: 15),
-              cursorColor: AppColors.primaryAction,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintStyle: TextStyle(color: AppColors.placeholder),
-              ),
-              onSubmitted: (_) async {
-                await onSave();
-                close();
-              },
-            ),
-            const SizedBox(height: 12),
-            AnimatedScaleButton(
-              onPress: () async {
-                await onSave();
-                close();
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryAction,
-                  borderRadius: BorderRadius.circular(14),
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                obscureText: obscure,
+                style: const TextStyle(
+                  color: AppColors.textInput,
+                  fontSize: 15,
                 ),
-                child: const Text(
-                  'SAVE',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.primaryActionText,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
+                cursorColor: AppColors.primaryAction,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: AppColors.placeholder),
+                ),
+                onSubmitted: (_) async {
+                  await onSave();
+                  close();
+                },
+              ),
+              const SizedBox(height: 12),
+              AnimatedScaleButton(
+                onPress: () async {
+                  await onSave();
+                  close();
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryAction,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Text(
+                    'SAVE',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.primaryActionText,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -387,13 +549,15 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Icon(Mdi.get(icon), color: AppColors.textSecondary, size: 16),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.5,
+            ),
           ),
         ),
       ],
@@ -429,7 +593,10 @@ class _SettingsCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.glassBorder, width: 1),
       ),
-      child: Column(children: children),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(children: children),
+      ),
     );
   }
 }
@@ -485,7 +652,11 @@ class _Row extends StatelessWidget {
               ),
             ),
             if (onTap != null)
-              Icon(Mdi.get('chevronRight'), color: AppColors.textMuted, size: 18),
+              Icon(
+                Mdi.get('chevronRight'),
+                color: AppColors.textMuted,
+                size: 18,
+              ),
           ],
         ),
       ),
@@ -518,14 +689,21 @@ class _StatusRow extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               if (subtitle.isNotEmpty)
                 Text(
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
                 ),
             ],
           ),
@@ -547,7 +725,9 @@ class _FailureRow extends ConsumerWidget {
       child: Row(
         children: [
           Icon(
-            Mdi.get(notification.isTimeout ? 'timerOffOutline' : 'alertCircleOutline'),
+            Mdi.get(
+              notification.isTimeout ? 'timerOffOutline' : 'alertCircleOutline',
+            ),
             color: AppColors.primaryAction,
             size: 16,
           ),
@@ -560,34 +740,42 @@ class _FailureRow extends ConsumerWidget {
                   notification.message,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
           ),
-          if (!notification.isPermanent)
-            AnimatedScaleButton(
-              onPress: () {
-                final manager = ref.read(aiQueueManagerProvider);
-                manager.retryNote(notification.noteId);
-                manager.dismissNotification(notification.id);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.glassSurfaceLow,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.glassBorderSubtle, width: 1),
+          AnimatedScaleButton(
+            onPress: () {
+              final manager = ref.read(aiQueueManagerProvider);
+              manager.retryNote(notification.noteId);
+              manager.dismissNotification(notification.id);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.glassSurfaceLow,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.glassBorderSubtle,
+                  width: 1,
                 ),
-                child: const Text(
-                  'Retry',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              child: const Text(
+                'Retry',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
+          ),
         ],
       ),
     );
   }
 }
-

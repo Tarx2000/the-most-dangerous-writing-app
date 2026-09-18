@@ -32,6 +32,15 @@ class _AnimatedSymmetricalRingState extends State<AnimatedSymmetricalRing>
     duration: const Duration(milliseconds: 600),
   );
 
+  // Cached progress animation: curve depends on active state (RN draws with
+  // cubic-out, retracts with quad in/out). Rebuilt only when isActive flips.
+  late Animation<double> _progress = _buildProgress();
+
+  Animation<double> _buildProgress() => CurvedAnimation(
+    parent: _controller,
+    curve: widget.isActive ? Curves.easeOutCubic : Curves.easeInOutQuad,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +53,7 @@ class _AnimatedSymmetricalRingState extends State<AnimatedSymmetricalRing>
   void didUpdateWidget(covariant AnimatedSymmetricalRing oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isActive != oldWidget.isActive) {
+      _progress = _buildProgress();
       if (widget.isActive) {
         _controller.forward();
       } else {
@@ -60,16 +70,16 @@ class _AnimatedSymmetricalRingState extends State<AnimatedSymmetricalRing>
 
   @override
   Widget build(BuildContext context) {
+    // Hoisted out of the builder: allocating a CurvedAnimation per frame
+    // (60×/s) churned the UI thread during every ring draw. The painter now
+    // reads a single cached animation value.
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _progress,
       builder: (context, _) {
         return CustomPaint(
           size: Size(widget.size, widget.size),
           painter: _SymmetricalRingPainter(
-            progress: CurvedAnimation(
-              parent: _controller,
-              curve: widget.isActive ? Curves.easeOutCubic : Curves.easeInOutQuad,
-            ).value,
+            progress: _progress.value,
             strokeWidth: widget.strokeWidth,
             color: widget.color,
             backgroundColor: widget.backgroundColor,

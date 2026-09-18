@@ -24,17 +24,24 @@ class PinRequest {
 }
 
 class SecurityController extends ChangeNotifier {
-  // ignore: prefer_initializing_formals — named param kept public-shaped.
-  SecurityController({required SecureStorageService storage}) : _storage = storage;
+  SecurityController({
+    required SecureStorageService storage,
+    LocalAuthentication? localAuth,
+  })
+    // Public constructor keeps the storage dependency injectable in tests.
+    // ignore: prefer_initializing_formals
+    : _storage = storage,
+       _localAuth = localAuth ?? LocalAuthentication();
 
   final SecureStorageService _storage;
 
   // -- PIN ------------------------------------------------------------------
 
-  PinPadMode? _mode;
   String? _pendingPin;
   Completer<bool>? _pendingCompleter;
   String? _promptOverride;
+  bool _disposed = false;
+  bool _submittingPin = false;
 
   /// Live state for the PinPadModal UI.
   final ValueNotifier<PinPadMode?> mode = ValueNotifier(null);
@@ -59,25 +66,35 @@ class SecurityController extends ChangeNotifier {
     _pendingCompleter = completer;
     _promptOverride = promptMessage;
 
-    await _open();
+    await _open(completer);
     return completer.future;
   }
 
-  Future<void> _open() async {
-    final hasPin = (await _storage.readPin()) != null;
-    if (await _isLockedOut()) {
-      // Locked out: reject the request immediately and show the banner.
-      _finish(false);
-      _startLockoutTimer();
-      return;
+  Future<void> _open(Completer<bool> request) async {
+    try {
+      final hasPin = (await _storage.readPin()) != null;
+      final locked = await _isLockedOut();
+      // A canceled or replaced request must never reopen the pad later.
+      if (_disposed || _pendingCompleter != request) return;
+      if (locked) {
+        _finish(false);
+        await _startLockoutTimer();
+        return;
+      }
+      _lockoutTimer?.cancel();
+      isLockedOut.value = false;
+      lockoutRemainingSeconds.value = 0;
+      _pendingPin = null;
+      mode.value = hasPin ? PinPadMode.verify : PinPadMode.setup1;
+      isVisible.value = true;
+      promptText.value = hasPin
+          ? (_promptOverride ?? 'Enter your PIN')
+          : 'Create a 4-Digit PIN';
+      notifyListeners();
+    } catch (_) {
+      // A keystore error must leave the app locked, without an uncaught Future.
+      if (!_disposed && _pendingCompleter == request) _finish(false);
     }
-    _mode = hasPin ? PinPadMode.verify : PinPadMode.setup1;
-    _pendingPin = null;
-    mode.value = _mode;
-    isVisible.value = true;
-    promptText.value = _promptOverride ??
-        (hasPin ? 'Enter your PIN' : 'Create a 4-Digit PIN');
-    notifyListeners();
   }
 
   Future<bool> _isLockedOut() async {
@@ -91,49 +108,71 @@ class SecurityController extends ChangeNotifier {
     return true;
   }
 
-  void _startLockoutTimer() {
-    isLockedOut.value = true;
-    notifyListeners();
+  Future<void> _startLockoutTimer() async {
+    final until = await _storage.readLockoutUntil();
+    if (_disposed || until <= 0) return;
+    void update() {
+      if (_disposed) return;
+      final remaining = ((until - DateTime.now().millisecondsSinceEpoch) / 1000)
+          .ceil();
+      isLockedOut.value = remaining > 0;
+      lockoutRemainingSeconds.value = remaining.clamp(
+        0,
+        pinLockoutDurationMs ~/ 1000,
+      );
+      if (remaining <= 0) _lockoutTimer?.cancel();
+      // Expiry clears the banner; it must not create an orphan PIN request.
+      notifyListeners();
+    }
+
     _lockoutTimer?.cancel();
-    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      final until = await _storage.readLockoutUntil();
-      final remaining = ((until - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
-      if (remaining <= 0) {
-        timer.cancel();
-        isLockedOut.value = false;
-        lockoutRemainingSeconds.value = 0;
-        await _storage.writeLockoutUntil(0);
-        await _storage.writeAttemptCount(0);
-        notifyListeners();
-        unawaited(_open());
-      } else {
-        lockoutRemainingSeconds.value = remaining;
-      }
-    });
+    update();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (_) => update());
   }
 
   /// Handles a digit press; returns true when the pin resolves.
+  /// RN copy parity (`PinPadModal.tsx`): setup confirm = "Confirm PIN",
+  /// mismatch = "PINs do not match. Try again." (not a reset to setup copy).
   Future<bool> onDigit(String digit) async {
-    if (mode.value == null) return false;
+    if (_disposed ||
+        mode.value == null ||
+        _submittingPin ||
+        isLockedOut.value ||
+        !RegExp(r'^\d{4}$').hasMatch(digit)) {
+      return false;
+    }
+    _submittingPin = true;
+    try {
+      return await _submitPin(digit);
+    } finally {
+      _submittingPin = false;
+    }
+  }
+
+  Future<bool> _submitPin(String digit) async {
     _promptOverride = null;
 
     switch (mode.value!) {
       case PinPadMode.setup1:
         _pendingPin = digit;
         mode.value = PinPadMode.setup2;
-        promptText.value = 'Confirm your PIN';
+        promptText.value = 'Confirm PIN';
+        notifyListeners();
         return false;
       case PinPadMode.setup2:
         if (digit == _pendingPin) {
           await _storage.writePin(digit);
           await _storage.writeAttemptCount(0);
           await _storage.writeLockoutUntil(0);
+          if (_disposed || _pendingCompleter == null) return false;
           _finish(true);
+          return true;
         } else {
           _shake();
           _pendingPin = null;
           mode.value = PinPadMode.setup1;
-          promptText.value = 'Create a 4-Digit PIN';
+          promptText.value = 'PINs do not match. Try again.';
+          notifyListeners();
         }
         return false;
       case PinPadMode.verify:
@@ -155,8 +194,10 @@ class SecurityController extends ChangeNotifier {
       // 3 failures → 30 s lockout (SPEC §12).
       await _storage.writeAttemptCount(0);
       await _storage.writeLockoutUntil(
-          DateTime.now().millisecondsSinceEpoch + pinLockoutDurationMs);
+        DateTime.now().millisecondsSinceEpoch + pinLockoutDurationMs,
+      );
       _finish(false);
+      await _startLockoutTimer();
     } else {
       await _storage.writeAttemptCount(attempts);
     }
@@ -180,86 +221,150 @@ class SecurityController extends ChangeNotifier {
   }
 
   void cancel() {
+    _lockoutTimer?.cancel();
+    isLockedOut.value = false;
+    lockoutRemainingSeconds.value = 0;
+    _pendingPin = null;
     _finish(false);
   }
 
   // -- Biometric tiers --------------------------------------------------------
 
-  final LocalAuthentication _localAuth = LocalAuthentication();
+  final LocalAuthentication _localAuth;
 
-  /// Tier flags (SPEC §12: 0 locked → 1 circles → 1.5 profile → 2 notes + feed).
+  /// Tier flags: full access includes profile and circles; profile includes circles.
   bool isCirclesUnlocked = false;
   bool isProfileUnlocked = false;
   bool isNotesUnlocked = false;
   bool isFeedUnlocked = false;
-
   bool _isAuthenticatingBiometrics = false;
-
-  /// Bumped on every tier change so reactive widgets can re-evaluate.
+  bool _unlockInProgress = false;
+  int _lockGeneration = 0;
+  DateTime? _backgroundedAt;
   final ValueNotifier<int> tierVersion = ValueNotifier(0);
 
-  /// Central unlock (Vision ★ button). Attempts biometrics, falls back to
-  /// PIN per `preferPinAuth` / hardware availability (SPEC §12).
-  Future<bool> unlockNotes({required bool preferPinAuth, required bool useBiometrics, int lockTimeoutMins = 3}) async {
+  Future<bool> unlockNotes({
+    required bool preferPinAuth,
+    required bool useBiometrics,
+    int lockTimeoutMins = 3,
+  }) => _unlock(
+    2,
+    preferPinAuth: preferPinAuth,
+    useBiometrics: useBiometrics,
+    lockTimeoutMins: lockTimeoutMins,
+  );
+
+  Future<bool> unlockCircles({
+    bool preferPinAuth = false,
+    bool useBiometrics = true,
+    int lockTimeoutMins = 3,
+  }) => _unlock(
+    1,
+    preferPinAuth: preferPinAuth,
+    useBiometrics: useBiometrics,
+    lockTimeoutMins: lockTimeoutMins,
+  );
+
+  Future<bool> unlockProfile({
+    bool preferPinAuth = false,
+    bool useBiometrics = true,
+    int lockTimeoutMins = 3,
+  }) => _unlock(
+    1.5,
+    preferPinAuth: preferPinAuth,
+    useBiometrics: useBiometrics,
+    lockTimeoutMins: lockTimeoutMins,
+  );
+
+  Future<bool> _unlock(
+    double tier, {
+    required bool preferPinAuth,
+    required bool useBiometrics,
+    required int lockTimeoutMins,
+  }) async {
+    if (_disposed || _unlockInProgress) return false;
+    if (isNotesUnlocked ||
+        (tier == 1 && isCirclesUnlocked) ||
+        (tier == 1.5 && isProfileUnlocked)) {
+      return true;
+    }
+    _unlockInProgress = true;
+    final generation = _lockGeneration;
+    try {
+      final reason = tier == 2
+          ? 'Unlock your notes'
+          : tier == 1.5
+          ? 'Verify identity to view profile'
+          : 'Confirm identity for Circles';
+      final success = await _authenticate(
+        reason,
+        preferPinAuth: preferPinAuth,
+        useBiometrics: useBiometrics,
+      );
+      // A manual lock or expired background grace wins over a late auth result.
+      if (!success || _disposed || generation != _lockGeneration) return false;
+      isCirclesUnlocked = true;
+      if (tier >= 1.5) isProfileUnlocked = true;
+      if (tier == 2) {
+        isNotesUnlocked = true;
+        isFeedUnlocked = true;
+      }
+      tierVersion.value++;
+      // RN parity: the auto-lock countdown only runs for the full (Stage 2)
+      // unlock — circles/profile-only unlocks persist until background or
+      // manual lock. Starting it here would newly lock circles after N idle
+      // minutes, which RN never does.
+      if (tier == 2) _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
+      notifyListeners();
+      return true;
+    } finally {
+      _unlockInProgress = false;
+    }
+  }
+
+  Future<bool> _authenticate(
+    String reason, {
+    required bool preferPinAuth,
+    required bool useBiometrics,
+  }) async {
     if (preferPinAuth || !useBiometrics) {
-      return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
+      return requestPin(promptMessage: reason);
     }
     try {
-      final available = await _localAuth.isDeviceSupported();
-      final canCheck = await _localAuth.canCheckBiometrics;
-      if (!available || !canCheck) {
-        return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
-      }
+      final supported = await _localAuth.isDeviceSupported();
+      final enrolled = supported
+          ? await _localAuth.getAvailableBiometrics()
+          : <BiometricType>[];
+      if (_disposed) return false;
+      if (enrolled.isEmpty) return requestPin(promptMessage: reason);
       _isAuthenticatingBiometrics = true;
       try {
-        final success = await _localAuth.authenticate(
-          localizedReason: 'Unlock your writing app',
-          biometricOnly: true,
-        );
-        if (success) {
-          _grantAll(lockTimeoutMins: lockTimeoutMins);
-          return true;
-        }
-        return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
+        // Native passcode fallback is supported, matching Expo authentication.
+        // Cancel remains cancel: never open another prompt after dismissal.
+        return await _localAuth.authenticate(localizedReason: reason);
       } finally {
         _isAuthenticatingBiometrics = false;
       }
+    } on LocalAuthException catch (error) {
+      if (_disposed) return false;
+      switch (error.code) {
+        case LocalAuthExceptionCode.userCanceled:
+        case LocalAuthExceptionCode.systemCanceled:
+        case LocalAuthExceptionCode.timeout:
+        case LocalAuthExceptionCode.authInProgress:
+        case LocalAuthExceptionCode.uiUnavailable:
+          return false;
+        default:
+          return requestPin(promptMessage: reason);
+      }
     } catch (_) {
-      return _unlockWithPin(lockTimeoutMins: lockTimeoutMins);
+      return _disposed ? false : requestPin(promptMessage: reason);
     }
   }
 
-  Future<bool> _unlockWithPin({int lockTimeoutMins = 3}) async {
-    final ok = await requestPin(promptMessage: 'Enter your PIN');
-    if (ok) _grantAll(lockTimeoutMins: lockTimeoutMins);
-    return ok;
-  }
-
-  void _grantAll({int lockTimeoutMins = 3}) {
-    isCirclesUnlocked = true;
-    isProfileUnlocked = true;
-    isNotesUnlocked = true;
-    isFeedUnlocked = true;
-    tierVersion.value++;
-    _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
-    notifyListeners();
-  }
-
-  /// Tiers (SPEC §12): notes implies everything; profile implies circles.
-  void unlockCircles() {
-    isCirclesUnlocked = true;
-    tierVersion.value++;
-    notifyListeners();
-  }
-
-  void unlockProfile() {
-    isCirclesUnlocked = true;
-    isProfileUnlocked = true;
-    tierVersion.value++;
-    notifyListeners();
-  }
-
   void lockAll() {
+    _lockGeneration++;
+    cancel();
     isCirclesUnlocked = false;
     isProfileUnlocked = false;
     isNotesUnlocked = false;
@@ -272,9 +377,14 @@ class SecurityController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Resets the inactivity timer (activity events while unlocked).
+  /// Resets the inactivity timer (activity events while fully unlocked).
+  /// RN parity: the timer only runs for Stage 2 (`isNotesUnlocked`). Circles/
+  /// profile-only unlocks persist until background/manual lock — `keepAlive`
+  /// while only circles are open must not start a full-lock countdown.
   void keepAlive({int lockTimeoutMins = 3}) {
-    if (isNotesUnlocked) _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
+    if (isNotesUnlocked) {
+      _startInactivityTimer(lockTimeoutMins: lockTimeoutMins);
+    }
   }
 
   void _startInactivityTimer({int lockTimeoutMins = 3}) {
@@ -286,18 +396,30 @@ class SecurityController extends ChangeNotifier {
   }
 
   /// App-state handling: background → grace timer; foreground → resume.
+  /// RN parity: foreground only resumes the timer when Stage 2 is unlocked.
   void onAppLifecycle(AppLifecycleState state, {required int lockTimeoutMins}) {
     switch (state) {
       case AppLifecycleState.resumed:
         _backgroundGraceTimer?.cancel();
         _backgroundGraceTimer = null;
-        if (isNotesUnlocked) keepAlive(lockTimeoutMins: lockTimeoutMins);
+        final backgroundedAt = _backgroundedAt;
+        _backgroundedAt = null;
+        // Mobile timers may pause in the background; check elapsed wall time.
+        if (backgroundedAt != null &&
+            DateTime.now().difference(backgroundedAt) >=
+                const Duration(seconds: 30)) {
+          lockAll();
+        } else if (isNotesUnlocked) {
+          keepAlive(lockTimeoutMins: lockTimeoutMins);
+        }
       case AppLifecycleState.inactive:
         // Do not auto-lock while the OS biometric sheet/dialog is actively displayed
         if (_isAuthenticatingBiometrics) break;
         // Control center / notification overlay → lock immediately (SPEC).
         lockAll();
       case AppLifecycleState.paused:
+        if (_isAuthenticatingBiometrics) break;
+        _backgroundedAt = DateTime.now();
         if (lockTimeoutMins == 0) {
           lockAll(); // Immediate when the inactivity timer is disabled
         } else {
@@ -315,6 +437,10 @@ class SecurityController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    final pending = _pendingCompleter;
+    _pendingCompleter = null;
+    if (pending != null && !pending.isCompleted) pending.complete(false);
     _lockoutTimer?.cancel();
     _inactivityTimer?.cancel();
     _backgroundGraceTimer?.cancel();

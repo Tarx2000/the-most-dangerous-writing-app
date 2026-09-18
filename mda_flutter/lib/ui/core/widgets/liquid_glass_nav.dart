@@ -71,65 +71,80 @@ class _LiquidGlassNavState extends State<LiquidGlassNav> {
       bottom: widget.safeBottom,
       width: pillWidth,
       height: _height,
-      child: Transform.translate(
-        // The pill slides DOWN 80 px and fades as the feed opens (SPEC §14).
-        offset: Offset(0, widget.feedProgress * 80),
-        child: Opacity(
-          opacity: (1 - widget.feedProgress).clamp(0.0, 1.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.overlayLockAndroid,
-              borderRadius: BorderRadius.circular(_height / 2),
-              border: Border.all(color: AppColors.specularBorderStart, width: 1),
-              boxShadow: const [
-                BoxShadow(
-                  color: AppColors.navPillShadow,
-                  blurRadius: 24,
-                  offset: Offset(0, 10),
+      child: IgnorePointer(
+        ignoring: widget.feedOpen,
+        child: Transform.translate(
+          // The pill slides DOWN 80 px and fades as the feed opens (SPEC §14).
+          offset: Offset(0, widget.feedProgress * 80),
+          child: Opacity(
+            opacity: (1 - widget.feedProgress).clamp(0.0, 1.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.overlayLockAndroid,
+                borderRadius: BorderRadius.circular(_height / 2),
+                border: Border.all(
+                  color: AppColors.specularBorderStart,
+                  width: 1,
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(_height / 2),
-              child: Stack(
-                children: [
-                  // Layer 1: pill background (already the container)
-                  // Layer 2: sliding indicator bubble — RN parity:
-                  // `left: 0; top: 6; translateX = index*tabWidth + PADDING`,
-                  // height PILL_HEIGHT−12, width tabWidth − 2×PADDING.
-                  AnimatedPositioned(
-                    left: _indicatorLeft(widget.tabs, widget.activeId, tabWidth),
-                    top: _pillInset,
-                    height: _height - _pillInset * 2,
-                    width: tabWidth - _pillInset * 2,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.navIndicatorBackground,
-                        borderRadius: BorderRadius.circular((_height - _pillInset * 2) / 2),
-                        border: Border.all(color: AppColors.navIndicatorBorder, width: 1),
-                      ),
-                    ),
-                  ),
-                  // Layer 3: tabs
-                  Row(
-                    children: [
-                      for (final tab in widget.tabs)
-                        Expanded(
-                          child: _NavTab(
-                            tab: tab,
-                            tabWidth: tabWidth,
-                            active: tab.id == widget.activeId,
-                            onTap: () {
-                              widget.onSelect(tab.id);
-                              widget.onFeedToggle?.call();
-                            },
-                          ),
-                        ),
-                    ],
+                boxShadow: const [
+                  BoxShadow(
+                    color: AppColors.navPillShadow,
+                    blurRadius: 24,
+                    offset: Offset(0, 10),
                   ),
                 ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(_height / 2),
+                child: Stack(
+                  children: [
+                    // Layer 1: pill background (already the container)
+                    // Layer 2: sliding indicator bubble — RN parity:
+                    // `left: 0; top: 6; translateX = index*tabWidth + PADDING`,
+                    // height PILL_HEIGHT−12, width tabWidth − 2×PADDING.
+                    AnimatedPositioned(
+                      left: _indicatorLeft(
+                        widget.tabs,
+                        widget.activeId,
+                        tabWidth,
+                      ),
+                      top: _pillInset,
+                      height: _height - _pillInset * 2,
+                      width: tabWidth - _pillInset * 2,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.navIndicatorBackground,
+                          borderRadius: BorderRadius.circular(
+                            (_height - _pillInset * 2) / 2,
+                          ),
+                          border: Border.all(
+                            color: AppColors.navIndicatorBorder,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Layer 3: tabs
+                    Row(
+                      children: [
+                        for (final tab in widget.tabs)
+                          Expanded(
+                            child: _NavTab(
+                              tab: tab,
+                              tabWidth: tabWidth,
+                              active: tab.id == widget.activeId,
+                              onTap: () {
+                                widget.onSelect(tab.id);
+                                widget.onFeedToggle?.call();
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -179,13 +194,17 @@ class _NavTab extends StatelessWidget {
                 Icon(
                   Mdi.get(tab.icon),
                   size: 22,
-                  color: active ? AppColors.navIconActive : AppColors.navIconInactive,
+                  color: active
+                      ? AppColors.navIconActive
+                      : AppColors.navIconInactive,
                 ),
                 const SizedBox(height: 3),
                 Text(
                   tab.label,
                   style: TextStyle(
-                    color: active ? AppColors.navIconActive : AppColors.navIconInactive,
+                    color: active
+                        ? AppColors.navIconActive
+                        : AppColors.navIconInactive,
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
@@ -214,8 +233,21 @@ class _NavTab extends StatelessWidget {
 
 /// Default nav tabs (SPEC §15).
 List<NavTabConfig> defaultNavTabs({required bool checkinUrgent}) => [
-      const NavTabConfig(id: HomeTab.journal, icon: 'notebookEdit', label: 'Journal'),
-      const NavTabConfig(id: HomeTab.circles, icon: 'accountGroup', label: 'Circles'),
-      const NavTabConfig(id: HomeTab.vlog, icon: 'videoOutline', label: 'Vlog'),
-      NavTabConfig(id: HomeTab.checkin, icon: 'pillar', label: 'Check-in', urgent: checkinUrgent),
-    ];
+  const NavTabConfig(
+    id: HomeTab.journal,
+    icon: 'notebookEdit',
+    label: 'Journal',
+  ),
+  const NavTabConfig(
+    id: HomeTab.circles,
+    icon: 'accountGroup',
+    label: 'Circles',
+  ),
+  const NavTabConfig(id: HomeTab.vlog, icon: 'videoOutline', label: 'Vlog'),
+  NavTabConfig(
+    id: HomeTab.checkin,
+    icon: 'pillar',
+    label: 'Check-in',
+    urgent: checkinUrgent,
+  ),
+];

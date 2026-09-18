@@ -14,11 +14,16 @@ import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
 import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import 'note_viewer_modal.dart';
 
 class PersonProfileModal extends ConsumerStatefulWidget {
-  const PersonProfileModal({super.key, required this.personId, required this.onClose});
+  const PersonProfileModal({
+    super.key,
+    required this.personId,
+    required this.onClose,
+  });
 
   final String personId;
   final VoidCallback onClose;
@@ -68,16 +73,34 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
     if (person == null) return;
     vibrate(HapticPatterns.unlockSuccess);
     await ref.read(appDataProvider.notifier).updatePerson(person.id, {
-      'name': _nameController.text.trim().isEmpty ? person.name : _nameController.text.trim(),
-      'nickname': _nicknameController.text.trim().isEmpty ? null : _nicknameController.text.trim(),
+      'name': _nameController.text.trim().isEmpty
+          ? person.name
+          : _nameController.text.trim(),
+      'nickname': _nicknameController.text.trim().isEmpty
+          ? null
+          : _nicknameController.text.trim(),
       'relationship': _relationship,
-      'birthday': _birthdayController.text.trim().isEmpty ? null : _birthdayController.text.trim(),
-      'bio': _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
+      'birthday': _birthdayController.text.trim().isEmpty
+          ? null
+          : _birthdayController.text.trim(),
+      'bio': _bioController.text.trim().isEmpty
+          ? null
+          : _bioController.text.trim(),
     });
     if (mounted) setState(() => _editing = false);
   }
 
   Future<void> _delete() async {
+    final security = ref.read(securityControllerProvider);
+    final prefs = ref.read(preferencesProvider);
+    if (!await security.unlockNotes(
+          preferPinAuth: prefs.preferPinAuth,
+          useBiometrics: prefs.useBiometrics,
+          lockTimeoutMins: prefs.lockTimeoutMins,
+        ) ||
+        !mounted) {
+      return;
+    }
     final person = _person;
     if (person == null) return;
     await ref.read(appDataProvider.notifier).deletePerson(person.id);
@@ -86,11 +109,28 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
 
   @override
   Widget build(BuildContext context) {
+    final security = ref.watch(securityControllerProvider);
+    if (!security.isProfileUnlocked) {
+      // The profile may remain in the navigator overlay after an idle lock.
+      // Remove all private contents immediately, while keeping dismissal usable.
+      return Material(
+        color: AppColors.background,
+        child: Center(
+          child: TextButton(
+            onPressed: widget.onClose,
+            child: const Text('Profile locked — close'),
+          ),
+        ),
+      );
+    }
     final person = _person;
     if (person == null) {
       return const SizedBox.shrink();
     }
-    final notes = ref.watch(notesProvider).where((n) => n.personId == person.id).toList();
+    final notes = ref
+        .watch(notesProvider)
+        .where((n) => n.personId == person.id)
+        .toList();
     final totalWords = notes.fold<int>(0, (sum, n) => sum + n.wordCount);
 
     return Material(
@@ -99,7 +139,8 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
         alignment: Alignment.bottomCenter,
         child: GestureDetector(
           onVerticalDragEnd: (details) {
-            if (details.primaryVelocity != null && details.primaryVelocity! > 1000) {
+            if (details.primaryVelocity != null &&
+                details.primaryVelocity! > 1000) {
               widget.onClose();
             }
           },
@@ -110,7 +151,9 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
                 child: Column(
@@ -120,7 +163,10 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                       children: [
                         IconButton(
                           onPressed: widget.onClose,
-                          icon: Icon(Mdi.get('close'), color: AppColors.textSecondary),
+                          icon: Icon(
+                            Mdi.get('close'),
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                         const Spacer(),
                         AnimatedScaleButton(
@@ -128,8 +174,12 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                           child: Row(
                             children: [
                               Icon(
-                                _editing ? Mdi.get('check') : Mdi.get('pencilOutline'),
-                                color: _editing ? AppColors.green : AppColors.textSecondary,
+                                _editing
+                                    ? Mdi.get('check')
+                                    : Mdi.get('pencilOutline'),
+                                color: _editing
+                                    ? AppColors.green
+                                    : AppColors.textSecondary,
                                 size: 18,
                               ),
                               const SizedBox(width: 6),
@@ -171,7 +221,9 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                                 shape: BoxShape.circle,
                               ),
                               child: Text(
-                                person.name.isEmpty ? '?' : person.name[0].toUpperCase(),
+                                person.name.isEmpty
+                                    ? '?'
+                                    : person.name[0].toUpperCase(),
                                 style: const TextStyle(
                                   color: AppColors.textPrimary,
                                   fontSize: 34,
@@ -182,7 +234,10 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                           ),
                           const SizedBox(height: 12),
                           if (_editing)
-                            _EditField(controller: _nameController, label: 'Name')
+                            _EditField(
+                              controller: _nameController,
+                              label: 'Name',
+                            )
                           else
                             Text(
                               person.displayName,
@@ -195,7 +250,10 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                           const SizedBox(height: 6),
                           if (!_editing && person.relationship != null)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.dangerTint,
                                 borderRadius: BorderRadius.circular(14),
@@ -216,12 +274,13 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                     // 3-stat row
                     Row(
                       children: [
-                        _StatCell(value: '$notes.length', label: 'Entries'),
+                        _StatCell(value: '${notes.length}', label: 'Entries'),
                         _StatCell(value: '$totalWords', label: 'Words'),
                         _StatCell(
                           value: _sinceLabel(person.createdAt),
                           label: 'Since',
-                        ),                      ],
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 24),
                     // About / edit fields
@@ -237,16 +296,26 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                     const SizedBox(height: 10),
                     if (_editing) ...[
                       const SizedBox(height: 4),
-                      _EditField(controller: _nicknameController, label: 'Nickname'),
+                      _EditField(
+                        controller: _nicknameController,
+                        label: 'Nickname',
+                      ),
                       const SizedBox(height: 10),
                       _RelationshipPicker(
                         selected: _relationship,
                         onSelect: (r) => setState(() => _relationship = r),
                       ),
                       const SizedBox(height: 10),
-                      _EditField(controller: _birthdayController, label: 'Birthday (YYYY-MM-DD)'),
+                      _EditField(
+                        controller: _birthdayController,
+                        label: 'Birthday (YYYY-MM-DD)',
+                      ),
                       const SizedBox(height: 10),
-                      _EditField(controller: _bioController, label: 'Bio', maxLines: 3),
+                      _EditField(
+                        controller: _bioController,
+                        label: 'Bio',
+                        maxLines: 3,
+                      ),
                       const SizedBox(height: 16),
                       AnimatedScaleButton(
                         onPress: _save,
@@ -272,7 +341,8 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                       if (person.bio != null || person.birthday != null) ...[
                         Text(
                           [
-                            if (person.birthday != null) '🎂 ${person.birthday}',
+                            if (person.birthday != null)
+                              '🎂 ${person.birthday}',
                             if (person.bio != null) person.bio!,
                           ].join('\n'),
                           style: const TextStyle(
@@ -294,15 +364,32 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      for (final note in notes.take(5))
-                        _RecentNoteRow(
-                          note: note,
-                          onTap: () => showNoteViewer(context, note: note),
+                      if (!security.isNotesUnlocked)
+                        TextButton.icon(
+                          icon: Icon(Mdi.get('lockOutline')),
+                          label: const Text('Unlock entries'),
+                          onPressed: () {
+                            final prefs = ref.read(preferencesProvider);
+                            security.unlockNotes(
+                              preferPinAuth: prefs.preferPinAuth,
+                              useBiometrics: prefs.useBiometrics,
+                              lockTimeoutMins: prefs.lockTimeoutMins,
+                            );
+                          },
                         ),
-                      if (notes.isEmpty)
+                      if (security.isNotesUnlocked)
+                        for (final note in notes.take(5))
+                          _RecentNoteRow(
+                            note: note,
+                            onTap: () => showNoteViewer(context, note: note),
+                          ),
+                      if (security.isNotesUnlocked && notes.isEmpty)
                         const Text(
                           'No entries with this person yet.',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 14,
+                          ),
                         ),
                     ],
                     const SizedBox(height: 32),
@@ -315,7 +402,10 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                               decoration: BoxDecoration(
                                 color: AppColors.dangerSubtle,
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: AppColors.dangerBorderMedium, width: 1),
+                                border: Border.all(
+                                  color: AppColors.dangerBorderMedium,
+                                  width: 1,
+                                ),
                               ),
                               child: Column(
                                 children: [
@@ -333,12 +423,17 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                                     children: [
                                       Expanded(
                                         child: AnimatedScaleButton(
-                                          onPress: () => setState(() => _confirmDelete = false),
+                                          onPress: () => setState(
+                                            () => _confirmDelete = false,
+                                          ),
                                           child: Container(
-                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: AppColors.glassHighlight,
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
                                             child: const Text(
                                               'Cancel',
@@ -357,16 +452,20 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                                         child: AnimatedScaleButton(
                                           onPress: _delete,
                                           child: Container(
-                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: AppColors.primaryAction,
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
                                             child: const Text(
                                               'Delete',
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
-                                                color: AppColors.primaryActionText,
+                                                color:
+                                                    AppColors.primaryActionText,
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.w700,
                                               ),
@@ -380,14 +479,20 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                               ),
                             )
                           : AnimatedScaleButton(
-                              onPress: () => setState(() => _confirmDelete = true),
+                              onPress: () =>
+                                  setState(() => _confirmDelete = true),
                               child: Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.dangerSubtle,
                                   borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: AppColors.dangerBorderLight, width: 1),
+                                  border: Border.all(
+                                    color: AppColors.dangerBorderLight,
+                                    width: 1,
+                                  ),
                                 ),
                                 child: const Text(
                                   'Delete Person',
@@ -412,7 +517,20 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
 
   static String _sinceLabel(int createdAtMs) {
     final dt = DateTime.fromMillisecondsSinceEpoch(createdAtMs);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${months[dt.month - 1]} ${dt.year}';
   }
 }
@@ -448,7 +566,11 @@ class _StatCell extends StatelessWidget {
 }
 
 class _EditField extends StatelessWidget {
-  const _EditField({required this.controller, required this.label, this.maxLines = 1});
+  const _EditField({
+    required this.controller,
+    required this.label,
+    this.maxLines = 1,
+  });
 
   final TextEditingController controller;
   final String label;
@@ -497,16 +619,22 @@ class _RelationshipPicker extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
-                color: selected == option ? AppColors.dangerTint : AppColors.glassSurfaceSubtle,
+                color: selected == option
+                    ? AppColors.dangerTint
+                    : AppColors.glassSurfaceSubtle,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: selected == option ? AppColors.dangerBorder : AppColors.glassBorderFaint,
+                  color: selected == option
+                      ? AppColors.dangerBorder
+                      : AppColors.glassBorderFaint,
                 ),
               ),
               child: Text(
                 option,
                 style: TextStyle(
-                  color: selected == option ? AppColors.primaryAction : AppColors.textSecondary,
+                  color: selected == option
+                      ? AppColors.primaryAction
+                      : AppColors.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -544,13 +672,19 @@ class _RecentNoteRow extends StatelessWidget {
                   note.text,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 '${note.wordCount}w',
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),

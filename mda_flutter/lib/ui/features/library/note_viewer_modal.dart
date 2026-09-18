@@ -1,7 +1,7 @@
 /// NoteViewerModal — full note reader (port of `NoteViewerModal.tsx`, SPEC §15).
 /// Backdrop `overlayVideoStrong` · sheet `surfaceMedium`, radius 32 ·
 /// AI title 22/900 · date 20/900 · meta "123 words • 5 min" red uppercase ·
-/// AI summary card · failure box (Phase 4 wires the retry) · Generate AI
+/// AI summary card · failure/retry states · Generate AI
 /// Summary pill · full text in the user font/size · Delete (confirm-in-sheet).
 library;
 
@@ -13,12 +13,18 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/models/saved_note.dart';
+import '../../../data/ai_providers.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/rich_text.dart';
 
 class NoteViewerModal extends ConsumerStatefulWidget {
-  const NoteViewerModal({super.key, required this.note, required this.onClose, this.onDeleted});
+  const NoteViewerModal({
+    super.key,
+    required this.note,
+    required this.onClose,
+    this.onDeleted,
+  });
 
   final SavedNote note;
   final VoidCallback onClose;
@@ -30,9 +36,12 @@ class NoteViewerModal extends ConsumerStatefulWidget {
 
 class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
   bool _confirmDelete = false;
-  late bool _aiQueued = false;
-
-  SavedNote get _note => widget.note;
+  SavedNote get _note =>
+      ref
+          .read(notesProvider)
+          .where((note) => note.id == widget.note.id)
+          .firstOrNull ??
+      widget.note;
 
   Future<void> _handleDelete() async {
     vibrate(HapticPatterns.lockAll);
@@ -43,6 +52,8 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(notesProvider);
+    ref.watch(aiQueueStateProvider);
     final note = _note;
     final prefs = ref.watch(preferencesProvider);
 
@@ -50,7 +61,8 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
       color: AppColors.overlayVideoStrong,
       child: GestureDetector(
         onVerticalDragEnd: (details) {
-          if (details.primaryVelocity != null && details.primaryVelocity! > 1000) {
+          if (details.primaryVelocity != null &&
+              details.primaryVelocity! > 1000) {
             widget.onClose();
           }
         },
@@ -63,7 +75,9 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
               borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
             ),
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(32),
+              ),
               child: Column(
                 children: [
                   // Handle
@@ -83,7 +97,10 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                       children: [
                         IconButton(
                           onPressed: widget.onClose,
-                          icon: Icon(Mdi.get('close'), color: AppColors.textSecondary),
+                          icon: Icon(
+                            Mdi.get('close'),
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         Expanded(
@@ -145,8 +162,14 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                             style: TextStyle(
                               color: AppColors.textInput,
                               fontFamily: fontFamilyForIndex(prefs.fontIndex),
-                              fontSize: prefs.sizeIndex >= 0 && prefs.sizeIndex < 4
-                                  ? const [14.0, 18.0, 24.0, 32.0][prefs.sizeIndex]
+                              fontSize:
+                                  prefs.sizeIndex >= 0 && prefs.sizeIndex < 4
+                                  ? const [
+                                      14.0,
+                                      18.0,
+                                      24.0,
+                                      32.0,
+                                    ][prefs.sizeIndex]
                                   : 18,
                               height: 1.55,
                             ),
@@ -158,7 +181,9 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                   // Footer: delete
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    child: _confirmDelete ? _buildConfirmDelete() : _buildDeleteButton(),
+                    child: _confirmDelete
+                        ? _buildConfirmDelete()
+                        : _buildDeleteButton(),
                   ),
                 ],
               ),
@@ -204,7 +229,11 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
               padding: const EdgeInsets.only(bottom: 6),
               child: AppRichText(
                 '• $bullet',
-                style: const TextStyle(color: AppColors.textBody, fontSize: 15, height: 1.4),
+                style: const TextStyle(
+                  color: AppColors.textBody,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
               ),
             ),
         ],
@@ -214,31 +243,71 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
 
   Widget _buildAiActions(SavedNote note) {
     if (!note.isEligibleForAi) return const SizedBox.shrink();
-    return AnimatedScaleButton(
-      onPress: () => setState(() => _aiQueued = true), // Phase 4: real queue
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-        decoration: BoxDecoration(
-          color: AppColors.dangerTint,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.dangerBorder, width: 1),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Mdi.get('creation'), color: AppColors.primaryAction, size: 16),
-            const SizedBox(width: 8),
-            Text(
-              _aiQueued ? 'Processing...' : 'Generate AI Summary',
-              style: const TextStyle(
-                color: AppColors.primaryAction,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
+    final manager = ref.watch(aiQueueManagerProvider);
+    final queued = manager.isNoteQueued(note.id);
+    final active = queued || manager.isNoteActive(note.id);
+    final failure = manager.notifications
+        .where((failure) => failure.noteId == note.id)
+        .lastOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (failure != null && !active)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              failure.message,
+              style: const TextStyle(color: AppColors.textSecondary),
             ),
-          ],
+          ),
+        AnimatedScaleButton(
+          onPress: active
+              ? null
+              : () {
+                  if (failure != null) manager.dismissNotification(failure.id);
+                  manager.enqueueNote(
+                    note.id,
+                    aiCategoryForNote(
+                      isAlignmentReflection: note.isAlignmentReflection,
+                      personId: note.personId,
+                    ),
+                  );
+                },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            decoration: BoxDecoration(
+              color: AppColors.dangerTint,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.dangerBorder, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Mdi.get('creation'),
+                  color: AppColors.primaryAction,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  active
+                      ? (queued ? 'Queued...' : 'Processing...')
+                      : failure != null
+                      ? 'Retry AI Summary'
+                      : note.aiSummary?.isNotEmpty == true
+                      ? 'Regenerate AI Summary'
+                      : 'Generate AI Summary',
+                  style: const TextStyle(
+                    color: AppColors.primaryAction,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -255,7 +324,11 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Mdi.get('trashCanOutline'), color: AppColors.primaryAction, size: 18),
+            Icon(
+              Mdi.get('trashCanOutline'),
+              color: AppColors.primaryAction,
+              size: 18,
+            ),
             const SizedBox(width: 8),
             const Text(
               'Delete Entry',
@@ -283,7 +356,11 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
         children: [
           const Text(
             'Delete this entry forever?',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -300,7 +377,11 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                     child: const Text(
                       'Cancel',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -318,7 +399,11 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                     child: const Text(
                       'Delete',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.primaryActionText, fontSize: 14, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: AppColors.primaryActionText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -331,21 +416,18 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
   }
 }
 
-/// Helper: exposes the note viewer as a full-screen overlay entry.
+/// A route gives Back navigation and media underneath a reliable modal lifecycle.
 Future<void> showNoteViewer(
   BuildContext context, {
   required SavedNote note,
   VoidCallback? onDeleted,
-}) {
-  final overlay = Overlay.of(context);
-  late final OverlayEntry entry;
-  entry = OverlayEntry(
-    builder: (context) => NoteViewerModal(
-      note: note,
-      onClose: () => entry.remove(),
-      onDeleted: onDeleted,
-    ),
-  );
-  overlay.insert(entry);
-  return Future.value();
-}
+}) => showGeneralDialog<void>(
+  context: context,
+  barrierColor: Colors.transparent,
+  transitionDuration: const Duration(milliseconds: 200),
+  pageBuilder: (context, animation, secondaryAnimation) => NoteViewerModal(
+    note: note,
+    onClose: () => Navigator.of(context).pop(),
+    onDeleted: onDeleted,
+  ),
+);

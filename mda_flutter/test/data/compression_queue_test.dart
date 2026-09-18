@@ -2,13 +2,19 @@
 /// dedupe, persistence recovery.
 library;
 
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mda_flutter/data/queues/compression_queue.dart';
 import 'package:mda_flutter/data/services/vlog_compressor.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeCompressor extends VlogCompressor {
-  _FakeCompressor({this.failuresBeforeSuccess = 0, this.simulatedTimeout = false});
+  _FakeCompressor({
+    this.failuresBeforeSuccess = 0,
+    this.simulatedTimeout = false,
+  });
 
   int failuresBeforeSuccess;
   bool simulatedTimeout;
@@ -54,36 +60,114 @@ class _FakeDeps {
   );
 }
 
+class _DelayedCompressor extends VlogCompressor {
+  final result = Completer<CompressionResult>();
+  int calls = 0;
+  void Function(double)? progress;
+
+  @override
+  Future<CompressionResult> compressVideo(
+    String inputUri,
+    String presetId,
+    void Function(double)? onProgress,
+  ) {
+    calls++;
+    progress = onProgress;
+    return result.future;
+  }
+}
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('successful job: queued → processing → done with metadata update',
-      () async {
-    final compressor = _FakeCompressor();
-    final deps = _FakeDeps();
-    final manager = CompressionQueueManager(compressor: compressor, deps: deps.deps);
-    await manager.initialize();
+  test(
+    'timeout retains ownership and drain waits for late native completion',
+    () {
+      fakeAsync((clock) {
+        final compressor = _DelayedCompressor();
+        final deps = _FakeDeps();
+        final manager = CompressionQueueManager(
+          compressor: compressor,
+          deps: deps.deps,
+        );
+        manager.initialize();
+        clock.flushMicrotasks();
+        manager.enqueueVlog('v1', '/original.mp4', 'balanced');
+        manager.enqueueVlog('v2', '/second.mp4', 'balanced');
+        clock.elapse(const Duration(milliseconds: 500));
+        expect(compressor.calls, 1);
+        clock.elapse(const Duration(minutes: 5));
+        expect(manager.getJobForVlog('v1')?.status, 'failed');
+        compressor.progress?.call(0.9);
+        expect(manager.getJobForVlog('v1')?.status, 'failed');
+        clock.elapse(const Duration(seconds: 1));
+        expect(
+          compressor.calls,
+          1,
+          reason: 'native jobs must remain sequential',
+        );
+        var drained = false;
+        manager.pauseAndDrain().then((_) => drained = true);
+        clock.flushMicrotasks();
+        expect(drained, isFalse);
+        compressor.result.complete(
+          const CompressionResult(
+            outputUri: '/late-output.mp4',
+            outputSizeBytes: 50,
+            originalSizeBytes: 100,
+            wasCompressed: true,
+          ),
+        );
+        clock.flushMicrotasks();
+        expect(drained, isTrue);
+        expect(manager.getJobForVlog('v1')?.status, 'failed');
+        expect(
+          deps.updates.any((row) => row.containsKey('file_path')),
+          isFalse,
+        );
+        expect(deps.deleted, ['/late-output.mp4']);
+        expect(compressor.calls, 1);
+        manager.shutdown();
+        clock.flushMicrotasks();
+      });
+    },
+  );
 
-    manager.enqueueVlog('v1', '/tmp/v1.mp4', 'balanced');
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
+  test(
+    'successful job: queued → processing → done with metadata update',
+    () async {
+      final compressor = _FakeCompressor();
+      final deps = _FakeDeps();
+      final manager = CompressionQueueManager(
+        compressor: compressor,
+        deps: deps.deps,
+      );
+      await manager.initialize();
 
-    expect(compressor.calls, 1);
-    expect(manager.getJobForVlog('v1')?.status, 'done');
-    expect(manager.isVlogInQueue('v1'), isFalse);
-    final update = deps.updates.first;
-    expect(update['file_path'], '/tmp/v1.mp4.compressed');
-    expect(update['compression_pending'], 0);
-    expect(update['compression_preset'], 'balanced');
-    expect(deps.deleted, contains('/tmp/v1.mp4'));
-    await manager.shutdown();
-  });
+      manager.enqueueVlog('v1', '/tmp/v1.mp4', 'balanced');
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+
+      expect(compressor.calls, 1);
+      expect(manager.getJobForVlog('v1')?.status, 'done');
+      expect(manager.isVlogInQueue('v1'), isFalse);
+      final update = deps.updates.first;
+      expect(update['file_path'], '/tmp/v1.mp4.compressed');
+      expect(update['compression_pending'], 0);
+      expect(update['compression_preset'], 'balanced');
+      expect(deps.deleted, contains('/tmp/v1.mp4'));
+      await manager.shutdown();
+    },
+  );
 
   test('failures retry twice then fail and clear compressionPending', () async {
     final compressor = _FakeCompressor(failuresBeforeSuccess: 99);
     final deps = _FakeDeps();
-    final manager = CompressionQueueManager(compressor: compressor, deps: deps.deps);
+    final manager = CompressionQueueManager(
+      compressor: compressor,
+      deps: deps.deps,
+    );
     await manager.initialize();
 
     manager.enqueueVlog('v1', '/tmp/v1.mp4', 'balanced');
@@ -102,7 +186,9 @@ void main() {
   test('enqueue dedupes a vlog with a live job', () async {
     final compressor = _FakeCompressor(failuresBeforeSuccess: 99);
     final manager = CompressionQueueManager(
-        compressor: compressor, deps: _FakeDeps().deps);
+      compressor: compressor,
+      deps: _FakeDeps().deps,
+    );
     await manager.initialize();
 
     manager.enqueueVlog('v1', '/tmp/v1.mp4', 'balanced');
@@ -114,7 +200,9 @@ void main() {
   test('cancelJob only cancels queued jobs', () async {
     final compressor = _FakeCompressor(failuresBeforeSuccess: 99);
     final manager = CompressionQueueManager(
-        compressor: compressor, deps: _FakeDeps().deps);
+      compressor: compressor,
+      deps: _FakeDeps().deps,
+    );
     await manager.initialize();
 
     manager.enqueueVlog('v1', '/tmp/v1.mp4', 'balanced');
@@ -127,7 +215,10 @@ void main() {
   test('hard timeout marks the job failed', () async {
     final compressor = _FakeCompressor(simulatedTimeout: true);
     final deps = _FakeDeps();
-    final manager = CompressionQueueManager(compressor: compressor, deps: deps.deps);
+    final manager = CompressionQueueManager(
+      compressor: compressor,
+      deps: deps.deps,
+    );
     await manager.initialize();
 
     manager.enqueueVlog('v1', '/tmp/v1.mp4', 'balanced');
@@ -145,10 +236,12 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'COMPRESSION_JOBS_QUEUE':
           '[{"id":"j1","vlogId":"v1","filePath":"/tmp/v1.mp4","presetId":"balanced",'
-              '"status":"processing","progress":0.5,"createdAt":1}]',
+          '"status":"processing","progress":0.5,"createdAt":1}]',
     });
     final manager = CompressionQueueManager(
-        compressor: _FakeCompressor(), deps: _FakeDeps().deps);
+      compressor: _FakeCompressor(),
+      deps: _FakeDeps().deps,
+    );
     await manager.initialize();
     final job = manager.jobs.single;
     expect(job.status, 'queued');

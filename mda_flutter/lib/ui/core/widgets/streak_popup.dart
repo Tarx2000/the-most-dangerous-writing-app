@@ -76,9 +76,14 @@ class _StreakPopupState extends State<StreakPopup>
                     curve: const Interval(0.15, 0.45, curve: Curves.easeOut),
                   ),
                   child: ScaleTransition(
-                    scale: CurvedAnimation(
-                      parent: _controller,
-                      curve: const Interval(0.15, 0.45, curve: Curves.easeOutBack),
+                    // RN parity (`StreakPopup.tsx`): controlled spring pop
+                    // (springGentle), never an overshooting easeOutBack that
+                    // balloons past 1.0 (~1.1) and breaks the ≤1.05 scale rule.
+                    scale: Tween<double>(begin: 0.6, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: _controller,
+                        curve: const Interval(0.15, 0.45, curve: Curves.easeOutCubic),
+                      ),
                     ),
                     child: Container(
                       width: _iconSize,

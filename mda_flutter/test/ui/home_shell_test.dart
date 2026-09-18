@@ -1,82 +1,115 @@
-/// Widget tests for the HomeShell (SPEC §14):
-/// nav tab switching, pager pages, feed reveal gesture.
+/// Real hit-testing guards against a feed that exists offscreen but cannot be used.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mda_flutter/data/app_data.dart';
+import 'package:mda_flutter/data/providers.dart';
 import 'package:mda_flutter/ui/features/home/home_shell.dart';
+import 'package:mda_flutter/ui/core/widgets/tick_dial.dart';
 
-Widget _wrap() {
-  return ProviderScope(
-    child: const MaterialApp(home: Scaffold(body: HomeShell())),
+class _Storage extends StorageNotifier {
+  @override
+  AppData build() => const AppData(isLoaded: true);
+}
+
+Future<void> _pumpHome(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(400, 850);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [appDataProvider.overrideWith(_Storage.new)],
+      child: const MaterialApp(home: Scaffold(body: HomeShell())),
+    ),
   );
+  await tester.pump();
+}
+
+Future<void> _openFeed(WidgetTester tester) async {
+  // Incremental events cross 50% before release: the old implementation
+  // stopped processing the gesture at that point and never committed it.
+  final gesture = await tester.startGesture(const Offset(200, 650));
+  await gesture.moveBy(const Offset(0, -30));
+  await tester.pump();
+  for (var i = 0; i < 6; i++) {
+    await gesture.moveBy(const Offset(0, -80));
+    await tester.pump(const Duration(milliseconds: 80));
+  }
+  await gesture.up();
+  await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('nav tabs switch the start page mode', (tester) async {
-    await tester.pumpWidget(_wrap());
-    await tester.pump();
-
-    // Start in journal mode.
-    expect(find.text('FREE WRITING'), findsOneWidget);
-
-    // Circles tab → relationship journal.
+  testWidgets('nav selects modes and preserves the selected vlog duration', (
+    tester,
+  ) async {
+    await _pumpHome(tester);
+    expect(find.text('Free Writing'), findsOneWidget);
     await tester.tap(find.text('Circles'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('RELATIONSHIP JOURNAL'), findsOneWidget);
-
-    // Vlog tab → video journal.
+    expect(find.text('Relationship Journal'), findsOneWidget);
     await tester.tap(find.text('Vlog'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('VIDEO JOURNAL'), findsOneWidget);
-
-    // Check-in tab.
+    tester.widget<TickDial>(find.byType(TickDial)).onSelect(3);
+    await tester.pump();
+    expect(tester.widget<TickDial>(find.byType(TickDial)).selectedIndex, 3);
     await tester.tap(find.text('Check-in'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('OKAY'), findsOneWidget); // score 5 tier label (uppercase)
-
+    expect(find.text('OKAY'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('swiping the pager shows the library', (tester) async {
-    await tester.pumpWidget(_wrap());
-    await tester.pump();
-
-    expect(find.text('Library'), findsNothing);
-    // Start the fling on the hero area — the TickDial claims its own
-    // horizontal drags and would swallow the pager gesture otherwise.
-    await tester.flingFrom(const Offset(400, 160), const Offset(-500, 0), 1200);
-    await tester.pumpAndSettle(const Duration(milliseconds: 400));
-    expect(find.text('Library'), findsOneWidget);
-
+  testWidgets('horizontal swipe reaches the library without changing mode', (
+    tester,
+  ) async {
+    await _pumpHome(tester);
+    await tester.flingFrom(const Offset(350, 160), const Offset(-320, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(find.text('Library').hitTestable(), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('upward drag reveals the feed layer, downward closes it',
-      (tester) async {
-    await tester.pumpWidget(_wrap());
+  testWidgets(
+    'upward drag beyond halfway opens an interactive feed; downward closes',
+    (tester) async {
+      await _pumpHome(tester);
+      expect(find.text('FEED'), findsNothing);
+      await _openFeed(tester);
+      expect(find.text('FEED').hitTestable(), findsOneWidget);
+      expect(find.text('Journal').hitTestable(), findsNothing);
+      await tester.drag(find.text('FEED'), const Offset(0, 500));
+      await tester.pumpAndSettle();
+      expect(find.text('FEED'), findsNothing);
+      expect(find.text('Free Writing').hitTestable(), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('feed opens from Circles mode as well', (tester) async {
+    await _pumpHome(tester);
+    await tester.tap(find.text('Circles'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await _openFeed(tester);
+    expect(find.text('FEED').hitTestable(), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+    await tester.pumpAndSettle();
+    expect(find.text('Relationship Journal').hitTestable(), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('cancelled reveal returns to the start page', (tester) async {
+    await _pumpHome(tester);
+    final gesture = await tester.startGesture(const Offset(200, 650));
+    await gesture.moveBy(const Offset(0, -30));
+    await gesture.moveBy(const Offset(0, -120));
     await tester.pump();
-
-    // Drag up far enough to commit the reveal (≥ 40% of the screen).
-    await tester.drag(
-      find.byType(PageView),
-      const Offset(0, -600),
-      warnIfMissed: false,
-    );
-    await tester.pumpAndSettle(const Duration(milliseconds: 400));
-
-    // The feed title is now visible.
-    expect(find.text('FEED'), findsOneWidget);
-
-    // Drag back down to close.
-    await tester.drag(
-      find.text('FEED'),
-      const Offset(0, 600),
-    );
-    await tester.pumpAndSettle(const Duration(milliseconds: 400));
-    expect(find.text('FREE WRITING'), findsOneWidget);
-
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(find.text('FEED'), findsNothing);
+    expect(find.text('Free Writing').hitTestable(), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 }

@@ -7,9 +7,10 @@ Monorepo containing **two implementations** of the same journaling app (stopping
 | `mda_rn/` | React Native (Expo SDK 55) | **Source of truth** — the original app |
 | `mda_flutter/` | Flutter (Dart 3.12, Flutter 3.44) | Port — behavioral contract is `mda_flutter/SPEC_1TO1.md` |
 
-> **Flutter rewrite complete**: all 9 phases done (writing loop, library, circles,
-> AI pipeline, masteries, alignment, vlogs, security, backup v2, feed, settings;
-> 101 tests, release APKs build).
+> **Flutter parity repair in progress**: the nine feature areas are implemented,
+> but the initial port had interaction, security, restore, and visual regressions.
+> See `mda_flutter/PORT_AUDIT.md` for verified repairs and remaining device checks.
+> A passing build alone does not establish behavioral or visual parity.
 > **The RN app remains the source of truth**; when in doubt, the code in `mda_rn/`
 > wins — update `SPEC_1TO1.md` and port the behavior.
 > Read `mda_flutter/AGENTS.md` before editing Flutter code.

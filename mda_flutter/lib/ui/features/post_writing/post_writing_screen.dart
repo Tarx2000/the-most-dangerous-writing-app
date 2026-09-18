@@ -3,7 +3,6 @@
 /// The note is already saved before arriving here. This screen shows the AI
 /// title/summary states (shimmer while queued/processing, offline banner,
 /// "short entry" notice), offers edit mode, and the grammar check entry point.
-/// The AI queue itself lands in Phase 4 — the UI contract is complete here.
 library;
 
 import 'package:flutter/material.dart';
@@ -38,15 +37,16 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
   final TextEditingController _editController = TextEditingController();
 
   SavedNote? get _note {
-    for (final note in ref.watch(notesProvider)) {
+    for (final note in ref.read(notesProvider)) {
       if (note.id == widget.noteId) return note;
     }
     return null;
   }
 
   bool get _aiActive {
-    final manager = ref.watch(aiQueueManagerProvider);
-    return manager.isNoteActive(widget.noteId) || manager.isNoteQueued(widget.noteId);
+    final manager = ref.read(aiQueueManagerProvider);
+    return manager.isNoteActive(widget.noteId) ||
+        manager.isNoteQueued(widget.noteId);
   }
 
   @override
@@ -64,7 +64,9 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
     if (prefs.autoGenerateSummaries &&
         note.isEligibleForAi &&
         (note.aiTitle == null || note.aiTitle!.isEmpty)) {
-      ref.read(aiQueueManagerProvider).enqueueNote(
+      ref
+          .read(aiQueueManagerProvider)
+          .enqueueNote(
             note.id,
             aiCategoryForNote(
               isAlignmentReflection: note.isAlignmentReflection,
@@ -77,7 +79,9 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
   void _enableAiManually() {
     final note = _note;
     if (note == null) return;
-    ref.read(aiQueueManagerProvider).enqueueNote(
+    ref
+        .read(aiQueueManagerProvider)
+        .enqueueNote(
           note.id,
           aiCategoryForNote(
             isAlignmentReflection: note.isAlignmentReflection,
@@ -103,8 +107,9 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
     });
     try {
       final config = ref.read(aiConfigProvider).toRuntimeConfig();
-      final suggestions =
-          await ref.read(aiServiceProvider).checkGrammar(config: config, text: note.text);
+      final suggestions = await ref
+          .read(aiServiceProvider)
+          .checkGrammar(config: config, text: note.text);
       if (!mounted) return;
       setState(() {
         _checkingGrammar = false;
@@ -121,7 +126,10 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
   }
 
   void _applySuggestion(GrammarSuggestion suggestion, SavedNote note) {
-    final updated = note.text.replaceFirst(suggestion.original, suggestion.suggestion);
+    final updated = note.text.replaceFirst(
+      suggestion.original,
+      suggestion.suggestion,
+    );
     if (updated == note.text) return;
     ref.read(appDataProvider.notifier).updateNote(note.id, {'text': updated});
     setState(() {});
@@ -139,10 +147,46 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
   Future<void> _saveEdit() async {
     final text = _editController.text.trim();
     if (text.isEmpty) return;
-    await ref.read(appDataProvider.notifier).updateNote(widget.noteId, {'text': text});
+    await ref.read(appDataProvider.notifier).updateNote(widget.noteId, {
+      'text': text,
+    });
     if (!mounted) return;
     setState(() => _editing = false);
     _closeWithFlyAway();
+  }
+
+  Future<void> _deleteEntry() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surfaceRaised,
+        title: const Text('Delete this entry?'),
+        content: const Text('This permanently deletes the saved entry.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(appDataProvider.notifier).deleteNote(widget.noteId);
+      if (mounted) _closeWithFlyAway();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete the entry. Please try again.'),
+          ),
+        );
+      }
+    }
   }
 
   void _closeWithFlyAway() {
@@ -158,12 +202,17 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(notesProvider);
+    ref.watch(aiQueueStateProvider);
     final note = _note;
     if (note == null) {
       return const Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
-          child: Text('Entry not found', style: TextStyle(color: AppColors.textMuted)),
+          child: Text(
+            'Entry not found',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
         ),
       );
     }
@@ -183,20 +232,30 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
                 children: [
                   IconButton(
                     onPressed: _closeWithFlyAway,
-                    icon: Icon(Mdi.get('close'), color: AppColors.textSecondary),
+                    icon: Icon(
+                      Mdi.get('close'),
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   Row(
                     children: [
                       IconButton(
-                        onPressed: _toggleEdit,
+                        onPressed: _editing ? _saveEdit : _toggleEdit,
                         icon: Icon(
-                          _editing ? Mdi.get('check') : Mdi.get('pencilOutline'),
-                          color: _editing ? AppColors.green : AppColors.textSecondary,
+                          _editing
+                              ? Mdi.get('check')
+                              : Mdi.get('pencilOutline'),
+                          color: _editing
+                              ? AppColors.green
+                              : AppColors.textSecondary,
                         ),
                       ),
                       IconButton(
-                        onPressed: _closeWithFlyAway,
-                        icon: Icon(Mdi.get('trashCanOutline'), color: AppColors.textSecondary),
+                        onPressed: _deleteEntry,
+                        icon: Icon(
+                          Mdi.get('trashCanOutline'),
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -238,7 +297,8 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
         Builder(
           builder: (context) {
             final prefs = ref.watch(userPreferencesProvider);
-            final readingSize = readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
+            final readingSize =
+                readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
             final fontFamily = fontFamilyForIndex(prefs.fontIndex);
             return Text(
               note.text,
@@ -281,7 +341,10 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
             Expanded(
               child: Text(
                 _grammarError!,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -305,7 +368,11 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
       if (suggestions.isEmpty) {
         return const Text(
           'No issues found! ✨',
-          style: TextStyle(color: AppColors.green, fontSize: 14, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            color: AppColors.green,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
         );
       }
       return Column(
@@ -322,11 +389,18 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.suggestionBackground,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.suggestionBorder, width: 1),
+                    border: Border.all(
+                      color: AppColors.suggestionBorder,
+                      width: 1,
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Icon(Mdi.get('pencilOutline'), color: AppColors.suggestionError, size: 16),
+                      Icon(
+                        Mdi.get('pencilOutline'),
+                        color: AppColors.suggestionError,
+                        size: 16,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -345,16 +419,24 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
                                   const TextSpan(text: '  →  '),
                                   TextSpan(
                                     text: suggestion.suggestion,
-                                    style: const TextStyle(color: AppColors.gold),
+                                    style: const TextStyle(
+                                      color: AppColors.gold,
+                                    ),
                                   ),
                                 ],
                               ),
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               suggestion.explanation,
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
@@ -369,7 +451,11 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
             onPress: _runGrammarCheck,
             child: const Text(
               'Check again',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -387,11 +473,19 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Mdi.get('spellcheck'), color: AppColors.textSecondary, size: 16),
+            Icon(
+              Mdi.get('spellcheck'),
+              color: AppColors.textSecondary,
+              size: 16,
+            ),
             const SizedBox(width: 8),
             const Text(
               'Check grammar',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ),
@@ -431,13 +525,17 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
         ),
       );
     }
-    // AI failed or disabled — offer manual processing (Phase 4 wires the queue).
+    // AI failed or disabled — offer manual processing through the shared queue.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Untitled Entry',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.w900),
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 26,
+            fontWeight: FontWeight.w900,
+          ),
         ),
         const SizedBox(height: 12),
         AnimatedScaleButton(
@@ -451,7 +549,11 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
             ),
             child: const Text(
               'Enable AI processing for this entry',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -504,7 +606,11 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
               padding: const EdgeInsets.only(bottom: 6),
               child: AppRichText(
                 '• $bullet',
-                style: const TextStyle(color: AppColors.textBody, fontSize: 15, height: 1.4),
+                style: const TextStyle(
+                  color: AppColors.textBody,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
               ),
             ),
         ],
@@ -518,13 +624,18 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
       children: [
         Text(
           '${countWords(_editController.text)} words',
-          style: const TextStyle(color: AppColors.textDim, fontSize: 13, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            color: AppColors.textDim,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 12),
         Builder(
           builder: (context) {
             final prefs = ref.watch(userPreferencesProvider);
-            final readingSize = readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
+            final readingSize =
+                readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
             final fontFamily = fontFamilyForIndex(prefs.fontIndex);
             return TextField(
               controller: _editController,
@@ -536,9 +647,7 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
                 height: readingSize.lineHeight / readingSize.fontSize,
               ),
               cursorColor: AppColors.primaryAction,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-              ),
+              decoration: const InputDecoration(border: InputBorder.none),
             );
           },
         ),
@@ -553,7 +662,11 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
             ),
             child: const Text(
               'SAVE & CLOSE',
-              style: TextStyle(color: AppColors.primaryActionText, fontSize: 16, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                color: AppColors.primaryActionText,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ),

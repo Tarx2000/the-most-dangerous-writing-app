@@ -46,6 +46,7 @@ Future<T?> showActionSheet<T>(
       options: options,
       selected: selected,
       onSelect: (value) {
+        if (completer.isCompleted) return;
         vibrate(HapticPatterns.optionSelect);
         close();
         completer.complete(value);
@@ -92,7 +93,9 @@ class _ActionSheetBody<T> extends StatelessWidget {
                     Icon(
                       Mdi.get(option.icon!),
                       size: 22,
-                      color: active ? AppColors.primaryAction : AppColors.textSecondary,
+                      color: active
+                          ? AppColors.primaryAction
+                          : AppColors.textSecondary,
                     ),
                     const SizedBox(width: 12),
                   ],
@@ -100,7 +103,9 @@ class _ActionSheetBody<T> extends StatelessWidget {
                     child: Text(
                       option.label,
                       style: TextStyle(
-                        color: active ? AppColors.primaryAction : AppColors.textPrimary,
+                        color: active
+                            ? AppColors.primaryAction
+                            : AppColors.textPrimary,
                         fontSize: 16,
                         fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                       ),
@@ -109,7 +114,9 @@ class _ActionSheetBody<T> extends StatelessWidget {
                   Icon(
                     active ? Mdi.get('check') : Mdi.get('chevronRight'),
                     size: 20,
-                    color: active ? AppColors.primaryAction : AppColors.textMuted,
+                    color: active
+                        ? AppColors.primaryAction
+                        : AppColors.textMuted,
                   ),
                 ],
               ),

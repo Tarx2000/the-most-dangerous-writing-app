@@ -3,12 +3,14 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 class AnimatedScaleButton extends StatefulWidget {
   const AnimatedScaleButton({
     super.key,
     required this.onPress,
     this.onLongPress,
+    this.longPressDuration,
     this.activeScale = 0.95,
     this.activeOpacity = 0.8,
     this.disabled = false,
@@ -17,6 +19,7 @@ class AnimatedScaleButton extends StatefulWidget {
 
   final VoidCallback? onPress;
   final VoidCallback? onLongPress;
+  final Duration? longPressDuration;
   final double activeScale;
   final double activeOpacity;
   final bool disabled;
@@ -33,16 +36,15 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
     duration: const Duration(milliseconds: 150),
   );
   late final Animation<double> _scale = TweenSequence<double>([
-    TweenSequenceItem(tween: Tween(begin: 1.0, end: widget.activeScale), weight: 1),
-  ]).animate(
-    CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-  );
+    TweenSequenceItem(
+      tween: Tween(begin: 1.0, end: widget.activeScale),
+      weight: 1,
+    ),
+  ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   late final Animation<double> _opacity = Tween<double>(
     begin: 1.0,
     end: widget.activeOpacity,
-  ).animate(
-    CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-  );
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
   void _onTapDown(_) {
     if (widget.disabled) return;
@@ -62,22 +64,34 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: _onTapDown,
-      onTapUp: _onTapUp,
-      onTapCancel: _onTapCancel,
-      onTap: widget.disabled ? null : widget.onPress,
-      onLongPress: widget.disabled ? null : widget.onLongPress,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          return Opacity(
-            opacity: _opacity.value,
-            child: Transform.scale(scale: _scale.value, child: child),
-          );
-        },
-        child: widget.child,
+    return RawGestureDetector(
+      gestures: {
+        if (widget.onLongPress != null && !widget.disabled)
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+                () => LongPressGestureRecognizer(
+                  duration: widget.longPressDuration,
+                ),
+                (instance) => instance.onLongPress = widget.onLongPress,
+              ),
+      },
+      child: GestureDetector(
+        onTapDown: _onTapDown,
+        onTapUp: _onTapUp,
+        onTapCancel: _onTapCancel,
+        onTap: widget.disabled ? null : widget.onPress,
+
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Opacity(
+              opacity: _opacity.value,
+              child: Transform.scale(scale: _scale.value, child: child),
+            );
+          },
+          child: widget.child,
+        ),
       ),
     );
   }

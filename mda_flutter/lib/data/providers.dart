@@ -37,7 +37,9 @@ import 'services/vlog_storage_manager.dart';
 
 // -- Infrastructure providers ----------------------------------------------
 
-final settingsRepositoryProvider = Provider<SettingsRepository>((ref) => SettingsRepository());
+final settingsRepositoryProvider = Provider<SettingsRepository>(
+  (ref) => SettingsRepository(),
+);
 
 final settingsServiceProvider = Provider<SettingsService>(
   (ref) => SettingsService(ref.watch(settingsRepositoryProvider)),
@@ -47,26 +49,40 @@ final secureStorageServiceProvider = Provider<SecureStorageService>(
   (ref) => SecureStorageService(),
 );
 
-final notesRepositoryProvider = Provider<NotesRepository>((ref) => NotesRepository());
-
-final personsRepositoryProvider = Provider<PersonsRepository>((ref) => PersonsRepository());
-
-final pillarsRepositoryProvider = Provider<PillarsRepository>((ref) => PillarsRepository());
-
-final vlogsRepositoryProvider = Provider<VlogsRepository>((ref) => VlogsRepository());
-
-final thumbnailServiceProvider = Provider<ThumbnailService>((ref) => ThumbnailService());
-
-final vlogStorageManagerProvider = Provider<VlogStorageManager>((ref) => VlogStorageManager());
-
-final backupServiceProvider = Provider<BackupService>(
-  (ref) => BackupService(),
+final notesRepositoryProvider = Provider<NotesRepository>(
+  (ref) => NotesRepository(),
 );
 
-final vlogCompressorProvider = Provider<VlogCompressor>((ref) => VlogCompressor());
+final personsRepositoryProvider = Provider<PersonsRepository>(
+  (ref) => PersonsRepository(),
+);
+
+final pillarsRepositoryProvider = Provider<PillarsRepository>(
+  (ref) => PillarsRepository(),
+);
+
+final vlogsRepositoryProvider = Provider<VlogsRepository>(
+  (ref) => VlogsRepository(),
+);
+
+final thumbnailServiceProvider = Provider<ThumbnailService>(
+  (ref) => ThumbnailService(),
+);
+
+final vlogStorageManagerProvider = Provider<VlogStorageManager>(
+  (ref) => VlogStorageManager(),
+);
+
+final backupServiceProvider = Provider<BackupService>((ref) => BackupService());
+
+final vlogCompressorProvider = Provider<VlogCompressor>(
+  (ref) => VlogCompressor(),
+);
 
 /// Singleton compression queue (mirror of the AI queue pattern).
-final compressionQueueManagerProvider = Provider<CompressionQueueManager>((ref) {
+final compressionQueueManagerProvider = Provider<CompressionQueueManager>((
+  ref,
+) {
   final manager = CompressionQueueManager(
     compressor: ref.watch(vlogCompressorProvider),
     deps: CompressionDeps(
@@ -82,7 +98,9 @@ final compressionQueueManagerProvider = Provider<CompressionQueueManager>((ref) 
 });
 
 /// Live compression queue state.
-final compressionQueueStateProvider = StreamProvider<CompressionQueueState>((ref) {
+final compressionQueueStateProvider = StreamProvider<CompressionQueueState>((
+  ref,
+) {
   final manager = ref.watch(compressionQueueManagerProvider);
   final controller = StreamController<CompressionQueueState>.broadcast();
   void emit() {
@@ -100,29 +118,47 @@ final compressionQueueStateProvider = StreamProvider<CompressionQueueState>((ref
 
 // -- Domain providers (derived slices of AppData) ---------------------------
 
-final appDataProvider = NotifierProvider<StorageNotifier, AppData>(StorageNotifier.new);
+final appDataProvider = NotifierProvider<StorageNotifier, AppData>(
+  StorageNotifier.new,
+);
 
-final notesProvider = Provider<List<SavedNote>>((ref) => ref.watch(appDataProvider).notes);
+final notesProvider = Provider<List<SavedNote>>(
+  (ref) => ref.watch(appDataProvider).notes,
+);
 
-final personsProvider = Provider<List<Person>>((ref) => ref.watch(appDataProvider).persons);
+final personsProvider = Provider<List<Person>>(
+  (ref) => ref.watch(appDataProvider).persons,
+);
 
-final vlogsProvider = Provider<List<SavedVlog>>((ref) => ref.watch(appDataProvider).vlogs);
+final vlogsProvider = Provider<List<SavedVlog>>(
+  (ref) => ref.watch(appDataProvider).vlogs,
+);
 
-final pillarsProvider = Provider<List<Pillar>>((ref) => ref.watch(appDataProvider).pillars);
+final pillarsProvider = Provider<List<Pillar>>(
+  (ref) => ref.watch(appDataProvider).pillars,
+);
 
-final adviceCardsProvider =
-    Provider<List<AdviceCard>>((ref) => ref.watch(appDataProvider).adviceCards);
+final adviceCardsProvider = Provider<List<AdviceCard>>(
+  (ref) => ref.watch(appDataProvider).adviceCards,
+);
 
-final preferencesProvider =
-    Provider<PreferencesState>((ref) => ref.watch(appDataProvider).preferences);
+final preferencesProvider = Provider<PreferencesState>(
+  (ref) => ref.watch(appDataProvider).preferences,
+);
 
 final userPreferencesProvider = preferencesProvider;
 
-final streakProvider = Provider<StreakState>((ref) => ref.watch(appDataProvider).streak);
+final streakProvider = Provider<StreakState>(
+  (ref) => ref.watch(appDataProvider).streak,
+);
 
-final feedDataProvider = Provider<FeedState>((ref) => ref.watch(appDataProvider).feed);
+final feedDataProvider = Provider<FeedState>(
+  (ref) => ref.watch(appDataProvider).feed,
+);
 
-final isAppLoadedProvider = Provider<bool>((ref) => ref.watch(appDataProvider).isLoaded);
+final isAppLoadedProvider = Provider<bool>(
+  (ref) => ref.watch(appDataProvider).isLoaded,
+);
 
 /// Streak popup event (set by saveEntry; the StartScreen renders it once and
 /// dismisses). Mirrors the RN `DeviceEventEmitter` 'streakIncreased' channel.
@@ -133,8 +169,9 @@ class StreakPopupData {
   final List<String> history;
 }
 
-final pendingStreakPopupProvider =
-    StateProvider<StreakPopupData?>((ref) => null);
+final pendingStreakPopupProvider = StateProvider<StreakPopupData?>(
+  (ref) => null,
+);
 
 /// Result of saving an entry (streak side-effects, parity with RN saveNote).
 class SaveEntryResult {
@@ -209,7 +246,8 @@ class StorageNotifier extends Notifier<AppData> {
       logCompressor.warn('compression queue boot failed (continuing)', e);
     }
 
-    final (pillars, adviceCards, lastLog) = deferred[1] as (List<Pillar>, List<AdviceCard>, int?);
+    final (pillars, adviceCards, lastLog) =
+        deferred[1] as (List<Pillar>, List<AdviceCard>, int?);
 
     state = state.copyWith(
       vlogs: deferred[0] as List<SavedVlog>,
@@ -242,7 +280,10 @@ class StorageNotifier extends Notifier<AppData> {
   Future<PreferencesState> _loadSettings() async {
     final service = ref.read(settingsServiceProvider);
     try {
-      final lastReflection = await service.getInt(SettingsKeys.lastReflectionDate, 0);
+      final lastReflection = await service.getInt(
+        SettingsKeys.lastReflectionDate,
+        0,
+      );
       return PreferencesState(
         fontIndex: await service.getInt(SettingsKeys.userFontIdx, 0),
         sizeIndex: await service.getInt(SettingsKeys.userSizeIdx, 1),
@@ -250,15 +291,19 @@ class StorageNotifier extends Notifier<AppData> {
         enableHaptics: await service.getBool(SettingsKeys.enableHaptics, true),
         lockTimeoutMins: await service.getInt(SettingsKeys.lockTimeoutMins, 3),
         vlogQuality: await service.getString(SettingsKeys.vlogQuality, '1080p'),
-        compressionPreset:
-            await service.getString(SettingsKeys.compressionPreset, 'balanced'),
+        compressionPreset: await service.getString(
+          SettingsKeys.compressionPreset,
+          'balanced',
+        ),
         devMode: await service.getBool(SettingsKeys.devMode, false),
         debugLayout: await service.getBool(SettingsKeys.debugLayout, false),
         preferPinAuth: await service.getBool(SettingsKeys.preferPinAuth, false),
         logMode: await service.getBool(SettingsKeys.logMode, kDebugMode),
         lastReflectionDate: lastReflection == 0 ? null : lastReflection,
-        autoGenerateSummaries:
-            await service.getBool(SettingsKeys.autoGenerateSummaries, true),
+        autoGenerateSummaries: await service.getBool(
+          SettingsKeys.autoGenerateSummaries,
+          true,
+        ),
       );
     } catch (e) {
       logStorage.error('settings load failed', e);
@@ -274,9 +319,10 @@ class StorageNotifier extends Notifier<AppData> {
       return StreakState(
         currentStreak: await service.getInt(SettingsKeys.currentStreak, 0),
         lastWinDate: await service.getString(SettingsKeys.lastWinDate, ''),
-        streakHistory: (await service.getJsonList(SettingsKeys.streakHistory, []))
-            .whereType<String>()
-            .toList(),
+        streakHistory: (await service.getJsonList(
+          SettingsKeys.streakHistory,
+          [],
+        )).whereType<String>().toList(),
       );
     } catch (e) {
       logStorage.error('streak load failed', e);
@@ -312,11 +358,15 @@ class StorageNotifier extends Notifier<AppData> {
     try {
       final comments = await service.getJsonMap(SettingsKeys.feedComments, {});
       return FeedState(
-        bookmarkedNoteIds: (await service.getJsonList(SettingsKeys.bookmarkedNoteIds, []))
-            .whereType<String>()
-            .toList(),
+        bookmarkedNoteIds: (await service.getJsonList(
+          SettingsKeys.bookmarkedNoteIds,
+          [],
+        )).whereType<String>().toList(),
         feedComments: comments.map((k, v) => MapEntry(k, '$v')),
-        autoPlayFeedVideos: await service.getBool(SettingsKeys.autoPlayFeedVideos, true),
+        autoPlayFeedVideos: await service.getBool(
+          SettingsKeys.autoPlayFeedVideos,
+          true,
+        ),
       );
     } catch (e) {
       logStorage.error('feed load failed', e);
@@ -392,8 +442,9 @@ class StorageNotifier extends Notifier<AppData> {
       streakHistory: prevStreak.streakHistory,
       now: DateTime.now(),
     );
-    final newLastWinDate =
-        eligible && prevStreak.lastWinDate != todayStr ? todayStr : prevStreak.lastWinDate;
+    final newLastWinDate = eligible && prevStreak.lastWinDate != todayStr
+        ? todayStr
+        : prevStreak.lastWinDate;
 
     // Optimistic UI update.
     state = state.copyWith(
@@ -412,7 +463,9 @@ class StorageNotifier extends Notifier<AppData> {
       vibrate([0, 500]);
       logStorage.error('saveEntry failed, rolling back', e);
       state = state.copyWith(
-        notes: prevStreak == state.streak ? state.notes : state.notes.where((n) => n.id != note.id).toList(),
+        notes: prevStreak == state.streak
+            ? state.notes
+            : state.notes.where((n) => n.id != note.id).toList(),
         streak: prevStreak,
       );
       // Re-read authoritative state: simplest correct rollback is a reload.
@@ -420,7 +473,11 @@ class StorageNotifier extends Notifier<AppData> {
         notes: await notesRepo.getAllNotes(),
         streak: prevStreak,
       );
-      return SaveEntryResult(note: note, streakIncreased: false, newStreak: prevStreak.currentStreak);
+      return SaveEntryResult(
+        note: note,
+        streakIncreased: false,
+        newStreak: prevStreak.currentStreak,
+      );
     }
 
     // Note committed. Streak settings are best-effort secondary writes.
@@ -428,7 +485,10 @@ class StorageNotifier extends Notifier<AppData> {
       try {
         await settings.setRaw(SettingsKeys.currentStreak, '${result.streak}');
         await settings.setRaw(SettingsKeys.lastWinDate, newLastWinDate);
-        await settings.setRaw(SettingsKeys.streakHistory, jsonEncode(result.history));
+        await settings.setRaw(
+          SettingsKeys.streakHistory,
+          jsonEncode(result.history),
+        );
       } catch (e) {
         logStorage.warn('streak settings write failed (note still saved)', e);
       }
@@ -460,10 +520,9 @@ class StorageNotifier extends Notifier<AppData> {
     List<String> scopes, {
     void Function(double progress)? onProgress,
   }) {
-    return ref.read(backupServiceProvider).exportBackupZip(
-          scopes: scopes,
-          onProgress: onProgress,
-        );
+    return ref
+        .read(backupServiceProvider)
+        .exportBackupZip(scopes: scopes, onProgress: onProgress);
   }
 
   /// Imports a backup ZIP (gates + rollback inside the service).
@@ -474,13 +533,14 @@ class StorageNotifier extends Notifier<AppData> {
     // Pause both queues for the restore (SPEC §13), reload after success.
     final aiQueue = ref.read(aiQueueManagerProvider);
     final compressionQueue = ref.read(compressionQueueManagerProvider);
-    aiQueue.pause();
-    compressionQueue.pause();
+    await Future.wait([
+      aiQueue.pauseAndDrain(),
+      compressionQueue.pauseAndDrain(),
+    ]);
     try {
-      final result = await ref.read(backupServiceProvider).importBackupZip(
-            zipPath: zipPath,
-            onProgress: onProgress,
-          );
+      final result = await ref
+          .read(backupServiceProvider)
+          .importBackupZip(zipPath: zipPath, onProgress: onProgress);
       if (result.success) {
         await loadAll(force: true);
       }
@@ -502,7 +562,10 @@ class StorageNotifier extends Notifier<AppData> {
     } else {
       bookmarks.add(noteId);
     }
-    await settings.setRaw(SettingsKeys.bookmarkedNoteIds, jsonEncode(bookmarks));
+    await settings.setRaw(
+      SettingsKeys.bookmarkedNoteIds,
+      jsonEncode(bookmarks),
+    );
     state = state.copyWith(
       feed: state.feed.copyWith(bookmarkedNoteIds: bookmarks),
     );
@@ -514,12 +577,13 @@ class StorageNotifier extends Notifier<AppData> {
     if (comment.trim().isEmpty) {
       comments.remove(noteId);
     } else {
-      comments[noteId] = comment.trim().substring(0, comment.trim().length.clamp(0, 500));
+      comments[noteId] = comment.trim().substring(
+        0,
+        comment.trim().length.clamp(0, 500),
+      );
     }
     await settings.setRaw(SettingsKeys.feedComments, jsonEncode(comments));
-    state = state.copyWith(
-      feed: state.feed.copyWith(feedComments: comments),
-    );
+    state = state.copyWith(feed: state.feed.copyWith(feedComments: comments));
   }
 
   Future<void> toggleAutoPlayFeedVideos(bool enabled) async {
@@ -546,12 +610,21 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> deleteNote(String id) async {
     final repo = ref.read(notesRepositoryProvider);
     await repo.deleteNote(id);
-    state = state.copyWith(notes: [for (final n in state.notes) if (n.id != id) n]);
+    state = state.copyWith(
+      notes: [
+        for (final n in state.notes)
+          if (n.id != id) n,
+      ],
+    );
   }
 
   Future<String?> addPerson(String name) async {
     final repo = ref.read(personsRepositoryProvider);
-    final person = Person(id: generateId(), name: name, createdAt: DateTime.now().millisecondsSinceEpoch);
+    final person = Person(
+      id: generateId(),
+      name: name,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
     try {
       await repo.insertPerson(person);
       state = state.copyWith(persons: [person, ...state.persons]);
@@ -572,7 +645,12 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> deletePerson(String id) async {
     final repo = ref.read(personsRepositoryProvider);
     await repo.deletePerson(id);
-    state = state.copyWith(persons: [for (final p in state.persons) if (p.id != id) p]);
+    state = state.copyWith(
+      persons: [
+        for (final p in state.persons)
+          if (p.id != id) p,
+      ],
+    );
   }
 
   Future<void> saveVlog(SavedVlog vlog) async {
@@ -591,7 +669,12 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> deleteVlog(String id) async {
     final repo = ref.read(vlogsRepositoryProvider);
     await repo.deleteVlog(id);
-    state = state.copyWith(vlogs: [for (final v in state.vlogs) if (v.id != id) v]);
+    state = state.copyWith(
+      vlogs: [
+        for (final v in state.vlogs)
+          if (v.id != id) v,
+      ],
+    );
   }
 
   Future<void> savePillar(Pillar pillar) async {
@@ -609,20 +692,23 @@ class StorageNotifier extends Notifier<AppData> {
 
     if (existing == null) {
       await repo.insertPillar(pillar);
-      await repo.insertPillarVersion(PillarVersion(
-        id: '${pillar.id}_v1',
-        pillarId: pillar.id,
-        version: 1,
-        title: pillar.title,
-        description: pillar.description,
-        createdAt: now,
-      ));
+      await repo.insertPillarVersion(
+        PillarVersion(
+          id: '${pillar.id}_v1',
+          pillarId: pillar.id,
+          version: 1,
+          title: pillar.title,
+          description: pillar.description,
+          createdAt: now,
+        ),
+      );
       state = state.copyWith(pillars: [pillar, ...state.pillars]);
       return;
     }
 
     final contentChanged =
-        existing.title != pillar.title || existing.description != pillar.description;
+        existing.title != pillar.title ||
+        existing.description != pillar.description;
     final updated = contentChanged
         ? pillar.copyWith(version: existing.version + 1, lastEditedAt: now)
         : pillar.copyWith(lastEditedAt: now);
@@ -638,14 +724,16 @@ class StorageNotifier extends Notifier<AppData> {
       'version': updated.version,
     });
     if (contentChanged) {
-      await repo.insertPillarVersion(PillarVersion(
-        id: '${updated.id}_v${updated.version}',
-        pillarId: updated.id,
-        version: updated.version,
-        title: updated.title,
-        description: updated.description,
-        createdAt: now,
-      ));
+      await repo.insertPillarVersion(
+        PillarVersion(
+          id: '${updated.id}_v${updated.version}',
+          pillarId: updated.id,
+          version: updated.version,
+          title: updated.title,
+          description: updated.description,
+          createdAt: now,
+        ),
+      );
     }
     state = state.copyWith(
       pillars: [
@@ -659,7 +747,12 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> deletePillar(String id) async {
     final repo = ref.read(pillarsRepositoryProvider);
     await repo.hardDeletePillar(id);
-    state = state.copyWith(pillars: [for (final p in state.pillars) if (p.id != id) p]);
+    state = state.copyWith(
+      pillars: [
+        for (final p in state.pillars)
+          if (p.id != id) p,
+      ],
+    );
   }
 
   Future<void> togglePillarActive(String id) async {
@@ -670,7 +763,8 @@ class StorageNotifier extends Notifier<AppData> {
     await repo.updatePillar(id, {'is_active': next ? 1 : 0});
     state = state.copyWith(
       pillars: [
-        for (final p in state.pillars) if (p.id == id) p.copyWith(isActive: next) else p,
+        for (final p in state.pillars)
+          if (p.id == id) p.copyWith(isActive: next) else p,
       ],
     );
   }
@@ -684,7 +778,12 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> deleteAdviceCard(String id) async {
     final repo = ref.read(pillarsRepositoryProvider);
     await repo.deactivateAdviceCard(id);
-    state = state.copyWith(adviceCards: [for (final c in state.adviceCards) if (c.id != id) c]);
+    state = state.copyWith(
+      adviceCards: [
+        for (final c in state.adviceCards)
+          if (c.id != id) c,
+      ],
+    );
   }
 
   Future<List<PillarLog>> getPillarLogs(String pillarId) async {
@@ -696,8 +795,17 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> savePillarLog(PillarLog log) async {
     final repo = ref.read(pillarsRepositoryProvider);
     await repo.insertPillarLog(log);
+    state = state.copyWith(lastLogDate: DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// Check-in completion is separate from log rate limiting: weekly advice-only
+  /// check-ins have no pillar log, but must still clear the reminder dot.
+  Future<void> completeCheckin(int timestamp) async {
+    await ref
+        .read(settingsServiceProvider)
+        .setRaw(SettingsKeys.lastReflectionDate, '$timestamp');
     state = state.copyWith(
-      lastLogDate: DateTime.now().millisecondsSinceEpoch,
+      preferences: state.preferences.copyWith(lastReflectionDate: timestamp),
     );
   }
 
@@ -708,7 +816,10 @@ class StorageNotifier extends Notifier<AppData> {
 
   Future<void> incrementAdviceReflection(String adviceId) async {
     final repo = ref.read(pillarsRepositoryProvider);
-    await repo.incrementAdviceReflection(adviceId, DateTime.now().millisecondsSinceEpoch);
+    await repo.incrementAdviceReflection(
+      adviceId,
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   Future<PillarVersion?> getPillarVersion(String pillarId, int version) async {
@@ -730,7 +841,8 @@ class StorageNotifier extends Notifier<AppData> {
   bool isCheckinRateLimited({DateTime? now}) {
     final last = state.lastLogDate;
     if (last == null) return false;
-    return (now ?? DateTime.now()).millisecondsSinceEpoch - last < checkinRateLimitMs;
+    return (now ?? DateTime.now()).millisecondsSinceEpoch - last <
+        checkinRateLimitMs;
   }
 
   /// Persists and applies a preference change (settings table is the source of truth).
@@ -764,8 +876,12 @@ class StorageNotifier extends Notifier<AppData> {
     );
 
     final writes = <Future<void>>[];
-    if (fontIndex != null) writes.add(service.setRaw(SettingsKeys.userFontIdx, '$fontIndex'));
-    if (sizeIndex != null) writes.add(service.setRaw(SettingsKeys.userSizeIdx, '$sizeIndex'));
+    if (fontIndex != null) {
+      writes.add(service.setRaw(SettingsKeys.userFontIdx, '$fontIndex'));
+    }
+    if (sizeIndex != null) {
+      writes.add(service.setRaw(SettingsKeys.userSizeIdx, '$sizeIndex'));
+    }
     if (enableHaptics != null) {
       writes.add(service.setRaw(SettingsKeys.enableHaptics, '$enableHaptics'));
       setGlobalHapticsEnabled(enableHaptics);
@@ -774,13 +890,21 @@ class StorageNotifier extends Notifier<AppData> {
       writes.add(service.setRaw(SettingsKeys.useBiometrics, '$useBiometrics'));
     }
     if (lockTimeoutMins != null) {
-      writes.add(service.setRaw(SettingsKeys.lockTimeoutMins, '$lockTimeoutMins'));
+      writes.add(
+        service.setRaw(SettingsKeys.lockTimeoutMins, '$lockTimeoutMins'),
+      );
     }
-    if (vlogQuality != null) writes.add(service.setRaw(SettingsKeys.vlogQuality, vlogQuality));
+    if (vlogQuality != null) {
+      writes.add(service.setRaw(SettingsKeys.vlogQuality, vlogQuality));
+    }
     if (compressionPreset != null) {
-      writes.add(service.setRaw(SettingsKeys.compressionPreset, compressionPreset));
+      writes.add(
+        service.setRaw(SettingsKeys.compressionPreset, compressionPreset),
+      );
     }
-    if (devMode != null) writes.add(service.setRaw(SettingsKeys.devMode, '$devMode'));
+    if (devMode != null) {
+      writes.add(service.setRaw(SettingsKeys.devMode, '$devMode'));
+    }
     if (preferPinAuth != null) {
       writes.add(service.setRaw(SettingsKeys.preferPinAuth, '$preferPinAuth'));
     }
@@ -789,7 +913,12 @@ class StorageNotifier extends Notifier<AppData> {
       setLogMode(logMode);
     }
     if (autoGenerateSummaries != null) {
-      writes.add(service.setRaw(SettingsKeys.autoGenerateSummaries, '$autoGenerateSummaries'));
+      writes.add(
+        service.setRaw(
+          SettingsKeys.autoGenerateSummaries,
+          '$autoGenerateSummaries',
+        ),
+      );
     }
     await Future.wait(writes);
     state = state.copyWith(preferences: next);

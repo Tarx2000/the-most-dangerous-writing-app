@@ -63,3 +63,36 @@ lib/
   `~/.android/avd/Samsung_Galaxy_S24_Ultra.avd/snapshots/`, keep `hw.gpu.mode=host`
   in `config.ini` (already set), restart the AVD (cold boot).
 - Verified: debug build installs + runs on the AVD (API 36, arm64) without crashes.
+
+## Port Repair Invariants
+- Track verification and outstanding parity work in `PORT_AUDIT.md`; do not label
+  the port complete based only on compilation or widget tests.
+- Home feed visibility is committed gesture state, separate from animation
+  progress. Cache expensive screen children; drag frames update transforms only.
+- Feed video playback requires viewport intersection, foreground/current route,
+  autoplay preference, and reveal progress >= 0.95. Cached list children are not
+  evidence of visibility. Compare controller identity after async initialization.
+- Present dismissible sheets/readers as Navigator routes, not bare OverlayEntry
+  objects. The global PIN remains above the router; its Back dispatcher cancels
+  authentication before delegating to the underlying route.
+- SecurityBoundary owns app lifecycle/activity. All unlock tiers authenticate;
+  manual lock invalidates pending authentication results. Native biometric UI
+  lifecycle events must not invalidate the authentication that opened it.
+- Before restore, await both queues' `pauseAndDrain()` (active jobs and pending
+  persistence). Then restore/reload, reinitialize queues, and resume in `finally`.
+- Validate backup metadata/table shapes before replacement. Stage media separately,
+  preserve rollback copies until successful commit, and strip secrets on import
+  as well as export. ZIP/media work belongs off the UI isolate.
+- Check-in logging and optional reflections are separate phases. Capture the
+  entry rate-limit decision before saving this check-in's own logs. Reflections
+  use SessionEngine typing/idle/wipe callbacks, and stop timers on save/exit.
+- Native short haptics use HapticFeedback, throttled to avoid pointer-event bursts;
+  longer warning patterns use vibration. Disabling haptics cancels active patterns.
+- A compression timeout marks failure but must not start overlapping native jobs.
+  Ignore late progress, discard late output, and drain watchdog writes before restore.
+- AI stream chunks refresh stall detection. Cancelled requests must not overwrite
+  newer watchdog state. Queue UI observes state changes (including an initial
+  buffered snapshot); saved-entry readers observe the current note, not a stale
+  constructor snapshot. Generate/retry actions must enqueue real work.
+- Completed check-ins persist LAST_REFLECTION_DATE, independently of pillar-log
+  rate limiting; weekly advice-only sessions also count for the reminder dot.

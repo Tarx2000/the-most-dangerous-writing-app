@@ -18,8 +18,9 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/providers.dart';
+import '../../../data/app_data.dart';
+import 'backup_scope_picker.dart';
 import '../../../data/security_providers.dart';
-import '../../../data/services/backup_service.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
@@ -45,42 +46,66 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
   String? _backupStatus;
 
   Future<void> _openExport() async {
-    final scopes = await showActionSheet<String>(
-      context,
-      title: 'Export Backup',
-      selected: 'notes',
-      options: [
-        for (final scope in backupScopes)
-          ActionSheetOption(value: scope, label: _scopeLabel(scope), icon: _scopeIcon(scope)),
-      ],
+    if (_backupBusy) return;
+    final scopes = await showDialog<List<String>>(
+      context: context,
+      barrierColor: AppColors.overlayMedium,
+      builder: (_) => const BackupScopePicker(),
     );
-    if (scopes == null) return;
+    if (scopes == null || scopes.isEmpty || !mounted) return;
     vibrate(HapticPatterns.backupOp);
     setState(() {
       _backupBusy = true;
       _backupStatus = 'Creating backup ZIP...';
     });
-    final result = await ref.read(appDataProvider.notifier).exportBackupZip([scopes]);
-    if (!mounted) return;
-    setState(() {
-      _backupBusy = false;
-      _backupStatus = result.success ? 'Backup created — sharing...' : 'Backup failed';
-    });
-    if (result.success && result.zipPath != null) {
-      await SharePlus.instance.share(ShareParams(files: [XFile(result.zipPath!)]));
-    }
-    if (mounted) {
-      setState(() => _backupStatus = null);
-      if (!result.success) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(result.error ?? 'Backup failed'),
-          backgroundColor: AppColors.primaryAction,
-        ));
+    try {
+      final result = await ref
+          .read(appDataProvider.notifier)
+          .exportBackupZip(scopes);
+      if (!mounted) return;
+      if (!result.success || result.zipPath == null) {
+        _showBackupError(result.error ?? 'Backup failed');
+        return;
+      }
+      setState(() => _backupStatus = 'Backup created — sharing...');
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(result.zipPath!)]),
+      );
+    } catch (_) {
+      _showBackupError(
+        'Could not create or share the backup. Please try again.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _backupBusy = false;
+          _backupStatus = null;
+        });
       }
     }
   }
 
+  void _showBackupError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.primaryAction,
+      ),
+    );
+  }
+
   Future<void> _openImport() async {
+    if (_backupBusy) return;
+    // Picker/plugin failures must be handled too, before an archive is opened.
+    try {
+      await _pickAndImport();
+    } catch (_) {
+      _showBackupError('Could not open the backup file. Please try again.');
+    }
+  }
+
+  Future<void> _pickAndImport() async {
     vibrate(HapticPatterns.backupOp);
     const typeGroup = XTypeGroup(
       label: 'ZIP',
@@ -98,10 +123,12 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
     if (!file.name.toLowerCase().endsWith('.zip')) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please select a valid .zip backup file.'),
-        backgroundColor: AppColors.primaryAction,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a valid .zip backup file.'),
+          backgroundColor: AppColors.primaryAction,
+        ),
+      );
       return;
     }
 
@@ -135,7 +162,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
     setState(() {
       _backupBusy = true;
-      _backupStatus = 'Wiping and importing backup...';
+      _backupStatus = 'Checking and restoring backup...';
     });
 
     File? tempZipFile;
@@ -150,9 +177,14 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
           tempDir.path,
           'mda_backup_import_${DateTime.now().millisecondsSinceEpoch}.zip',
         );
-        final bytes = await file.readAsBytes();
         tempZipFile = File(tempPath);
-        await tempZipFile.writeAsBytes(bytes);
+        // Stream large video backups instead of allocating the whole ZIP in RAM.
+        final sink = tempZipFile.openWrite();
+        try {
+          await sink.addStream(file.openRead());
+        } finally {
+          await sink.close();
+        }
         path = tempPath;
       }
 
@@ -165,58 +197,36 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         _backupBusy = false;
         _backupStatus = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(result.success
-            ? 'Backup restored successfully.'
-            : (result.error ?? 'Import failed')),
-        backgroundColor: result.success ? AppColors.green : AppColors.primaryAction,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.success
+                ? 'Backup restored successfully.'
+                : (result.error ?? 'Import failed'),
+          ),
+          backgroundColor: result.success
+              ? AppColors.green
+              : AppColors.primaryAction,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _backupBusy = false;
         _backupStatus = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Import failed: $e'),
-        backgroundColor: AppColors.primaryAction,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import failed: $e'),
+          backgroundColor: AppColors.primaryAction,
+        ),
+      );
     } finally {
-      if (tempZipFile != null && await tempZipFile.exists()) {
+      if (tempZipFile != null) {
         try {
-          await tempZipFile.delete();
+          if (await tempZipFile.exists()) await tempZipFile.delete();
         } catch (_) {}
       }
-    }
-  }
-
-  static String _scopeLabel(String scope) {
-    switch (scope) {
-      case 'settings':
-        return 'Settings';
-      case 'notes':
-        return 'Notes & Circles';
-      case 'masteries':
-        return 'Masteries';
-      case 'vlogs':
-        return 'Vlogs';
-      default:
-        return scope;
-    }
-  }
-
-  static String _scopeIcon(String scope) {
-    switch (scope) {
-      case 'settings':
-        return 'cogOutline';
-      case 'notes':
-        return 'notebookEditOutline';
-      case 'masteries':
-        return 'pillar';
-      case 'vlogs':
-        return 'videoOutline';
-      default:
-        return 'fileOutline';
     }
   }
 
@@ -238,7 +248,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              'v$appVersion',
+              'Version $appVersion',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -250,32 +260,52 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         const SizedBox(height: 16),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+            padding: const EdgeInsets.only(bottom: 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // -- Appearance -------------------------------------------------
-                const SettingsSectionHeader('APPEARANCE', icon: 'paletteOutline'),
-                const SizedBox(height: 12),
                 SettingsCard(
                   children: [
+                    const _CardHeading(
+                      'Appearance',
+                      'Customize your reading and writing typography',
+                      icon: 'formatText',
+                    ),
                     _FontPicker(prefs: prefs),
-                    const SettingsDivider(),
+                    const SizedBox(height: 20),
+                    const Divider(height: 1, color: AppColors.glassBorder),
+                    const SizedBox(height: 18),
                     _ReadingSizePicker(prefs: prefs),
-                    const SettingsDivider(),
-                    _LivePreview(prefs: prefs),
                   ],
                 ),
 
+                const Padding(
+                  padding: EdgeInsets.only(left: 5, bottom: 12),
+                  child: Text(
+                    'Live Preview',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                _LivePreview(prefs: prefs),
+                const SizedBox(height: 20),
+
                 // -- Security & Storage -----------------------------------------
-                const SettingsSectionHeader('SECURITY & STORAGE', icon: 'shieldLockOutline'),
-                const SizedBox(height: 12),
                 SettingsCard(
                   children: [
+                    const _CardHeading(
+                      'Security & Storage',
+                      'Notes and Circles are protected by biometric authentication (fingerprint / face).',
+                      icon: 'shieldLockOutline',
+                    ),
                     _PrefToggleRow(
                       title: 'Force PIN Auth',
-                      subtitle: 'Prefer the PIN pad over biometrics',
-                      icon: 'pinOutline',
+                      subtitle: 'Always ask for PIN instead of Biometrics',
+                      icon: 'dialpad',
                       value: prefs.preferPinAuth,
                       onChanged: (v) => ref
                           .read(appDataProvider.notifier)
@@ -283,17 +313,17 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                     ),
                     const SettingsDivider(),
                     SettingsRow(
-                      icon: 'timerOutline',
+                      icon: 'timerLockOutline',
                       title: 'Inactivity Lock',
-                      subtitle: 'Lock after this many minutes idle',
+                      subtitle: 'Time before face/fingerprint needed',
                       value: prefs.lockTimeoutMins == 0
-                          ? 'Off'
-                          : '${prefs.lockTimeoutMins} min',
+                          ? 'Immediate'
+                          : '${prefs.lockTimeoutMins} Min${prefs.lockTimeoutMins != 1 ? 's' : ''}',
                       onTap: () => _pickLockTimeout(prefs.lockTimeoutMins),
                     ),
                     const SettingsDivider(),
                     SettingsRow(
-                      icon: 'harddisk',
+                      icon: 'serverNetwork',
                       title: 'Vlog Footprint',
                       subtitle: 'Storage used by recorded videos',
                       value: _formatBytes(totalBytes),
@@ -308,23 +338,27 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                     ),
                     const SettingsDivider(),
                     SettingsRow(
-                      icon: 'archiveOutline',
+                      icon: 'zipBoxOutline',
                       title: 'Compression Preset',
                       subtitle: 'Balance size and quality after recording',
                       value: prefs.compressionPreset.toUpperCase(),
-                      onTap: () => _pickCompressionPreset(prefs.compressionPreset),
+                      onTap: () =>
+                          _pickCompressionPreset(prefs.compressionPreset),
                     ),
                   ],
                 ),
 
                 // -- Feed & System ----------------------------------------------
-                const SettingsSectionHeader('FEED & SYSTEM', icon: 'twitter'),
-                const SizedBox(height: 12),
                 SettingsCard(
                   children: [
+                    const _CardHeading(
+                      'Feed & System',
+                      'System-wide configurations and behaviors',
+                      icon: 'newspaperVariantOutline',
+                    ),
                     _PrefToggleRow(
                       title: 'Haptic Feedback',
-                      subtitle: 'Vibrations throughout the app',
+                      subtitle: 'Subtle vibrations on interaction',
                       icon: 'vibrate',
                       value: prefs.enableHaptics,
                       onChanged: (v) => ref
@@ -334,7 +368,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                     const SettingsDivider(),
                     _PrefToggleRow(
                       title: 'Auto-play Videos',
-                      subtitle: 'Play feed videos when visible',
+                      subtitle: 'Videos play muted when visible in the feed',
                       icon: 'playCircleOutline',
                       value: ref.watch(feedDataProvider).autoPlayFeedVideos,
                       onChanged: (v) => ref
@@ -345,20 +379,24 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                 ),
 
                 // -- Backup & Import --------------------------------------------
-                const SettingsSectionHeader('BACKUP & IMPORT', icon: 'cloudDownloadOutline'),
-                const SizedBox(height: 12),
                 SettingsCard(
                   children: [
+                    const _CardHeading(
+                      'Backup & Import',
+                      'Export your journal entries, settings, Masteries, and vlog videos, or restore a previous ZIP backup.',
+                      icon: 'backupRestore',
+                    ),
                     SettingsRow(
-                      icon: 'exportVariant',
+                      icon: 'export',
                       title: 'Export Backup ZIP',
-                      subtitle: 'Plaintext ZIP with notes, circles, masteries, vlogs',
+                      subtitle:
+                          'Plaintext ZIP with notes, circles, masteries, vlogs',
                       onTap: _backupBusy ? null : _openExport,
                     ),
                     const SettingsDivider(),
                     SettingsRow(
                       icon: 'import',
-                      title: 'Import Backup',
+                      title: 'Import Backup ZIP',
                       subtitle: 'Wipes current data, restores the backup',
                       onTap: _backupBusy ? null : _openImport,
                     ),
@@ -377,7 +415,10 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                           const SizedBox(width: 10),
                           Text(
                             _backupStatus!,
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -397,7 +438,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
   }
 
   Future<void> _pickLockTimeout(int current) async {
-    const options = [0, 1, 3, 5, 10, 30];
+    const options = [0, 1, 3, 5, 15];
     final choice = await showActionSheet<int>(
       context,
       title: 'Inactivity Lock',
@@ -406,13 +447,17 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         for (final mins in options)
           ActionSheetOption(
             value: mins,
-            label: mins == 0 ? 'Off' : '$mins minutes',
+            label: mins == 0
+                ? 'Immediately'
+                : '$mins ${mins == 1 ? 'Minute' : 'Minutes'}',
             icon: mins == 0 ? 'timerOffOutline' : 'timerOutline',
           ),
       ],
     );
     if (choice != null) {
-      await ref.read(appDataProvider.notifier).setPreference(lockTimeoutMins: choice);
+      await ref
+          .read(appDataProvider.notifier)
+          .setPreference(lockTimeoutMins: choice);
     }
   }
 
@@ -431,7 +476,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       ],
     );
     if (choice != null) {
-      await ref.read(appDataProvider.notifier).setPreference(vlogQuality: choice);
+      await ref
+          .read(appDataProvider.notifier)
+          .setPreference(vlogQuality: choice);
     }
   }
 
@@ -441,14 +488,32 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       title: 'Compression Preset',
       selected: current,
       options: const [
-        ActionSheetOption(value: 'off', label: 'Off — keep original', icon: 'archiveOffOutline'),
-        ActionSheetOption(value: 'light', label: 'Light (~40% smaller)', icon: 'archiveOutline'),
-        ActionSheetOption(value: 'balanced', label: 'Balanced (~60% smaller)', icon: 'scaleBalance'),
-        ActionSheetOption(value: 'max', label: 'Maximum (~80% smaller)', icon: 'archiveArrowDownOutline'),
+        ActionSheetOption(
+          value: 'off',
+          label: 'Off — keep original',
+          icon: 'archiveOffOutline',
+        ),
+        ActionSheetOption(
+          value: 'light',
+          label: 'Light (~40% smaller)',
+          icon: 'archiveOutline',
+        ),
+        ActionSheetOption(
+          value: 'balanced',
+          label: 'Balanced (~60% smaller)',
+          icon: 'scaleBalance',
+        ),
+        ActionSheetOption(
+          value: 'max',
+          label: 'Maximum (~80% smaller)',
+          icon: 'archiveArrowDownOutline',
+        ),
       ],
     );
     if (choice != null) {
-      await ref.read(appDataProvider.notifier).setPreference(compressionPreset: choice);
+      await ref
+          .read(appDataProvider.notifier)
+          .setPreference(compressionPreset: choice);
     }
   }
 
@@ -462,9 +527,15 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ChangelogRow('v1.3.0', 'AMOLED redesign · 7-day urgent check-in glow · Circles premium modal'),
+            _ChangelogRow(
+              'v1.3.0',
+              'AMOLED redesign · 7-day urgent check-in glow · Circles premium modal',
+            ),
             _ChangelogRow('v1.2.0', '60fps animations · virtualized lists'),
-            _ChangelogRow('v1.1.0', 'Vlog recording + compression · auto-play feed'),
+            _ChangelogRow(
+              'v1.1.0',
+              'Vlog recording + compression · auto-play feed',
+            ),
             _ChangelogRow('v1.0.0', 'Circles — relationship journaling'),
             _ChangelogRow('v0.9.0', 'Writing UX fixes · mobile overhaul'),
           ],
@@ -505,7 +576,11 @@ class _ChangelogRow extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -532,34 +607,12 @@ class _PrefToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(Mdi.get(icon), color: AppColors.textSecondary, size: 18),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          SettingsToggle(value: value, onChanged: onChanged),
-        ],
-      ),
+    return SettingsRow(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      onTap: () => onChanged(!value),
+      trailing: SettingsToggle(value: value, onChanged: onChanged),
     );
   }
 }
@@ -568,7 +621,7 @@ class _PrefToggleRow extends StatelessWidget {
 class _FontPicker extends StatelessWidget {
   const _FontPicker({required this.prefs});
 
-  final dynamic prefs;
+  final PreferencesState prefs;
 
   @override
   Widget build(BuildContext context) {
@@ -583,24 +636,34 @@ class _FontPicker extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 3),
             child: AnimatedScaleButton(
-              onPress: () => ProviderScope.containerOf(context, listen: false)
-                  .read(appDataProvider.notifier)
-                  .setPreference(fontIndex: index),
+              onPress: () => ProviderScope.containerOf(
+                context,
+                listen: false,
+              ).read(appDataProvider.notifier).setPreference(fontIndex: index),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: active ? AppColors.primaryAction : AppColors.glassSurfaceSubtle,
+                  color: active
+                      ? AppColors.primaryAction
+                      : AppColors.glassSurfaceSubtle,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: active ? Colors.transparent : AppColors.glassBorderFaint,
+                    color: active
+                        ? Colors.transparent
+                        : AppColors.glassBorderFaint,
                     width: 1,
                   ),
                 ),
                 child: Text(
                   _fontLabels[index],
                   style: TextStyle(
-                    color: active ? AppColors.primaryActionText : AppColors.textSecondary,
+                    color: active
+                        ? AppColors.primaryActionText
+                        : AppColors.textSecondary,
                     fontSize: 12,
                     fontFamily: family,
                   ),
@@ -618,51 +681,74 @@ class _FontPicker extends StatelessWidget {
 class _ReadingSizePicker extends StatelessWidget {
   const _ReadingSizePicker({required this.prefs});
 
-  final dynamic prefs;
+  final PreferencesState prefs;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          const Text(
-            'Reading Size',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Reading Size',
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
           ),
-          const Spacer(),
-          for (var i = 0; i < 4; i++)
-            Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: AnimatedScaleButton(
-                onPress: () => ProviderScope.containerOf(context, listen: false)
-                    .read(appDataProvider.notifier)
-                    .setPreference(sizeIndex: i),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: prefs.sizeIndex == i
-                        ? AppColors.primaryAction
-                        : AppColors.glassSurfaceSubtle,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    'A',
-                    style: TextStyle(
-                      color: prefs.sizeIndex == i
-                          ? AppColors.primaryActionText
-                          : AppColors.textSecondary,
-                      fontSize: const [12.0, 16.0, 20.0, 24.0][i],
-                      fontWeight: FontWeight.w700,
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: AppColors.glassSurfaceLow,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              for (var i = 0; i < readingSizes.length; i++)
+                Expanded(
+                  child: Semantics(
+                    label: 'Reading size ${i + 1}',
+                    selected: prefs.sizeIndex == i,
+                    button: true,
+                    child: AnimatedScaleButton(
+                      activeScale: 0.98,
+                      onPress: () {
+                        vibrate(HapticPatterns.optionSelect);
+                        ProviderScope.containerOf(context, listen: false)
+                            .read(appDataProvider.notifier)
+                            .setPreference(sizeIndex: i);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        height: 56,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: prefs.sizeIndex == i
+                              ? AppColors.primaryAction
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'A',
+                          style: TextStyle(
+                            color: prefs.sizeIndex == i
+                                ? AppColors.primaryActionText
+                                : AppColors.textSecondary,
+                            fontSize: 12.0 + i * 4,
+                            fontWeight: prefs.sizeIndex == i
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -671,7 +757,7 @@ class _ReadingSizePicker extends StatelessWidget {
 class _LivePreview extends StatelessWidget {
   const _LivePreview({required this.prefs});
 
-  final dynamic prefs;
+  final PreferencesState prefs;
 
   @override
   Widget build(BuildContext context) {
@@ -685,7 +771,7 @@ class _LivePreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
-        'The quick brown fox jumps over the lazy dog.\nKeep typing — your words depend on it.',
+        'The quick brown fox jumps over the lazy dog.',
         style: TextStyle(
           color: AppColors.textBody,
           fontSize: size.fontSize,
@@ -695,4 +781,47 @@ class _LivePreview extends StatelessWidget {
       ),
     );
   }
+}
+
+/// RN card hierarchy: red icon, sentence-case heading and supporting copy.
+class _CardHeading extends StatelessWidget {
+  const _CardHeading(this.title, this.subtitle, {required this.icon});
+  final String title;
+  final String subtitle;
+  final String icon;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Mdi.get(icon), color: AppColors.primaryAction, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+      ],
+    ),
+  );
 }

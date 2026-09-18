@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import 'animated_scale_button.dart';
 
 class ConfirmDialog extends StatefulWidget {
   const ConfirmDialog({
@@ -38,10 +39,12 @@ class _ConfirmDialogState extends State<ConfirmDialog>
     vsync: this,
     duration: const Duration(milliseconds: 250),
   );
-  late final Animation<double> _scale = CurvedAnimation(
-    parent: _controller,
-    curve: Curves.easeOutCubic,
-  );
+  // RN parity (`ConfirmDialog.tsx`): the card springs 0.9→1.0 instead of
+  // growing from a point (0→1), which re-rasters the whole card every frame.
+  late final Animation<double> _scale = Tween<double>(begin: 0.9, end: 1.0)
+      .animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+      );
   late final Animation<double> _opacity = CurvedAnimation(
     parent: _controller,
     curve: Curves.easeOut,
@@ -131,9 +134,9 @@ class _ConfirmDialogState extends State<ConfirmDialog>
                       children: [
                         // Cancel button
                         Expanded(
-                          child: InkWell(
-                            onTap: () => _dismiss(widget.onCancel),
-                            borderRadius: BorderRadius.circular(14),
+                          child: AnimatedScaleButton(
+                            onPress: () => _dismiss(widget.onCancel),
+                            activeScale: 0.97,
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                               decoration: BoxDecoration(
@@ -161,9 +164,9 @@ class _ConfirmDialogState extends State<ConfirmDialog>
                         const SizedBox(width: 12),
                         // Confirm button
                         Expanded(
-                          child: InkWell(
-                            onTap: () => _dismiss(widget.onConfirm),
-                            borderRadius: BorderRadius.circular(14),
+                          child: AnimatedScaleButton(
+                            onPress: () => _dismiss(widget.onConfirm),
+                            activeScale: 0.97,
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                               decoration: BoxDecoration(

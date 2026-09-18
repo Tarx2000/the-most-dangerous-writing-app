@@ -103,10 +103,13 @@ class SessionEngine {
 
   /// Session countdown is still running (excludes deaths and quick notes).
   bool get isSessionRunning =>
-      !_hasLost && !_isContinuingAfterLoss && (sessionSecondsRemaining.value ?? 0) > 0;
+      !_hasLost &&
+      !_isContinuingAfterLoss &&
+      (sessionSecondsRemaining.value ?? 0) > 0;
 
   /// True when the entry can be saved (time up, continuing, or quick note).
-  bool get canSave => _sessionTimedOut || _isContinuingAfterLoss || _isQuickNote || _hasLost;
+  bool get canSave =>
+      _sessionTimedOut || _isContinuingAfterLoss || _isQuickNote || _hasLost;
 
   int get difficultyLimitMsValue => _difficultyLimitMs;
 
@@ -147,10 +150,19 @@ class SessionEngine {
       sessionSecondsRemaining.value = null; // Quick notes have NO timers
     } else {
       sessionSecondsRemaining.value = sessionDurationMin * 60;
-      _sessionTicker = Timer.periodic(const Duration(seconds: 1), _onSessionTick);
-      _idleTicker = Timer.periodic(const Duration(milliseconds: tickRateMs), _onIdleTick);
+      _sessionTicker = Timer.periodic(
+        const Duration(seconds: 1),
+        _onSessionTick,
+      );
+      _idleTicker = Timer.periodic(
+        const Duration(milliseconds: tickRateMs),
+        _onIdleTick,
+      );
     }
-    logAi.debug('session started', '$sessionDurationMin min / ${difficultyLimitMs}ms idle');
+    logAi.debug(
+      'session started',
+      '$sessionDurationMin min / ${difficultyLimitMs}ms idle',
+    );
   }
 
   /// Text edit entry point — resets the idle timer and updates the word count.
@@ -164,7 +176,8 @@ class SessionEngine {
 
     if (isInsertion && text.startsWith(_lastCountedText)) {
       final added = text.substring(_lastCountedText.length);
-      final continuation = _lastCountedText.isNotEmpty &&
+      final continuation =
+          _lastCountedText.isNotEmpty &&
           !_lastCountedText.endsWith(' ') &&
           !_lastCountedText.endsWith('\n') &&
           !_lastCountedText.endsWith('\t') &&
@@ -195,7 +208,9 @@ class SessionEngine {
   // -- Timer ticks --------------------------------------------------------------
 
   void _onIdleTick(Timer _) {
-    if (_isQuickNote || phase.value != SessionPhase.writing) return; // Frozen after death or quick note
+    if (_isQuickNote || phase.value != SessionPhase.writing) {
+      return; // Frozen after death or quick note
+    }
     final next = idleTimeMs.value + tickRateMs;
     idleTimeMs.value = next;
     final ratio = next / _difficultyLimitMs;
@@ -221,7 +236,10 @@ class SessionEngine {
     }
   }
 
-  // -- Haptic escalation (SPEC §8: once per level, reset on typing) ---------------
+  // -- Haptic escalation (SPEC §8: sequential levels, reset on typing) ---------
+  // RN `useSession.ts` only advances one level per tick: a jump straight from
+  // calm writing to 0.90 still fires `warning` first. Mirror that cadence so
+  // the warning patterns never get skipped on a laggy frame.
 
   void _checkHaptics(double ratio) {
     HapticLevel level;
@@ -236,9 +254,9 @@ class SessionEngine {
     } else {
       level = HapticLevel.none;
     }
-    if (level != HapticLevel.none && level.index != _hapticLevel) {
-      _hapticLevel = level.index;
-      callbacks.onHapticLevel?.call(level);
+    if (level != HapticLevel.none && level.index > _hapticLevel) {
+      _hapticLevel = level.index > _hapticLevel + 1 ? _hapticLevel + 1 : level.index;
+      callbacks.onHapticLevel?.call(HapticLevel.values[_hapticLevel]);
     }
   }
 
@@ -257,6 +275,8 @@ class SessionEngine {
     idleTimeMs.value = _difficultyLimitMs;
     idleRatio.value = 1.0;
     vibrate(HapticPatterns.death);
+    // The screen's onDeath callback owns the shake animation only; the engine
+    // owns the haptic shock (RN vibrates once in `triggerDeathState`).
     // Text is wiped shortly after the death overlay appears (SPEC: 200 ms).
     _deathTimer?.cancel();
     _deathTimer = Timer(const Duration(milliseconds: 200), () {
@@ -292,6 +312,16 @@ class SessionEngine {
       won: won,
       durationMin: _isQuickNote ? 0 : _sessionDurationMin,
     );
+  }
+
+  /// Stops session work while an entry is being saved or its deck is visible.
+  /// Controllers remain reusable for the next reflection.
+  void stopTimers() {
+    _idleTicker?.cancel();
+    _sessionTicker?.cancel();
+    _deathTimer?.cancel();
+    _wordCountDebounce?.cancel();
+    cancel();
   }
 
   void dispose() {

@@ -19,11 +19,11 @@ void main() {
     ));
 
     // Initial frame renders (storage is pre-loaded in the fake).
-    expect(find.text('FREE WRITING'), findsOneWidget);
-    expect(find.text('START WRITING'), findsOneWidget);
+    expect(find.text('Free Writing'), findsOneWidget);
+    expect(find.text('Start Writing'), findsOneWidget);
 
     await tester.pump();
-    expect(find.text('START WRITING'), findsOneWidget);
+    expect(find.text('Start Writing'), findsOneWidget);
   });
 }
 

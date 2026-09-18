@@ -22,6 +22,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
@@ -44,6 +45,9 @@ const int backupVersionCurrent = 2;
 /// Legacy format (no manifests, flat basenames) — still importable.
 const int backupVersionLegacy = 1;
 
+/// Bound metadata allocation while allowing large journals; videos stay streamed.
+const int maxBackupMetadataBytes = 64 * 1024 * 1024;
+
 /// Free-space gate margin: required bytes = manifest total * this factor.
 const double freeSpaceMarginFactor = 1.1;
 
@@ -56,7 +60,12 @@ const Map<String, List<String>> scopeTables = {
   'system': ['ai_jobs', 'ai_logs'],
 };
 
-const List<String> allBackupScopes = ['settings', 'notes', 'masteries', 'vlogs'];
+const List<String> allBackupScopes = [
+  'settings',
+  'notes',
+  'masteries',
+  'vlogs',
+];
 const List<String> backupScopes = allBackupScopes;
 
 /// Settings table keys that hold secret credentials. Stripped on export.
@@ -66,10 +75,7 @@ const Set<String> settingSecretKeys = {
 };
 
 /// SharedPreferences / AsyncStorage allowlist that travels in backups.
-const Set<String> prefsAllowlist = {
-  '__DB_SCHEMA_VERSION__',
-  'FEATURE_FLAGS',
-};
+const Set<String> prefsAllowlist = {'__DB_SCHEMA_VERSION__', 'FEATURE_FLAGS'};
 
 /// Local security state that must NEVER travel with a backup and NEVER be
 /// overwritten by a restore ("PIN bleibt immer lokal").
@@ -97,15 +103,20 @@ class BackupFileEntry {
   factory BackupFileEntry.fromJson(Map<String, dynamic> json) {
     final rawEntryPath = json['entryPath'] as String?;
     final rawBasename = json['basename'] as String?;
-    final rawKind = (json['kind'] as String?) ??
+    final rawKind =
+        (json['kind'] as String?) ??
         (rawEntryPath?.startsWith('vlogs/') == true ? 'video' : 'thumbnail');
 
-    final entryPath = rawEntryPath ??
+    final entryPath =
+        rawEntryPath ??
         (rawBasename != null
-            ? (rawKind == 'video' ? 'vlogs/$rawBasename' : 'thumbnails/$rawBasename')
+            ? (rawKind == 'video'
+                  ? 'vlogs/$rawBasename'
+                  : 'thumbnails/$rawBasename')
             : '');
 
-    final sizeBytes = (json['sizeBytes'] as num?)?.toInt() ??
+    final sizeBytes =
+        (json['sizeBytes'] as num?)?.toInt() ??
         (json['size'] as num?)?.toInt() ??
         0;
 
@@ -129,29 +140,23 @@ class BackupFileEntry {
   String get basename => p.basename(entryPath);
 
   Map<String, dynamic> toJson() => {
-        'vlogId': vlogId,
-        'entryPath': entryPath,
-        'kind': kind,
-        'sizeBytes': sizeBytes,
-        'included': included,
-        'reason': reason,
-      };
+    'vlogId': vlogId,
+    'entryPath': entryPath,
+    'kind': kind,
+    'sizeBytes': sizeBytes,
+    'included': included,
+    'reason': reason,
+  };
 }
 
 /// Column/row-count snapshot per table.
 class BackupTableManifest {
-  const BackupTableManifest({
-    required this.columns,
-    required this.rowCount,
-  });
+  const BackupTableManifest({required this.columns, required this.rowCount});
 
   final List<String> columns;
   final int rowCount;
 
-  Map<String, dynamic> toJson() => {
-        'columns': columns,
-        'rowCount': rowCount,
-      };
+  Map<String, dynamic> toJson() => {'columns': columns, 'rowCount': rowCount};
 }
 
 /// Detailed outcome of an export or import.
@@ -183,6 +188,28 @@ class BackupResult {
   final List<String> warnings;
 }
 
+/// Archive listing (names + sizes only; media bytes stay in the ZIP until the
+/// staged isolate extraction). Crosses isolate boundaries, so plain data only.
+class _ArchiveEntryRef {
+  const _ArchiveEntryRef(this.name, this.size, this.isMetadata);
+
+  final String name;
+  final int size;
+  final bool isMetadata;
+}
+
+/// ZIP decoded on a worker isolate: manifest index + raw metadata bytes.
+class _DecodedBackup {
+  const _DecodedBackup(this.entries, this.metadataBytes);
+
+  final List<_ArchiveEntryRef> entries;
+  final Uint8List metadataBytes;
+
+  Map<String, int> entrySizes() => {
+    for (final entry in entries) entry.name: entry.size,
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    BACKUP SERVICE IMPLEMENTATION
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -191,8 +218,8 @@ class BackupService {
   BackupService({
     Future<String> Function()? documentsDirProvider,
     Future<String> Function()? dbPathProvider,
-  })  : _documentsDirProvider = documentsDirProvider ?? _defaultDocs,
-        _dbPathProvider = dbPathProvider ?? getDatabaseFilePath;
+  }) : _documentsDirProvider = documentsDirProvider ?? _defaultDocs,
+       _dbPathProvider = dbPathProvider ?? getDatabaseFilePath;
 
   final Future<String> Function() _documentsDirProvider;
   final Future<String> Function() _dbPathProvider;
@@ -224,8 +251,9 @@ class BackupService {
     final excludedVideos = <({String vlogId, String reason})>[];
 
     try {
-      final effectiveScopes =
-          scopes.isEmpty ? allBackupScopes : scopes.toSet().toList();
+      final effectiveScopes = scopes.isEmpty
+          ? allBackupScopes
+          : scopes.toSet().toList();
       final tables = _collectTables(effectiveScopes);
 
       // 1. WAL checkpoint for a consistent snapshot.
@@ -243,7 +271,9 @@ class BackupService {
           var rows = await getAll('SELECT * FROM $table');
           if (table == 'settings') {
             final filtered = rows
-                .where((row) => !settingSecretKeys.contains(row['key']?.toString()))
+                .where(
+                  (row) => !settingSecretKeys.contains(row['key']?.toString()),
+                )
                 .toList();
             final stripped = rows.length - filtered.length;
             if (stripped > 0) {
@@ -263,9 +293,14 @@ class BackupService {
         } catch (e) {
           logStorage.warn('Table $table unreadable, backed up empty', e);
           sqliteData[table] = [];
-          tableManifest[table] = const BackupTableManifest(columns: [], rowCount: 0);
+          tableManifest[table] = const BackupTableManifest(
+            columns: [],
+            rowCount: 0,
+          );
           tablesIncluded.add(table);
-          warnings.add('Table "$table" could not be read and was backed up empty');
+          warnings.add(
+            'Table "$table" could not be read and was backed up empty',
+          );
         }
       }
 
@@ -280,7 +315,8 @@ class BackupService {
       final usedVideoNames = <String>{};
       final usedThumbNames = <String>{};
 
-      final vlogRows = (effectiveScopes.contains('vlogs')
+      final vlogRows =
+          (effectiveScopes.contains('vlogs')
               ? sqliteData['vlogs']
               : const <Map<String, Object?>>[]) ??
           const <Map<String, Object?>>[];
@@ -291,56 +327,72 @@ class BackupService {
         final thumbPath = row['thumbnail_path'] as String? ?? '';
 
         if (videoPath.isNotEmpty) {
-          final entryName = _uniqueBasename(vlogId, p.basename(videoPath), usedVideoNames);
+          final entryName = _uniqueBasename(
+            vlogId,
+            p.basename(videoPath),
+            usedVideoNames,
+          );
           final entryPath = 'vlogs/$entryName';
           final file = File(videoPath);
           if (file.existsSync()) {
             final size = file.lengthSync();
-            vlogEntries.add(BackupFileEntry(
-              vlogId: vlogId,
-              entryPath: entryPath,
-              kind: 'video',
-              sizeBytes: size,
-              included: true,
-            ));
+            vlogEntries.add(
+              BackupFileEntry(
+                vlogId: vlogId,
+                entryPath: entryPath,
+                kind: 'video',
+                sizeBytes: size,
+                included: true,
+              ),
+            );
             sourceByEntry[entryPath] = videoPath;
           } else {
-            vlogEntries.add(BackupFileEntry(
-              vlogId: vlogId,
-              entryPath: entryPath,
-              kind: 'video',
-              sizeBytes: 0,
-              included: false,
-              reason: 'missing',
-            ));
+            vlogEntries.add(
+              BackupFileEntry(
+                vlogId: vlogId,
+                entryPath: entryPath,
+                kind: 'video',
+                sizeBytes: 0,
+                included: false,
+                reason: 'missing',
+              ),
+            );
             excludedVideos.add((vlogId: vlogId, reason: 'missing'));
             warnings.add('Video file missing for vlog $vlogId: $videoPath');
           }
         }
 
         if (thumbPath.isNotEmpty) {
-          final entryName = _uniqueBasename(vlogId, p.basename(thumbPath), usedThumbNames);
+          final entryName = _uniqueBasename(
+            vlogId,
+            p.basename(thumbPath),
+            usedThumbNames,
+          );
           final entryPath = 'thumbnails/$entryName';
           final file = File(thumbPath);
           if (file.existsSync()) {
             final size = file.lengthSync();
-            thumbEntries.add(BackupFileEntry(
-              vlogId: vlogId,
-              entryPath: entryPath,
-              kind: 'thumbnail',
-              sizeBytes: size,
-              included: true,
-            ));
+            thumbEntries.add(
+              BackupFileEntry(
+                vlogId: vlogId,
+                entryPath: entryPath,
+                kind: 'thumbnail',
+                sizeBytes: size,
+                included: true,
+              ),
+            );
             sourceByEntry[entryPath] = thumbPath;
           } else {
-            thumbEntries.add(BackupFileEntry(
-              vlogId: vlogId,
-              entryPath: entryPath,
-              kind: 'thumbnail',
-              sizeBytes: 0,
-              included: false,
-              reason: 'missing',
-            ));
+            thumbEntries.add(
+              BackupFileEntry(
+                vlogId: vlogId,
+                entryPath: entryPath,
+                kind: 'thumbnail',
+                sizeBytes: 0,
+                included: false,
+                reason: 'missing',
+              ),
+            );
             warnings.add('Thumbnail file missing for vlog $vlogId: $thumbPath');
           }
         }
@@ -369,43 +421,22 @@ class BackupService {
       final docs = await _docs();
       final backupDir = Directory(p.join(docs, 'backups'));
       await backupDir.create(recursive: true);
-      final zipPath = p.join(backupDir.path, 'mda_backup_${_isoTimestamp()}.zip');
-
-      final encoder = ZipFileEncoder();
-      encoder.create(zipPath);
-
-      // Metadata JSON
-      encoder.addArchiveFile(
-        ArchiveFile.bytes('backup_metadata.json', utf8.encode(jsonEncode(metadata))),
+      final zipPath = p.join(
+        backupDir.path,
+        'mda_backup_${_isoTimestamp()}.zip',
       );
 
-      // Media files (STORE streaming)
-      for (final entry in vlogEntries) {
-        if (!entry.included) continue;
-        final src = sourceByEntry[entry.entryPath];
-        if (src != null && File(src).existsSync()) {
-          encoder.addArchiveFile(
-            ArchiveFile.stream(entry.entryPath, InputFileStream(src))
-              ..compression = CompressionType.none,
-          );
-        }
-      }
-      for (final entry in thumbEntries) {
-        if (!entry.included) continue;
-        final src = sourceByEntry[entry.entryPath];
-        if (src != null && File(src).existsSync()) {
-          encoder.addArchiveFile(
-            ArchiveFile.stream(entry.entryPath, InputFileStream(src))
-              ..compression = CompressionType.none,
-          );
-        }
-      }
-
-      await encoder.close();
+      // Encoding and file I/O run off the UI isolate so a large media backup
+      // cannot freeze animations or trigger Android's unresponsive-app dialog.
+      await Isolate.run(
+        () => _writeZipWorker(zipPath, metadata, sourceByEntry),
+      );
       onProgress?.call(0.8);
 
       // 7. Post-zip verification (SPEC §13).
-      final verification = _verifyZip(zipPath, metadata);
+      final verification = await Isolate.run(
+        () => _verifyZip(zipPath, metadata),
+      );
       if (verification == 'failed') {
         return BackupResult(
           success: false,
@@ -440,11 +471,7 @@ class BackupService {
       );
     } catch (e) {
       logStorage.error('backup export failed', e);
-      return BackupResult(
-        success: false,
-        error: '$e',
-        warnings: warnings,
-      );
+      return BackupResult(success: false, error: '$e', warnings: warnings);
     }
   }
 
@@ -453,6 +480,10 @@ class BackupService {
   // ---------------------------------------------------------------------------
 
   /// Imports a backup ZIP with schema gates, manifest verification, and safety snapshots.
+  ///
+  /// Heavy work (ZIP decode, JSON validation, media extraction/size checks)
+  /// runs on worker isolates — a video-heavy backup must never inflate on the
+  /// UI thread.
   Future<BackupResult> importBackupZip({
     required String zipPath,
     void Function(double progress)? onProgress,
@@ -460,29 +491,16 @@ class BackupService {
   }) async {
     final warnings = <String>[];
     Map<String, Object>? snapshots;
-    InputFileStream? input;
 
     try {
       onProgress?.call(0.1);
-      input = InputFileStream(zipPath);
-      final archive = ZipDecoder().decodeStream(input, verify: false);
-
-      final metadataFile = archive.files.where((f) {
-        final name = f.name.replaceAll('\\', '/');
-        return name == 'backup_metadata.json' ||
-            name.endsWith('/backup_metadata.json');
-      }).firstOrNull;
-      if (metadataFile == null) {
-        return const BackupResult(
-          success: false,
-          verification: 'failed',
-          error: 'Corrupt backup — metadata file (backup_metadata.json) missing.',
-        );
-      }
-
-      final metadataBytes = _readArchiveFileBytes(metadataFile);
-      final rawJson =
-          jsonDecode(utf8.decode(metadataBytes)) as Map<String, dynamic>;
+      // Throws FormatException for missing/oversized metadata (same messages
+      // the old inline path returned — corrupt archives never touch user data).
+      final decodedBackup = await Isolate.run(() => _decodeBackup(zipPath));
+      final metadataBytes = decodedBackup.metadataBytes;
+      final rawJson = await Isolate.run(
+        () => _validateMetadata(jsonDecode(utf8.decode(metadataBytes))),
+      );
 
       // 1. Version Normalization (Supports v2 and v1).
       final version = rawJson['backupVersion'] as num? ?? 1;
@@ -500,7 +518,8 @@ class BackupService {
         return const BackupResult(
           success: false,
           verification: 'failed',
-          error: 'This backup was created by a newer app version. Update the app first.',
+          error:
+              'This backup was created by a newer app version. Update the app first.',
         );
       }
 
@@ -515,56 +534,98 @@ class BackupService {
             vlogEntries.add(BackupFileEntry.fromJson(item));
           }
         }
-        for (final item in (rawFileManifest['thumbnails'] as List? ?? const [])) {
+        for (final item
+            in (rawFileManifest['thumbnails'] as List? ?? const [])) {
           if (item is Map<String, dynamic>) {
             thumbEntries.add(BackupFileEntry.fromJson(item));
           }
         }
       } else {
         // Legacy v1 fallback: derive manifest from zip contents.
-        for (final file in archive.files) {
-          if (file.name.startsWith('vlogs/') && file.name != 'vlogs/') {
-            final id = p.basenameWithoutExtension(file.name).split('_').first;
-            vlogEntries.add(BackupFileEntry(
-              vlogId: id,
-              entryPath: file.name,
-              kind: 'video',
-              sizeBytes: file.size,
-              included: true,
-            ));
-          } else if (file.name.startsWith('thumbnails/') && file.name != 'thumbnails/') {
-            final id = p.basenameWithoutExtension(file.name).split('_').first;
-            thumbEntries.add(BackupFileEntry(
-              vlogId: id,
-              entryPath: file.name,
-              kind: 'thumbnail',
-              sizeBytes: file.size,
-              included: true,
-            ));
+        for (final entry in decodedBackup.entries) {
+          final name = entry.name;
+          if (name.startsWith('vlogs/') && name != 'vlogs/') {
+            final id = p.basenameWithoutExtension(name).split('_').first;
+            vlogEntries.add(
+              BackupFileEntry(
+                vlogId: id,
+                entryPath: name,
+                kind: 'video',
+                sizeBytes: entry.size,
+                included: true,
+              ),
+            );
+          } else if (name.startsWith('thumbnails/') &&
+              name != 'thumbnails/') {
+            final id = p.basenameWithoutExtension(name).split('_').first;
+            thumbEntries.add(
+              BackupFileEntry(
+                vlogId: id,
+                entryPath: name,
+                kind: 'thumbnail',
+                sizeBytes: entry.size,
+                included: true,
+              ),
+            );
+          }
+        }
+      }
+
+      // Reject ambiguous output names before any user data is touched.
+      for (final entries in [vlogEntries, thumbEntries]) {
+        final usedNames = <String>{};
+        for (final entry in entries.where((e) => e.included)) {
+          if (entry.basename.isEmpty ||
+              entry.basename == '.' ||
+              entry.basename == '..' ||
+              entry.sizeBytes < 0 ||
+              !usedNames.add(entry.basename)) {
+            throw const FormatException('Invalid or duplicate media filename.');
           }
         }
       }
 
       // 4. Manifest gate: check included files exist in the archive.
-      final manifestOk = _verifyArchiveEntries(archive, vlogEntries, thumbEntries);
+      // Compares manifest sizes against real ZIP data (decoded on the worker),
+      // not unverified headers alone.
+      final manifestOk = _verifyArchiveEntries(
+        decodedBackup.entrySizes(),
+        vlogEntries,
+        thumbEntries,
+      );
       if (!manifestOk) {
         return const BackupResult(
           success: false,
           verification: 'failed',
-          error: 'Corrupt backup — included media files are missing or damaged.',
+          error:
+              'Corrupt backup — included media files are missing or damaged.',
         );
       }
 
+      for (final entry in [...vlogEntries, ...thumbEntries]) {
+        if (!entry.included) {
+          warnings.add(
+            'Media omitted from backup: ${entry.entryPath} (${entry.reason ?? 'not included'}).',
+          );
+        }
+      }
+
       // 5. Free-space gate.
-      final requiredBytes = vlogEntries.fold<int>(0, (s, e) => s + e.sizeBytes) +
-          thumbEntries.fold<int>(0, (s, e) => s + e.sizeBytes);
+      final requiredBytes =
+          vlogEntries
+              .where((e) => e.included)
+              .fold<int>(0, (s, e) => s + e.sizeBytes) +
+          thumbEntries
+              .where((e) => e.included)
+              .fold<int>(0, (s, e) => s + e.sizeBytes);
       try {
         final free = await (freeSpaceProvider ?? _freeDiskBytes)();
         if (free > 0 && requiredBytes * freeSpaceMarginFactor > free) {
           return BackupResult(
             success: false,
             verification: 'failed',
-            error: 'Not enough free space for this backup '
+            error:
+                'Not enough free space for this backup '
                 '(${((requiredBytes * freeSpaceMarginFactor) / 1048576).round()} MB needed).',
           );
         }
@@ -581,20 +642,26 @@ class BackupService {
         await _restoreSqliteWithColumnFiltering(sqlite);
 
         // 8. Rewrite media paths to sandbox & extract media.
+        // RN parity: only the media dirs present in this backup are touched.
+        // A settings/notes-only import must never delete the user's videos.
         onProgress?.call(0.7);
         final docs = await _docs();
         final restoredVlogs = await _restoreMediaFiles(
-          archive,
+          zipPath,
           vlogEntries,
           thumbEntries,
           docs,
           sqlite['vlogs'] as List? ?? const [],
+          snapshots,
         );
 
         // 9. Restore SharedPreferences allowlist.
         onProgress?.call(0.9);
         final prefs = rawJson['asyncStorage'] as Map<String, dynamic>? ?? {};
-        await _restorePrefsAllowlist(prefs, snapshots['prefsPairs'] as Map<String, Object?>?);
+        await _restorePrefsAllowlist(
+          prefs,
+          snapshots['prefsPairs'] as Map<String, Object?>?,
+        );
 
         onProgress?.call(1.0);
         return BackupResult(
@@ -628,7 +695,14 @@ class BackupService {
         warnings: warnings,
       );
     } finally {
-      await input?.close();
+      if (snapshots != null && snapshots['rollbackFailed'] != true) {
+        try {
+          final directory = Directory(snapshots['snapshotDir'] as String);
+          if (await directory.exists()) await directory.delete(recursive: true);
+        } catch (error) {
+          logStorage.warn('Backup temporary files could not be removed', error);
+        }
+      }
     }
   }
 
@@ -636,15 +710,78 @@ class BackupService {
   // Internal Helpers
   // ---------------------------------------------------------------------------
 
+  static Future<_DecodedBackup> _decodeBackup(String zipPath) async {
+    final input = InputFileStream(zipPath);
+    try {
+      final archive = ZipDecoder().decodeStream(input, verify: false);
+      ArchiveFile? metadataFile;
+      for (final file in archive.files) {
+        final name = file.name.replaceAll('\\', '/');
+        if (name == 'backup_metadata.json' ||
+            name.endsWith('/backup_metadata.json')) {
+          metadataFile = file;
+          break;
+        }
+      }
+      if (metadataFile == null) {
+        throw const FormatException(
+          'Corrupt backup — metadata file (backup_metadata.json) missing.',
+        );
+      }
+      if (metadataFile.size > maxBackupMetadataBytes) {
+        throw const FormatException('Backup metadata is too large.');
+      }
+      final metadataBytes = _readArchiveFileBytes(metadataFile);
+      // The whole ZIP is decoded on the worker: a video-heavy backup would
+      // otherwise inflate hundreds of MB on the UI thread (jank/ANR/OOM).
+      // Only manifest names/sizes (not media bytes) cross the isolate boundary.
+      final entries = <_ArchiveEntryRef>[
+        for (final file in archive.files)
+          if (file.isFile)
+            _ArchiveEntryRef(
+              file.name.replaceAll('\\', '/'),
+              file.size,
+              file.name == metadataFile.name,
+            ),
+      ];
+      return _DecodedBackup(entries, metadataBytes);
+    } finally {
+      await input.close();
+    }
+  }
+
   static Uint8List _readArchiveFileBytes(ArchiveFile file) {
     return file.readBytes() ?? Uint8List(0);
   }
+
+  /// Confirms staged media bytes match the manifest (truncated archives can
+  /// pass the header-only gate). Runs off the UI thread; -1 = mismatch.
+  static Future<int> _verifyExtractedSizes(
+    String stagedDir,
+    List<Map<String, dynamic>> entries,
+  ) => Isolate.run(() {
+    for (final raw in entries) {
+      final entry = BackupFileEntry.fromJson(raw);
+      final file = File(
+        p.join(
+          stagedDir,
+          entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
+          entry.basename,
+        ),
+      );
+      if (!file.existsSync()) return -1;
+      if (file.lengthSync() != entry.sizeBytes) return -1;
+    }
+    return entries.length;
+  });
 
   String _uniqueBasename(String vlogId, String name, Set<String> used) {
     var candidate = name;
     var attempt = 0;
     while (used.contains(candidate)) {
-      candidate = attempt == 0 ? '${vlogId}_$name' : '${vlogId}_${attempt}_$name';
+      candidate = attempt == 0
+          ? '${vlogId}_$name'
+          : '${vlogId}_${attempt}_$name';
       attempt++;
     }
     used.add(candidate);
@@ -656,12 +793,47 @@ class BackupService {
     final result = <String, Object?>{};
     for (final key in prefsAllowlist) {
       final val = sp.get(key);
-      if (val != null) result[key] = val;
+      if (val == null) continue;
+      // RN serializes parsed AsyncStorage values, not their JSON source text.
+      // Exporting FEATURE_FLAGS as a string would double-encode it on RN restore.
+      if (val is String) {
+        try {
+          result[key] = jsonDecode(val);
+          continue;
+        } on FormatException {
+          // Plain string preferences remain strings.
+        }
+      }
+      result[key] = val;
     }
     return result;
   }
 
-  String _verifyZip(String zipPath, Map<String, dynamic> metadata) {
+  static Future<void> _writeZipWorker(
+    String zipPath,
+    Map<String, dynamic> metadata,
+    Map<String, String> sources,
+  ) async {
+    final encoder = ZipFileEncoder()..create(zipPath);
+    try {
+      encoder.addArchiveFile(
+        ArchiveFile.bytes(
+          'backup_metadata.json',
+          utf8.encode(jsonEncode(metadata)),
+        ),
+      );
+      for (final entry in sources.entries) {
+        encoder.addArchiveFile(
+          ArchiveFile.stream(entry.key, InputFileStream(entry.value))
+            ..compression = CompressionType.none,
+        );
+      }
+    } finally {
+      await encoder.close();
+    }
+  }
+
+  static String _verifyZip(String zipPath, Map<String, dynamic> metadata) {
     InputFileStream? input;
     try {
       input = InputFileStream(zipPath);
@@ -701,15 +873,10 @@ class BackupService {
   }
 
   bool _verifyArchiveEntries(
-    Archive archive,
+    Map<String, int> sizes,
     List<BackupFileEntry> vlogs,
     List<BackupFileEntry> thumbs,
   ) {
-    final sizes = <String, int>{
-      for (final file in archive.files)
-        if (file.isFile) file.name.replaceAll('\\', '/'): file.size,
-    };
-
     for (final entry in [...vlogs, ...thumbs]) {
       if (!entry.included) continue;
       final normalizedPath = entry.entryPath.replaceAll('\\', '/');
@@ -721,7 +888,7 @@ class BackupService {
         if (match != null) actual = match.value;
       }
       if (actual == null) return false;
-      if (entry.sizeBytes > 0 && actual != entry.sizeBytes) return false;
+      if (actual != entry.sizeBytes) return false;
     }
     return true;
   }
@@ -757,123 +924,227 @@ class BackupService {
     };
   }
 
-  /// Restores SQLite in ONE transaction with LIVE COLUMN FILTERING.
-  Future<void> _restoreSqliteWithColumnFiltering(Map<String, dynamic> sqlite) async {
-    final db = await getDb();
-    final currentUserTables = await getCurrentUserTables();
-
-    // Disable foreign keys during restore so tables and records can be cleared
-    // and restored regardless of relational dependency order (matching RN Expo SQLite).
-    await db.execute('PRAGMA foreign_keys = OFF');
-
-    await db.transaction((txn) async {
-      // 1. Wipe all existing user tables (full-restore semantics).
-      for (final table in currentUserTables) {
-        await txn.rawDelete('DELETE FROM $table');
+  /// Validate structure before taking a snapshot or deleting any existing data.
+  /// SQLite accepts only scalar values; nested data must already be JSON text,
+  /// as written by both applications' repositories.
+  static Map<String, dynamic> _validateMetadata(dynamic raw) {
+    if (raw is! Map<String, dynamic> ||
+        raw['sqlite'] is! Map<String, dynamic>) {
+      throw const FormatException('Corrupt backup: SQLite data is missing.');
+    }
+    final sqlite = raw['sqlite'] as Map<String, dynamic>;
+    if (sqlite.isEmpty) {
+      throw const FormatException('Corrupt backup: no tables were supplied.');
+    }
+    final knownTables = scopeTables.values.expand((tables) => tables).toSet();
+    if (!sqlite.keys.any(knownTables.contains)) {
+      throw const FormatException('Corrupt backup: no supported tables.');
+    }
+    for (final entry in sqlite.entries) {
+      if (!knownTables.contains(entry.key)) continue;
+      if (entry.value is! List) {
+        throw FormatException('Corrupt backup table: ${entry.key}.');
       }
-
-      // 2. Insert rows with live column filtering.
-      for (final entry in sqlite.entries) {
-        final table = entry.key;
-        final rows = entry.value as List? ?? const [];
-        if (rows.isEmpty) continue;
-
-        // Query columns currently existing in this database table.
-        final colInfo = await txn.rawQuery('PRAGMA table_info($table)');
-        final allowedColumns = colInfo.map((r) => r['name'] as String).toSet();
-        if (allowedColumns.isEmpty) continue;
-
-        for (final row in rows) {
-          if (row is! Map) continue;
-          final map = row.cast<String, Object?>();
-          final columns = map.keys.where((c) => allowedColumns.contains(c)).toList();
-          if (columns.isEmpty) continue;
-
-          final placeholders = List.filled(columns.length, '?').join(', ');
-          await txn.rawInsert(
-            'INSERT INTO $table (${columns.join(', ')}) VALUES ($placeholders)',
-            [for (final c in columns) map[c]],
-          );
+      for (final row in entry.value as List) {
+        if (row is! Map<String, dynamic> ||
+            row.values.any(
+              (v) => v != null && v is! String && v is! num && v is! bool,
+            )) {
+          throw FormatException('Corrupt backup row in ${entry.key}.');
         }
       }
-    });
+    }
+    final manifests = raw['tableManifest'];
+    if (manifests != null) {
+      if (manifests is! Map<String, dynamic>) {
+        throw const FormatException('Corrupt table manifest.');
+      }
+      for (final entry in manifests.entries) {
+        final manifest = entry.value;
+        if (manifest is! Map ||
+            manifest['rowCount'] is! int ||
+            sqlite[entry.key] is! List ||
+            (sqlite[entry.key] as List).length != manifest['rowCount']) {
+          throw FormatException('Table manifest mismatch: ${entry.key}.');
+        }
+      }
+    }
+    if (raw['asyncStorage'] != null &&
+        raw['asyncStorage'] is! Map<String, dynamic>) {
+      throw const FormatException('Corrupt backup preferences.');
+    }
+    return raw;
   }
 
-  /// Writes media files and unconditionally rewrites vlog file/thumbnail paths.
+  /// Restore only known tables and live columns, retaining SQLite's original
+  /// foreign-key mode even when malformed data makes the transaction fail.
+  Future<void> _restoreSqliteWithColumnFiltering(
+    Map<String, dynamic> sqlite,
+  ) async {
+    final db = await getDb();
+    final currentUserTables = await getCurrentUserTables();
+    final knownTables = scopeTables.values.expand((tables) => tables).toSet();
+    final foreignKeys = (await db.rawQuery(
+      'PRAGMA foreign_keys',
+    )).first.values.first;
+    await db.execute('PRAGMA foreign_keys = OFF');
+    try {
+      await db.transaction((txn) async {
+        for (final table in currentUserTables.where(knownTables.contains)) {
+          await txn.rawDelete('DELETE FROM "$table"');
+        }
+        for (final entry in sqlite.entries) {
+          final table = entry.key;
+          if (!knownTables.contains(table) ||
+              !currentUserTables.contains(table)) {
+            continue;
+          }
+          final rows = entry.value as List;
+          final colInfo = await txn.rawQuery('PRAGMA table_info("$table")');
+          final allowedColumns = colInfo
+              .map((r) => r['name'] as String)
+              .toSet();
+          for (final row in rows) {
+            final map = (row as Map).cast<String, Object?>();
+            // Import is a security boundary too: older/third-party backups may
+            // contain credentials even though our own exporter excludes them.
+            if (table == 'settings' && settingSecretKeys.contains(map['key'])) {
+              continue;
+            }
+            final columns = map.keys.where(allowedColumns.contains).toList();
+            if (columns.isEmpty) continue;
+            final placeholders = List.filled(columns.length, '?').join(', ');
+            await txn.rawInsert(
+              'INSERT INTO "$table" (${columns.map((c) => '"$c"').join(', ')}) VALUES ($placeholders)',
+              [
+                for (final c in columns)
+                  map[c] is bool ? (map[c] == true ? 1 : 0) : map[c],
+              ],
+            );
+          }
+        }
+      });
+    } finally {
+      await db.execute('PRAGMA foreign_keys = $foreignKeys');
+    }
+  }
+
+  /// Extract on a worker isolate into staging directories before replacing
+  /// media. Renaming the old directories keeps rollback cheap even for GBs of
+  /// videos and prevents a failed restore from overwriting a user's originals.
+  /// Only folders actually present in this backup are swapped; a scoped import
+  /// (settings/notes-only) leaves existing media untouched (RN parity).
   Future<int> _restoreMediaFiles(
-    Archive archive,
+    String zipPath,
     List<BackupFileEntry> vlogs,
     List<BackupFileEntry> thumbs,
     String docs,
     List rawVlogRows,
+    Map<String, Object> snapshots,
   ) async {
-    final vlogDir = Directory(p.join(docs, 'vlogs'));
-    final thumbDir = Directory(p.join(docs, 'vlog_thumbnails'));
-    await vlogDir.create(recursive: true);
-    await thumbDir.create(recursive: true);
+    final included = [...vlogs, ...thumbs].where((e) => e.included).toList();
+    if (included.isEmpty) {
+      // No media in this backup: keep the user's videos and thumbnails as-is.
+      snapshots['mediaDirectories'] = const <String>[];
+      return 0;
+    }
+    final snapshotDir = snapshots['snapshotDir'] as String;
+    final stagedDir = p.join(snapshotDir, 'staged');
+    final files = included.map((e) => e.toJson()).toList();
+    await Isolate.run(() => _extractMediaWorker(zipPath, stagedDir, files));
+    // A truncated archive can pass the header-only manifest gate; confirm the
+    // staged bytes match the manifest before replacing user media.
+    final stagedOk = await _verifyExtractedSizes(stagedDir, files);
+    if (stagedOk < 0) {
+      throw const FormatException(
+        'Corrupt backup — extracted media does not match the manifest.',
+      );
+    }
 
-    var restoredCount = 0;
+    final movedDirectories = <String>[];
+    snapshots['mediaDirectories'] = movedDirectories;
+    final folders = <String>{
+      if (vlogs.any((e) => e.included)) 'vlogs',
+      if (thumbs.any((e) => e.included)) 'vlog_thumbnails',
+    };
+    for (final folder in folders) {
+      final current = Directory(p.join(docs, folder));
+      final previous = p.join(snapshotDir, 'original_$folder');
+      if (await current.exists()) await current.rename(previous);
+      movedDirectories.add(folder);
+      await Directory(p.join(stagedDir, folder)).rename(current.path);
+    }
     final nameByVlog = <String, ({String? video, String? thumb})>{};
-
-    // Extract videos
-    for (final entry in vlogs) {
-      final file = archive.files.where((f) {
-        final name = f.name.replaceAll('\\', '/');
-        final target = entry.entryPath.replaceAll('\\', '/');
-        return name == target || name.endsWith('/$target');
-      }).firstOrNull;
-      if (file != null) {
-        final outPath = p.join(vlogDir.path, entry.basename);
-        await _writeArchiveFileStreaming(file, outPath);
-        final current = nameByVlog[entry.vlogId];
-        nameByVlog[entry.vlogId] = (video: entry.basename, thumb: current?.thumb);
-        restoredCount++;
-      }
+    for (final entry in [...vlogs, ...thumbs].where((e) => e.included)) {
+      final current = nameByVlog[entry.vlogId];
+      nameByVlog[entry.vlogId] = entry.kind == 'video'
+          ? (video: entry.basename, thumb: current?.thumb)
+          : (video: current?.video, thumb: entry.basename);
     }
-
-    // Extract thumbnails
-    for (final entry in thumbs) {
-      final file = archive.files.where((f) {
-        final name = f.name.replaceAll('\\', '/');
-        final target = entry.entryPath.replaceAll('\\', '/');
-        return name == target || name.endsWith('/$target');
-      }).firstOrNull;
-      if (file != null) {
-        final outPath = p.join(thumbDir.path, entry.basename);
-        await _writeArchiveFileStreaming(file, outPath);
-        final current = nameByVlog[entry.vlogId];
-        nameByVlog[entry.vlogId] = (video: current?.video, thumb: entry.basename);
-      }
-    }
-
-    // Rebase vlog paths in database
     for (final raw in rawVlogRows) {
-      if (raw is! Map) continue;
-      final id = raw['id']?.toString() ?? '';
+      final row = raw as Map;
+      final id = row['id']?.toString() ?? '';
       final names = nameByVlog[id];
-      final videoName = names?.video ?? p.basename(raw['file_path']?.toString() ?? '$id.mp4');
-      final thumbName = names?.thumb ??
-          (raw['thumbnail_path'] != null ? p.basename(raw['thumbnail_path'].toString()) : null);
-
+      // v1 has no vlog IDs in its manifest, so match its original basenames.
+      final videoName =
+          names?.video ??
+          _mediaBasename(row['file_path']?.toString() ?? '$id.mp4');
+      final thumbName =
+          names?.thumb ??
+          (row['thumbnail_path'] != null
+              ? _mediaBasename(row['thumbnail_path'].toString())
+              : null);
       await run(
         'UPDATE vlogs SET file_path = ?, thumbnail_path = ? WHERE id = ?',
         [
-          p.join(vlogDir.path, videoName),
-          thumbName != null ? p.join(thumbDir.path, thumbName) : null,
+          p.join(docs, 'vlogs', videoName),
+          thumbName != null ? p.join(docs, 'vlog_thumbnails', thumbName) : null,
           id,
         ],
       );
     }
-
-    return restoredCount;
+    return vlogs.where((e) => e.included).length;
   }
 
-  Future<void> _writeArchiveFileStreaming(ArchiveFile file, String outPath) async {
-    final output = OutputFileStream(outPath);
+  static String _mediaBasename(String path) {
+    // RN paths are file:// URLs and may contain percent-encoded filenames.
+    final uri = Uri.tryParse(path);
+    return p.basename(uri?.scheme == 'file' ? uri!.toFilePath() : path);
+  }
+
+  static Future<void> _extractMediaWorker(
+    String zipPath,
+    String stagingPath,
+    List<Map<String, dynamic>> entries,
+  ) async {
+    final input = InputFileStream(zipPath);
     try {
-      file.writeContent(output, freeMemory: true);
+      final archive = ZipDecoder().decodeStream(input);
+      for (final folder in ['vlogs', 'vlog_thumbnails']) {
+        await Directory(p.join(stagingPath, folder)).create(recursive: true);
+      }
+      for (final raw in entries) {
+        final entry = BackupFileEntry.fromJson(raw);
+        final target = entry.entryPath.replaceAll('\\', '/');
+        final file = archive.files.firstWhere((f) {
+          final name = f.name.replaceAll('\\', '/');
+          return f.isFile && (name == target || name.endsWith('/$target'));
+        });
+        final output = OutputFileStream(
+          p.join(
+            stagingPath,
+            entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
+            entry.basename,
+          ),
+        );
+        try {
+          file.writeContent(output, freeMemory: true);
+        } finally {
+          await output.close();
+        }
+      }
     } finally {
-      await output.close();
+      await input.close();
     }
   }
 
@@ -941,6 +1212,19 @@ class BackupService {
         await File(dbCopy).copy(dbPath);
       }
 
+      // Restore every directory that was swapped before the failure.
+      final docs = await _docs();
+      for (final folder
+          in (snapshots['mediaDirectories'] as List<String>? ??
+              const <String>[])) {
+        final current = Directory(p.join(docs, folder));
+        if (await current.exists()) await current.delete(recursive: true);
+        final previous = Directory(
+          p.join(snapshots['snapshotDir'] as String, 'original_$folder'),
+        );
+        if (await previous.exists()) await previous.rename(current.path);
+      }
+
       // Rollback prefs
       final prefsPairs = snapshots['prefsPairs'] as Map<String, Object?>?;
       if (prefsPairs != null) {
@@ -959,14 +1243,19 @@ class BackupService {
       final snapshotDir = Directory(snapshots['snapshotDir'] as String);
       if (await snapshotDir.exists()) await snapshotDir.delete(recursive: true);
     } catch (e) {
-      logStorage.warn('Rollback best-effort failed', e);
+      // Keep recovery files if the device rejects a rollback write (e.g. disk
+      // failure); deleting them here would destroy the remaining original.
+      snapshots['rollbackFailed'] = true;
+      logStorage.warn(
+        'Rollback best-effort failed; recovery files retained',
+        e,
+      );
     }
   }
 
   Future<int> _freeDiskBytes() async => -1;
 
-  static String _isoTimestamp() {
-    final now = DateTime.now();
+  static String _isoTimestamp() {    final now = DateTime.now();
     return '${now.year}${_two(now.month)}${_two(now.day)}-${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
   }
 

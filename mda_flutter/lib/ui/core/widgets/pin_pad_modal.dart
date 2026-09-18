@@ -27,6 +27,7 @@ class PinPadModal extends ConsumerStatefulWidget {
 class _PinPadModalState extends ConsumerState<PinPadModal>
     with TickerProviderStateMixin {
   String _pin = '';
+  bool _submitting = false;
 
   late final AnimationController _shakeController = AnimationController(
     vsync: this,
@@ -41,9 +42,13 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
     vsync: this,
     duration: const Duration(milliseconds: 250),
   );
-  late final Animation<double> _slideAnim = Tween<double>(begin: 40.0, end: 0.0).animate(
-    CurvedAnimation(parent: _entranceController, curve: Curves.easeOutCubic),
-  );
+  late final Animation<double> _slideAnim = Tween<double>(begin: 40.0, end: 0.0)
+      .animate(
+        CurvedAnimation(
+          parent: _entranceController,
+          curve: Curves.easeOutCubic,
+        ),
+      );
   late final Animation<double> _fadeAnim = CurvedAnimation(
     parent: _entranceController,
     curve: Curves.easeOut,
@@ -63,22 +68,26 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
   }
 
   Future<void> _press(String digit) async {
+    if (_submitting || _pin.length >= 4) return;
+    final controller = ref.read(securityControllerProvider);
+    if (controller.isLockedOut.value || !controller.isVisible.value) return;
     vibrate(HapticPatterns.dialPress);
     setState(() => _pin += digit);
     if (_pin.length < 4) return;
 
-    // 150 ms delay so the fill animation plays (SPEC §12).
+    // One submission at a time: fast taps cannot append a fifth digit or race
+    // PIN confirmation against verification while the dots finish animating.
+    _submitting = true;
     final entered = _pin;
+    final shakeBefore = controller.shakeKey.value;
     await Future<void>.delayed(const Duration(milliseconds: pinDotDelayMs));
-    final controller = ref.read(securityControllerProvider);
-    final resolved = await controller.onDigit(entered);
     if (!mounted) return;
-    if (resolved) {
-      setState(() => _pin = '');
-    } else if (controller.mode.value == PinPadMode.verify &&
-        controller.isVisible.value) {
+    await controller.onDigit(entered);
+    if (!mounted) return;
+    _submitting = false;
+    if (controller.shakeKey.value != shakeBefore) {
       _wrongPin();
-    } else if (controller.isVisible.value) {
+    } else {
       setState(() => _pin = '');
     }
   }
@@ -90,8 +99,12 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
   }
 
   void _backspace() {
-    vibrate(HapticPatterns.tick);
-    if (_pin.isNotEmpty) setState(() => _pin = _pin.substring(0, _pin.length - 1));
+    if (_submitting) return;
+    // RN parity: the PIN delete key vibrates like a dial press (30 ms), not a tick.
+    vibrate(HapticPatterns.dialPress);
+    if (_pin.isNotEmpty) {
+      setState(() => _pin = _pin.substring(0, _pin.length - 1));
+    }
   }
 
   PinPadMode? _lastMode;
@@ -103,8 +116,18 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
     final prompt = controller.promptText.value;
     final lockedOut = controller.isLockedOut.value;
 
+    // Sync local input state when the pad opens. `didUpdateWidget` cannot see
+    // provider-driven mode changes, so the check lives here but performs no
+    // animation side effects mid-build — the entrance animation is triggered
+    // post-frame below.
     if (mode != null && _lastMode == null) {
-      _entranceController.forward(from: 0.0);
+      _pin = '';
+      _submitting = false;
+    }
+    if (mode != null && _lastMode == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _entranceController.forward(from: 0.0);
+      });
     }
     _lastMode = mode;
 
@@ -137,7 +160,9 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
                     padding: const EdgeInsets.only(bottom: 40),
                     decoration: const BoxDecoration(
                       color: AppColors.surfaceDark,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(32),
+                      ),
                       border: Border(
                         top: BorderSide(color: AppColors.glassBorder),
                         left: BorderSide(color: AppColors.glassBorder),
@@ -161,23 +186,35 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
                         if (lockedOut) ...[
                           Container(
                             margin: const EdgeInsets.symmetric(horizontal: 32),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.dangerTint,
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.dangerBorder, width: 1),
+                              border: Border.all(
+                                color: AppColors.dangerBorder,
+                                width: 1,
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Mdi.get('lockClock'), color: AppColors.primaryAction, size: 18),
+                                Icon(
+                                  Mdi.get('lockClock'),
+                                  color: AppColors.primaryAction,
+                                  size: 18,
+                                ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  'Too many attempts — wait ${controller.lockoutRemainingSeconds.value}s',
-                                  style: const TextStyle(
-                                    color: AppColors.primaryAction,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
+                                Flexible(
+                                  child: Text(
+                                    'Too many attempts — wait ${controller.lockoutRemainingSeconds.value}s',
+                                    style: const TextStyle(
+                                      color: AppColors.primaryAction,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -211,7 +248,9 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
                                     Container(
                                       width: 14,
                                       height: 14,
-                                      margin: const EdgeInsets.symmetric(horizontal: 10),
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         color: i < _pin.length
@@ -231,53 +270,57 @@ class _PinPadModalState extends ConsumerState<PinPadModal>
                           },
                         ),
                         const SizedBox(height: 26),
-                    // Dial
-                    Opacity(
-                      opacity: lockedOut ? 0.4 : 1,
-                      child: IgnorePointer(
-                        ignoring: lockedOut,
-                        child: Column(
-                          children: [
-                            for (var row = 0; row < 3; row++)
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  for (var col = 0; col < 3; col++)
-                                    _DialButton(
-                                      label: '${row * 3 + col + 1}',
-                                      onPress: () => _press('${row * 3 + col + 1}'),
-                                    ),
-                                ],
-                              ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                        // Dial
+                        Opacity(
+                          opacity: lockedOut ? 0.4 : 1,
+                          child: IgnorePointer(
+                            ignoring: lockedOut,
+                            child: Column(
                               children: [
-                                _DialButton(
-                                  label: 'CANCEL',
-                                  small: true,
-                                  onPress: () => controller.cancel(),
-                                ),
-                                _DialButton(label: '0', onPress: () => _press('0')),
-                                _DialButton(
-                                  icon: 'backspaceOutline',
-                                  onPress: _backspace,
+                                for (var row = 0; row < 3; row++)
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      for (var col = 0; col < 3; col++)
+                                        _DialButton(
+                                          label: '${row * 3 + col + 1}',
+                                          onPress: () =>
+                                              _press('${row * 3 + col + 1}'),
+                                        ),
+                                    ],
+                                  ),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _DialButton(
+                                      label: 'CANCEL',
+                                      small: true,
+                                      onPress: () => controller.cancel(),
+                                    ),
+                                    _DialButton(
+                                      label: '0',
+                                      onPress: () => _press('0'),
+                                    ),
+                                    _DialButton(
+                                      icon: 'backspaceOutline',
+                                      onPress: _backspace,
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
-      ],
-    ),
-  ),
-);
+      ),
+    );
   }
 }
 

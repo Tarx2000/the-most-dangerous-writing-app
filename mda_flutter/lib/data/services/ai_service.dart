@@ -59,8 +59,7 @@ class AiService {
 
   /// Chunk flush rule (SPEC §9): end in whitespace/CJK punctuation or buffer
   /// exceeds 12 chars.
-  static final RegExp _flushPattern =
-      RegExp(r"[ \t\n.,!?\-:;，。！？、”'一-龥]$");
+  static final RegExp _flushPattern = RegExp(r"[ \t\n.,!?\-:;，。！？、”'一-龥]$");
 
   // -- Streaming request -----------------------------------------------------
 
@@ -93,9 +92,12 @@ class AiService {
       ..body = jsonEncode(body);
 
     final cancelCompleter = Completer<void>();
-    final timeoutTimer = Timer(const Duration(milliseconds: AiTiming.requestTimeoutMs), () {
-      if (!cancelCompleter.isCompleted) cancelCompleter.complete();
-    });
+    final timeoutTimer = Timer(
+      const Duration(milliseconds: AiTiming.requestTimeoutMs),
+      () {
+        if (!cancelCompleter.isCompleted) cancelCompleter.complete();
+      },
+    );
 
     final responseFuture = _client.send(request);
     Future<void> drainLateResponse() async {
@@ -108,7 +110,9 @@ class AiService {
     try {
       final response = await Future.any<http.StreamedResponse>([
         responseFuture,
-        cancelCompleter.future.then((_) => throw const AiError(AiErrorKind.timeout, 'request timed out')),
+        cancelCompleter.future.then(
+          (_) => throw const AiError(AiErrorKind.timeout, 'request timed out'),
+        ),
       ]);
 
       timeoutTimer.cancel();
@@ -123,9 +127,10 @@ class AiService {
       final wordBuffer = StringBuffer();
       final flushPattern = _flushPattern;
 
-      await for (final line in response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
+      await for (final line
+          in response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
         if (cancelToken?.isCancelled == true) {
           throw const AiError(AiErrorKind.cancelled, 'cancelled by token');
         }
@@ -138,7 +143,8 @@ class AiService {
         accumulated.write(delta);
         wordBuffer.write(delta);
         final buffer = wordBuffer.toString();
-        if (buffer.isNotEmpty && (flushPattern.hasMatch(buffer) || buffer.length >= 12)) {
+        if (buffer.isNotEmpty &&
+            (flushPattern.hasMatch(buffer) || buffer.length >= 12)) {
           onChunk(accumulated.toString());
           wordBuffer.clear();
         }
@@ -217,7 +223,11 @@ class AiService {
     AiCancelToken? cancelToken,
   }) async {
     if (text.trim().isEmpty) return '';
-    final prompt = _promptFor(config, relationship == null ? 'title' : 'relationshipTitle', relationship);
+    final prompt = _promptFor(
+      config,
+      relationship == null ? 'title' : 'relationshipTitle',
+      relationship,
+    );
     final result = await streamChat(
       config: config,
       systemPrompt: prompt,
@@ -237,7 +247,11 @@ class AiService {
     AiCancelToken? cancelToken,
   }) async {
     if (text.trim().isEmpty) return const [];
-    final prompt = _promptFor(config, relationship == null ? 'summary' : 'relationshipSummary', relationship);
+    final prompt = _promptFor(
+      config,
+      relationship == null ? 'summary' : 'relationshipSummary',
+      relationship,
+    );
     final result = await streamChat(
       config: config,
       systemPrompt: prompt,
@@ -272,12 +286,17 @@ class AiService {
 
   static List<GrammarSuggestion> _parseGrammar(String raw) {
     var cleaned = raw.trim();
-    cleaned = cleaned.replaceFirst(RegExp(r'^```json\s*'), '').replaceFirst(RegExp(r'\s*```$'), '');
+    cleaned = cleaned
+        .replaceFirst(RegExp(r'^```json\s*'), '')
+        .replaceFirst(RegExp(r'\s*```$'), '');
     if (cleaned.isEmpty) return const [];
     try {
       final decoded = jsonDecode(cleaned);
       if (decoded is! List) {
-        throw const AiError(AiErrorKind.parse, 'grammar response is not an array');
+        throw const AiError(
+          AiErrorKind.parse,
+          'grammar response is not an array',
+        );
       }
       return [
         for (final item in decoded)
@@ -294,8 +313,12 @@ class AiService {
     } on AiError {
       rethrow;
     } catch (_) {
-      throw const AiError(AiErrorKind.parse, 'grammar response unparseable',
-          userMessage: "Couldn't check grammar — the AI returned an unexpected response.");
+      throw const AiError(
+        AiErrorKind.parse,
+        'grammar response unparseable',
+        userMessage:
+            "Couldn't check grammar — the AI returned an unexpected response.",
+      );
     }
   }
 
@@ -307,20 +330,21 @@ class AiService {
     required String text,
     RelationshipContext? relationship,
     AiCancelToken? cancelToken,
+    VoidCallback? onProgress,
   }) async {
     final title = await generateTitle(
       config: config,
       text: text,
       relationship: relationship,
       cancelToken: cancelToken,
-      onChunk: (_) {},
+      onChunk: (_) => onProgress?.call(),
     );
     final summary = await generateSummary(
       config: config,
       text: text,
       relationship: relationship,
       cancelToken: cancelToken,
-      onChunk: (_) {},
+      onChunk: (_) => onProgress?.call(),
     );
     return (
       title: title,
@@ -335,8 +359,11 @@ class AiService {
   /// otherwise `GET {baseUrl}/api/version` (Ollama native); 5 s timeout.
   Future<bool> pingServer(AiConfig config) async {
     if (config.provider == AiProvider.neuralwatt && config.apiKey.isEmpty) {
-      throw const AiError(AiErrorKind.config, 'no neuralwatt key',
-          userMessage: 'No Neuralwatt API key set. Add your key in AI Settings.');
+      throw const AiError(
+        AiErrorKind.config,
+        'no neuralwatt key',
+        userMessage: 'No Neuralwatt API key set. Add your key in AI Settings.',
+      );
     }
     final baseUrl = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
     final isV1 = baseUrl.endsWith('/v1');
@@ -347,7 +374,9 @@ class AiService {
       if (isV1) {
         request.headers['Authorization'] = 'Bearer ${config.apiKey}';
       }
-      final response = await _client.send(request).timeout(const Duration(seconds: 5));
+      final response = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 5));
       await response.stream.drain<void>();
       if (response.statusCode >= 200 && response.statusCode < 300) return true;
       throw classifyHttpStatus(response.statusCode);
@@ -364,7 +393,9 @@ class AiService {
     final uri = Uri.parse('$baseUrl/models');
     final request = http.Request('GET', uri)
       ..headers['Authorization'] = 'Bearer ${config.apiKey}';
-    final response = await _client.send(request).timeout(const Duration(seconds: 10));
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 10));
     final body = await response.stream.bytesToString();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw classifyHttpStatus(response.statusCode);
@@ -373,7 +404,10 @@ class AiService {
       final decoded = jsonDecode(body);
       final data = decoded['data'];
       if (data is List) {
-        return [for (final item in data) if (item['id'] is String) item['id'] as String];
+        return [
+          for (final item in data)
+            if (item['id'] is String) item['id'] as String,
+        ];
       }
     } catch (_) {}
     return const [];
@@ -381,12 +415,19 @@ class AiService {
 
   // -- Prompt plumbing ----------------------------------------------------------
 
-  String _promptFor(AiConfig config, String key, RelationshipContext? relationship) {
+  String _promptFor(
+    AiConfig config,
+    String key,
+    RelationshipContext? relationship,
+  ) {
     var prompt = config.prompts[key] ?? defaultAiPrompts[key] ?? '';
     if (relationship != null) {
       prompt = prompt
           .replaceAll('{{PERSON_NAME}}', relationship.personName)
-          .replaceAll('{{RELATIONSHIP_STATUS}}', relationship.relationshipStatus);
+          .replaceAll(
+            '{{RELATIONSHIP_STATUS}}',
+            relationship.relationshipStatus,
+          );
     }
     return prompt;
   }

@@ -5,7 +5,9 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mda_flutter/data/services/ai_error.dart';
 import 'package:http/http.dart' as http;
 import 'package:mda_flutter/data/models/saved_note.dart';
 import 'package:mda_flutter/data/queues/ai_queue.dart';
@@ -35,8 +37,8 @@ class _ScriptedClient extends http.BaseClient {
     final status = !isChat
         ? pingStatus
         : statuses.length > chatCalls - 1
-            ? statuses[chatCalls - 1]
-            : statuses.last;
+        ? statuses[chatCalls - 1]
+        : statuses.last;
     final controller = StreamController<List<int>>();
     Future.microtask(() async {
       // 429/401/500 → error body; 200 → a slow SSE result so mid-stream
@@ -80,54 +82,108 @@ class _FakeDeps {
 }
 
 AiConfig _config({String apiKey = 'key'}) => AiConfig(
-      provider: 'ollama',
-      apiKey: apiKey,
-      baseUrl: 'https://ollama.com/v1',
-      model: 'gemma4:31b-cloud',
-      grammarModel: '',
-    );
+  provider: 'ollama',
+  apiKey: apiKey,
+  baseUrl: 'https://ollama.com/v1',
+  model: 'gemma4:31b-cloud',
+  grammarModel: '',
+);
 
 SavedNote _longNote(String id, {String? personId}) => SavedNote(
-      id: id,
-      text: List.generate(50, (i) => 'word$i').join(' '),
-      dateStr: '2026-08-11',
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-      durationMin: 5,
-      won: true,
-      personId: personId,
+  id: id,
+  text: List.generate(50, (i) => 'word$i').join(' '),
+  dateStr: '2026-08-11',
+  timestamp: DateTime.now().millisecondsSinceEpoch,
+  durationMin: 5,
+  won: true,
+  personId: personId,
+);
+
+class _HeldService extends AiService {
+  @override
+  Future<({String title, List<String> summary, bool failed})> processNote({
+    required AiConfig config,
+    required String text,
+    RelationshipContext? relationship,
+    AiCancelToken? cancelToken,
+    void Function()? onProgress,
+  }) {
+    final result =
+        Completer<({String title, List<String> summary, bool failed})>();
+    cancelToken?.onCancel(
+      () => result.completeError(
+        const AiError(AiErrorKind.cancelled, 'cancelled'),
+      ),
     );
+    return result.future;
+  }
+}
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('retryable server errors retry twice then fail with notification', () async {
-    final client = _ScriptedClient([500, 500, 500]);
-    final deps = _FakeDeps();
-    final note = _longNote('n1');
-    deps.notes[note.id] = note;
-
-    final manager = AiQueueManager(
-      service: AiService(client: client),
-      deps: deps.deps,
-      logger: AiLogger(),
-      healthCheckIntervalMs: 150,
-    );
-    await manager.initialize(_config());
-    manager.enqueueNote(note.id, 'journal');
-
-    // 3 attempts (initial + 2 retries); health checks resume the queue
-    // after each server-error pause.
-    await Future<void>.delayed(const Duration(milliseconds: 4000));
-    expect(client.chatCalls, 3);
-    final job = manager.jobs.single;
-    expect(job.status, 'failed');
-    expect(job.retryCount, 2);
-    expect(manager.notifications, hasLength(1));
-    expect(manager.notifications.single.noteId, note.id);
-    await manager.shutdown();
+  test('timeout failure survives the cancelled request completing later', () {
+    fakeAsync((clock) {
+      final deps = _FakeDeps();
+      deps.notes['timeout'] = SavedNote(
+        id: 'timeout',
+        text: List.filled(50, 'word').join(' '),
+        dateStr: '',
+        timestamp: 1,
+        durationMin: 5,
+        won: true,
+      );
+      final manager = AiQueueManager(
+        service: _HeldService(),
+        deps: deps.deps,
+        logger: AiLogger(),
+      );
+      manager.initialize(_config());
+      clock.flushMicrotasks();
+      manager.enqueueNote('timeout', 'journal');
+      clock.elapse(const Duration(milliseconds: 500));
+      clock.elapse(const Duration(seconds: 180));
+      clock.flushMicrotasks();
+      expect(manager.jobs.single.status, 'failed');
+      expect(manager.notifications, hasLength(1));
+      expect(manager.isNoteQueued('timeout'), isFalse);
+      expect(deps.updateCount, 0);
+      manager.shutdown();
+      clock.flushMicrotasks();
+    });
   });
+
+  test(
+    'retryable server errors retry twice then fail with notification',
+    () async {
+      final client = _ScriptedClient([500, 500, 500]);
+      final deps = _FakeDeps();
+      final note = _longNote('n1');
+      deps.notes[note.id] = note;
+
+      final manager = AiQueueManager(
+        service: AiService(client: client),
+        deps: deps.deps,
+        logger: AiLogger(),
+        healthCheckIntervalMs: 150,
+      );
+      await manager.initialize(_config());
+      manager.enqueueNote(note.id, 'journal');
+
+      // 3 attempts (initial + 2 retries); health checks resume the queue
+      // after each server-error pause.
+      await Future<void>.delayed(const Duration(milliseconds: 4000));
+      expect(client.chatCalls, 3);
+      final job = manager.jobs.single;
+      expect(job.status, 'failed');
+      expect(job.retryCount, 2);
+      expect(manager.notifications, hasLength(1));
+      expect(manager.notifications.single.noteId, note.id);
+      await manager.shutdown();
+    },
+  );
 
   test('auth errors fail fast without retries', () async {
     final client = _ScriptedClient([401]);
@@ -211,9 +267,7 @@ void main() {
       won: false,
       isTweet: true,
     );
-    deps.notes['short'] = _longNote('short').copyWith(
-      text: 'too short for ai',
-    );
+    deps.notes['short'] = _longNote('short').copyWith(text: 'too short for ai');
 
     final manager = AiQueueManager(
       service: AiService(client: client),
@@ -252,34 +306,38 @@ void main() {
     await manager.shutdown();
   });
 
-  test('cancellation (pause) requeues without a failure notification', () async {
-    final client = _ScriptedClient([200]);
-    final deps = _FakeDeps();
-    deps.notes['n1'] = _longNote('n1');
+  test(
+    'cancellation (pause) requeues without a failure notification',
+    () async {
+      final client = _ScriptedClient([200]);
+      final deps = _FakeDeps();
+      deps.notes['n1'] = _longNote('n1');
 
-    final manager = AiQueueManager(
-      service: AiService(client: client),
-      deps: deps.deps,
-      logger: AiLogger(),
-      healthCheckIntervalMs: 150,
-    );
-    await manager.initialize(_config());
-    manager.enqueueNote('n1', 'journal');
-    // Let the job start (500 ms rate limit), then pause mid-flight.
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    manager.pause(); // cancels in-flight request
+      final manager = AiQueueManager(
+        service: AiService(client: client),
+        deps: deps.deps,
+        logger: AiLogger(),
+        healthCheckIntervalMs: 150,
+      );
+      await manager.initialize(_config());
+      manager.enqueueNote('n1', 'journal');
+      // Let the job start (500 ms rate limit), then pause mid-flight.
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      manager.pause(); // cancels in-flight request
 
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    expect(manager.notifications, isEmpty);
-    expect(manager.jobs.single.status, 'queued');
-    await manager.shutdown();
-  });
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      expect(manager.notifications, isEmpty);
+      expect(manager.jobs.single.status, 'queued');
+      await manager.shutdown();
+    },
+  );
 
   test('batch order is journal → circle → checkin', () async {
     final client = _ScriptedClient([200]);
     final deps = _FakeDeps();
-    deps.notes['checkin'] =
-        _longNote('checkin').copyWith(isAlignmentReflection: true);
+    deps.notes['checkin'] = _longNote(
+      'checkin',
+    ).copyWith(isAlignmentReflection: true);
     deps.notes['circle'] = _longNote('circle', personId: 'p1');
     deps.notes['journal'] = _longNote('journal');
     deps.notes['journal2'] = _longNote('journal2');
@@ -299,6 +357,67 @@ void main() {
     final processed = manager.jobs.map((j) => j.noteId).toList();
     expect(processed.indexOf('journal'), lessThan(processed.indexOf('circle')));
     expect(processed.indexOf('circle'), lessThan(processed.indexOf('checkin')));
+    await manager.shutdown();
+  });
+
+  test(
+    'pause drains a scheduled job before restore and reinitialize dedupes',
+    () async {
+      final client = _ScriptedClient([200]);
+      final deps = _FakeDeps()..notes['journal'] = _longNote('journal');
+      final manager = AiQueueManager(
+        service: AiService(client: client),
+        deps: deps.deps,
+        logger: AiLogger(),
+      );
+      await manager.initialize(_config());
+      manager.enqueueNote('journal', 'journal');
+      await manager.pauseAndDrain();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(client.chatCalls, 0);
+      await manager.initialize(_config());
+      expect(manager.jobs, hasLength(1));
+      await manager.shutdown();
+    },
+  );
+
+  test(
+    'batch categories and eligibility exclude unselected or short entries',
+    () async {
+      final deps = _FakeDeps();
+      deps.notes['circle'] = _longNote('circle', personId: 'p');
+      deps.notes['journal'] = _longNote('journal');
+      deps.notes['short'] = _longNote(
+        'short',
+        personId: 'p',
+      ).copyWith(text: 'short');
+      final manager = AiQueueManager(
+        service: AiService(client: _ScriptedClient([200])),
+        deps: deps.deps,
+        logger: AiLogger(),
+      );
+      await manager.initialize(_config());
+      manager.pause();
+      await manager.enqueueBatch(categories: {'circle'});
+      expect(manager.jobs.map((job) => job.noteId), ['circle']);
+      await manager.shutdown();
+    },
+  );
+
+  test('cancelled scheduled batch never reaches the server', () async {
+    final client = _ScriptedClient([200]);
+    final deps = _FakeDeps()..notes['journal'] = _longNote('journal');
+    final manager = AiQueueManager(
+      service: AiService(client: client),
+      deps: deps.deps,
+      logger: AiLogger(),
+    );
+    await manager.initialize(_config());
+    manager.enqueueNote('journal', 'journal');
+    manager.cancelBatch();
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    expect(client.chatCalls, 0);
+    expect(manager.jobs, isEmpty);
     await manager.shutdown();
   });
 

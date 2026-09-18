@@ -4,7 +4,7 @@
 ///   Layer C: LiquidGlassNav (floats, fades + slides down when feed opens)
 ///
 /// Feed reveal gesture (parity with `useHomeGestures.ts`): upward-only pan,
-/// activation ≥ 8 px, fail on |dx| > 20 px, finger 1:1 tracking; commit at
+/// native vertical-drag recognition, finger 1:1 tracking; commit at
 /// progress ≥ 0.40 or velocity < -3000 px/s; commit/close both animate with
 /// `springSnappy` (never a hard jump).
 ///
@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/haptics.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/liquid_glass_nav.dart';
 import '../feed/feed_screen.dart';
@@ -32,8 +34,6 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell>
     with SingleTickerProviderStateMixin {
-  static const double _activationOffset = 8;
-  static const double _failTolerance = 20;
   static const double _commitProgress = 0.40;
   static const double _closeProgress = 0.70;
   static const double _openVelocity = -3000;
@@ -50,8 +50,12 @@ class _HomeShellState extends ConsumerState<HomeShell>
   );
 
   double get _feedProgress => _feedController.value;
-  bool get _feedOpen => _feedController.value > 0.5;
+  // A gesture must keep ownership when progress crosses the halfway point.
+  // Visibility is a committed state, never inferred from an animation frame.
+  bool _feedOpen = false;
+  bool _feedMounted = false;
   bool _dragArmed = false;
+  double _dragStartProgress = 0;
   double _dragDy = 0;
 
   SessionMode get _modeForTab {
@@ -69,8 +73,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
     }
   }
 
-  bool get _isOnStartPage => _activeTab != HomeTab.circles;
-
   @override
   void dispose() {
     _pager.dispose();
@@ -85,78 +87,125 @@ class _HomeShellState extends ConsumerState<HomeShell>
     _pager.jumpToPage(0);
   }
 
-  /// Springs the feed to the target (springSnappy — parity with RN).
-  void _commitFeed(bool open) {
-    final target = open ? 1.0 : 0.0;
-    if (_feedController.value == target) return;
-    _feedController.animateWith(
-      SpringSimulation(
-        const SpringDescription(damping: 35, stiffness: 250, mass: 0.8),
-        _feedController.value,
-        target,
-        0,
-      ),
-    );
+  /// The spring updates only transforms. Expensive screens stay cached as
+  /// AnimatedBuilder children, so pointer movement never rebuilds the pager.
+  Future<void> _commitFeed(bool open) async {
+    final changed = _feedOpen != open;
     setState(() {
+      _feedOpen = open;
       _dragArmed = false;
       _dragDy = 0;
     });
+    if (changed) vibrate(HapticPatterns.tick);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _feedController.value = open ? 1 : 0;
+    } else {
+      try {
+        await _feedController
+            .animateWith(
+              SpringSimulation(
+                AppSprings.springSnappy,
+                _feedProgress,
+                open ? 1 : 0,
+                0,
+              ),
+            )
+            .orCancel;
+      } on TickerCanceled {
+        return; // A new gesture took over, or the screen was disposed.
+      }
+    }
+    if (mounted && !open && !_dragArmed) {
+      // Release video controllers and stop hidden feed work after dismissal.
+      setState(() => _feedMounted = false);
+    }
   }
 
-  // -- Feed open gesture (on the start page only, upward-only) ---------------
-
   void _onOpenDragStart(DragStartDetails details) {
-    _dragArmed = _isOnStartPage && !_feedOpen;
+    if (_feedOpen) return;
+    _feedController.stop();
+    _dragArmed = true;
+    _dragStartProgress = _feedProgress;
     _dragDy = 0;
+    if (!_feedMounted) setState(() => _feedMounted = true);
   }
 
   void _onOpenDragUpdate(DragUpdateDetails details) {
-    if (!_dragArmed || _feedOpen) return;
-    if (details.delta.dx.abs() > _failTolerance) {
-      _dragArmed = false;
-      return;
-    }
-    if (details.delta.dy > 0 && _dragDy <= _activationOffset) {
-      return; // only upward pulls arm the reveal
-    }
-    setState(() {
-      _dragDy += details.delta.dy;
-      _feedController.value = (_dragDy / -MediaQuery.sizeOf(context).height)
-          .clamp(0.0, 1.0)
-          .toDouble();
-    });
+    if (!_dragArmed) return;
+    _dragDy += details.delta.dy;
+    _feedController.value =
+        (_dragStartProgress - _dragDy / MediaQuery.sizeOf(context).height)
+            .clamp(0.0, 1.0);
   }
 
   void _onOpenDragEnd(DragEndDetails details) {
-    if (!_dragArmed || _feedOpen) return;
-    final velocity = details.primaryVelocity ?? 0;
-    if (_feedProgress >= _commitProgress || velocity < _openVelocity) {
-      _commitFeed(true);
-    } else {
-      _commitFeed(false);
-    }
+    if (!_dragArmed) return;
+    _commitFeed(
+      _feedProgress >= _commitProgress ||
+          (details.primaryVelocity ?? 0) < _openVelocity,
+    );
   }
 
-  // -- Feed close gesture (on the feed layer) --------------------------------
+  // RN parity (`FeedScreen.tsx` close gesture): the close decision also
+  // projects where the fling would land (progress − velocity·0.12/height).
+  // A fast downward fling from 0.75 closes; without the projection Flutter
+  // would snap back where RN lets go.
+  //
+  // Overscroll transfers carry real fling velocity (the ScrollEndNotification
+  // velocity), so a top-edge flick closes exactly like a header drag.
+  void _onCloseDragStart(DragStartDetails details) {
+    if (!_feedOpen) return;
+    _feedController.stop();
+    _dragArmed = true;
+    _dragStartProgress = _feedProgress;
+    _dragDy = 0;
+  }
 
   void _onCloseDragUpdate(DragUpdateDetails details) {
-    if (!_feedOpen) return;
-    setState(() {
-      _dragDy += details.delta.dy;
-      _feedController.value = (1 + _dragDy / MediaQuery.sizeOf(context).height)
-          .clamp(0.0, 1.0)
-          .toDouble();
-    });
+    if (!_dragArmed) return;
+    _dragDy += details.delta.dy;
+    _feedController.value =
+        (_dragStartProgress - _dragDy / MediaQuery.sizeOf(context).height)
+            .clamp(0.0, 1.0);
   }
 
   void _onCloseDragEnd(DragEndDetails details) {
-    if (!_feedOpen) return;
+    if (!_dragArmed) return;
     final velocity = details.primaryVelocity ?? 0;
-    if (_feedProgress < _closeProgress || velocity > _closeVelocity) {
-      _commitFeed(false);
-    } else {
-      _commitFeed(true);
-    }
+    final height = MediaQuery.sizeOf(context).height;
+    final projected = height <= 0
+        ? _feedProgress
+        : _feedProgress - velocity * 0.12 / height;
+    _commitFeed(
+      !(_feedProgress < _closeProgress ||
+          velocity > _closeVelocity ||
+          projected < 0.5),
+    );
+  }
+
+  void _onDragCancel() {
+    if (_dragArmed) _commitFeed(_feedOpen);
+  }
+
+  // The list owns vertical scrolling. Only downward overscroll at its top
+  // transfers movement to the feed reveal; normal reading never closes it.
+  // The overscroll end carries the real fling velocity for the RN projection.
+  void _onFeedOverscroll(double delta) {
+    if (!_feedOpen) return;
+    if (!_dragArmed) _onCloseDragStart(DragStartDetails());
+    _onCloseDragUpdate(
+      DragUpdateDetails(globalPosition: Offset.zero, delta: Offset(0, delta)),
+    );
+  }
+
+  void _onFeedOverscrollEnd(double velocity) {
+    if (!_dragArmed) return;
+    _onCloseDragEnd(
+      DragEndDetails(
+        primaryVelocity: velocity,
+        globalPosition: Offset.zero,
+      ),
+    );
   }
 
   @override
@@ -165,85 +214,101 @@ class _HomeShellState extends ConsumerState<HomeShell>
     final checkinUrgent = _isCheckinUrgent();
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
-    return Stack(
-      children: [
-        // ---- Layer B: main content (pager Start | Library) ----------------
-        AnimatedBuilder(
-          animation: _feedController,
-          builder: (context, _) {
-            final progress = _feedProgress;
-            return Transform.translate(
-              offset: Offset(0, progress * -screenHeight),
+    return PopScope(
+      canPop: !_feedMounted,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _feedMounted) _commitFeed(false);
+      },
+      child: Stack(
+        children: [
+          AnimatedBuilder(
+            animation: _feedController,
+            builder: (context, child) => Transform.translate(
+              offset: Offset(0, _feedProgress * -screenHeight),
+              child: child,
+            ),
+            child: IgnorePointer(
+              ignoring: _feedOpen,
               child: PageView(
                 controller: _pager,
-                physics: _feedOpen ? const NeverScrollableScrollPhysics() : null,
-                // NOTE: swiping the pager NEVER changes the nav pill — the
-                // pill reflects the session mode only.
                 children: [
                   GestureDetector(
-                    behavior: HitTestBehavior.translucent,
+                    behavior: HitTestBehavior.opaque,
                     onVerticalDragStart: _onOpenDragStart,
                     onVerticalDragUpdate: _onOpenDragUpdate,
                     onVerticalDragEnd: _onOpenDragEnd,
-                    child: StartScreen(mode: _modeForTab),
+                    onVerticalDragCancel: _onDragCancel,
+                    child: StartScreen(
+                      mode: _modeForTab,
+                      onFeedPull: (delta) {
+                        if (!_dragArmed) _onOpenDragStart(DragStartDetails());
+                        _onOpenDragUpdate(
+                          DragUpdateDetails(
+                            globalPosition: Offset.zero,
+                            delta: Offset(0, delta),
+                          ),
+                        );
+                      },
+                      onFeedPullEnd: () => _onOpenDragEnd(DragEndDetails()),
+                    ),
                   ),
                   const LibraryScreen(),
                 ],
               ),
-            );
-          },
-        ),
-
-        // ---- Layer A: feed layer (starts below the viewport) --------------
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: screenHeight,
-          // The close-gesture must not swallow page drags while the feed is
-          // closed — hit-testing is disabled until it is revealed.
-          child: IgnorePointer(
-            ignoring: !_feedOpen,
-            child: GestureDetector(
-              onVerticalDragUpdate: _onCloseDragUpdate,
-              onVerticalDragEnd: _onCloseDragEnd,
-              child: AnimatedBuilder(
-                animation: _feedController,
-                builder: (context, _) {
-                  return Transform.translate(
-                    offset: Offset(0, (1 - _feedProgress) * screenHeight),
-                    child: FeedScreen(
-                      onClose: () => _commitFeed(false),
-                    ),
-                  );
-                },
-              ),
             ),
           ),
-        ),
-
-        // ---- Layer C: LiquidGlassNav --------------------------------------
-        AnimatedBuilder(
-          animation: _feedController,
-          builder: (context, _) {
-            return LiquidGlassNav(
+          if (_feedMounted)
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _feedController,
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(0, (1 - _feedProgress) * screenHeight),
+                  child: child,
+                ),
+                child: IgnorePointer(
+                  ignoring: !_feedOpen,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragStart: _onCloseDragStart,
+                    onVerticalDragUpdate: _onCloseDragUpdate,
+                    onVerticalDragEnd: _onCloseDragEnd,
+                    onVerticalDragCancel: _onDragCancel,
+                    child: FeedScreen(
+                      revealProgress: _feedController,
+                      onClose: () => _commitFeed(false),
+                      onOverscrollPull: _onFeedOverscroll,
+                      onOverscrollEnd: () => _onCloseDragEnd(DragEndDetails()),
+                      onOverscrollEndWithVelocity: _onFeedOverscrollEnd,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // The navigation pill is independent of the sliding main content.
+          // It must stop accepting touches as soon as the feed is committed.
+          AnimatedBuilder(
+            animation: _feedController,
+            builder: (context, _) => LiquidGlassNav(
               tabs: defaultNavTabs(checkinUrgent: checkinUrgent),
               activeId: _activeTab,
               onSelect: _onNavSelect,
               feedOpen: _feedOpen,
               feedProgress: _feedProgress,
               safeBottom: bottomInset + 14,
-            );
-          },
-        ),
-      ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   /// Gold urgent dot when no check-in happened in the last 7 days (SPEC §14).
   bool _isCheckinUrgent() {
-    final lastLog = ref.watch(appDataProvider).lastLogDate;
-    if (lastLog == null) return true;
-    return DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastLog)).inDays >= 7;
+    final lastReflection = ref.watch(preferencesProvider).lastReflectionDate;
+    if (lastReflection == null) return true;
+    return DateTime.now()
+            .difference(DateTime.fromMillisecondsSinceEpoch(lastReflection))
+            .inDays >=
+        7;
   }
 }

@@ -17,7 +17,17 @@ class CompressionStatusBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(compressionQueueStateProvider).value;
     final job = state?.currentJob;
-    if (state == null || (!state.isProcessing && state.pendingCount == 0)) {
+    final failedCount =
+        state?.jobs.where((j) => j.status == 'failed').length ?? 0;
+    // RN parity: visible while queued, processing, OR failed (failures need
+    // the red card + retry surface, not silence). Hidden only when idle.
+    final hasActivity =
+        state != null &&
+        (state.pendingCount > 0 ||
+            state.isProcessing ||
+            job?.status == 'processing' ||
+            failedCount > 0);
+    if (state == null || !hasActivity) {
       return const SizedBox.shrink();
     }
 
@@ -28,23 +38,35 @@ class CompressionStatusBar extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.glassBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.glassBorderSubtle, width: 1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: failedCount > 0
+                ? AppColors.dangerBorderStrong
+                : AppColors.glassBorder,
+            width: 1,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Mdi.get('videoOutline'), color: AppColors.orange, size: 18),
+                Icon(
+                  Mdi.get(state.isProcessing ? 'loading' : 'zipBoxOutline'),
+                  color: failedCount > 0
+                      ? AppColors.danger
+                      : AppColors.primaryAction,
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
-                const Text(
-                  'COMPRESSING VIDEOS',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5,
+                Text(
+                  state.pendingCount > 0
+                      ? 'Compressing ${state.pendingCount} video${state.pendingCount != 1 ? 's' : ''}'
+                      : 'Compression Jobs',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const Spacer(),
