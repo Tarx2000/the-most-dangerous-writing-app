@@ -8,3 +8,7 @@
 
 # local env files
 .env*.local
+
+# App backup exports (user data, can be >1 GB — never commit; GitHub blocks files >100 MB)
+mda_backup_*.zip
+*.zip
