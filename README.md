@@ -4,8 +4,8 @@ A journaling app where if you stop typing, your text is destroyed. This is a **m
 
 | Folder | Implementation | Status |
 |---|---|---|
-| [`mda_rn/`](mda_rn/) | React Native (Expo SDK 55, React 19, Reanimated 4) | **Source of truth** — the original app |
-| [`mda_flutter/`](mda_flutter/) | Flutter (Dart 3.12, Flutter 3.44) | Port — behavioral contract in `mda_flutter/SPEC_1TO1.md` |
+| [`mda_flutter/`](mda_flutter/) | Flutter (Dart 3.12, Flutter 3.44) | **The app** — built, installed and used |
+| [`mda_rn/`](mda_rn/) | React Native (Expo SDK 55, React 19, Reanimated 4) | Legacy — no longer built or installed (kept as behavioral reference) |
 
 ## Features
 
@@ -23,21 +23,21 @@ A journaling app where if you stop typing, your text is destroyed. This is a **m
 
 ## Getting Started
 
-### React Native (`mda_rn/`)
+### Flutter (`mda_flutter/`) — the app
 
 ```bash
-cd mda_rn
-npm install
-npm start           # Start Expo dev server
-npm run android     # Run on Android
-npm run ios         # Run on iOS
-npm test            # Run the test suite
+cd mda_flutter
+flutter pub get
+flutter run           # Debug on emulator/device
+flutter test --concurrency=1   # Test suite
 ```
 
 Release APK builds: see `.agents/workflows/expo-build.md` (opencode command `/expo-build`).
+APK output: `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 
-### Flutter (`mda_flutter/`)
+### React Native (`mda_rn/`) — legacy reference only
 
+Kept as behavioral reference (SPEC source); it is NOT built or installed anymore.
 See [`mda_flutter/README.md`](mda_flutter/README.md) for Flutter-specific setup and `mda_flutter/SPEC_1TO1.md` for the behavioral contract.
 
 ## License

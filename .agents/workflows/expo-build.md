@@ -1,14 +1,19 @@
 ---
-description: Local Android Build — commits pending changes, pushes to remote, runs all tests, then builds a release APK locally. No implementation plan needed.
+description: Local Android Build — tests, commit & push, then builds the Flutter release APK locally. No implementation plan needed.
 ---
 
 <!-- 
-  WORKFLOW: Local Android Release Build
-  
+  WORKFLOW: Local Android Release Build (Flutter-only)
+
+  The user decided on 2026-09-21: ONLY the Flutter app (`mda_flutter/`) is
+  built, installed and used from now on. The RN app (`mda_rn/`) is legacy —
+  it is NEVER built, committed for, or installed anymore. If any doc below
+  still mentions `mda_rn/` build steps, it is STALE — follow this file.
+
   This workflow is fully automated (turbo-all). When invoked via /expo-build:
   1. Commit and push any pending changes to remote
-  2. Run the full test suite — ALL tests must pass
-  3. Build a local release APK via Gradle
+  2. Run the full Flutter test suite — ALL tests must pass
+  3. Build the Flutter release APK for arm64 (S24 Ultra)
   4. Report the APK location with a clickable link
   
   NO implementation plan is generated. Execution starts immediately.
@@ -16,28 +21,29 @@ description: Local Android Build — commits pending changes, pushes to remote, 
 
 // turbo-all
 
-# Local Android Release Build
+# Local Android Release Build (Flutter)
 
 > **No implementation plan required.** This workflow executes immediately when invoked.
 
 > [!IMPORTANT]
-> **The React Native app lives in `mda_rn/`.** All npm/gradle commands in this
-> workflow run inside `mda_rn/`. Git commands run from the monorepo root.
-> APK output: `mda_rn/android/app/build/outputs/apk/release/app-release.apk`.
+> **The Flutter app lives in `mda_flutter/`.** All flutter commands in this
+> workflow run inside `mda_flutter/`. Git commands run from the monorepo root.
+> APK output: `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
+> The RN app in `mda_rn/` is legacy and is NEVER built anymore.
 
 ---
 
-## Step 1 — Lint Check (Zero Errors Required)
+## Step 1 — Analyze (Zero Issues Required)
 
-Run ESLint. **The build is blocked if any errors are present.**
+Run the Flutter analyzer. **The build is blocked if any issues are present.**
 
 ```bash
-cd mda_rn && npm run lint
+cd mda_flutter && flutter analyze
 ```
 
 > [!CAUTION]
-> **STOP HERE if ESLint reports any errors.** Do NOT proceed to Step 2.  
-> Warnings are acceptable, but **errors must be zero**. Report the error output and help the user fix it. Only continue after `npm run lint` exits clean.
+> **STOP HERE if `flutter analyze` reports any issues.** Do NOT proceed to Step 2.
+> Report the output and help the user fix it. Only continue after `flutter analyze` exits clean.
 
 ---
 
@@ -46,15 +52,16 @@ cd mda_rn && npm run lint
 Run all project tests. **Every single test must pass before proceeding.**
 
 ```bash
-cd mda_rn && npm test
+cd mda_flutter && flutter test --concurrency=1
 ```
 
 > [!CAUTION]
-> **STOP HERE if any test fails.** Do NOT proceed to Step 3.  
-> Instead, report the failing tests to the user and help them fix the issues. But dont fix anything yourself! ONLY REPORT THE ISSUE!
+> **STOP HERE if any test fails.** Do NOT proceed to Step 3.
+> Instead, report the failing tests to the user and help them fix the issues.
 > Only continue to the build step after re-running tests and confirming 100% pass rate.
-
-**What this runs:** `jest` with the project's `jest.config.js` (in `mda_rn/`), which discovers all `*.test.ts` / `*.test.tsx` files under `src/lib/__tests__/`.
+>
+> **Widget-test rule:** testWidgets must NEVER do real DB I/O — override
+> `appDataProvider` with a fake `StorageNotifier` instead.
 
 ---
 
@@ -88,24 +95,28 @@ cd mda_rn && npm test
 
 ---
 
-## Step 4 — Build Release APK
+## Step 4 — Build Flutter Release APK
 
-Build an optimized local release APK targeting 64-bit modern devices (arm64-v8a architecture for significant build-time reduction).
+Build the optimized Flutter release APK for arm64 (Samsung Galaxy S24 Ultra).
+`--split-per-abi` produces per-architecture APKs; the arm64 one is renamed to
+the canonical `app-arm64-v8a-release.apk` name the user's phone recognizes as
+an update. `--no-tree-shake-icons` keeps the full MDI font (runtime
+`Mdi.get()` IconData prevents tree-shaking — parity with the RN app which
+bundles the full MDI font).
 
-**CRITICAL: Use `--quiet` flag** — Gradle produces thousands of lines of task output. Without `--quiet`, the agent's shell buffer overflows (51,200-byte / 2,000-line limit), causing a perceived infinite hang on Windows even though the build already finished. `--quiet` suppresses task spam and only prints warnings, errors, and the final `BUILD SUCCESSFUL` message.
-
-**Unix/macOS:**
 ```bash
-cd mda_rn/android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet
+cd mda_flutter && flutter build apk --release --no-tree-shake-icons --split-per-abi
+cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-**Windows (must use `cmd /c` for `.bat` scripts):**
-```cmd
-cmd /c "cd /d mda_rn\android && gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a --quiet"
-```
+(The `cp` is a no-op safeguard documenting the canonical filename; the real
+output of `--split-per-abi` already carries the `app-arm64-v8a-release.apk` name.)
 
 > [!NOTE]
-> `gradlew.bat` is a batch file and requires the `cmd /c` wrapper to execute correctly in non-CMD shells. Direct execution via `cd android && gradlew.bat ...` fails with "'gradlew.bat' is not recognized" because the shell spawns a new process that cannot resolve `.bat` files directly.
+> `versionCode` comes from `pubspec.yaml` (`1.5.12+2005` → code 2005, kept
+> above the old per-ABI split build whose arm64 was 2001 — a lower code
+> would make Android reject the install as a downgrade). Bump the `+NNN`
+> suffix for every release so the phone accepts it as an update.
 
 ---
 
@@ -113,28 +124,32 @@ cmd /c "cd /d mda_rn\android && gradlew.bat assembleRelease -PreactNativeArchite
 
 After a successful build, report the APK location to the user with a clickable link (use the local absolute path; example below):
 
-**APK output path:** `mda_rn/android/app/build/outputs/apk/release/app-release.apk`
+**APK output path:** `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+
+---
+
+## Update Hygiene (phone only sees updates it accepts)
+
+- **Package must stay `com.anonymous.mda_flutter`** and the APK must be
+  signed with the SAME key as the installed one (currently debug keys —
+  see `android/app/build.gradle.kts`). A different package or key means
+  "package conflicts", not an update.
+- **versionCode must grow** with every release (`pubspec.yaml` `+NNN` suffix).
+- The RN app (`com.anonymous.themostdangerouswritingapp`, different package
+  AND different key) can NEVER be updated by a Flutter APK — it must be
+  uninstalled once; data moves via backup export/import.
 
 ---
 
 ## Hardware Acceleration & Parallelization
 
-To fully utilize PC performance (e.g. bundling 1500+ modules in seconds), ensure `mda_rn/android/gradle.properties` contains:
-
-```properties
-org.gradle.parallel=true
-org.gradle.daemon=true
-org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
-```
+Flutter release builds are single-command; no Gradle flags needed. Keep
+`flutter analyze` + `flutter test --concurrency=1` as the gates.
 
 ---
 
 ## Common Issues
 
-- **"App not installed as package conflicts with an existing package"**: When installing a locally built APK over an EAS Cloud build (or vice-versa), Android blocks the installation because the cryptographic signing keys do not match. **Fix:** Simply uninstall the existing version of the app from your smartphone first, then install the new APK.
-- **"ninja: error: manifest 'build.ninja' still dirty after 100 tries" (Windows)**: A notorious bug caused by the Android SDK shipping an outdated Ninja executable (v1.10) that ignores the Windows 260-character Long Path Registry override. **Fix:** Download Ninja v1.12.1+ from GitHub and replace the bundled executable at `%LOCALAPPDATA%\Android\Sdk\cmake\3.22.1\bin\ninja.exe`.
-- **"Metro bundler error after installing native modules"**: Run `cd mda_rn && npx expo start -c` to clear cache.
-- **"Build fails with missing babel-preset-expo"**: Run `cd mda_rn && npm install --save-dev babel-preset-expo`.
-- **"App crashes on startup after adding reanimated"**: Ensure `babel.config.js` includes `'react-native-reanimated/plugin'` as the LAST plugin.
-- **`gradlew.bat` not recognized on Windows**: Batch files (`.bat`) cannot be executed directly from non-CMD shells. Always use `cmd /c "cd /d android && gradlew.bat ..."` instead of `cd android && gradlew.bat ...`.
-- **Agent appears stuck during build (Windows)**: Gradle prints thousands of task lines. The bash tool truncates output at 51,200 bytes / 2,000 lines, and the buffer flush can take 20–30 seconds after the build actually finished. **Fix:** Always append `--quiet` to the Gradle command (see Step 4). This suppresses the task spam and prevents the buffer overflow hang.
+- **"App not installed as package conflicts with an existing package"**: package name or signing key differs from the installed app (e.g. RN app vs Flutter app, or debug vs release key). **Fix:** uninstall the conflicting app first (export a backup first!), then install the new APK.
+- **"There was a problem parsing the package" / downgrade**: versionCode went down. **Fix:** bump the `+NNN` suffix in `mda_flutter/pubspec.yaml`.
+- **"Metro bundler error after installing native modules" (RN legacy only)**: Run `cd mda_rn && npx expo start -c` to clear cache.

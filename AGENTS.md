@@ -68,7 +68,7 @@ Critical per-domain rules live in `.agents/instructions/*.md` (applies to the RN
 
 ## Workflows
 
-- `.agents/workflows/expo-build.md` — canonical Local Android Release Build (lint → test → commit/push → gradle APK). Registered in opencode as `/expo-build` (`.opencode/command/expo-build.md`). **All commands run inside `mda_rn/`; APK output: `mda_rn/android/app/build/outputs/apk/release/app-release.apk`.** **Always run this workflow when the user asks for a build, "expo build", or an APK** — do not improvise a build.
+- `.agents/workflows/expo-build.md` — canonical Local Android Release Build (**Flutter-only** since 2026-09-21: analyze → test → commit/push → `flutter build apk --release --no-tree-shake-icons --split-per-abi`). Registered in opencode as `/expo-build` (`.opencode/command/expo-build.md`). **All commands run inside `mda_flutter/`; APK output: `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.** **Always run this workflow when the user asks for a build, "expo build", or an APK** — do not improvise a build, and NEVER build `mda_rn/` (legacy, RN is no longer used or installed).
 
 ## Agent Operating Rules (Mandatory)
 
