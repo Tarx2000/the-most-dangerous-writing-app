@@ -42,21 +42,60 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
   String? _relationship;
 
   Person? get _person {
-    for (final p in ref.watch(personsProvider)) {
+    final persons = ref.read(personsProvider);
+    for (final p in persons) {
       if (p.id == widget.personId) return p;
     }
     return null;
   }
 
+  /// Shared lookup that also subscribes to person updates, without touching
+  /// `ref` during `initState` (the crash in the report: `dependOnInherited…`
+  /// was called before `initState()` completed because the getter used
+  /// `ref.watch` and `initState` called the getter).
+  Person? _watchedPerson() {
+    Person? found;
+    for (final p in ref.watch(personsProvider)) {
+      if (p.id == widget.personId) {
+        found = p;
+        break;
+      }
+    }
+    return found;
+  }
+
   @override
   void initState() {
     super.initState();
-    final person = _person;
-    _nameController = TextEditingController(text: person?.name ?? '');
-    _nicknameController = TextEditingController(text: person?.nickname ?? '');
-    _birthdayController = TextEditingController(text: person?.birthday ?? '');
-    _bioController = TextEditingController(text: person?.bio ?? '');
-    _relationship = person?.relationship;
+    // Defer the first provider read until AFTER initState completes: the
+    // state is not mounted on the element tree yet, so even `ref.read`
+    // through the getter tripped the inherited-widget assert on some
+    // devices. Controllers start empty; didChangeDependencies fills them.
+    _nameController = TextEditingController();
+    _nicknameController = TextEditingController();
+    _birthdayController = TextEditingController();
+    _bioController = TextEditingController();
+  }
+
+  bool _controllersSynced = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Runs after initState with a valid element: safe to read providers.
+    // Syncs once (and again if the person appears late, e.g. restore racing
+    // the modal) but never clobbers text the user is editing.
+    if (!_editing && !_controllersSynced) {
+      final person = _person;
+      if (person != null) {
+        _nameController.text = person.name;
+        _nicknameController.text = person.nickname ?? '';
+        _birthdayController.text = person.birthday ?? '';
+        _bioController.text = person.bio ?? '';
+        _relationship = person.relationship;
+        _controllersSynced = true;
+      }
+    }
   }
 
   @override
@@ -70,8 +109,7 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
 
   Future<void> _save() async {
     final person = _person;
-    if (person == null) return;
-    vibrate(HapticPatterns.unlockSuccess);
+    if (person == null) return;    vibrate(HapticPatterns.unlockSuccess);
     await ref.read(appDataProvider.notifier).updatePerson(person.id, {
       'name': _nameController.text.trim().isEmpty
           ? person.name
@@ -123,7 +161,7 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
         ),
       );
     }
-    final person = _person;
+    final person = _watchedPerson();
     if (person == null) {
       return const SizedBox.shrink();
     }

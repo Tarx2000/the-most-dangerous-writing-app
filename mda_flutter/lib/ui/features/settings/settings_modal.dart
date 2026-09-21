@@ -121,6 +121,23 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         'multipart/x-zip',
       ],
     );
+    // RN parity: auth gate (biometrics or PIN) BEFORE the file picker opens.
+    // The picker is a native activity that backgrounds the app; authenticating
+    // after it returns races the auto-lock grace timer and can lock the app
+    // mid-restore. On a fresh install no PIN exists yet — the pad opens in
+    // setup mode and creating one counts as authentication (same as RN's
+    // first-unlock flow).
+    if (!mounted) return;
+    final security = ref.read(securityControllerProvider);
+    final prefs = ref.read(preferencesProvider);
+    if (!security.isNotesUnlocked) {
+      final ok = await security.unlockNotes(
+        preferPinAuth: prefs.preferPinAuth,
+        useBiometrics: prefs.useBiometrics,
+      );
+      if (!ok || !mounted) return;
+    }
+
     final file = await openFile(acceptedTypeGroups: [typeGroup]);
     if (file == null) return;
 
@@ -143,7 +160,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       builder: (ctx) => ConfirmDialog(
         title: 'Restore Backup?',
         message:
-            'This will replace your current notes, circles, and settings with the data in this backup archive. This action cannot be undone.',
+            'This will replace your current notes, circles, and settings with the data in this backup archive. Your security PIN stays local and is never overwritten. This action cannot be undone.',
         confirmLabel: 'Restore',
         cancelLabel: 'Cancel',
         destructive: true,
@@ -152,16 +169,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       ),
     );
     if (confirmed != true || !mounted) return;
-
-    final security = ref.read(securityControllerProvider);
-    final prefs = ref.read(preferencesProvider);
-    if (!security.isNotesUnlocked) {
-      final ok = await security.unlockNotes(
-        preferPinAuth: prefs.preferPinAuth,
-        useBiometrics: prefs.useBiometrics,
-      );
-      if (!ok || !mounted) return;
-    }
 
     setState(() {
       _backupBusy = true;

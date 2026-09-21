@@ -6,6 +6,10 @@ import 'package:flutter/foundation.dart';
 
 bool _logMode = kDebugMode;
 
+/// Debug-only sink for mirrored log lines (Marionette `get_logs`, see
+/// `lib/marionette_harness.dart`). Null in release/test — zero overhead.
+void Function(String line)? debugLogSink;
+
 /// Sets verbose logging mode (settings pref `LOG_MODE`).
 void setLogMode(bool enabled) => _logMode = enabled;
 
@@ -24,8 +28,17 @@ void _log(LogLevel level, String tag, String message, [Object? extra]) {
     LogLevel.info => 'ℹ️',
     LogLevel.debug => '🐞',
   };
+  final line = '$prefix [$tag] $message${extra != null ? ' $extra' : ''}';
+  // Mirror into the debug sink (Marionette get_logs). Guarded: a throwing
+  // sink must never break app logging.
+  final sink = debugLogSink;
+  if (sink != null) {
+    try {
+      sink(line);
+    } catch (_) {}
+  }
   // ignore: avoid_print
-  print('$prefix [$tag] $message${extra != null ? ' $extra' : ''}');
+  print(line);
 }
 
 /// Generic logger.

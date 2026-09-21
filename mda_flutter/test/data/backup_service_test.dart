@@ -132,6 +132,160 @@ void main() {
   );
 
   test(
+    'free-space gate rejects with a user-facing message (RN parity)',
+    () async {
+      // A 10 MB manifest against a 1 MB disk: the gate must refuse BEFORE
+      // any user data is touched, with the "not enough free space" copy
+      // (not a raw errno, never a crash, never a partial restore).
+      final big = List<int>.filled(10 * 1024 * 1024, 1);
+      final path = await writeBackup(
+        {
+          'backupVersion': 2,
+          'sqlite': {'notes': []},
+          'fileManifest': {
+            'vlogs': [
+              {
+                'vlogId': 'v1',
+                'entryPath': 'vlogs/big.mp4',
+                'kind': 'video',
+                'sizeBytes': big.length,
+                'included': true,
+              },
+            ],
+            'thumbnails': [],
+          },
+        },
+        files: {'vlogs/big.mp4': big},
+      );
+      final result = await service.importBackupZip(
+        zipPath: path,
+        freeSpaceProvider: () async => 1024 * 1024,
+      );
+      expect(result.success, isFalse);
+      expect(result.error, contains('Not enough free space'));
+      expect(await getAll('SELECT * FROM notes'), hasLength(1));
+    },
+  );
+
+  test(
+    'unknown free space never blocks a restore (weak phones)',
+    () async {
+      // Probe failure (-1) or throw must proceed, not refuse: a phone that
+      // cannot answer the capacity question still restores fine.
+      final path = await writeBackup({
+        'backupVersion': 2,
+        'sqlite': {'notes': []},
+        'fileManifest': {'vlogs': [], 'thumbnails': []},
+      });
+      for (final probe in [
+        () async => -1,
+        () async => throw StateError('probe crashed'),
+      ]) {
+        final result = await service.importBackupZip(
+          zipPath: path,
+          freeSpaceProvider: probe,
+        );
+        expect(result.success, isTrue, reason: result.error);
+      }
+    },
+  );
+
+  test(
+    'size mismatch inside one file aborts with attribution (not the gate)',
+    () async {
+      // A ZIP whose manifest claims 100 bytes but stores only 3: the
+      // per-file check (not the global manifest gate) must reject it, no
+      // phantom video may remain staged, and the DB stays intact.
+      final path = await writeBackup(
+        {
+          'backupVersion': 2,
+          'sqlite': {'notes': []},
+          'fileManifest': {
+            'vlogs': [
+              {
+                'vlogId': 'v1',
+                'entryPath': 'vlogs/short.mp4',
+                'kind': 'video',
+                'sizeBytes': 100,
+                'included': true,
+              },
+            ],
+            'thumbnails': [],
+          },
+        },
+        files: {
+          'vlogs/short.mp4': [1, 2, 3],
+        },
+      );
+      final result = await service.importBackupZip(zipPath: path);
+      expect(result.success, isFalse);
+      expect(result.error, contains('damaged'));
+      expect(await getAll('SELECT * FROM notes'), hasLength(1));
+    },
+  );
+
+  test(
+    'multi-file media merge keeps a full rollback journal (regression)',
+    () async {
+      // Two existing user videos; the backup overwrites BOTH. The merge loop
+      // used to recreate the rollback journal per file, so only the last
+      // file's entries survived — a failure after the merge could not undo
+      // the earlier files. Both originals must come back.
+      for (final name in ['a.mp4', 'b.mp4']) {
+        final f = File(p.join(tempDir.path, 'vlogs', name));
+        await f.parent.create(recursive: true);
+        await f.writeAsString('original $name');
+      }
+      final path = await writeBackup(
+        {
+          'backupVersion': 2,
+          'sqlite': {'notes': []},
+          'fileManifest': {
+            'vlogs': [
+              {
+                'vlogId': 'v1',
+                'entryPath': 'vlogs/a.mp4',
+                'kind': 'video',
+                'sizeBytes': 3,
+                'included': true,
+              },
+              {
+                'vlogId': 'v2',
+                'entryPath': 'vlogs/b.mp4',
+                'kind': 'video',
+                'sizeBytes': 3,
+                'included': true,
+              },
+            ],
+            'thumbnails': [],
+          },
+        },
+        files: {
+          'vlogs/a.mp4': [1, 2, 3],
+          'vlogs/b.mp4': [4, 5, 6],
+        },
+      );
+      final result = await service.importBackupZip(
+        zipPath: path,
+        onStage: (stage) {
+          if (stage == 'Restoring settings…') {
+            throw StateError('Simulated post-media failure');
+          }
+        },
+      );
+      expect(result.success, isFalse);
+      expect(
+        await File(p.join(tempDir.path, 'vlogs', 'a.mp4')).readAsString(),
+        'original a.mp4',
+      );
+      expect(
+        await File(p.join(tempDir.path, 'vlogs', 'b.mp4')).readAsString(),
+        'original b.mp4',
+      );
+    },
+  );
+
+  test(
     'failure after media replacement restores original database and videos',
     () async {
       final original = File(p.join(tempDir.path, 'vlogs', 'same.mp4'));

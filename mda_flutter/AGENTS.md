@@ -64,6 +64,31 @@ lib/
   in `config.ini` (already set), restart the AVD (cold boot).
 - Verified: debug build installs + runs on the AVD (API 36, arm64) without crashes.
 
+## Agent Self-Driving (Marionette MCP + official Flutter MCP)
+- **Debug harness**: `lib/marionette_harness.dart` installs `MarionetteBinding`
+  (debug-only, `kDebugMode && !FLUTTER_TEST` gate in `main.dart` — zero release
+  impact) plus four test extensions: `mdaTest.backupState`, `mdaTest.seedNote`,
+  `mdaTest.exportBackup`, `mdaTest.importBackup`. They run the REAL
+  `StorageNotifier` export/import pipeline and skip only the native file
+  picker + PIN/biometric prompt (agents cannot operate those).
+- **Loop (no human needed)**: `flutter run` → copy the VM service URI →
+  `marionette --uri <ws-uri> get-interactive-elements` / `tap` /
+  `take-screenshots` / `get-logs` (CLI: `~/.pub-cache/bin/marionette`), or
+  the same tools via the `marionette` MCP server. The backup round-trip
+  (`seedNote → exportBackup → importBackup → backupState`) verifies import
+  restores data autonomously — asserts counts, never asks the user.
+- **Logs**: app logger mirrors into `get_logs` via `debugLogSink`
+  (`lib/core/logger.dart`). `get_logs` is empty until a hot restart if the
+  harness was attached earlier in the session.
+- **opencode MCP config** (`~/.config/opencode/opencode.jsonc`): `dart_flutter`
+  (`dart mcp-server`, dev-time tools) + `marionette` (`marionette_mcp`,
+  runtime driving). The Reddit `flutterdevagents` project is not a findable
+  repo/package — this is the maintained equivalent.
+- **Rules**: `main.dart` is the only production entrypoint that initializes
+  the binding (single-binding rule — tests use their own test binding).
+  Never gate behavior on Marionette in release code; never read/write PIN
+  material in extensions (PIN is never exported/restored, SPEC §13).
+
 ## Port Repair Invariants
 - Track verification and outstanding parity work in `PORT_AUDIT.md`; do not label
   the port complete based only on compilation or widget tests.

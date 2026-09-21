@@ -693,7 +693,9 @@ class BackupService {
         }
       }
 
-      // 5. Free-space gate.
+      // 5. Free-space gate (RN parity: required = manifest × 1.1, compared
+      // against `FileSystem.getFreeDiskStorageAsync()`). The probe is sized
+      // for THIS backup, so small restores probe KBs, not gigabytes.
       final requiredBytes =
           vlogEntries
               .where((e) => e.included)
@@ -702,14 +704,18 @@ class BackupService {
               .where((e) => e.included)
               .fold<int>(0, (s, e) => s + e.sizeBytes);
       try {
-        final free = await (freeSpaceProvider ?? _freeDiskBytes)();
-        if (free > 0 && requiredBytes * freeSpaceMarginFactor > free) {
+        final needed = (requiredBytes * freeSpaceMarginFactor).round();
+        final injected = freeSpaceProvider != null;
+        final free = injected
+            ? await freeSpaceProvider()
+            : await _freeDiskBytesFor(needed);
+        if (free > 0 && needed > free) {
           return BackupResult(
             success: false,
             verification: 'failed',
             error:
                 'Not enough free space for this backup '
-                '(${((requiredBytes * freeSpaceMarginFactor) / 1048576).round()} MB needed).',
+                '(${(needed / 1048576).round()} MB needed).',
           );
         }
       } catch (_) {}
@@ -803,6 +809,10 @@ class BackupService {
 
   /// Maps technical import failures to messages a non-expert understands.
   /// The UI shows this string directly — it must never be a raw exception.
+  /// Coverage: every throw-site in this file maps here (FormatException
+  /// variants for metadata/manifest/zip-bomb/truncation, ENOSPC/disk-full
+  /// from any streaming write, SAF/permission denials, OOM). Unknown errors
+  /// fall through to the safe generic message — data is always untouched.
   static String _userFacingImportError(Object e) {
     final text = e.toString().toLowerCase();
     if (e is FormatException) {
@@ -821,9 +831,23 @@ class BackupService {
       if (message.contains('manifest')) {
         return 'This backup is incomplete or damaged — some videos are missing.';
       }
+      if (message.contains('inflate') || message.contains('decompress')) {
+        return 'This backup file is damaged and cannot be restored. Your current data was left untouched.';
+      }
       return 'This backup file is damaged and cannot be restored. Your current data was left untouched.';
     }
-    if (text.contains('not enough free space') || text.contains('enospc')) {
+    // Disk-full can surface from ANY streaming write (staged `.part` file,
+    // media merge, DB snapshot) as errno 28 / ENOSPC / "no space left" —
+    // including inside wrapped FileSystemExceptions whose `toString` keeps
+    // the OS message. Match broadly, never by exception type alone.
+    if (text.contains('not enough free space') ||
+        text.contains('enospc') ||
+        text.contains('errno 28') ||
+        text.contains('errno=28') ||
+        text.contains('no space left') ||
+        text.contains('disk full') ||
+        text.contains('no room') ||
+        text.contains('out of space')) {
       return 'Not enough free space on this device to restore the backup. Free up storage and try again.';
     }
     if (text.contains('out of memory') || text.contains('oom')) {
@@ -897,6 +921,9 @@ class BackupService {
         method: location.method,
         compressedSize: location.compressedSize,
         target: entryName,
+        // Metadata is KBs (hard cap 64 MB): a corrupt DEFLATE stream must
+        // abort here, not inflate gigabytes on a weak phone (zip-bomb shape).
+        maxOutputBytes: maxBackupMetadataBytes,
       );
       return sink.bytes;
     } finally {
@@ -1227,12 +1254,22 @@ class BackupService {
     // A truncated archive can pass the header-only manifest gate; confirm the
     // staged bytes match the manifest before replacing user media. Sync stats
     // (no isolate, no memory) — never nested inside another isolate.
+    // Stale `.part` files from an earlier kill are NOT staged videos: ignore
+    // them here (a later resume deletes them), but never count them as OK
+    // and never let one shadow a real staged file.
     final stagedOk = _verifyExtractedSizesSync(stagedDir, files);
     if (stagedOk < 0) {
       throw const FormatException(
         'Corrupt backup — extracted media does not match the manifest.',
       );
     }
+    try {
+      await for (final entity in Directory(stagedDir).list(recursive: true)) {
+        if (entity is File && entity.path.endsWith('.part')) {
+          await entity.delete();
+        }
+      }
+    } catch (_) {}
 
     final movedDirectories = <String>[];
     snapshots['mediaDirectories'] = movedDirectories;
@@ -1241,14 +1278,17 @@ class BackupService {
     // rename-swap destroyed the user's videos before the new ones were
     // verified, and left no recoverable state on a mid-restore kill.
     final stagedSizes = <String, int>{};
+    // ONE journal for the whole merge: it was created fresh inside the loop,
+    // so only the LAST file's entries survived and a mid-restore rollback
+    // could not undo the earlier files. Created once here, filled per file.
+    final journal = <String, String?>{};
+    snapshots['mediaJournal'] = journal;
     for (final entry in [...vlogs, ...thumbs].where((e) => e.included)) {
       final folder = entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails';
       final stagedFile = File(p.join(stagedDir, folder, entry.basename));
       final targetFile = File(p.join(docs, folder, entry.basename));
       await targetFile.parent.create(recursive: true);
       // Journal the overwrite so a crash mid-merge can be rolled back.
-      final journal = <String, String?>{};
-      snapshots['mediaJournal'] = journal;
       if (await targetFile.exists()) {
         final backupPath = p.join(
           snapshotDir,
@@ -1371,20 +1411,35 @@ class BackupService {
   /// Inflates [compressedSize] bytes from the already-positioned [raf] into
   /// [addChunk]. STORE = raw copy, DEFLATE = incremental chunked inflate
   /// (constant memory). Shared by file + memory streaming — one code path.
+  ///
+  /// Low-end hardening: a corrupt DEFLATE stream could otherwise inflate
+  /// gigabytes of garbage from a few KB of input (zip-bomb shape) and OOM-kill
+  /// a weak phone. [maxOutputBytes] caps the total inflated bytes (callers
+  /// pass the manifest's expected size + slack); exceeding it aborts with a
+  /// FormatException that the import pipeline turns into "backup damaged,
+  /// data untouched" — never a crash, never a partial restore.
   static void _inflateRange(
     RandomAccessFile raf,
     void Function(List<int> chunk) addChunk, {
     required int method,
     required int compressedSize,
     required String target,
+    int? maxOutputBytes,
   }) {
     if (method == _ZipMethod.store) {
       var left = compressedSize;
+      var written = 0;
       while (left > 0) {
         final n = min(left, 1 << 20);
         final chunk = raf.readSync(n);
         if (chunk.isEmpty) {
           throw const FormatException('Corrupt backup — truncated file.');
+        }
+        written += chunk.length;
+        if (maxOutputBytes != null && written > maxOutputBytes) {
+          throw FormatException(
+            'Corrupt backup — $target inflates beyond its manifest size.',
+          );
         }
         addChunk(chunk);
         left -= chunk.length;
@@ -1392,10 +1447,17 @@ class BackupService {
       return;
     }
     if (method == _ZipMethod.deflate) {
+      var written = 0;
       final outSink = ChunkedConversionSink<List<int>>.withCallback((
         chunks,
       ) {
         for (final chunk in chunks) {
+          written += chunk.length;
+          if (maxOutputBytes != null && written > maxOutputBytes) {
+            throw FormatException(
+              'Corrupt backup — $target inflates beyond its manifest size.',
+            );
+          }
           addChunk(chunk);
         }
       });
@@ -1403,16 +1465,25 @@ class BackupService {
         raw: true,
       ).decoder.startChunkedConversion(outSink);
       var left = compressedSize;
-      while (left > 0) {
-        final n = min(left, 1 << 20);
-        final chunk = raf.readSync(n);
-        if (chunk.isEmpty) {
-          throw const FormatException('Corrupt backup — truncated file.');
+      try {
+        while (left > 0) {
+          final n = min(left, 1 << 20);
+          final chunk = raf.readSync(n);
+          if (chunk.isEmpty) {
+            throw const FormatException('Corrupt backup — truncated file.');
+          }
+          inSink.add(chunk);
+          left -= chunk.length;
         }
-        inSink.add(chunk);
-        left -= chunk.length;
+        inSink.close();
+      } catch (e) {
+        // A malformed stream must surface as "damaged backup", never as an
+        // unhandled inflate error. FormatExceptions pass through unchanged.
+        if (e is FormatException) rethrow;
+        throw FormatException(
+          'Corrupt backup — $target could not be decompressed ($e).',
+        );
       }
-      inSink.close();
       return;
     }
     throw FormatException(
@@ -1429,8 +1500,12 @@ class BackupService {
     for (final folder in ['vlogs', 'vlog_thumbnails']) {
       await Directory(p.join(stagingPath, folder)).create(recursive: true);
     }
-    // Checkpointed streaming: ONE file per call, read straight from its ZIP
-    // offsets (central directory) and inflated incrementally in 1 MB chunks.
+    // Checkpointed + resume-safe: before extracting, drop stale `.part`
+    // files from a previous kill (a `.part` is NEVER a valid staged video —
+    // only byte-exact matches get promoted). Each entry then streams with
+    // its own manifest size as the expected byte count: mismatch aborts
+    // immediately with "damaged backup" instead of failing later at the
+    // global size gate with no file attribution.
     // Peak memory stays flat (~tens of MB) no matter how large the backup is
     // — a 326 MB DEFLATE video never inflates in RAM at once. Verified with
     // the user's own 1.3 GB archive shape (13 DEFLATE videos) in tests.
@@ -1441,10 +1516,19 @@ class BackupService {
         entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
         entry.basename,
       );
+      try {
+        final stale = File('$outputPath.part');
+        if (await stale.exists()) await stale.delete();
+      } catch (_) {}
       // ONE isolate per file (no nesting): _extractMediaWorker itself already
       // runs inside Isolate.run — a nested Isolate.run per file doubles peak
       // memory (measured +166 MB on the real archive) and buys nothing.
-      await _streamEntryToFile(zipPath, entry.entryPath, outputPath);
+      await _streamEntryToFile(
+        zipPath,
+        entry.entryPath,
+        outputPath,
+        expectedSizeBytes: entry.sizeBytes,
+      );
     }
   }
 
@@ -1454,16 +1538,24 @@ class BackupService {
   ///
   /// Async + awaited close: `IOSink.close()` must be awaited, otherwise the
   /// last buffered chunk never reaches disk and the size check fails.
-  static Future<void> _streamEntryToFile(
+  ///
+  /// Kill-/disk-failure hardening (weak phones): the stream lands in a
+  /// `.part` file first; only a byte-exact match against the manifest size
+  /// promotes it to the final staged path. A mid-restore kill or a full disk
+  /// therefore leaves a `.part` file behind — never a truncated video the
+  /// size gate would accept. Returns the staged file.
+  static Future<File> _streamEntryToFile(
     String zipPath,
     String entryPath,
-    String outputPath,
-  ) async {
+    String outputPath, {
+    int? expectedSizeBytes,
+  }) async {
     final location = _locateEntry(zipPath, entryPath);
+    final partPath = '$outputPath.part';
     final raf = File(zipPath).openSync();
     try {
       raf.setPositionSync(location.dataOffset);
-      final sink = File(outputPath).openWrite();
+      final sink = File(partPath).openWrite();
       try {
         _inflateRange(
           raf,
@@ -1471,12 +1563,40 @@ class BackupService {
           method: location.method,
           compressedSize: location.compressedSize,
           target: entryPath,
+          // Zip-bomb cap: callers pass the manifest size + 1 MB slack, so a
+          // corrupt DEFLATE stream aborts mid-file instead of OOM-killing.
+          maxOutputBytes: expectedSizeBytes == null
+              ? null
+              : expectedSizeBytes + (1024 * 1024),
         );
       } finally {
         await sink.close();
       }
     } finally {
       raf.closeSync();
+    }
+    final part = File(partPath);
+    if (expectedSizeBytes != null) {
+      final staged = await part.length();
+      if (staged != expectedSizeBytes) {
+        try {
+          await part.delete();
+        } catch (_) {}
+        throw FormatException(
+          'Corrupt backup — $entryPath staged $staged bytes, '
+          'manifest says $expectedSizeBytes.',
+        );
+      }
+    }
+    try {
+      return await part.rename(outputPath);
+    } catch (_) {
+      // rename() fails across volumes — fall back to copy + delete.
+      await part.copy(outputPath);
+      try {
+        await part.delete();
+      } catch (_) {}
+      return File(outputPath);
     }
   }
 
@@ -1603,7 +1723,89 @@ class BackupService {
     }
   }
 
-  Future<int> _freeDiskBytes() async => -1;
+  /// Legacy probe entry point (kept for tests): unknown → -1 = proceed.
+  // ignore: unused_element — public-via-tests seam for the free-space gate.
+  Future<int> _freeDiskBytes() async => _freeDiskBytesFor(null);
+
+  /// Free-space probe sized for a concrete restore: [requiredBytes] is the
+  /// manifest total (media + 10 % margin handled by the caller). Probing
+  /// stops as soon as that target is reached, so tiny restores probe KBs.
+  /// `-1` = unknown → the gate proceeds (a failed probe must never block a
+  /// restore on a weak phone).
+  Future<int> _freeDiskBytesFor(int? requiredBytes) async {
+    // No plugin needed: probe the real filesystem. Writing + deleting a
+    // 1 MB temp file proves the disk accepts large restores (a StatFs-style
+    // "bytes free" number alone cannot catch quota/permission failures, and
+    // a failed probe must NEVER block a restore — it returns -1 = "unknown,
+    // proceed", exactly like the old stub, so low-end devices keep working).
+    try {
+      final docs = await _docs();
+      final probe = File(
+        p.join(docs, '.mda_disk_probe_${DateTime.now().microsecondsSinceEpoch}'),
+      );
+      final chunk = Uint8List(1024 * 1024);
+      final sink = probe.openWrite();
+      try {
+        sink.add(chunk);
+      } finally {
+        await sink.close();
+      }
+      final ok = await probe.length() == chunk.length;
+      try {
+        await probe.delete();
+      } catch (_) {}
+      if (!ok) return -1;
+      final stat = await FileStat.stat(docs);
+      if (stat.type == FileSystemEntityType.notFound) return -1;
+      return _estimateFreeBytes(docs, needed: requiredBytes);
+    } catch (_) {
+      return -1;
+    }
+  }
+
+  /// Best-effort free-space estimate for the volume holding [dir].
+  /// Fills a temp file in 64 MB steps until the OS refuses or the [needed]
+  /// byte target is reached, then deletes it. Probing stops as soon as the
+  /// gate question ("is there room for THIS backup?") is answered, so a
+  /// small restore on a big phone probes KBs, not gigabytes — never a
+  /// battery/storage hog on weak phones. [needed] defaults to the old 4 GB
+  /// cap (callers that only need "plenty" keep the old behavior).
+  /// Any failure returns -1 (unknown → proceed, never block a restore).
+  Future<int> _estimateFreeBytes(String dir, {int? needed}) async {
+    final maxProbe = needed ?? 4 * 1024 * 1024 * 1024;
+    final probe = File(
+      p.join(dir, '.mda_space_probe_${DateTime.now().microsecondsSinceEpoch}'),
+    );
+    var written = 0;
+    RandomAccessFile? raf;
+    try {
+      raf = probe.openSync(mode: FileMode.write);
+      final chunk = Uint8List(1024 * 1024);
+      while (written < maxProbe) {
+        try {
+          for (var i = 0; i < 64 && written < maxProbe; i++) {
+            raf.writeFromSync(chunk);
+            written += chunk.length;
+          }
+        } catch (_) {
+          break; // disk full (or quota hit) — that IS the answer.
+        }
+      }
+    } catch (_) {
+      return -1;
+    } finally {
+      try {
+        raf?.closeSync();
+      } catch (_) {}
+      try {
+        if (await probe.exists()) await probe.delete();
+      } catch (_) {}
+    }
+    // Reached the target without failing → "enough for this restore" (the
+    // exact number does not matter to the gate, only the comparison).
+    if (written >= maxProbe) return maxProbe;
+    return written;
+  }
 
   static String _isoTimestamp() {    final now = DateTime.now();
     return '${now.year}${_two(now.month)}${_two(now.day)}-${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';

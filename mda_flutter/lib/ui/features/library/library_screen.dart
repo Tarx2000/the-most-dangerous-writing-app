@@ -131,15 +131,20 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       lockTimeoutMins: prefs.lockTimeoutMins,
     );
     if (!allowed || !mounted) return;
-    final overlay = Overlay.of(context);
-    late final OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (context) => PersonProfileModal(
-        personId: person.id,
-        onClose: () => entry.remove(),
-      ),
+    // A Navigator route (not a bare OverlayEntry): Back navigation works,
+    // the PIN layer stays above, and provider scope is always valid — the
+    // old OverlayEntry crashed with dependOnInheritedWidget… before
+    // initState() completed (see PORT_AUDIT: sheets must be routes).
+    await showGeneralDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          PersonProfileModal(
+            personId: person.id,
+            onClose: () => Navigator.of(context).pop(),
+          ),
     );
-    overlay.insert(entry);
   }
 
   Future<void> _unlockCurrentTab() async {

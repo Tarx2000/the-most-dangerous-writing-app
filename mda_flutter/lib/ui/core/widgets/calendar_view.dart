@@ -20,10 +20,12 @@ class CalendarView extends StatefulWidget {
   final List<String> streakHistory;
 
   @override
-  State<CalendarView> createState() => _CalendarViewState();
+  State<CalendarView> createState() => CalendarViewState();
 }
 
-class _CalendarViewState extends State<CalendarView> {
+/// State is public so the date math is unit-testable (see
+/// `test/ui/calendar_math_test.dart`). Widget behavior is unchanged.
+class CalendarViewState extends State<CalendarView> {
   static const _weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
   late final PageController _pager = PageController(initialPage: 1);
@@ -31,15 +33,38 @@ class _CalendarViewState extends State<CalendarView> {
 
   DateTime get _currentMonth {
     final now = DateTime.now();
-    return DateTime(now.year, now.month - _monthOffset, 1);
+    return CalendarViewState.monthForOffset(now, _monthOffset);
   }
 
   bool get _canGoForward => _monthOffset > 0;
 
   void _commitMonth(int delta) {
-    setState(() => _monthOffset += delta);
+    // RN parity (`commitMonth`): going back is unbounded, going forward
+    // stops at the current month (offset 0). Without the clamp the label
+    // could show a FUTURE month while the ring logic still compares days
+    // against `now` — the "eingekreiste 21" symptom from the bug report.
+    setState(() => _monthOffset = CalendarViewState.clampOffset(_monthOffset + delta));
     _pager.jumpToPage(1); // always recenter on the new "current" month
   }
+
+  /// Shared date math, unit-tested (see `calendar_math_test.dart`):
+  /// displayed month for an offset, Monday-first leading blanks, and the
+  /// future-month clamp. The report's core bug: `weekday % 7` maps Sunday→0
+  /// AND Monday→1 (off by one — Sunday-first layout on some months), and the
+  /// PageView could drift into future months no arrow could reach.
+  ///
+  /// Monday-first blanks for a month: Dart `weekday` is 1 = Monday …
+  /// 7 = Sunday, so `weekday − 1` IS the blank count (RN `(getDay()+6)%7`).
+  /// The old `weekday % 7` mapped Sunday→0 AND Monday→1 — off by one.
+  static int mondayFirstBlanks(int year, int month) =>
+      DateTime(year, month, 1).weekday - 1;
+
+  /// Displayed month for a back-offset (0 = current month).
+  static DateTime monthForOffset(DateTime now, int offset) =>
+      DateTime(now.year, now.month - offset, 1);
+
+  /// Forward navigation stops at the current month (RN `canGoForward`).
+  static int clampOffset(int offset) => offset.clamp(0, 1200);
 
   @override
   void dispose() {
@@ -49,10 +74,17 @@ class _CalendarViewState extends State<CalendarView> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
     final recordDays = widget.streakHistory.toSet();
     final month = _currentMonth;
     final monthLabel = _monthName(month.month);
     final yearLabel = '${month.year}';
+    // The "heute" ring belongs to exactly one cell: today's date shown in
+    // the CURRENT month only. Comparing a bare `day == now.day` would ring
+    // the 21st in every month the user scrolls to (the reported bug).
+    final todayKey =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final showTodayRing = recordDays.contains(todayKey) || _monthOffset == 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,6 +189,10 @@ class _CalendarViewState extends State<CalendarView> {
                         month: monthDate.month,
                         daySize: daySize,
                         recordDays: recordDays,
+                        // Only the live current-month page may ring today:
+                        // pager neighbours (prev/next) show plain numbers.
+                        showTodayRing:
+                            showTodayRing && monthDate == _currentMonth,
                       );
                     },
                     itemCount: 3,
@@ -207,6 +243,7 @@ class _MonthGrid extends StatelessWidget {
     required this.month,
     required this.daySize,
     required this.recordDays,
+    this.showTodayRing = true,
   });
 
   final int year;
@@ -214,14 +251,19 @@ class _MonthGrid extends StatelessWidget {
   final double daySize;
   final Set<String> recordDays;
 
+  /// False for the PageView's prev/next neighbour pages: they render the
+  /// same month shape but must never carry the today ring.
+  final bool showTodayRing;
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final daysInMonth = DateTime(year, month + 1, 0).day;
-    final firstDayJS = DateTime(year, month, 1).weekday % 7; // 0 = Monday
+    // Monday-first: Dart weekday 1 (Mon) … 7 (Sun) → blanks = weekday − 1.
+    final firstDayMon = CalendarViewState.mondayFirstBlanks(year, month);
     final cells = <Widget>[];
 
-    for (var i = 0; i < firstDayJS; i++) {
+    for (var i = 0; i < firstDayMon; i++) {
       cells.add(SizedBox(width: daySize, height: daySize));
     }
 
@@ -229,7 +271,10 @@ class _MonthGrid extends StatelessWidget {
       final dateStr =
           '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
       final hasRecord = recordDays.contains(dateStr);
-      final isToday = now.year == year && now.month == month && now.day == day;
+      final isToday = showTodayRing &&
+          now.year == year &&
+          now.month == month &&
+          now.day == day;
 
       cells.add(Container(
         key: ValueKey('cal-day-$dateStr'),

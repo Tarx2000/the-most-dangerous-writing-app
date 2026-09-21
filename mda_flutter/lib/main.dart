@@ -8,6 +8,9 @@
 ///      the UI never waits for data before first frame)
 library;
 
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,9 +18,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/haptics.dart';
 import 'core/logger.dart';
+import 'marionette_harness.dart' as marionette;
+
+/// `true` inside `flutter test` (test binding owns the process — Marionette
+/// must NOT initialize there; single-binding rule, see marionette_harness).
+bool get _isFlutterTest => Platform.environment.containsKey('FLUTTER_TEST');
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Debug-only Marionette binding FIRST (before any plugin can claim the
+  // binding). Release/test builds get the stock binding — zero ship impact.
+  // NOTE: the container is created lazily — only on the debug path — so
+  // release/test builds never pay for (or leak) an unused container.
+  late final ProviderContainer debugContainer = ProviderContainer();
+  if (kDebugMode && !_isFlutterTest) {
+    marionette.ensureMarionette(debugContainer);
+  } else {
+    WidgetsFlutterBinding.ensureInitialized();
+  }
 
   // Status bar hidden everywhere (RN parity); black nav bar; portrait only.
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -40,5 +57,17 @@ Future<void> main() async {
     return null;
   });
 
-  runApp(const ProviderScope(child: MdaApp()));
+  // The debug container is shared with the Marionette test extensions so
+  // they operate on the same state the UI renders (UncontrolledProviderScope
+  // = "use this exact container instead of creating one").
+  if (kDebugMode && !_isFlutterTest) {
+    runApp(
+      UncontrolledProviderScope(
+        container: debugContainer,
+        child: const MdaApp(),
+      ),
+    );
+  } else {
+    runApp(const ProviderScope(child: MdaApp()));
+  }
 }

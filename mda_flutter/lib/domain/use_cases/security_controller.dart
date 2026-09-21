@@ -377,6 +377,23 @@ class SecurityController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Debug-only test hook (Marionette `mdaTest.unlockAll`): flips every tier
+  /// flag exactly as a successful biometric auth would — no PIN material is
+  /// read or written, no prompt opens. Lets automated UI verification reach
+  /// locked content on emulators without enrolled biometrics. Never called
+  /// from production code (asserted in debug builds).
+  void debugUnlockAllForTest() {
+    assert(() {
+      isCirclesUnlocked = true;
+      isProfileUnlocked = true;
+      isNotesUnlocked = true;
+      isFeedUnlocked = true;
+      tierVersion.value++;
+      notifyListeners();
+      return true;
+    }(), 'debugUnlockAllForTest is debug-only');
+  }
+
   /// Resets the inactivity timer (activity events while fully unlocked).
   /// RN parity: the timer only runs for Stage 2 (`isNotesUnlocked`). Circles/
   /// profile-only unlocks persist until background/manual lock — `keepAlive`
