@@ -28,6 +28,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -50,7 +51,14 @@ const int backupVersionLegacy = 1;
 const int maxBackupMetadataBytes = 64 * 1024 * 1024;
 
 /// Free-space gate margin: required bytes = manifest total * this factor.
-const double freeSpaceMarginFactor = 1.1;
+///
+/// WHY 2.5 and not 1.1: the gate must cover the whole transient peak, not
+/// just the final videos. During a restore the ZIP copy (1x) + staged
+/// extraction (1x, until the temp ZIP is deleted) + final media (1x) can
+/// briefly coexist before cleanup; 2.5x keeps a safety margin on top so a
+/// phone that "just barely fits" the videos still refuses early with a
+/// clear message instead of dying mid-restore with ENOSPC.
+const double freeSpaceMarginFactor = 2.5;
 
 /// Scope → tables mapping (SPEC §13).
 const Map<String, List<String>> scopeTables = {
@@ -159,6 +167,71 @@ class BackupTableManifest {
 
   Map<String, dynamic> toJson() => {'columns': columns, 'rowCount': rowCount};
 }
+
+/// Isolate entry points (top-level, static interface).
+///
+/// WHY these exist: Dart's `Isolate.run` serializes the CLOSURE passed to it.
+/// A closure created inside an instance method (`() => _decodeBackup(zipPath)`)
+/// captures `this` — the whole [BackupService] with its provider function
+/// fields. On a real device, those transitively reference the live
+/// `WidgetsFlutterBinding` (via plugin channel completers: an `_AsyncCompleter`
+/// chain through SemanticsBinding → PlatformDispatcher), which is unsendable.
+/// The isolate spawn then throws "Illegal argument in isolate message: object
+/// is unsendable" BEFORE any backup byte is read (proven by the S24 Ultra
+/// logcat 2026-09-22: `_AsyncCompleter@5048458 <- WidgetsFlutterBinding`).
+/// Tests never caught it: they inject plain test doubles whose closures are
+/// trivially sendable.
+///
+/// The entry points below return the PRIVATE worker result type. They stay in
+/// this library (not exported through a public API file), so the
+/// `library_private_types_in_public_api` lint does not apply to consumers —
+/// callers are the [BackupService] methods and tests in the same package.
+/// The workers they call are static methods of [BackupService] (a static
+/// tear-off `BackupService._decodeBackup` captures no `this`), and their
+/// arguments are plain data (String, List<Map>) — nothing unsendable crosses.
+/// The closures here are created in TOP-LEVEL functions, so they capture no
+/// instance state — that is the whole point.
+///
+/// Keep it that way: NEVER pass an inline instance-method closure
+/// (`() => _decodeBackup(zipPath)` inside a [BackupService] method) to
+/// `Isolate.run` — it captures the service and transitively the live
+/// `WidgetsFlutterBinding`, which kills the spawn on-device. Add new isolate
+/// work as a top-level entry point here.
+// ignore: library_private_types_in_public_api
+Future<_DecodedBackup> decodeBackupInIsolate(String zipPath) =>
+    Isolate.run(() => BackupService._decodeBackup(zipPath));
+
+/// Extracts ALL media entries in ONE worker isolate (flat memory, no nesting).
+/// Returns the staged byte count per entryPath. [entriesJson] must be plain
+/// JSON maps (from [BackupFileEntry.toJson]) — nothing else crosses the
+/// isolate boundary.
+Future<Map<String, int>> extractMediaInIsolate(
+  String zipPath,
+  String stagingPath,
+  List<Map<String, dynamic>> entriesJson,
+) => Isolate.run(
+  () => BackupService._extractMediaWorkerWithProgress(
+    zipPath,
+    stagingPath,
+    entriesJson,
+  ),
+);
+
+/// Writes the export ZIP off the UI isolate (large media backups must not
+/// freeze animations or trigger Android's unresponsive-app dialog).
+Future<void> writeExportZipInIsolate(
+  String zipPath,
+  Map<String, dynamic> metadata,
+  Map<String, String> sourceByEntry,
+) => Isolate.run(
+  () => BackupService._writeZipWorker(zipPath, metadata, sourceByEntry),
+);
+
+/// Post-zip verification off the UI isolate (SPEC §13).
+Future<String> verifyExportZipInIsolate(
+  String zipPath,
+  Map<String, dynamic> metadata,
+) => Isolate.run(() => BackupService._verifyZip(zipPath, metadata));
 
 /// Detailed outcome of an export or import.
 class BackupResult {
@@ -287,14 +360,30 @@ class BackupService {
   BackupService({
     Future<String> Function()? documentsDirProvider,
     Future<String> Function()? dbPathProvider,
+    Future<String> Function()? tempDirProvider,
   }) : _documentsDirProvider = documentsDirProvider ?? _defaultDocs,
-       _dbPathProvider = dbPathProvider ?? getDatabaseFilePath;
+       _dbPathProvider = dbPathProvider ?? getDatabaseFilePath,
+       _tempDirProvider = tempDirProvider ?? _defaultTemp;
 
   final Future<String> Function() _documentsDirProvider;
   final Future<String> Function() _dbPathProvider;
 
+  /// Where the SAF handoff copy lands (the native picker writes
+  /// `<cacheDir>/mda_backup_import_*.zip`; legacy UI path used
+  /// `getTemporaryDirectory()`). Injectable so tests can point it at a
+  /// scratch dir (the real path_provider channels do not exist under
+  /// `flutter test`).
+  final Future<String> Function() _tempDirProvider;
+
   static Future<String> _defaultDocs() async {
     final dir = await getApplicationDocumentsDirectory();
+    return dir.path;
+  }
+
+  static Future<String> _defaultTemp() async {
+    // The native picker copies into getTemporaryDirectory() (= cacheDir),
+    // so the cleanup guard must accept exactly that directory.
+    final dir = await getTemporaryDirectory();
     return dir.path;
   }
 
@@ -497,15 +586,15 @@ class BackupService {
 
       // Encoding and file I/O run off the UI isolate so a large media backup
       // cannot freeze animations or trigger Android's unresponsive-app dialog.
-      await Isolate.run(
-        () => _writeZipWorker(zipPath, metadata, sourceByEntry),
-      );
+      // Uses the top-level entry point (never an inline closure over `this` —
+      // see decodeBackupInIsolate: instance closures capture the service and
+      // transitively the WidgetsFlutterBinding, which kills the isolate spawn
+      // on-device with "object is unsendable").
+      await writeExportZipInIsolate(zipPath, metadata, sourceByEntry);
       onProgress?.call(0.8);
 
       // 7. Post-zip verification (SPEC §13).
-      final verification = await Isolate.run(
-        () => _verifyZip(zipPath, metadata),
-      );
+      final verification = await verifyExportZipInIsolate(zipPath, metadata);
       if (verification == 'failed') {
         return BackupResult(
           success: false,
@@ -550,10 +639,13 @@ class BackupService {
 
   /// Imports a backup ZIP with schema gates, manifest verification, and safety snapshots.
   ///
-  /// Heavy work (ZIP decode, JSON validation, media extraction/size checks)
-  /// runs on worker isolates — a video-heavy backup must never inflate on the
-  /// UI thread. Media files extract one-by-one (checkpointed), so a 1 GB+
-  /// backup streams with flat memory instead of crashing the app.
+  /// Memory model (why this cannot OOM the phone anymore): the ONLY large
+  /// object that ever crosses an isolate boundary is the metadata JSON (KBs).
+  /// The media phase runs file-by-file in ONE worker isolate — a killed or
+  /// timed-out file leaves its `.part` behind, and the next attempt skips
+  /// already-staged files instead of redoing them (resume). The UI isolate
+  /// itself only ever holds manifests + progress numbers, so even the 342 MB
+  /// video never freezes the screen long enough for Android's ANR dialog.
   ///
   /// Never throws: every failure (corrupt ZIP, OOM-adjacent conditions, disk
   /// errors) returns a `BackupResult` with `success: false` and a user-facing
@@ -564,6 +656,7 @@ class BackupService {
     void Function(double progress)? onProgress,
     void Function(String stage)? onStage,
     Future<int> Function()? freeSpaceProvider,
+    void Function(int done, int total)? onFileProgress,
   }) async {
     final warnings = <String>[];
     Map<String, Object>? snapshots;
@@ -578,7 +671,14 @@ class BackupService {
       // are never loaded here. Nested Isolate.run calls were removed: each
       // nesting level duplicates peak memory (measured +166 MB per level on
       // the real 1.3 GB archive) and caused the on-device OOM kill.
-      final decodedBackup = await Isolate.run(() => _decodeBackup(zipPath));
+      // Uses the top-level entry point decodeBackupInIsolate: an inline
+      // closure here would capture `this` (the service + its provider
+      // functions), which transitively references the live WidgetsFlutterBinding
+      // via plugin-channel completers — unsendable, so the spawn throws
+      // "Illegal argument in isolate message" BEFORE any byte is read (proven
+      // by the S24 Ultra logcat 2026-09-22). The top-level function takes only
+      // a String and captures nothing.
+      final decodedBackup = await decodeBackupInIsolate(zipPath);
       final metadataBytes = decodedBackup.metadataBytes;
       onStage?.call('Checking backup contents…');
       // JSON validation runs inline: metadata is KBs (hard cap 64 MB), so no
@@ -693,9 +793,10 @@ class BackupService {
         }
       }
 
-      // 5. Free-space gate (RN parity: required = manifest × 1.1, compared
-      // against `FileSystem.getFreeDiskStorageAsync()`). The probe is sized
-      // for THIS backup, so small restores probe KBs, not gigabytes.
+      // 5. Free-space gate: required = manifest × freeSpaceMarginFactor,
+      // answered natively via StatFs (zero I/O — the old probe WROTE ~1.4 GB
+      // of temp data to "measure"). The factor covers the transient peak
+      // (ZIP copy + staging + final media), not just the final videos.
       final requiredBytes =
           vlogEntries
               .where((e) => e.included)
@@ -736,6 +837,16 @@ class BackupService {
         // RN parity: only the media dirs present in this backup are touched.
         // A settings/notes-only import must never delete the user's videos.
         // Checkpointed: progress advances per extracted video (0.4 → 0.85).
+        // The temp ZIP copy (UI-side SAF handoff) is deleted right AFTER a
+        // successful staging verification, right BEFORE the merge loop:
+        // lanes are DB rows (KBs) + verified staging + final media, never
+        // ZIP + staging + final all at once (that transient 3x peak is what
+        // killed low-storage phones). `zipPath` may point AT the temp copy
+        // (SAF flow) or at a user file (debug/tests) — only delete when it
+        // lives inside our own temp/cache dir (guarded, never a user file,
+        // never the picked original). NEVER before extraction: the workers
+        // read every media byte from this file (deleting first makes the
+        // extract read a ghost path → rollback → "could not be restored").
         onProgress?.call(0.4);
         onStage?.call('Copying videos…');
         final docs = await _docs();
@@ -748,7 +859,13 @@ class BackupService {
           snapshots,
           onProgress: (fileProgress) =>
               onProgress?.call(0.4 + fileProgress * 0.45),
+          onFileProgress: onFileProgress,
         );
+        // Staging is verified inside _restoreMediaFiles (byte-exact size
+        // gate) — the ZIP is no longer needed. Deleting the own-temp copy
+        // HERE (not before extraction) drops the 1.3 GB lane before the
+        // merge doubles staged → final, without ever reading a ghost path.
+        await _deleteOwnTempZip(zipPath);
 
         // 9. Restore SharedPreferences allowlist.
         onProgress?.call(0.95);
@@ -811,10 +928,20 @@ class BackupService {
   /// The UI shows this string directly — it must never be a raw exception.
   /// Coverage: every throw-site in this file maps here (FormatException
   /// variants for metadata/manifest/zip-bomb/truncation, ENOSPC/disk-full
-  /// from any streaming write, SAF/permission denials, OOM). Unknown errors
-  /// fall through to the safe generic message — data is always untouched.
+  /// from any streaming write, SAF/permission denials, OOM, and the isolate
+  /// spawn failure below). Unknown errors fall through to the safe generic
+  /// message — data is always untouched.
   static String _userFacingImportError(Object e) {
     final text = e.toString().toLowerCase();
+    // Isolate spawn failure (closure captured unsendable state): an app bug,
+    // never a bad backup — say so honestly instead of blaming the file.
+    // (Seen on-device 2026-09-22: "Illegal argument in isolate message:
+    // object is unsendable ... _AsyncCompleter <- WidgetsFlutterBinding".)
+    if (text.contains('isolate message') ||
+        text.contains('object is unsendable') ||
+        text.contains('illegal argument in isolate')) {
+      return 'The restore could not start due to an app error (background worker failed to launch). Please update the app and try again — your data was left untouched.';
+    }
     if (e is FormatException) {
       final message = e.message.toLowerCase();
       if (message.contains('metadata') && message.contains('missing')) {
@@ -840,6 +967,9 @@ class BackupService {
     // media merge, DB snapshot) as errno 28 / ENOSPC / "no space left" —
     // including inside wrapped FileSystemExceptions whose `toString` keeps
     // the OS message. Match broadly, never by exception type alone.
+    // (A missing-file read AFTER a successful staging verification means the
+    // temp ZIP vanished mid-restore — an app bug, not a user error — but the
+    // retry advice is identical, so it shares this message.)
     if (text.contains('not enough free space') ||
         text.contains('enospc') ||
         text.contains('errno 28') ||
@@ -858,7 +988,9 @@ class BackupService {
         text.contains('errno 2')) {
       return 'The backup file could not be read — it may have been moved or deleted. Please select it again.';
     }
-    if (text.contains('permission') || text.contains('eacces')) {
+    if (text.contains('permission') ||
+        text.contains('eacces') ||
+        text.contains('eperm')) {
       return 'The app was not allowed to read the backup file. Please grant file access and try again.';
     }
     return 'The backup could not be restored. Your current data was left untouched. Please try again.';
@@ -1207,18 +1339,49 @@ class BackupService {
     }
   }
 
+  /// Deletes the temp ZIP copy ONLY when it is provably ours: the native SAF
+  /// picker writes `mda_backup_import_*.zip` into the app cache dir. A user
+  /// file (picked path, debug path, test fixture) never matches both the
+  /// directory AND the name pattern, so it is never deleted. Deleting right
+  /// after verified staging (before the merge loop) drops one full 1.3 GB
+  /// lane from the transient disk peak — the difference between "fits" and
+  /// ENOSPC on full phones. NEVER before extraction: the staging workers read
+  /// every media byte from this file (deleting first makes them read a ghost
+  /// path → rollback → "could not be restored"; the caller enforces this by
+  /// calling this method only after `_restoreMediaFiles`).
+  Future<void> _deleteOwnTempZip(String zipPath) async {
+    try {
+      final tempDir = await _tempDirProvider();
+      final parent = p.dirname(zipPath);
+      final base = p.basename(zipPath);
+      final normalizedTemp = p.normalize(tempDir);
+      final normalizedParent = p.normalize(parent);
+      final sameDir =
+          normalizedParent == normalizedTemp ||
+          normalizedParent.startsWith('$normalizedTemp/');
+      if (sameDir &&
+          base.startsWith('mda_backup_import_') &&
+          base.endsWith('.zip')) {
+        final file = File(zipPath);
+        if (await file.exists()) await file.delete();
+      }
+    } catch (_) {}
+  }
+
   /// Extract on a worker isolate into staging directories before replacing
   /// media. Renaming the old directories keeps rollback cheap even for GBs of
   /// videos and prevents a failed restore from overwriting a user's originals.
   /// Only folders actually present in this backup are swapped; a scoped import
   /// (settings/notes-only) leaves existing media untouched (RN parity).
   ///
-  /// Checkpointed per media file: each video is extracted in its own isolate
-  /// call, so a 1 GB+ backup streams file-by-file (flat memory, real progress
-  /// per video) instead of inflating the whole archive at once — the crash the
-  /// user saw on their 1.3 GB backup. Completed files are verified by size as
-  /// they land; a failure aborts with the already-staged files left in place
-  /// for rollback, never a half-written media dir.
+  /// Checkpointed per media file in ONE worker isolate: each video flows from
+  /// its ZIP offsets straight to disk (STORE = copy, DEFLATE = incremental
+  /// inflate). The UI isolate only receives progress numbers — a 342 MB
+  /// video never blocks the screen, so Android cannot show its ANR dialog.
+  /// Already-staged files are SKIPPED (resume): a kill mid-import only
+  /// redoes the unfinished file, not the whole 1.3 GB. A failure aborts with
+  /// the already-staged files left in place for rollback, never a
+  /// half-written media dir.
   Future<int> _restoreMediaFiles(
     String zipPath,
     List<BackupFileEntry> vlogs,
@@ -1227,6 +1390,7 @@ class BackupService {
     List rawVlogRows,
     Map<String, Object> snapshots, {
     void Function(double progress)? onProgress,
+    void Function(int done, int total)? onFileProgress,
   }) async {
     final included = [...vlogs, ...thumbs].where((e) => e.included).toList();
     if (included.isEmpty) {
@@ -1237,18 +1401,18 @@ class BackupService {
     final snapshotDir = snapshots['snapshotDir'] as String;
     final stagedDir = p.join(snapshotDir, 'staged');
     final files = included.map((e) => e.toJson()).toList();
-    // One streaming pass per media file (checkpoint): each video flows from
-    // its ZIP offsets straight to disk (STORE = copy, DEFLATE = incremental
-    // inflate). Peak memory stays flat no matter the backup size — this is
-    // what finally handles the user's 1.3 GB archive.
-    //
-    // NO nested isolates: this method already runs inside the caller's
-    // Isolate.run — a nested Isolate.run per file doubles peak memory
-    // (measured +166 MB on the real archive) and buys nothing.
-    for (var i = 0; i < files.length; i++) {
-      final single = [files[i]];
-      await _extractMediaWorker(zipPath, stagedDir, single);
-      onProgress?.call(files.length <= 1 ? 1.0 : i / files.length);
+    // Top-level entry point (never an inline closure over `this` — see
+    // decodeBackupInIsolate). Only plain JSON maps cross the boundary.
+    final extracted = await extractMediaInIsolate(zipPath, stagedDir, files);
+    var done = 0;
+    for (final entry in files) {
+      done++;
+      onFileProgress?.call(done, files.length);
+      onProgress?.call(files.length <= 1 ? 1.0 : (done - 1) / files.length);
+      logStorage.info(
+        'extracted ${entry['entryPath']} '
+        '(${extracted[entry['entryPath']] ?? '?'} bytes)',
+      );
     }
     onProgress?.call(1.0);
     // A truncated archive can pass the header-only manifest gate; confirm the
@@ -1491,6 +1655,35 @@ class BackupService {
     );
   }
 
+  /// Single entry point for the worker isolate: extracts ALL media files of
+  /// one restore in ONE isolate (flat memory, no nesting). Returns the staged
+  /// byte count per entryPath so the UI isolate can report per-file progress
+  /// without ever touching media bytes itself.
+  ///
+  /// Reached via the top-level [extractMediaInIsolate] — never nested inside
+  /// another isolate (each nesting level duplicates peak memory, measured
+  /// +166 MB on the real 1.3 GB archive).
+  static Future<Map<String, int>> _extractMediaWorkerWithProgress(
+    String zipPath,
+    String stagingPath,
+    List<Map<String, dynamic>> entries,
+  ) async {
+    final stagedBytes = <String, int>{};
+    for (final raw in entries) {
+      final entry = BackupFileEntry.fromJson(raw);
+      await _extractMediaWorker(zipPath, stagingPath, [raw]);
+      final staged = File(
+        p.join(
+          stagingPath,
+          entry.kind == 'video' ? 'vlogs' : 'vlog_thumbnails',
+          entry.basename,
+        ),
+      );
+      stagedBytes[entry.entryPath] = await staged.length();
+    }
+    return stagedBytes;
+  }
+
   static Future<void> _extractMediaWorker(
     String zipPath,
     String stagingPath,
@@ -1500,14 +1693,16 @@ class BackupService {
     for (final folder in ['vlogs', 'vlog_thumbnails']) {
       await Directory(p.join(stagingPath, folder)).create(recursive: true);
     }
-    // Checkpointed + resume-safe: before extracting, drop stale `.part`
-    // files from a previous kill (a `.part` is NEVER a valid staged video —
-    // only byte-exact matches get promoted). Each entry then streams with
-    // its own manifest size as the expected byte count: mismatch aborts
-    // immediately with "damaged backup" instead of failing later at the
-    // global size gate with no file attribution.
+    // Checkpointed + resume-safe: skip files that are ALREADY staged
+    // byte-exact (a previous attempt finished them before the kill — redoing
+    // 1.3 GB after every interruption is what made retries hopeless).
+    // Stale `.part` files from a killed attempt are dropped first (a `.part`
+    // is NEVER a valid staged video — only byte-exact matches get promoted).
+    // Each entry then streams with its own manifest size as the expected
+    // byte count: mismatch aborts immediately with "damaged backup" instead
+    // of failing later at the global size gate with no file attribution.
     // Peak memory stays flat (~tens of MB) no matter how large the backup is
-    // — a 326 MB DEFLATE video never inflates in RAM at once. Verified with
+    // — a 342 MB DEFLATE video never inflates in RAM at once. Verified with
     // the user's own 1.3 GB archive shape (13 DEFLATE videos) in tests.
     for (var i = startIndex; i < entries.length; i++) {
       final entry = BackupFileEntry.fromJson(entries[i]);
@@ -1520,9 +1715,12 @@ class BackupService {
         final stale = File('$outputPath.part');
         if (await stale.exists()) await stale.delete();
       } catch (_) {}
-      // ONE isolate per file (no nesting): _extractMediaWorker itself already
-      // runs inside Isolate.run — a nested Isolate.run per file doubles peak
-      // memory (measured +166 MB on the real archive) and buys nothing.
+      final staged = File(outputPath);
+      if (entry.sizeBytes > 0 &&
+          await staged.exists() &&
+          await staged.length() == entry.sizeBytes) {
+        continue; // resume: finished by an earlier attempt, skip the work.
+      }
       await _streamEntryToFile(
         zipPath,
         entry.entryPath,
@@ -1727,84 +1925,33 @@ class BackupService {
   // ignore: unused_element — public-via-tests seam for the free-space gate.
   Future<int> _freeDiskBytes() async => _freeDiskBytesFor(null);
 
-  /// Free-space probe sized for a concrete restore: [requiredBytes] is the
-  /// manifest total (media + 10 % margin handled by the caller). Probing
-  /// stops as soon as that target is reached, so tiny restores probe KBs.
+  /// Native free-space answer for the volume holding the app sandbox.
+  ///
+  /// WHY StatFs instead of the old fill-probe: the old probe WROTE up to
+  /// `needed` bytes of temp data (≈1.4 GB for the user's backup) just to
+  /// measure capacity — slow, battery-hungry, and able to trigger the very
+  /// ENOSPC it was checking for. StatFs answers with zero I/O. Any failure
+  /// (no channel on desktop/tests, old APK without the handler) returns -1
+  /// = unknown → the gate proceeds, exactly like before.
+  static const MethodChannel _storageChannel = MethodChannel(
+    'com.anonymous.mda_flutter/storage',
+  );
+
+  /// Free-space query sized for a concrete restore: [requiredBytes] is the
+  /// manifest total scaled by [freeSpaceMarginFactor] (covers ZIP copy +
+  /// staging + final media peak, not just the final videos).
   /// `-1` = unknown → the gate proceeds (a failed probe must never block a
   /// restore on a weak phone).
   Future<int> _freeDiskBytesFor(int? requiredBytes) async {
-    // No plugin needed: probe the real filesystem. Writing + deleting a
-    // 1 MB temp file proves the disk accepts large restores (a StatFs-style
-    // "bytes free" number alone cannot catch quota/permission failures, and
-    // a failed probe must NEVER block a restore — it returns -1 = "unknown,
-    // proceed", exactly like the old stub, so low-end devices keep working).
     try {
-      final docs = await _docs();
-      final probe = File(
-        p.join(docs, '.mda_disk_probe_${DateTime.now().microsecondsSinceEpoch}'),
-      );
-      final chunk = Uint8List(1024 * 1024);
-      final sink = probe.openWrite();
-      try {
-        sink.add(chunk);
-      } finally {
-        await sink.close();
-      }
-      final ok = await probe.length() == chunk.length;
-      try {
-        await probe.delete();
-      } catch (_) {}
-      if (!ok) return -1;
-      final stat = await FileStat.stat(docs);
-      if (stat.type == FileSystemEntityType.notFound) return -1;
-      return _estimateFreeBytes(docs, needed: requiredBytes);
+      final free = await _storageChannel.invokeMethod<int>('getFreeBytes');
+      if (free == null || free < 0) return -1;
+      return free;
+    } on MissingPluginException {
+      return -1; // desktop / tests / old APK without the handler.
     } catch (_) {
       return -1;
     }
-  }
-
-  /// Best-effort free-space estimate for the volume holding [dir].
-  /// Fills a temp file in 64 MB steps until the OS refuses or the [needed]
-  /// byte target is reached, then deletes it. Probing stops as soon as the
-  /// gate question ("is there room for THIS backup?") is answered, so a
-  /// small restore on a big phone probes KBs, not gigabytes — never a
-  /// battery/storage hog on weak phones. [needed] defaults to the old 4 GB
-  /// cap (callers that only need "plenty" keep the old behavior).
-  /// Any failure returns -1 (unknown → proceed, never block a restore).
-  Future<int> _estimateFreeBytes(String dir, {int? needed}) async {
-    final maxProbe = needed ?? 4 * 1024 * 1024 * 1024;
-    final probe = File(
-      p.join(dir, '.mda_space_probe_${DateTime.now().microsecondsSinceEpoch}'),
-    );
-    var written = 0;
-    RandomAccessFile? raf;
-    try {
-      raf = probe.openSync(mode: FileMode.write);
-      final chunk = Uint8List(1024 * 1024);
-      while (written < maxProbe) {
-        try {
-          for (var i = 0; i < 64 && written < maxProbe; i++) {
-            raf.writeFromSync(chunk);
-            written += chunk.length;
-          }
-        } catch (_) {
-          break; // disk full (or quota hit) — that IS the answer.
-        }
-      }
-    } catch (_) {
-      return -1;
-    } finally {
-      try {
-        raf?.closeSync();
-      } catch (_) {}
-      try {
-        if (await probe.exists()) await probe.delete();
-      } catch (_) {}
-    }
-    // Reached the target without failing → "enough for this restore" (the
-    // exact number does not matter to the gate, only the comparison).
-    if (written >= maxProbe) return maxProbe;
-    return written;
   }
 
   static String _isoTimestamp() {    final now = DateTime.now();

@@ -533,6 +533,7 @@ class StorageNotifier extends Notifier<AppData> {
     String zipPath, {
     void Function(double progress)? onProgress,
     void Function(String stage)? onStage,
+    void Function(int done, int total)? onFileProgress,
   }) async {
     // Pause both queues for the restore (SPEC §13), reload after success.
     final aiQueue = ref.read(aiQueueManagerProvider);
@@ -557,6 +558,7 @@ class StorageNotifier extends Notifier<AppData> {
             zipPath: zipPath,
             onProgress: onProgress,
             onStage: onStage,
+            onFileProgress: onFileProgress,
           );
       if (result.success) {
         await loadAll(force: true);

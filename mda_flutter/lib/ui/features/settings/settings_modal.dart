@@ -6,12 +6,10 @@ library;
 
 import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/haptics.dart';
@@ -19,6 +17,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/providers.dart';
 import '../../../data/app_data.dart';
+import '../../../data/services/backup_picker.dart';
 import 'backup_scope_picker.dart';
 import '../../../data/security_providers.dart';
 import '../../core/widgets/action_sheet.dart';
@@ -47,6 +46,13 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
   /// 0..1 restore progress (drives the progress bar during video copying).
   double _backupProgress = 0;
+
+  /// "Video 7 of 26" counter — per-file progress the isolate reports back.
+  /// Stale progress (regular 0..1 bar) freezes for minutes on a 342 MB
+  /// video; a moving file counter proves the app is alive and prevents the
+  /// user from force-killing a healthy restore.
+  int _backupFilesDone = 0;
+  int _backupFilesTotal = 0;
 
   Future<void> _openExport() async {
     if (_backupBusy) return;
@@ -110,17 +116,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
   Future<void> _pickAndImport() async {
     vibrate(HapticPatterns.backupOp);
-    const typeGroup = XTypeGroup(
-      label: 'ZIP',
-      extensions: ['zip'],
-      mimeTypes: [
-        'application/zip',
-        'application/x-zip-compressed',
-        'application/octet-stream',
-        'application/x-compressed',
-        'multipart/x-zip',
-      ],
-    );
     // RN parity: auth gate (biometrics or PIN) BEFORE the file picker opens.
     // The picker is a native activity that backgrounds the app; authenticating
     // after it returns races the auto-lock grace timer and can lock the app
@@ -138,20 +133,41 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       if (!ok || !mounted) return;
     }
 
-    final file = await openFile(acceptedTypeGroups: [typeGroup]);
-    if (file == null) return;
-
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a valid .zip backup file.'),
-          backgroundColor: AppColors.primaryAction,
-        ),
+    // Native SAF picker (BackupPicker): streams the document into the app
+    // cache in 4 MB chunks and returns the cache path. file_selector is NOT
+    // used here anymore — its Android implementation loads the whole file
+    // into a byte[] (1.3 GB → deterministic OOM in onActivityResult, proven
+    // by the S24 Ultra logcat). Cancel returns null (do nothing); native
+    // errors throw BackupPickerException with a user-facing message.
+    String? pickedPath;
+    try {
+      pickedPath = await const BackupPicker().pickBackupZip(
+        onCopyProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _backupBusy = true;
+              _backupStatus = 'Copying backup file…';
+              _backupProgress = (progress * 0.1).clamp(0.0, 0.1);
+            });
+          }
+        },
       );
+    } on BackupPickerException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _backupBusy = false;
+        _backupStatus = null;
+        _backupProgress = 0;
+      });
+      _showBackupError(switch (e.code) {
+        'NOT_A_ZIP' => 'Please select a valid .zip backup file.',
+        'PERMISSION_DENIED' =>
+          'The app was not allowed to read the backup file. Please grant file access and try again.',
+        _ => 'Could not open the backup file. Please try again.',
+      });
       return;
     }
-
+    if (pickedPath == null) return;
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -174,43 +190,55 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       _backupBusy = true;
       _backupStatus = 'Reading backup archive…';
       _backupProgress = 0;
+      _backupFilesDone = 0;
+      _backupFilesTotal = 0;
     });
 
     File? tempZipFile;
+    // WHY wakelock: a 1.3 GB restore takes minutes — if the screen sleeps
+    // mid-import, Android may stall I/O and the user returns to a seemingly
+    // dead app. Released in finally, so even a failure cannot leak it.
+    var wakelockHeld = false;
     try {
-      String path = file.path;
-      // On Android, openFile returns a content:// URI from the Storage Access Framework (SAF).
-      // Standard POSIX file streams cannot open content:// paths directly.
-      // Copy the picked file bytes to a local temporary cache file first (matching RN copyToCacheDirectory).
-      if (path.startsWith('content://') || !path.startsWith('/')) {
-        final tempDir = await getTemporaryDirectory();
-        final tempPath = p.join(
-          tempDir.path,
-          'mda_backup_import_${DateTime.now().millisecondsSinceEpoch}.zip',
-        );
-        tempZipFile = File(tempPath);
-        // Stream large video backups instead of allocating the whole ZIP in RAM.
-        final sink = tempZipFile.openWrite();
-        try {
-          await sink.addStream(file.openRead());
-        } finally {
-          await sink.close();
-        }
-        path = tempPath;
-      }
+      await WakelockPlus.enable();
+      wakelockHeld = true;
+      // The native picker already copied the SAF document into the app cache
+      // (chunked, OOM-safe) and handed us that cache path. No Dart-side copy
+      // is needed anymore — the old file_selector + manual copy path (which
+      // OOM-killed the app in onActivityResult) is gone. The service deletes
+      // this temp ZIP right after verified media staging; the finally-block
+      // below is only the safety net for failures BEFORE that point (gates
+      // rejected, user cancelled, spawn failure) so no 1.3 GB orphan stays
+      // in the cache.
+      final path = pickedPath;
+      tempZipFile = File(path);
 
       // The service never throws — failures arrive as BackupResult with a
       // user-facing message. The outer catch is only a last-resort net so a
       // 1 GB+ restore can never kill the app without explanation again.
+      // NOTE: the temp ZIP is deleted by the service right after verified
+      // media staging (not here) so ZIP + staging + final media never
+      // coexist — that transient 3x disk peak is what killed low-storage
+      // phones. Deleting here (before extraction) would make the workers
+      // read a ghost path.
       final result = await ref
           .read(appDataProvider.notifier)
           .importBackupZip(
             path,
             onProgress: (progress) {
-              if (mounted) setState(() => _backupProgress = progress);
+              if (mounted) setState(() => _backupProgress = 0.1 + progress * 0.9);
             },
             onStage: (stage) {
               if (mounted) setState(() => _backupStatus = stage);
+            },
+            onFileProgress: (done, total) {
+              if (mounted) {
+                setState(() {
+                  _backupFilesDone = done;
+                  _backupFilesTotal = total;
+                  _backupStatus = 'Copying video $done of $total…';
+                });
+              }
             },
           );
 
@@ -219,6 +247,8 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         _backupBusy = false;
         _backupStatus = null;
         _backupProgress = 0;
+        _backupFilesDone = 0;
+        _backupFilesTotal = 0;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -239,6 +269,8 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         _backupBusy = false;
         _backupStatus = null;
         _backupProgress = 0;
+        _backupFilesDone = 0;
+        _backupFilesTotal = 0;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -250,6 +282,15 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         ),
       );
     } finally {
+      if (wakelockHeld) {
+        try {
+          await WakelockPlus.disable();
+        } catch (_) {}
+      }
+      // The service deletes the temp ZIP after verified media staging; this
+      // is only the safety net for failures BEFORE that point (gates
+      // rejected, user cancelled, spawn failure) so no 1.3 GB orphan stays
+      // in the cache.
       if (tempZipFile != null) {
         try {
           if (await tempZipFile.exists()) await tempZipFile.delete();
@@ -451,7 +492,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                             ),
                           ),
                           Text(
-                            '${(_backupProgress * 100).round()}%',
+                            _backupFilesTotal > 0
+                                ? 'Video $_backupFilesDone of $_backupFilesTotal · ${(_backupProgress * 100).round()}%'
+                                : '${(_backupProgress * 100).round()}%',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,

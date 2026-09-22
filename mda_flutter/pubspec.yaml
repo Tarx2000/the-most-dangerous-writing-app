@@ -3,7 +3,7 @@ description: "The Most Dangerous Writing App — Flutter rewrite. A journaling a
 publish_to: 'none'
 # versionCode stays above the old per-ABI split build (arm64 was 2001):
 # a lower code would make Android reject the install as a downgrade.
-version: 1.5.12+2005
+version: 1.5.14+2007
 
 environment:
   sdk: ^3.12.2

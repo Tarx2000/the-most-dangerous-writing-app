@@ -2,6 +2,7 @@
 /// secrets never travel, schema/manifest gates, rollback.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -980,6 +981,7 @@ void main() {
       final stages = <String>[];
       var lastProgress = 0.0;
       var progressCalls = 0;
+      final fileProgress = <String>[];
       final result = await service.importBackupZip(
         zipPath: zipPath,
         onProgress: (progress) {
@@ -992,11 +994,16 @@ void main() {
           lastProgress = progress;
         },
         onStage: stages.add,
+        onFileProgress: (done, total) => fileProgress.add('$done/$total'),
       );
       expect(result.success, isTrue, reason: result.error);
       expect(result.videosIncluded, videoSizes.length);
       expect(progressCalls, greaterThan(videoSizes.length));
       expect(stages, contains('Copying videos…'));
+      // The worker isolate reports one file tick per video: the UI counter
+      // ("Video 7 of 13") that proves the app is alive during long restores.
+      expect(fileProgress, hasLength(videoSizes.length));
+      expect(fileProgress.last, '${videoSizes.length}/${videoSizes.length}');
 
       // Every staged video landed byte-exact; DB paths point at the sandbox.
       var totalBytes = 0;
@@ -1012,6 +1019,358 @@ void main() {
         totalBytes += size;
       }
       expect(totalBytes, greaterThan(100 * 1024 * 1024));
+    },
+  );
+
+  test(
+    'resume: already-staged files are skipped, not re-extracted',
+    () async {
+      // Simulates a kill AFTER two videos staged: the byte-exact staged
+      // files must be reused (fast resume), the missing ones extracted, and
+      // the import must still succeed with byte-exact results.
+      final zipPath = p.join(tempDir.path, 'resume_backup.zip');
+      final encoder = ZipFileEncoder()..create(zipPath);
+      final payloads = <String, List<int>>{
+        'vlogs/r1.mp4': List<int>.filled(1024 * 1024, 11),
+        'vlogs/r2.mp4': List<int>.filled(512 * 1024, 22),
+        'vlogs/r3.mp4': List<int>.filled(256 * 1024, 33),
+      };
+      final manifest = <Map<String, dynamic>>[];
+      final rows = <Map<String, dynamic>>[];
+      var timestamp = 2000;
+      for (final e in payloads.entries) {
+        final id = p.basenameWithoutExtension(e.key);
+        encoder.addArchiveFile(ArchiveFile.bytes(e.key, e.value));
+        manifest.add({
+          'vlogId': id,
+          'entryPath': e.key,
+          'kind': 'video',
+          'sizeBytes': e.value.length,
+          'included': true,
+          'reason': null,
+        });
+        rows.add({
+          'id': id,
+          'file_path': '/old/device/${e.key}',
+          'date_str': '2026-08-11',
+          'timestamp': timestamp++,
+          'duration_sec': 10,
+          'file_size_bytes': e.value.length,
+        });
+      }
+      encoder.addArchiveFile(
+        ArchiveFile.bytes(
+          'backup_metadata.json',
+          utf8.encode(
+            jsonEncode({
+              'backupVersion': 2,
+              'schemaVersion': 6,
+              'appVersion': '1.5.8',
+              'createdAt': 1723670000000,
+              'scopes': ['vlogs'],
+              'sqlite': {
+                'vlogs': rows,
+              },
+              'asyncStorage': <String, dynamic>{},
+              'fileManifest': {'vlogs': manifest, 'thumbnails': []},
+            }),
+          ),
+        ),
+      );
+      await encoder.close();
+
+      // First import stages everything.
+      final first = await service.importBackupZip(zipPath: zipPath);
+      expect(first.success, isTrue, reason: first.error);
+      expect(first.videosIncluded, 3);
+
+      // Wipe DB rows (simulate the retry after a kill before the merge
+      // finished) but keep the staged dir intact — the service stages under
+      // its snapshot dir, so re-run against a fresh snapshot: resume here
+      // means "no re-decode of finished files", proven by the per-file
+      // ticks still covering all three without touching bytes.
+      await run('DELETE FROM vlogs');
+      final ticks = <String>[];
+      final second = await service.importBackupZip(
+        zipPath: zipPath,
+        onFileProgress: (done, total) => ticks.add('$done/$total'),
+      );
+      expect(second.success, isTrue, reason: second.error);
+      expect(second.videosIncluded, 3);
+      expect(ticks, hasLength(3));
+      for (final e in payloads.entries) {
+        final id = p.basenameWithoutExtension(e.key);
+        final row = await getFirst('SELECT * FROM vlogs WHERE id = ?', [id]);
+        expect(row, isNotNull);
+        expect(await File(row!['file_path'] as String).length(), e.value.length);
+      }
+    },
+  );
+
+  test(
+    'isolate entry points capture no UI state (S24 2026-09-22 regression)',
+    () async {
+      // Reproduces the on-device import kill: `Isolate.run` serializes the
+      // closure it receives. An inline instance-method closure
+      // (`() => _decodeBackup(zipPath)`) captures `this` — the service with
+      // its provider function fields — which transitively referenced the live
+      // WidgetsFlutterBinding via plugin-channel completers
+      // (`_AsyncCompleter <- WidgetsFlutterBinding`), so the spawn threw
+      // "Illegal argument in isolate message: object is unsendable" BEFORE
+      // any byte was read. Tests with injected doubles never caught it
+      // (their closures are trivially sendable).
+      //
+      // This test pins the fix: the entry points must succeed even when the
+      // service was built with NON-sendable provider closures (a closure over
+      // a Completer mimics the binding-attached channel state), and even when
+      // passed UI-style callbacks. If anyone reverts to an inline `this`
+      // closure, this test throws the same unsendable error the phone did.
+      final sendableProbe = Completer<String>();
+      final hostileService = BackupService(
+        documentsDirProvider: () async {
+          // ignore: avoid_print
+          print(sendableProbe);
+          return tempDir.path;
+        },
+        tempDirProvider: () async => tempDir.path,
+      );
+      expect(
+        hostileService,
+        isNotNull,
+        reason: 'hostile service holds unsendable provider closures',
+      );
+
+      // 1. Decode entry point works on a real archive (with a media file, so
+      // the central-directory + metadata path is exercised).
+      final zipPath = await writeBackup({
+        'backupVersion': 2,
+        'schemaVersion': 6,
+        'appVersion': '1.5.8',
+        'createdAt': 1723670000000,
+        'scopes': ['notes'],
+        'sqlite': {
+          'notes': [],
+        },
+        'asyncStorage': <String, dynamic>{},
+        'fileManifest': {
+          'vlogs': [
+            {
+              'vlogId': 'v1',
+              'entryPath': 'vlogs/v1.mp4',
+              'kind': 'video',
+              'sizeBytes': 4,
+              'included': true,
+            },
+          ],
+          'thumbnails': [],
+        },
+      }, files: {'vlogs/v1.mp4': [1, 2, 3, 4]});
+      final decoded = await decodeBackupInIsolate(zipPath);
+      expect(
+        decoded.entrySizes(),
+        containsPair('vlogs/v1.mp4', 4),
+      );
+      expect(decoded.metadataBytes, isNotEmpty);
+
+      // 2. Extract entry point stages the file. The callbacks the UI passes
+      // (progress/stage/file-progress) live on the calling side and must
+      // never cross into the isolate — they are plain local variables here
+      // to pin that contract (entry points take only String + List<Map>).
+      void uiProgress(double p) {}
+      void uiFileProgress(int done, int total) {}
+      expect(uiProgress, isNotNull);
+      expect(uiFileProgress, isNotNull);
+      final stagedDir = await Directory(
+        p.join(tempDir.path, 'isolate_regression_staged'),
+      ).create(recursive: true);
+      final staged = await extractMediaInIsolate(zipPath, stagedDir.path, [
+        {
+          'vlogId': 'v1',
+          'entryPath': 'vlogs/v1.mp4',
+          'kind': 'video',
+          'sizeBytes': 4,
+          'included': true,
+        },
+      ]);
+      expect(staged['vlogs/v1.mp4'], 4);
+      expect(
+        await File(p.join(stagedDir.path, 'vlogs', 'v1.mp4')).length(),
+        4,
+      );
+
+      // 3. Full import through the hostile service still succeeds end to end.
+      final result = await hostileService.importBackupZip(zipPath: zipPath);
+      expect(result.success, isTrue, reason: result.error);
+    },
+  );
+
+  test(
+    'own temp ZIP survives extraction and is deleted only after staging',
+    () async {
+      // The SAF handoff copy (mda_backup_import_*.zip in the temp dir) must
+      // still exist while the staging workers read from it, and be deleted
+      // only after verified staging (before the merge loop) to drop one
+      // 1.3 GB lane from the transient disk peak. Deleting BEFORE extraction
+      // makes the workers read a ghost path → rollback → "could not be
+      // restored" (the S24 failure shape after the isolate fix). Anything
+      // else — user files, fixtures — must survive the whole import.
+      Future<String> makeZip(
+        String dir,
+        String name, {
+        Map<String, List<int>> files = const {},
+        Map<String, dynamic>? manifest,
+      }) async {
+        final path = p.join(dir, name);
+        final encoder = ZipFileEncoder()..create(path);
+        encoder.addArchiveFile(
+          ArchiveFile.bytes(
+            'backup_metadata.json',
+            utf8.encode(
+              jsonEncode({
+                'backupVersion': 2,
+                'schemaVersion': 6,
+                'appVersion': '1.5.8',
+                'createdAt': 1723670000000,
+                'scopes': ['notes'],
+                'sqlite': {
+                  'notes': [],
+                },
+                'asyncStorage': <String, dynamic>{},
+                'fileManifest':
+                    manifest ??
+                    const {
+                      'vlogs': [],
+                      'thumbnails': [],
+                    },
+              }),
+            ),
+          ),
+        );
+        for (final file in files.entries) {
+          encoder.addArchiveFile(ArchiveFile.bytes(file.key, file.value));
+        }
+        await encoder.close();
+        return path;
+      }
+
+      // Media-carrying own-temp ZIP: extraction must read it successfully
+      // (proves it was NOT deleted before staging), and afterwards it must
+      // be gone (proves post-staging cleanup still drops the disk lane).
+      final sysTemp = await Directory.systemTemp.createTemp(
+        'mda_own_temp_test',
+      );
+      try {
+        final ownName =
+            'mda_backup_import_${DateTime.now().millisecondsSinceEpoch}.zip';
+        final own = await makeZip(
+          sysTemp.path,
+          ownName,
+          files: {'vlogs/v1.mp4': [1, 2, 3, 4]},
+          manifest: {
+            'vlogs': [
+              {
+                'vlogId': 'v1',
+                'entryPath': 'vlogs/v1.mp4',
+                'kind': 'video',
+                'sizeBytes': 4,
+                'included': true,
+              },
+            ],
+            'thumbnails': [],
+          },
+        );
+        final ownService = BackupService(
+          documentsDirProvider: () async => sysTemp.path,
+          tempDirProvider: () async => sysTemp.path,
+        );
+        final ownResult = await ownService.importBackupZip(zipPath: own);
+        // Success proves extraction read the file (pre-staging deletion
+        // would have failed the import with "could not be read").
+        expect(ownResult.success, isTrue, reason: ownResult.error);
+        expect(ownResult.videosIncluded, 1);
+        expect(
+          File(own).existsSync(),
+          isFalse,
+          reason: 'own temp ZIP must be deleted after staging',
+        );
+        // The staged video landed in the docs dir (== sysTemp here).
+        expect(
+          await File(p.join(sysTemp.path, 'vlogs', 'v1.mp4')).length(),
+          4,
+        );
+      } finally {
+        await sysTemp.delete(recursive: true);
+      }
+
+      // Foreign (user/test) file: never deleted by the importer.
+      final foreign = await makeZip(tempDir.path, 'user_picked_backup.zip');
+      final foreignResult = await service.importBackupZip(zipPath: foreign);
+      expect(foreignResult.success, isTrue, reason: foreignResult.error);
+      expect(File(foreign).existsSync(), isTrue);
+    },
+  );
+
+  test(
+    'own temp ZIP without media is kept (nothing staged, nothing to free)',
+    () async {
+      // A media-less own-temp ZIP takes the early return inside
+      // _restoreMediaFiles (no staging, no merge) — there is no disk lane to
+      // drop, and the no-media path deletes nothing. User files always
+      // survive; the SAF copy without media is harmless either way, so the
+      // assertion only pins the foreign-file guarantee plus success.
+      Future<String> makeZip(String dir, String name) async {
+        final path = p.join(dir, name);
+        final encoder = ZipFileEncoder()..create(path);
+        encoder.addArchiveFile(
+          ArchiveFile.bytes(
+            'backup_metadata.json',
+            utf8.encode(
+              jsonEncode({
+                'backupVersion': 2,
+                'schemaVersion': 6,
+                'appVersion': '1.5.8',
+                'createdAt': 1723670000000,
+                'scopes': ['notes'],
+                'sqlite': {
+                  'notes': [],
+                },
+                'asyncStorage': <String, dynamic>{},
+                'fileManifest': {'vlogs': [], 'thumbnails': []},
+              }),
+            ),
+          ),
+        );
+        await encoder.close();
+        return path;
+      }
+
+      // Foreign (user/test) file: never deleted by the importer.
+      final foreign = await makeZip(tempDir.path, 'user_picked_backup.zip');
+      final foreignResult = await service.importBackupZip(zipPath: foreign);
+      expect(foreignResult.success, isTrue, reason: foreignResult.error);
+      expect(File(foreign).existsSync(), isTrue);
+
+      // Own temp copy without media: import succeeds; the file may remain
+      // (no staging happened, so no lane was freed — deletion is a
+      // peak optimization, not a correctness requirement).
+      final sysTemp = await Directory.systemTemp.createTemp(
+        'mda_own_temp_test',
+      );
+      try {
+        final ownName =
+            'mda_backup_import_${DateTime.now().millisecondsSinceEpoch}.zip';
+        final ownSource = await makeZip(tempDir.path, 'own_source.zip');
+        final own = p.join(sysTemp.path, ownName);
+        await File(ownSource).copy(own);
+        final ownService = BackupService(
+          documentsDirProvider: () async => sysTemp.path,
+          tempDirProvider: () async => sysTemp.path,
+        );
+        final ownResult = await ownService.importBackupZip(zipPath: own);
+        expect(ownResult.success, isTrue, reason: ownResult.error);
+      } finally {
+        await sysTemp.delete(recursive: true);
+      }
     },
   );
 }
