@@ -8,6 +8,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/mdi.dart';
 import 'animated_scale_button.dart';
+import 'animated_switch.dart';
+
+export 'animated_switch.dart';
 
 /// Uppercase section label with the letter-spacing token (13/800/1.5).
 class SettingsSectionHeader extends StatelessWidget {
@@ -186,57 +189,31 @@ class SettingsRow extends StatelessWidget {
   }
 }
 
-/// Custom toggle: 44×26 track, 22 px knob, red when on (SPEC §15).
+/// Animated toggle switch based on the Spectrum UI specification.
 class SettingsToggle extends StatelessWidget {
   const SettingsToggle({
     super.key,
     required this.value,
     required this.onChanged,
+    this.size = AnimatedSwitchSize.md,
+    this.onIcon,
+    this.offIcon,
   });
 
   final bool value;
   final ValueChanged<bool> onChanged;
+  final AnimatedSwitchSize size;
+  final Widget? onIcon;
+  final Widget? offIcon;
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      toggled: value,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          vibrate(HapticPatterns.optionSelect);
-          onChanged(!value);
-        },
-        child: SizedBox(
-          width: 48,
-          height: 48,
-          child: Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 44,
-              height: 26,
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: value ? AppColors.primaryAction : AppColors.border,
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: AnimatedAlign(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 22,
-                  height: 22,
-                  decoration: const BoxDecoration(
-                    color: AppColors.textPrimary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    return AnimatedSwitch(
+      value: value,
+      onChanged: onChanged,
+      size: size,
+      onIcon: onIcon,
+      offIcon: offIcon,
     );
   }
 }

@@ -79,7 +79,7 @@ class _CustomSliderState extends State<CustomSlider> {
                   ),
                 ),
               ),
-              // Filled track (animates smoothly to the current step)
+              // Filled track (directly tracks live thumb position with zero latency)
               Positioned(
                 left: _sidePadding,
                 top: 22,
@@ -87,8 +87,7 @@ class _CustomSliderState extends State<CustomSlider> {
                     ? 0.0
                     : (_thumbLeft(width, _dragValue) - _sidePadding + _thumbSize / 2)
                         .clamp(0.0, width - _sidePadding * 2),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
+                child: Container(
                   height: 4,
                   decoration: BoxDecoration(
                     color: widget.color,
@@ -152,20 +151,23 @@ class _CustomSliderState extends State<CustomSlider> {
                     setState(() {
                       _dragValue = newValue.toDouble();
                     });
+                    widget.onChanged(newValue);
                   },
                   onHorizontalDragUpdate: (details) {
                     final newValue = _valueAt(width, details.localPosition.dx);
-                    if (newValue != _dragValue.round()) {
+                    final changed = newValue != _dragValue.round();
+                    if (changed) {
                       vibrate(HapticPatterns.tick);
                     }
                     setState(() {
                       _dragValue = newValue.toDouble();
                     });
+                    if (changed) {
+                      widget.onChanged(newValue);
+                    }
                   },
                   onHorizontalDragEnd: (details) {
                     final value = _dragValue.round().clamp(1, 10);
-                    // Only tick when the release actually changed the value —
-                    // an unchanged release already ticked during the drag.
                     if (value != widget.value) {
                       vibrate(HapticPatterns.tick);
                     }

@@ -734,32 +734,37 @@ class _LockPillState extends State<_LockPill>
           // only their CURRENT width (clipped remainder is invisible), which
           // keeps the pill exactly as wide as its visible text.
           final p = _controller.value;
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-            decoration: BoxDecoration(
-              color: Color.lerp(
-                AppColors.glassBackground,
-                AppColors.primaryAction,
-                p,
-              ),
-              borderRadius: BorderRadius.circular(100),
-              border: Border.all(
+          final textColor = Color.lerp(
+            AppColors.textPrimary,
+            AppColors.primaryActionText,
+            p,
+          )!;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+              decoration: BoxDecoration(
                 color: Color.lerp(
-                  AppColors.glassBorder,
+                  AppColors.glassBackground,
                   AppColors.primaryAction,
                   p,
-                )!,
-                width: 1,
+                ),
+                borderRadius: BorderRadius.circular(100),
+                border: Border.all(
+                  color: Color.lerp(
+                    AppColors.glassBorder,
+                    AppColors.primaryAction,
+                    p,
+                  )!,
+                  width: 1,
+                ),
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 3D swing-gate shackle (RN `AnimatedLockIcon` parity):
-                // rotateY 0→180° around the hinge, NOT a flat 2D spin.
-                _SwingLockIcon(openAmount: 1 - p),
-                const SizedBox(width: 6),
-                // No Flexible here: each morph segment sizes itself to its
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 3D swing-gate shackle (RN `AnimatedLockIcon` parity):
+                  // rotateY 0→180° around the hinge, NOT a flat 2D spin.
+                  _SwingLockIcon(openAmount: 1 - p, color: textColor),
+                  const SizedBox(width: 6),
+                  // No Flexible here: each morph segment sizes itself to its
                 // visible width, so the pill can never exceed its content.
                 ClipRect(
                   child: SizedBox(
@@ -867,10 +872,14 @@ class _LockPillState extends State<_LockPill>
 /// it never flat-spins. The body rect + keyhole stay fixed; the keyhole fades
 /// out over 200 ms when unlocked. Rendered via CustomPainter (no SVG dep).
 class _SwingLockIcon extends StatelessWidget {
-  const _SwingLockIcon({required this.openAmount});
+  const _SwingLockIcon({
+    required this.openAmount,
+    this.color = const Color(0xFFFFFFFF),
+  });
 
   /// 0 = locked (shackle closed), 1 = unlocked (shackle swung open).
   final double openAmount;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -878,16 +887,20 @@ class _SwingLockIcon extends StatelessWidget {
       width: 16,
       height: 16,
       child: CustomPaint(
-        painter: _SwingLockPainter(openAmount: openAmount.clamp(0.0, 1.0)),
+        painter: _SwingLockPainter(
+          openAmount: openAmount.clamp(0.0, 1.0),
+          color: color,
+        ),
       ),
     );
   }
 }
 
 class _SwingLockPainter extends CustomPainter {
-  _SwingLockPainter({required this.openAmount});
+  _SwingLockPainter({required this.openAmount, required this.color});
 
   final double openAmount;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -899,7 +912,7 @@ class _SwingLockPainter extends CustomPainter {
     canvas.translate(6, 0);
 
     final stroke = Paint()
-      ..color = const Color(0xFFFFFFFF)
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round
@@ -916,27 +929,29 @@ class _SwingLockPainter extends CustomPainter {
 
     // Keyhole fades 200 ms (RN keyholeGProps): approximate by opacity.
     if (openAmount < 1) {
+      final keyOpacity = (1.0 - openAmount).clamp(0.0, 1.0);
       final keyPaint = Paint()
-        ..color = Color.fromRGBO(255, 255, 255, 1 - openAmount)
+        ..color = color.withValues(alpha: keyOpacity)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(const Offset(12, 16), 1.5, keyPaint);
       final linePaint = Paint()
-        ..color = Color.fromRGBO(255, 255, 255, 1 - openAmount)
+        ..color = color.withValues(alpha: keyOpacity)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
         ..strokeCap = StrokeCap.round;
       canvas.drawLine(const Offset(12, 17.5), const Offset(12, 19), linePaint);
     }
 
-    // Shackle: M7,11 V7 A5,5 ... — swung via rotateY around hinge (7,11).
-    // Perspective gate: horizontal extent shrinks with |cos|, mimicking the
-    // 3D swing without a full Matrix4 scene.
-    final angle = openAmount * 3.141592653589793;
-    final foreshorten = (0.15 + 0.85 * (1 - openAmount)).clamp(0.15, 1.0);
+    // Shackle 3D swing gate: rotates 180° around Y at the left hinge (7, 11).
+    // Uses Matrix4 3D transform with subtle perspective so it swings outward to the left when open.
     canvas.save();
-    canvas.translate(7, 11);
-    canvas.scale(foreshorten, 1);
-    canvas.translate(-7, -11);
+    final matrix = Matrix4.identity()
+      ..setEntry(3, 2, 0.002) // perspective
+      ..translateByDouble(7.0, 11.0, 0.0, 1.0)
+      ..rotateY(openAmount * 3.141592653589793)
+      ..translateByDouble(-7.0, -11.0, 0.0, 1.0);
+    canvas.transform(matrix.storage);
+
     final shackle = Path()
       ..moveTo(7, 11)
       ..lineTo(7, 7)
@@ -946,8 +961,6 @@ class _SwingLockPainter extends CustomPainter {
         clockwise: true,
       )
       ..lineTo(17, 11);
-    // Fade the swinging edge slightly as it turns away (depth cue).
-    final _ = angle;
     canvas.drawPath(shackle, stroke);
     canvas.restore();
 
@@ -956,7 +969,7 @@ class _SwingLockPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SwingLockPainter old) =>
-      old.openAmount != openAmount;
+      old.openAmount != openAmount || old.color != color;
 }
 
 /// Circles tab — person list; tap opens the profile modal.

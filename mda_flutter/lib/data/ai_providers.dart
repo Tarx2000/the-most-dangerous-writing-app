@@ -28,6 +28,14 @@ class AiConfigState {
     this.neuralwattBaseUrl = AiDefaults.neuralwattBaseUrl,
     this.neuralwattModel = AiDefaults.neuralwattModel,
     this.neuralwattGrammarModel = '',
+    this.codexApiKey = AiDefaults.codexApiKey,
+    this.codexBaseUrl = AiDefaults.codexBaseUrl,
+    this.codexModel = AiDefaults.codexModel,
+    this.codexGrammarModel = '',
+    this.openrouterApiKey = AiDefaults.openrouterApiKey,
+    this.openrouterBaseUrl = AiDefaults.openrouterBaseUrl,
+    this.openrouterModel = AiDefaults.openrouterModel,
+    this.openrouterGrammarModel = '',
     this.customPrompts = const {},
     this.favoriteModels = const [],
     this.autoGenerateSummaries = true,
@@ -42,19 +50,45 @@ class AiConfigState {
   final String neuralwattBaseUrl;
   final String neuralwattModel;
   final String neuralwattGrammarModel;
+  final String codexApiKey;
+  final String codexBaseUrl;
+  final String codexModel;
+  final String codexGrammarModel;
+  final String openrouterApiKey;
+  final String openrouterBaseUrl;
+  final String openrouterModel;
+  final String openrouterGrammarModel;
   final Map<String, String> customPrompts;
   final List<String> favoriteModels;
   final bool autoGenerateSummaries;
 
-  String get apiKey =>
-      provider == AiProvider.neuralwatt ? neuralwattApiKey : ollamaApiKey;
-  String get baseUrl =>
-      provider == AiProvider.neuralwatt ? neuralwattBaseUrl : ollamaBaseUrl;
-  String get model =>
-      provider == AiProvider.neuralwatt ? neuralwattModel : ollamaModel;
-  String get grammarModel => provider == AiProvider.neuralwatt
-      ? neuralwattGrammarModel
-      : ollamaGrammarModel;
+  String get apiKey => switch (provider) {
+        AiProvider.neuralwatt => neuralwattApiKey,
+        AiProvider.codex => codexApiKey,
+        AiProvider.openrouter => openrouterApiKey,
+        _ => ollamaApiKey,
+      };
+
+  String get baseUrl => switch (provider) {
+        AiProvider.neuralwatt => neuralwattBaseUrl,
+        AiProvider.codex => codexBaseUrl,
+        AiProvider.openrouter => openrouterBaseUrl,
+        _ => ollamaBaseUrl,
+      };
+
+  String get model => switch (provider) {
+        AiProvider.neuralwatt => neuralwattModel,
+        AiProvider.codex => codexModel,
+        AiProvider.openrouter => openrouterModel,
+        _ => ollamaModel,
+      };
+
+  String get grammarModel => switch (provider) {
+        AiProvider.neuralwatt => neuralwattGrammarModel,
+        AiProvider.codex => codexGrammarModel,
+        AiProvider.openrouter => openrouterGrammarModel,
+        _ => ollamaGrammarModel,
+      };
 
   /// Resolves to the runtime config used by the queue/service.
   AiConfig toRuntimeConfig() {
@@ -78,6 +112,14 @@ class AiConfigState {
     String? neuralwattBaseUrl,
     String? neuralwattModel,
     String? neuralwattGrammarModel,
+    String? codexApiKey,
+    String? codexBaseUrl,
+    String? codexModel,
+    String? codexGrammarModel,
+    String? openrouterApiKey,
+    String? openrouterBaseUrl,
+    String? openrouterModel,
+    String? openrouterGrammarModel,
     Map<String, String>? customPrompts,
     List<String>? favoriteModels,
     bool? autoGenerateSummaries,
@@ -93,6 +135,15 @@ class AiConfigState {
       neuralwattModel: neuralwattModel ?? this.neuralwattModel,
       neuralwattGrammarModel:
           neuralwattGrammarModel ?? this.neuralwattGrammarModel,
+      codexApiKey: codexApiKey ?? this.codexApiKey,
+      codexBaseUrl: codexBaseUrl ?? this.codexBaseUrl,
+      codexModel: codexModel ?? this.codexModel,
+      codexGrammarModel: codexGrammarModel ?? this.codexGrammarModel,
+      openrouterApiKey: openrouterApiKey ?? this.openrouterApiKey,
+      openrouterBaseUrl: openrouterBaseUrl ?? this.openrouterBaseUrl,
+      openrouterModel: openrouterModel ?? this.openrouterModel,
+      openrouterGrammarModel:
+          openrouterGrammarModel ?? this.openrouterGrammarModel,
       customPrompts: customPrompts ?? this.customPrompts,
       favoriteModels: favoriteModels ?? this.favoriteModels,
       autoGenerateSummaries:
@@ -211,6 +262,38 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
           SettingsKeys.aiNeuralwattGrammarModel,
           '',
         ),
+        codexApiKey: await service.getString(
+          SettingsKeys.aiCodexApiKey,
+          AiDefaults.codexApiKey,
+        ),
+        codexBaseUrl: await service.getString(
+          SettingsKeys.aiCodexBaseUrl,
+          AiDefaults.codexBaseUrl,
+        ),
+        codexModel: await service.getString(
+          SettingsKeys.aiCodexModel,
+          AiDefaults.codexModel,
+        ),
+        codexGrammarModel: await service.getString(
+          SettingsKeys.aiCodexGrammarModel,
+          '',
+        ),
+        openrouterApiKey: await service.getString(
+          SettingsKeys.aiOpenRouterApiKey,
+          AiDefaults.openrouterApiKey,
+        ),
+        openrouterBaseUrl: await service.getString(
+          SettingsKeys.aiOpenRouterBaseUrl,
+          AiDefaults.openrouterBaseUrl,
+        ),
+        openrouterModel: await service.getString(
+          SettingsKeys.aiOpenRouterModel,
+          AiDefaults.openrouterModel,
+        ),
+        openrouterGrammarModel: await service.getString(
+          SettingsKeys.aiOpenRouterGrammarModel,
+          '',
+        ),
         customPrompts: (await service.getJsonMap(
           SettingsKeys.aiCustomPrompts,
           {},
@@ -245,54 +328,70 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
   }
 
   Future<void> saveApiKey(String key) async {
-    final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(
-      isNeural ? SettingsKeys.aiNeuralwattApiKey : SettingsKeys.aiOllamaApiKey,
-      key,
-    );
-    state = isNeural
-        ? state.copyWith(neuralwattApiKey: key)
-        : state.copyWith(ollamaApiKey: key);
+    final settingKey = switch (state.provider) {
+      AiProvider.neuralwatt => SettingsKeys.aiNeuralwattApiKey,
+      AiProvider.codex => SettingsKeys.aiCodexApiKey,
+      AiProvider.openrouter => SettingsKeys.aiOpenRouterApiKey,
+      _ => SettingsKeys.aiOllamaApiKey,
+    };
+    await _save(settingKey, key);
+    state = switch (state.provider) {
+      AiProvider.neuralwatt => state.copyWith(neuralwattApiKey: key),
+      AiProvider.codex => state.copyWith(codexApiKey: key),
+      AiProvider.openrouter => state.copyWith(openrouterApiKey: key),
+      _ => state.copyWith(ollamaApiKey: key),
+    };
     _reconfigureQueue();
   }
 
   Future<void> saveBaseUrl(String url) async {
-    final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(
-      isNeural
-          ? SettingsKeys.aiNeuralwattBaseUrl
-          : SettingsKeys.aiOllamaBaseUrl,
-      url,
-    );
-    state = isNeural
-        ? state.copyWith(neuralwattBaseUrl: url)
-        : state.copyWith(ollamaBaseUrl: url);
+    final settingKey = switch (state.provider) {
+      AiProvider.neuralwatt => SettingsKeys.aiNeuralwattBaseUrl,
+      AiProvider.codex => SettingsKeys.aiCodexBaseUrl,
+      AiProvider.openrouter => SettingsKeys.aiOpenRouterBaseUrl,
+      _ => SettingsKeys.aiOllamaBaseUrl,
+    };
+    await _save(settingKey, url);
+    state = switch (state.provider) {
+      AiProvider.neuralwatt => state.copyWith(neuralwattBaseUrl: url),
+      AiProvider.codex => state.copyWith(codexBaseUrl: url),
+      AiProvider.openrouter => state.copyWith(openrouterBaseUrl: url),
+      _ => state.copyWith(ollamaBaseUrl: url),
+    };
     _reconfigureQueue();
   }
 
   Future<void> saveModel(String model) async {
-    final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(
-      isNeural ? SettingsKeys.aiNeuralwattModel : SettingsKeys.aiOllamaModel,
-      model,
-    );
-    state = isNeural
-        ? state.copyWith(neuralwattModel: model)
-        : state.copyWith(ollamaModel: model);
+    final settingKey = switch (state.provider) {
+      AiProvider.neuralwatt => SettingsKeys.aiNeuralwattModel,
+      AiProvider.codex => SettingsKeys.aiCodexModel,
+      AiProvider.openrouter => SettingsKeys.aiOpenRouterModel,
+      _ => SettingsKeys.aiOllamaModel,
+    };
+    await _save(settingKey, model);
+    state = switch (state.provider) {
+      AiProvider.neuralwatt => state.copyWith(neuralwattModel: model),
+      AiProvider.codex => state.copyWith(codexModel: model),
+      AiProvider.openrouter => state.copyWith(openrouterModel: model),
+      _ => state.copyWith(ollamaModel: model),
+    };
     _reconfigureQueue();
   }
 
   Future<void> saveGrammarModel(String model) async {
-    final isNeural = state.provider == AiProvider.neuralwatt;
-    await _save(
-      isNeural
-          ? SettingsKeys.aiNeuralwattGrammarModel
-          : SettingsKeys.aiOllamaGrammarModel,
-      model,
-    );
-    state = isNeural
-        ? state.copyWith(neuralwattGrammarModel: model)
-        : state.copyWith(ollamaGrammarModel: model);
+    final settingKey = switch (state.provider) {
+      AiProvider.neuralwatt => SettingsKeys.aiNeuralwattGrammarModel,
+      AiProvider.codex => SettingsKeys.aiCodexGrammarModel,
+      AiProvider.openrouter => SettingsKeys.aiOpenRouterGrammarModel,
+      _ => SettingsKeys.aiOllamaGrammarModel,
+    };
+    await _save(settingKey, model);
+    state = switch (state.provider) {
+      AiProvider.neuralwatt => state.copyWith(neuralwattGrammarModel: model),
+      AiProvider.codex => state.copyWith(codexGrammarModel: model),
+      AiProvider.openrouter => state.copyWith(openrouterGrammarModel: model),
+      _ => state.copyWith(ollamaGrammarModel: model),
+    };
     _reconfigureQueue();
   }
 

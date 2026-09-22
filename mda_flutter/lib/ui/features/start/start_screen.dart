@@ -144,8 +144,11 @@ class _StartScreenState extends ConsumerState<StartScreen> {
     final isCheckin = widget.mode == SessionMode.checkin;
     final isVlog = widget.mode == SessionMode.vlog;
     final tierColor = isCheckin
-        ? AppColors.alignmentTierColor(_checkinScore)
+        ? AppColors.alignmentTierColorSmooth(_checkinScore.toDouble())
         : AppColors.primaryAction;
+    final tierGlow = isCheckin
+        ? AppColors.alignmentTierGlowSmooth(_checkinScore.toDouble())
+        : null;
     final tierLabel = AppColors.alignmentTierLabel(_checkinScore).toUpperCase();
 
     return SafeArea(
@@ -212,11 +215,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                                         ? tierColor
                                         : AppColors.primaryAction,
                                     size: isCheckin ? 40 : 42,
-                                    glowColor: isCheckin
-                                        ? AppColors.alignmentTierGlow(
-                                            _checkinScore,
-                                          )
-                                        : null,
+                                    glowColor: tierGlow,
                                   ),
                                 ],
                               ),

@@ -87,8 +87,8 @@ class _VlogCalendarGalleryState extends ConsumerState<VlogCalendarGallery> {
     });
   }
 
-  void _openViewer(List<SavedVlog> dayVlogs) {
-    showVlogViewer(context, vlogs: dayVlogs);
+  void _openViewer(List<SavedVlog> dayVlogs, [Rect? sourceRect]) {
+    showVlogViewer(context, vlogs: dayVlogs, sourceRect: sourceRect);
   }
 
   @override
@@ -278,7 +278,7 @@ class _MonthGrid extends ConsumerWidget {
   final int year;
   final int month;
   final Map<String, List<SavedVlog>> byDay;
-  final ValueChanged<List<SavedVlog>> onDayTap;
+  final void Function(List<SavedVlog> dayVlogs, Rect? sourceRect) onDayTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -321,56 +321,66 @@ class _MonthGrid extends ConsumerWidget {
       }
 
       cells.add(
-        GestureDetector(
-          onTap: dayVlogs.isEmpty ? null : () => onDayTap(dayVlogs),
-          child: SizedBox(
-            width: cellSize,
-            height: thumbHeight + 10,
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: dayVlogs.isEmpty
-                  ? Container(
-                      width: 32,
-                      height: 32,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: isToday
-                            ? Border.all(
-                                color: AppColors.primaryAction,
-                                width: 2,
-                              )
-                            : null,
-                      ),
-                      child: Text(
-                        '$day',
-                        style: TextStyle(
-                          color: isToday
-                              ? AppColors.primaryAction
-                              : AppColors.textMuted,
-                          fontSize: 14,
-                          fontWeight: isToday
-                              ? FontWeight.w800
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    )
-                  : Container(
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        color: AppColors.dangerFill,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isToday
-                              ? AppColors.primaryAction
-                              : AppColors.dangerBorderMedium,
-                          width: isToday ? 2 : 1,
-                        ),
-                      ),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _DayThumbnail(vlog: dayVlogs.first),
+        Builder(
+          builder: (cellContext) {
+            return GestureDetector(
+              onTap: dayVlogs.isEmpty
+                  ? null
+                  : () {
+                      final box = cellContext.findRenderObject() as RenderBox?;
+                      final sourceRect = box != null
+                          ? (box.localToGlobal(Offset.zero) & box.size)
+                          : null;
+                      onDayTap(dayVlogs, sourceRect);
+                    },
+              child: SizedBox(
+                width: cellSize,
+                height: thumbHeight + 10,
+                child: Padding(
+                  padding: const EdgeInsets.all(3),
+                  child: dayVlogs.isEmpty
+                      ? Container(
+                          width: 32,
+                          height: 32,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: isToday
+                                ? Border.all(
+                                    color: AppColors.primaryAction,
+                                    width: 2,
+                                  )
+                                : null,
+                          ),
+                          child: Text(
+                            '$day',
+                            style: TextStyle(
+                              color: isToday
+                                  ? AppColors.primaryAction
+                                  : AppColors.textMuted,
+                              fontSize: 14,
+                              fontWeight: isToday
+                                  ? FontWeight.w800
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        )
+                      : Container(
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            color: AppColors.glassBackground,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isToday
+                                  ? AppColors.primaryAction
+                                  : AppColors.glassBorderSubtle,
+                              width: isToday ? 2 : 1,
+                            ),
+                          ),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              _DayThumbnail(vlog: dayVlogs.first),
                           // Day number
                           Positioned(
                             top: 3,
@@ -437,8 +447,10 @@ class _MonthGrid extends ConsumerWidget {
                         ],
                       ),
                     ),
-            ),
-          ),
+                  ),
+                ),
+            );
+          },
         ),
       );
     }

@@ -18,6 +18,7 @@ import '../../../data/models/saved_vlog.dart';
 import '../../../data/providers.dart';
 import '../../../domain/use_cases/mastery_logic.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/like_button.dart';
 import '../../core/widgets/viewport_activity.dart';
 
 const int storyPreviewWords = 50;
@@ -258,6 +259,12 @@ class FeedCard extends ConsumerWidget {
   }
 
   static String _categoryLabel(FeedItemData item) {
+    if (item.personName != null && item.personName!.isNotEmpty) {
+      if (item.type == FeedItemType.tweet) {
+        return '${item.personName} • Tweet';
+      }
+      return item.personName!;
+    }
     switch (item.type) {
       case FeedItemType.story:
         return 'Journal';
@@ -273,8 +280,8 @@ class FeedCard extends ConsumerWidget {
   }
 }
 
-/// Avatar column: checkin=emoji, circle=initial (danger border),
-/// tweet=bird (danger border), journal=star (border token).
+/// Avatar column: checkin=emoji, circle/person=initial (primaryAction border),
+/// tweet=bird (primaryAction border), journal=star (border token).
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.item, required this.accent});
 
@@ -283,6 +290,29 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasPerson = item.personName != null && item.personName!.isNotEmpty;
+    if (hasPerson &&
+        item.type != FeedItemType.checkin &&
+        item.type != FeedItemType.clip) {
+      return Container(
+        width: 38,
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.primaryAction, width: 1.5),
+        ),
+        child: Text(
+          item.personName!.characters.first.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.primaryAction,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
     final (Color borderColor, Widget child) = switch (item.type) {
       FeedItemType.checkin => (
         accent,
@@ -436,28 +466,15 @@ class _CommentSectionState extends ConsumerState<_CommentSection> {
           ),
         Row(
           children: [
-            AnimatedScaleButton(
-              onPress: () => ref
+            LikeButton(
+              size: LikeButtonSize.sm,
+              liked: widget.isBookmarked,
+              label: widget.isBookmarked
+                  ? 'Remove bookmark'
+                  : 'Bookmark entry',
+              onLikedChange: (_) => ref
                   .read(appDataProvider.notifier)
                   .toggleBookmark(widget.entryId),
-              child: Semantics(
-                label: widget.isBookmarked
-                    ? 'Remove bookmark'
-                    : 'Bookmark entry',
-                button: true,
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Icon(
-                    widget.isBookmarked
-                        ? Mdi.get('bookmark')
-                        : Mdi.get('bookmarkOutline'),
-                    color: widget.isBookmarked
-                        ? AppColors.primaryAction
-                        : AppColors.textMuted,
-                    size: 18,
-                  ),
-                ),
-              ),
             ),
             const SizedBox(width: 4),
             AnimatedScaleButton(

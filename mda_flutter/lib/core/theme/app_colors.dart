@@ -154,6 +154,29 @@ abstract final class AppColors {
     return const Color(0xFF00CCFF);
   }
 
+  /// Smoothly morphs alignment tier colors across continuous fractional scores.
+  static Color alignmentTierColorSmooth(double score) {
+    final clamped = score.clamp(1.0, 10.0);
+    if (clamped <= 2.0) {
+      return const Color(0xFFFF4D4D);
+    } else if (clamped <= 3.5) {
+      final t = (clamped - 2.0) / 1.5;
+      return Color.lerp(const Color(0xFFFF4D4D), const Color(0xFFFF9933), t)!;
+    } else if (clamped <= 5.0) {
+      final t = (clamped - 3.5) / 1.5;
+      return Color.lerp(const Color(0xFFFF9933), const Color(0xFFFFCC00), t)!;
+    } else if (clamped <= 7.0) {
+      final t = (clamped - 5.0) / 2.0;
+      return Color.lerp(const Color(0xFFFFCC00), const Color(0xFFA2FF66), t)!;
+    } else if (clamped <= 9.0) {
+      final t = (clamped - 7.0) / 2.0;
+      return Color.lerp(const Color(0xFFA2FF66), const Color(0xFF66FFCC), t)!;
+    } else {
+      final t = (clamped - 9.0) / 1.0;
+      return Color.lerp(const Color(0xFF66FFCC), const Color(0xFF00CCFF), t)!;
+    }
+  }
+
   /// Alignment score tier glow color.
   static Color alignmentTierGlow(int score) {
     if (score <= 2) return const Color(0x4DFF4D4D); // rgba(255,77,77,0.3)
@@ -162,6 +185,12 @@ abstract final class AppColors {
     if (score <= 7) return const Color(0x4DA2FF66);
     if (score <= 9) return const Color(0x4D66FFCC);
     return const Color(0x4D00CCFF);
+  }
+
+  /// Smoothly morphs alignment tier glow color across continuous fractional scores.
+  static Color alignmentTierGlowSmooth(double score) {
+    final base = alignmentTierColorSmooth(score);
+    return base.withValues(alpha: 0.3);
   }
 
   /// Tier emoji per score (SPEC §3).

@@ -88,8 +88,13 @@ class AiService {
 
     final request = http.Request('POST', uri)
       ..headers['Content-Type'] = 'application/json'
-      ..headers['Authorization'] = 'Bearer ${config.apiKey}'
-      ..body = jsonEncode(body);
+      ..headers['Authorization'] = 'Bearer ${config.apiKey}';
+    if (config.provider == AiProvider.openrouter) {
+      request.headers['HTTP-Referer'] =
+          'https://github.com/the-most-dangerous-writing-app';
+      request.headers['X-Title'] = 'The Most Dangerous Writing App';
+    }
+    request.body = jsonEncode(body);
 
     final cancelCompleter = Completer<void>();
     final timeoutTimer = Timer(
@@ -358,11 +363,14 @@ class AiService {
   /// `pingServer` — Neuralwatt or `/v1` URLs → `GET {baseUrl}/models`;
   /// otherwise `GET {baseUrl}/api/version` (Ollama native); 5 s timeout.
   Future<bool> pingServer(AiConfig config) async {
-    if (config.provider == AiProvider.neuralwatt && config.apiKey.isEmpty) {
+    final requiresKey = config.provider == AiProvider.neuralwatt ||
+        config.provider == AiProvider.codex ||
+        config.provider == AiProvider.openrouter;
+    if (requiresKey && config.apiKey.isEmpty) {
       throw const AiError(
         AiErrorKind.config,
-        'no neuralwatt key',
-        userMessage: 'No Neuralwatt API key set. Add your key in AI Settings.',
+        'no api key',
+        userMessage: 'No API key or token set. Add your key in AI Settings.',
       );
     }
     final baseUrl = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -373,6 +381,11 @@ class AiService {
       final request = http.Request('GET', uri);
       if (isV1) {
         request.headers['Authorization'] = 'Bearer ${config.apiKey}';
+      }
+      if (config.provider == AiProvider.openrouter) {
+        request.headers['HTTP-Referer'] =
+            'https://github.com/the-most-dangerous-writing-app';
+        request.headers['X-Title'] = 'The Most Dangerous Writing App';
       }
       final response = await _client
           .send(request)
@@ -393,6 +406,11 @@ class AiService {
     final uri = Uri.parse('$baseUrl/models');
     final request = http.Request('GET', uri)
       ..headers['Authorization'] = 'Bearer ${config.apiKey}';
+    if (config.provider == AiProvider.openrouter) {
+      request.headers['HTTP-Referer'] =
+          'https://github.com/the-most-dangerous-writing-app';
+      request.headers['X-Title'] = 'The Most Dangerous Writing App';
+    }
     final response = await _client
         .send(request)
         .timeout(const Duration(seconds: 10));

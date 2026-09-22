@@ -101,7 +101,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('All'));
+      await tester.tap(find.text('Bookmarked'));
       await tester.pumpAndSettle();
       expect(find.text('Nothing here yet'), findsOneWidget);
       await container.read(appDataProvider.notifier).toggleBookmark('clip-1');

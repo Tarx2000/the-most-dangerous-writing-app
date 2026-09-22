@@ -16,6 +16,7 @@ import '../../../core/theme/mdi.dart';
 import '../../../data/models/saved_vlog.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/like_button.dart';
 
 class VlogViewerModal extends ConsumerStatefulWidget {
   const VlogViewerModal({
@@ -227,6 +228,19 @@ class _VlogViewerModalState extends ConsumerState<VlogViewerModal>
                     child: _roundButton('close'),
                   ),
                   const Spacer(),
+                  if (_index >= 0 && _index < widget.vlogs.length) ...[
+                    LikeButton(
+                      size: LikeButtonSize.sm,
+                      liked: ref
+                          .watch(feedDataProvider)
+                          .bookmarkedNoteIds
+                          .contains(widget.vlogs[_index].id),
+                      onLikedChange: (_) => ref
+                          .read(appDataProvider.notifier)
+                          .toggleBookmark(widget.vlogs[_index].id),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   AnimatedScaleButton(
                     onPress: _toggleMute,
                     child: _roundButton(_muted ? 'volumeOff' : 'volumeHigh'),
@@ -414,21 +428,65 @@ class _VlogViewerModalState extends ConsumerState<VlogViewerModal>
 }
 
 /// Use a real route so Android Back dismisses the viewer and its native player.
+/// Performs a smooth morph animation from [sourceRect] to full screen on open,
+/// and morphs back down to [sourceRect] on close.
 Future<void> showVlogViewer(
   BuildContext context, {
   required List<SavedVlog> vlogs,
+  Rect? sourceRect,
 }) async {
   if (vlogs.isEmpty) return;
+  final screenSize = MediaQuery.sizeOf(context);
+  final fullRect = Rect.fromLTWH(0, 0, screenSize.width, screenSize.height);
+  final origin = sourceRect ??
+      Rect.fromCenter(
+        center: Offset(screenSize.width / 2, screenSize.height / 2),
+        width: screenSize.width * 0.35,
+        height: screenSize.height * 0.35,
+      );
+
   await showGeneralDialog<void>(
     context: context,
     barrierColor: Colors.black,
-    transitionDuration: const Duration(milliseconds: 220),
+    barrierDismissible: false,
+    transitionDuration: const Duration(milliseconds: 320),
     pageBuilder: (viewerContext, animation, secondaryAnimation) =>
         VlogViewerModal(
           vlogs: List.unmodifiable(vlogs),
           onClose: () => Navigator.of(viewerContext).pop(),
         ),
-    transitionBuilder: (context, animation, secondaryAnimation, child) =>
-        FadeTransition(opacity: animation, child: child),
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+
+      return AnimatedBuilder(
+        animation: curved,
+        builder: (context, _) {
+          final currentRect = Rect.lerp(origin, fullRect, curved.value)!;
+          final radius = (1.0 - curved.value) * 14.0;
+          return Stack(
+            children: [
+              Positioned.fromRect(
+                rect: currentRect,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(radius),
+                  child: FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: animation,
+                      curve: const Interval(0.0, 0.4),
+                      reverseCurve: const Interval(0.6, 1.0),
+                    ),
+                    child: child,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
   );
 }

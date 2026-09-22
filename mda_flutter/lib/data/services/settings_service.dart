@@ -38,11 +38,24 @@ abstract final class SettingsKeys {
   static const aiNeuralwattBaseUrl = 'AI_NEURALWATT_BASE_URL';
   static const aiNeuralwattModel = 'AI_NEURALWATT_MODEL';
   static const aiNeuralwattGrammarModel = 'AI_NEURALWATT_GRAMMAR_MODEL';
+  static const aiCodexApiKey = 'AI_CODEX_API_KEY';
+  static const aiCodexBaseUrl = 'AI_CODEX_BASE_URL';
+  static const aiCodexModel = 'AI_CODEX_MODEL';
+  static const aiCodexGrammarModel = 'AI_CODEX_GRAMMAR_MODEL';
+  static const aiOpenRouterApiKey = 'AI_OPENROUTER_API_KEY';
+  static const aiOpenRouterBaseUrl = 'AI_OPENROUTER_BASE_URL';
+  static const aiOpenRouterModel = 'AI_OPENROUTER_MODEL';
+  static const aiOpenRouterGrammarModel = 'AI_OPENROUTER_GRAMMAR_MODEL';
   static const aiCustomPrompts = 'AI_CUSTOM_PROMPTS';
   static const aiFavoriteModels = 'AI_FAVORITE_MODELS';
 
   /// API-key settings that must be stripped from backups (SPEC §13).
-  static const backupSecretKeys = {aiOllamaApiKey, aiNeuralwattApiKey};
+  static const backupSecretKeys = {
+    aiOllamaApiKey,
+    aiNeuralwattApiKey,
+    aiCodexApiKey,
+    aiOpenRouterApiKey,
+  };
 }
 
 class SettingsService {

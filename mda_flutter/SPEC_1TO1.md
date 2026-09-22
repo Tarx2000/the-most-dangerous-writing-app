@@ -225,12 +225,10 @@ pillar_versions(id TEXT PK, pillar_id TEXT NOT NULL, version INTEGER NOT NULL, t
 | FEED_COMMENTS | {} |
 | AUTO_PLAY_FEED_VIDEOS | true |
 | AUTO_GENERATE_SUMMARIES | true |
-| AI_PROVIDER | 'ollama' |
-| AI_OLLAMA_API_KEY / AI_NEURALWATT_API_KEY | hardcoded default / '' (secret) |
-| AI_OLLAMA_BASE_URL | 'https://ollama.com/v1' |
-| AI_NEURALWATT_BASE_URL | 'https://api.neuralwatt.com/v1' |
-| AI_OLLAMA_MODEL | 'gemma4:31b-cloud' |
-| AI_NEURALWATT_MODEL | 'glm-5.2' |
+| AI_PROVIDER | 'ollama' ('ollama', 'neuralwatt', 'codex', 'openrouter') |
+| AI_OLLAMA_API_KEY / AI_NEURALWATT_API_KEY / AI_CODEX_API_KEY / AI_OPENROUTER_API_KEY | hardcoded default / '' (secret) |
+| AI_OLLAMA_BASE_URL / AI_NEURALWATT_BASE_URL / AI_CODEX_BASE_URL / AI_OPENROUTER_BASE_URL | 'https://ollama.com/v1', 'https://api.neuralwatt.com/v1', 'https://api.openai.com/v1', 'https://openrouter.ai/api/v1' |
+| AI_OLLAMA_MODEL / AI_NEURALWATT_MODEL / AI_CODEX_MODEL / AI_OPENROUTER_MODEL | 'gemma4:31b-cloud', 'glm-5.2', 'gpt-6-luna', 'deepseek/deepseek-v4-1-flash' |
 | AI_*_GRAMMAR_MODEL | same as model |
 | AI_CUSTOM_PROMPTS | {} (merged over defaults) |
 | AI_FAVORITE_MODELS | [] |

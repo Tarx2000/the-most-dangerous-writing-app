@@ -16,6 +16,7 @@ import '../../../data/services/ai_config.dart';
 import '../../../data/services/ai_error.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/animated_switch.dart';
 import '../../core/widgets/base_modal.dart';
 import '../../core/widgets/shimmer_line.dart';
 import 'ai_model_picker.dart';
@@ -167,7 +168,6 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
     final config = ref.watch(aiConfigProvider);
     final queueState = ref.watch(aiQueueStateProvider).value;
     final notifications = ref.watch(aiFailureNotificationsProvider);
-    final isOllama = config.provider == AiProvider.ollama;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,23 +176,40 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
         const SizedBox(height: 12),
         _SettingsCard(
           children: [
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Auto-generate summaries',
-                style: TextStyle(fontSize: 15),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Auto-generate summaries',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  AnimatedSwitch(
+                    value: config.autoGenerateSummaries,
+                    onChanged: (enabled) => ref
+                        .read(aiConfigProvider.notifier)
+                        .updateAutoGenerateSummaries(enabled),
+                  ),
+                ],
               ),
-              value: config.autoGenerateSummaries,
-              onChanged: (enabled) => ref
-                  .read(aiConfigProvider.notifier)
-                  .updateAutoGenerateSummaries(enabled),
             ),
             const _Divider(),
             // Provider switch
             _Row(
               icon: 'serverNetwork',
               title: 'Provider',
-              value: isOllama ? 'Ollama Cloud' : 'Neuralwatt',
+              value: switch (config.provider) {
+                AiProvider.neuralwatt => 'Neuralwatt',
+                AiProvider.codex => 'Codex / OpenAI',
+                AiProvider.openrouter => 'OpenRouter',
+                _ => 'Ollama Cloud',
+              },
               onTap: () async {
                 final choice = await showActionSheet<String>(
                   context,
@@ -209,6 +226,16 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                       label: 'Neuralwatt',
                       icon: 'lightningBolt',
                     ),
+                    ActionSheetOption(
+                      value: 'codex',
+                      label: 'Codex / OpenAI',
+                      icon: 'codeBraces',
+                    ),
+                    ActionSheetOption(
+                      value: 'openrouter',
+                      label: 'OpenRouter',
+                      icon: 'routes',
+                    ),
                   ],
                 );
                 if (choice != null) {
@@ -222,7 +249,9 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
             // API key
             _Row(
               icon: 'keyVariant',
-              title: 'API Key',
+              title: config.provider == AiProvider.codex
+                  ? 'API Key / Token'
+                  : 'API Key',
               value: config.apiKey.isEmpty ? 'Not set' : '••••••••',
               onTap: () => _editKey(),
             ),
@@ -369,14 +398,26 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                   ),
               ],
             ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Overwrite existing metadata',
-                style: TextStyle(fontSize: 13),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Overwrite existing metadata',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  AnimatedSwitch(
+                    size: AnimatedSwitchSize.sm,
+                    value: _overwrite,
+                    onChanged: (value) => setState(() => _overwrite = value),
+                  ),
+                ],
               ),
-              value: _overwrite,
-              onChanged: (value) => setState(() => _overwrite = value),
             ),
             AnimatedScaleButton(
               onPress: _categories.isEmpty

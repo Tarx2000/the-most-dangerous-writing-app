@@ -16,6 +16,8 @@ import '../../../data/models/saved_note.dart';
 import '../../../data/ai_providers.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/cube_motion.dart';
+import '../../core/widgets/like_button.dart';
 import '../../core/widgets/rich_text.dart';
 
 class NoteViewerModal extends ConsumerStatefulWidget {
@@ -130,6 +132,17 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                             ],
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        LikeButton(
+                          size: LikeButtonSize.sm,
+                          liked: ref
+                              .watch(feedDataProvider)
+                              .bookmarkedNoteIds
+                              .contains(note.id),
+                          onLikedChange: (_) => ref
+                              .read(appDataProvider.notifier)
+                              .toggleBookmark(note.id),
+                        ),
                       ],
                     ),
                   ),
@@ -196,7 +209,18 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
 
   Widget _buildAiSummaryCard(SavedNote note) {
     final summary = note.aiSummary;
-    if (summary == null || summary.isEmpty) return const SizedBox.shrink();
+    final manager = ref.watch(aiQueueManagerProvider);
+    final isProcessing =
+        manager.isNoteActive(note.id) || manager.isNoteQueued(note.id);
+
+    if (summary == null || summary.isEmpty) {
+      if (isProcessing) {
+        return const CubeAiProcessingPlaceholder(
+          message: 'AI is generating reflections and summary...',
+        );
+      }
+      return const SizedBox.shrink();
+    }
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -312,111 +336,120 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
   }
 
   Widget _buildDeleteButton() {
-    return AnimatedScaleButton(
-      onPress: () => setState(() => _confirmDelete = true),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.dangerTint,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.dangerBorderLight, width: 1),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Mdi.get('trashCanOutline'),
-              color: AppColors.primaryAction,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Delete Entry',
-              style: TextStyle(
+    return Center(
+      child: AnimatedScaleButton(
+        onPress: () => setState(() => _confirmDelete = true),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+          decoration: BoxDecoration(
+            color: AppColors.dangerTint,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.dangerBorderLight, width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Mdi.get('trashCanOutline'),
                 color: AppColors.primaryAction,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
+                size: 15,
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              const Text(
+                'Delete Entry',
+                style: TextStyle(
+                  color: AppColors.primaryAction,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildConfirmDelete() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.dangerSubtle,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.dangerBorderMedium, width: 1),
-      ),
-      child: Column(
-        children: [
-          const Text(
-            'Delete this entry forever?',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.dangerSubtle,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.dangerBorderMedium, width: 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Delete this entry forever?',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: AnimatedScaleButton(
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedScaleButton(
                   onPress: () => setState(() => _confirmDelete = false),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.glassHighlight,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Text(
                       'Cancel',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: AnimatedScaleButton(
+                const SizedBox(width: 10),
+                AnimatedScaleButton(
                   onPress: _handleDelete,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.primaryAction,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Text(
                       'Delete',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppColors.primaryActionText,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 /// A route gives Back navigation and media underneath a reliable modal lifecycle.
+/// Slides in smoothly from the bottom on open, and slides back down on dismiss.
 Future<void> showNoteViewer(
   BuildContext context, {
   required SavedNote note,
@@ -424,10 +457,26 @@ Future<void> showNoteViewer(
 }) => showGeneralDialog<void>(
   context: context,
   barrierColor: Colors.transparent,
-  transitionDuration: const Duration(milliseconds: 200),
+  barrierDismissible: true,
+  barrierLabel: 'Dismiss',
+  transitionDuration: const Duration(milliseconds: 300),
   pageBuilder: (context, animation, secondaryAnimation) => NoteViewerModal(
     note: note,
     onClose: () => Navigator.of(context).pop(),
     onDeleted: onDeleted,
   ),
+  transitionBuilder: (context, animation, secondaryAnimation, child) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, 1.0),
+        end: Offset.zero,
+      ).animate(curved),
+      child: child,
+    );
+  },
 );

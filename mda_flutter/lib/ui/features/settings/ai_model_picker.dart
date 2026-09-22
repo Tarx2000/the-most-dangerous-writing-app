@@ -85,9 +85,12 @@ class _AiModelPickerState extends ConsumerState<AiModelPicker> {
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(aiConfigProvider);
-    final fallback = config.provider == AiProvider.ollama
-        ? AiDefaults.ollamaModels
-        : AiDefaults.neuralwattModels;
+    final fallback = switch (config.provider) {
+      AiProvider.neuralwatt => AiDefaults.neuralwattModels,
+      AiProvider.codex => AiDefaults.codexModels,
+      AiProvider.openrouter => AiDefaults.openrouterModels,
+      _ => AiDefaults.ollamaModels,
+    };
     final models =
         {
           ..._models,

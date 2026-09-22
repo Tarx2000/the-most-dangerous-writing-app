@@ -5,6 +5,8 @@ library;
 class AiProvider {
   static const ollama = 'ollama';
   static const neuralwatt = 'neuralwatt';
+  static const codex = 'codex';
+  static const openrouter = 'openrouter';
 }
 
 /// The resolved per-provider runtime configuration.
@@ -75,6 +77,36 @@ class AiDefaults {
 
   /// Selectable Neuralwatt models.
   static const List<String> neuralwattModels = ['glm-5.2'];
+
+  static const codexBaseUrl = 'https://api.openai.com/v1';
+  static const codexModel = 'gpt-6-luna';
+  static const codexApiKey = '';
+
+  /// Selectable Codex / OpenAI models.
+  static const List<String> codexModels = [
+    'gpt-6-luna',
+    'gpt-5-turbo',
+    'gpt-4o',
+    'gpt-4o-mini',
+    'o3-mini',
+    'o1',
+  ];
+
+  static const openrouterBaseUrl = 'https://openrouter.ai/api/v1';
+  static const openrouterModel = 'deepseek/deepseek-v4-1-flash';
+  static const openrouterApiKey = '';
+
+  /// Selectable OpenRouter models.
+  static const List<String> openrouterModels = [
+    'deepseek/deepseek-v4-1-flash',
+    'deepseek/deepseek-chat',
+    'deepseek/deepseek-r1',
+    'anthropic/claude-3.7-sonnet',
+    'openai/gpt-4o',
+    'openai/gpt-4o-mini',
+    'meta-llama/llama-3.3-70b-instruct',
+    'google/gemini-2.0-flash-001',
+  ];
 }
 
 /// Default prompts — verbatim semantics of `src/config/ai.ts` (SPEC §9).

@@ -86,6 +86,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             type: FeedItemType.tweet,
             timestamp: note.timestamp,
             note: note,
+            personId: note.personId,
+            personName: note.personId != null ? persons[note.personId] : null,
           )
         else if (note.personId != null)
           FeedItemData(
@@ -182,10 +184,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 child: Row(
                   children: [
                     _FilterChip(
-                      label: _onlyBookmarked ? 'Bookmarked' : 'All',
+                      label: 'All',
+                      active: !_onlyBookmarked,
+                      onTap: () => setState(() => _onlyBookmarked = false),
+                    ),
+                    _FilterChip(
+                      label: 'Bookmarked',
+                      icon: Mdi.get('bookmark'),
                       active: _onlyBookmarked,
-                      onTap: () =>
-                          setState(() => _onlyBookmarked = !_onlyBookmarked),
+                      onTap: () => setState(() => _onlyBookmarked = true),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 18,
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      color: AppColors.glassBorderSubtle,
                     ),
                     _FilterChip(
                       label: 'Journals',
@@ -358,11 +371,13 @@ class _FilterChip extends StatelessWidget {
     required this.label,
     required this.active,
     required this.onTap,
+    this.icon,
   });
 
   final String label;
   final bool active;
   final VoidCallback onTap;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -382,13 +397,28 @@ class _FilterChip extends StatelessWidget {
               width: 1,
             ),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? AppColors.primaryAction : AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 13,
+                  color:
+                      active ? AppColors.primaryAction : AppColors.textSecondary,
+                ),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color:
+                      active ? AppColors.primaryAction : AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
       ),
