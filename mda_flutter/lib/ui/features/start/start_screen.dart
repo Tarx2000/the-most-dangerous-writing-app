@@ -424,13 +424,7 @@ class _TopBar extends ConsumerWidget {
                     style: const LiquidGlassStyle(
                       shape: LiquidGlassShape.continuousRoundedRectangle(
                         cornerRadius: 30,
-                        borderWidth: 1.0,
-                        borderType: OpticalBorder(
-                          ambientIntensity: 0.30,
-                          borderSaturation: 1.0,
-                          borderSolidity: 0.04,
-                        ),
-                        lightColor: Color(0x1CFFFFFF),
+                        borderWidth: 0.0,
                       ),
                       refraction: LiquidGlassRefraction(
                         distortion: 0.05,
@@ -441,10 +435,17 @@ class _TopBar extends ConsumerWidget {
                         shadow: LiquidGlassShadow(blur: 10, opacity: 0.5),
                       ),
                     ),
-                    child: Padding(
+                    child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
+                          color: AppColors.glassBorderSubtle,
+                          width: 1,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -704,13 +705,7 @@ class _VisionLockButton extends ConsumerWidget {
               style: LiquidGlassStyle(
                 shape: const LiquidGlassShape.continuousRoundedRectangle(
                   cornerRadius: 30,
-                  borderWidth: 1.0,
-                  borderType: OpticalBorder(
-                    ambientIntensity: 0.30,
-                    borderSaturation: 1.0,
-                    borderSolidity: 0.04,
-                  ),
-                  lightColor: Color(0x1CFFFFFF),
+                  borderWidth: 0.0,
                 ),
                 refraction: const LiquidGlassRefraction(
                   distortion: 0.05,
@@ -723,10 +718,19 @@ class _VisionLockButton extends ConsumerWidget {
                   shadow: const LiquidGlassShadow(blur: 10, opacity: 0.5),
                 ),
               ),
-              child: Padding(
+              child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                    color: unlocked
+                        ? AppColors.glassBorderSubtle
+                        : AppColors.dangerBorder.withValues(alpha: 0.4),
+                    width: 1,
+                  ),
                 ),
                 child: _buildLockContent(unlocked),
               ),
@@ -827,28 +831,29 @@ class _SettingsCogButtonState extends ConsumerState<_SettingsCogButton> {
       },
       child: enableLiquidGlass
           ? LiquidGlassLens(
-              style: LiquidGlassStyle(
+              style: const LiquidGlassStyle(
                 shape: LiquidGlassShape.continuousRoundedRectangle(
                   cornerRadius: 30,
-                  borderWidth: devMode ? 2.0 : 1.0,
-                  borderType: const OpticalBorder(
-                    ambientIntensity: 0.30,
-                    borderSaturation: 1.0,
-                    borderSolidity: 0.04,
-                  ),
-                  lightColor: devMode ? AppColors.gold : const Color(0x1CFFFFFF),
+                  borderWidth: 0.0,
                 ),
-                refraction: const LiquidGlassRefraction(
+                refraction: LiquidGlassRefraction(
                   distortion: 0.05,
                   distortionWidth: 12,
                 ),
-                appearance: const LiquidGlassAppearance(
+                appearance: LiquidGlassAppearance(
                   color: Color(0x401C1C20),
                   shadow: LiquidGlassShadow(blur: 10, opacity: 0.5),
                 ),
               ),
-              child: Padding(
+              child: Container(
                 padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                    color: devMode ? AppColors.gold : AppColors.glassBorderSubtle,
+                    width: devMode ? 2 : 1,
+                  ),
+                ),
                 child: Icon(
                   Mdi.get('cog'),
                   color: devMode ? AppColors.gold : AppColors.textSecondary,

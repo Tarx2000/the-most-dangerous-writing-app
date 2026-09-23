@@ -129,13 +129,7 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
       style: LiquidGlassStyle(
         shape: LiquidGlassShape.continuousRoundedRectangle(
           cornerRadius: _height / 2,
-          borderWidth: 1.0,
-          borderType: const OpticalBorder(
-            ambientIntensity: 0.30,
-            borderSaturation: 1.0,
-            borderSolidity: 0.04,
-          ),
-          lightColor: const Color(0x22FFFFFF),
+          borderWidth: 0.0,
         ),
         refraction: const LiquidGlassRefraction(
           distortion: 0.07,
@@ -146,15 +140,24 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
         appearance: const LiquidGlassAppearance(
           color: Color(0x60121216),
           shadow: LiquidGlassShadow(
-            blur: 20,
-            opacity: 0.75,
+            blur: 24,
+            opacity: 0.8,
           ),
         ),
       ),
       touch: const LiquidGlassTouch(
         flex: LiquidGlassFlex.subtle(),
       ),
-      child: _buildTabStack(tabWidth, isGlass: true),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(_height / 2),
+          border: Border.all(
+            color: AppColors.glassBorderSubtle,
+            width: 1,
+          ),
+        ),
+        child: _buildTabStack(tabWidth, isGlass: true),
+      ),
     );
   }
 
@@ -179,14 +182,14 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
           child: Container(
             decoration: BoxDecoration(
               color: isGlass
-                  ? const Color(0x20FFFFFF)
+                  ? const Color(0x18FFFFFF)
                   : AppColors.navIndicatorBackground,
               borderRadius: BorderRadius.circular(
                 (_height - _pillInset * 2) / 2,
               ),
               border: Border.all(
                 color: isGlass
-                    ? const Color(0x18FFFFFF)
+                    ? const Color(0x10FFFFFF)
                     : AppColors.navIndicatorBorder,
                 width: 1,
               ),

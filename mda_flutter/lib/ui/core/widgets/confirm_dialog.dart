@@ -99,22 +99,16 @@ class _ConfirmDialogState extends ConsumerState<ConfirmDialog>
               opacity: _opacity,
               child: enableLiquidGlass
                   ? LiquidGlassLens(
-                      style: LiquidGlassStyle(
-                        shape: const LiquidGlassShape.continuousRoundedRectangle(
+                      style: const LiquidGlassStyle(
+                        shape: LiquidGlassShape.continuousRoundedRectangle(
                           cornerRadius: 20,
-                          borderWidth: 1.0,
-                          borderType: OpticalBorder(
-                            ambientIntensity: 0.30,
-                            borderSaturation: 1.0,
-                            borderSolidity: 0.04,
-                          ),
-                          lightColor: Color(0x20FFFFFF),
+                          borderWidth: 0.0,
                         ),
-                        refraction: const LiquidGlassRefraction(
+                        refraction: LiquidGlassRefraction(
                           distortion: 0.07,
                           distortionWidth: 18,
                         ),
-                        appearance: const LiquidGlassAppearance(
+                        appearance: LiquidGlassAppearance(
                           color: Color(0x80141418),
                           shadow: LiquidGlassShadow(
                             blur: 24,
@@ -125,6 +119,13 @@ class _ConfirmDialogState extends ConsumerState<ConfirmDialog>
                       child: Container(
                         width: cardWidth,
                         padding: const EdgeInsets.all(28),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.glassBorderSubtle,
+                            width: 1,
+                          ),
+                        ),
                         child: _buildDialogContent(),
                       ),
                     )

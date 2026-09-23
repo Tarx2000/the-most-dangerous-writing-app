@@ -1,11 +1,12 @@
 {
-    "terminal.integrated.gpuAcceleration": "on",
-    "terminal.integrated.smoothScrolling": true,
-    "terminal.integrated.cursorBlinking": false,
-    "terminal.integrated.cursorStyle": "block",
-    "terminal.integrated.localEchoEnabled": false,
-    "terminal.integrated.env.windows": {
-        "TERM": "xterm-256color",
-        "FORCE_COLOR": "1"
-    }
+  "dart.flutterSdkPath": "/opt/homebrew/bin/flutter",
+  "dart.flutterHotReloadOnSave": "all",
+  "dart.flutterHotRestartOnSave": false,
+  "dart.openDevTools": "never",
+  "dart.notifyCoworkersForUnusedSdkPrompt": false,
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.selectionHighlight": false,
+    "editor.suggest.snippetsPreventQuickSuggestions": false
+  }
 }
