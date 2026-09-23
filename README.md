@@ -32,7 +32,7 @@ flutter run           # Debug on emulator/device
 flutter test --concurrency=1   # Test suite
 ```
 
-Release APK builds: see `.agents/workflows/expo-build.md` (opencode command `/expo-build`).
+Release APK builds: see `.agents/workflows/flutter-build.md` (opencode command `/flutter-build`).
 APK output: `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 
 ### React Native (`mda_rn/`) — legacy reference only

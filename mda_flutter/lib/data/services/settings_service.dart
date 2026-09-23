@@ -48,6 +48,7 @@ abstract final class SettingsKeys {
   static const aiOpenRouterGrammarModel = 'AI_OPENROUTER_GRAMMAR_MODEL';
   static const aiCustomPrompts = 'AI_CUSTOM_PROMPTS';
   static const aiFavoriteModels = 'AI_FAVORITE_MODELS';
+  static const enableLiquidGlass = 'ENABLE_LIQUID_GLASS';
 
   /// API-key settings that must be stripped from backups (SPEC §13).
   static const backupSecretKeys = {

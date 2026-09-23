@@ -1,81 +1,43 @@
-# Domain Instruction: Animations
+# Domain Instruction: Flutter Animations & Visual Motion
 
 ## Scope
-Any file using `react-native-reanimated`, `react-native-gesture-handler`, `flubber`, or custom SVG animations.
+Any Flutter widget involving `AnimationController`, implicit animations (`AnimatedContainer`, `AnimatedScale`, `AnimatedOpacity`), gestures, GLSL shaders, or `liquid_glass_easy`.
 
-## CRITICAL: Never Write .value During Render
-SharedValues run on the UI thread. Writing `.value` during React render causes strict-mode warnings and stale reads.
+## Aesthetic Standard: Clean & Professional
+- Animations must look clean, elegant, and professional rather than playful, hyperactive, or excessively bouncy.
+- Use smooth timing curves (`Curves.easeOutCubic`, `Curves.fastOutSlowIn`) or well-damped springs. Avoid excessive overshooting.
+- Subtle feedback: Button taps and micro-interactions should use subtle scaling factors (`AnimatedScaleButton` scaling around 0.95–1.03x).
 
-```tsx
-// WRONG — causes "Writing to value during component render" warning
-const sv = useSharedValue(screenHeight);
-sv.value = screenHeight; // ❌ render-time write
+## Liquid Glass Standard & Solid Fallback
+- **Standard UI Element**: Liquid glass is the standard treatment for navigation bars (`LiquidGlassNav`), floating pills, modals, and interactive dialogs via `liquid_glass_easy: ^4.3.1` and custom GLSL fragment shaders.
+- **Mandatory Solid Fallback**: Liquid glass MUST ALWAYS support a clean, solid translucent fallback (`AppColors.overlayLockAndroid` / solid token) for when the user toggles liquid glass off in settings or on resource-constrained devices.
+- **Background**: Screen backgrounds remain pure AMOLED black (`#000000`). Glass effects float above this black canvas.
+- **GPU Performance**: Avoid stacking multiple real-time glass shaders over high-frequency scrolling lists (like the feed) to prevent frame drops.
 
-// RIGHT — update in useEffect
-const sv = useSharedValue(screenHeight);
-useEffect(() => { sv.value = screenHeight; }, [screenHeight, sv]); // ✅
+## Animation Performance Rules
+- **Repaint Boundaries**: Wrap complex animating subtrees or custom painters in `RepaintBoundary` so that painting the animation does not trigger repaints in the parent tree.
+- **Transform Over Layout Reflow**: Animate `Transform.scale` or `Transform.translate` rather than dynamically changing container `width`, `height`, or `padding` during an animation frame. Layout reflow forces expensive re-measurement passes.
+- **Isolate Animations from App State**: Use `AnimatedBuilder` with a child widget parameter so only the transform/opacity updates per frame, without rebuilding the child subtree:
+```dart
+AnimatedBuilder(
+  animation: controller,
+  builder: (context, child) => Opacity(
+    opacity: controller.value,
+    child: child,
+  ),
+  child: const ExpensiveSubtree(), // Built once!
+);
 ```
 
-## Allowed Update Locations
-- `useEffect` callbacks
-- `useCallback` handlers
-- Gesture handler callbacks (`onStart`, `onActive`, `onEnd`)
-- `requestAnimationFrame` loops
-
-## React.memo for Expensive Components
-Always wrap components that use Reanimated or SVG in `React.memo`:
-- `DangerOverlay`
-- `TickDial`
-- `LiquidMorphIcon`
-- `DeathOverlay`
-- Any component with `GestureDetector`
-
-## Flubber SVG Morphing
-- Pre-compute all interpolation frames before playback
-- Target 60fps by limiting frame count
-- Use `useSharedValue` for the path morph progress, not React state
-- **Cache pre-computed frame arrays** dynamically for clean transitions (e.g. `journal_to_circles`) to reduce flubber runtime overhead to 0ms on subsequent morphs.
-
-## Reanimated Thread Safety & runOnUI
-- **Avoid wrapping simple shared value writes in `runOnUI`**: Direct setting of `sharedValue.value = withSpring(...)` or `sharedValue.value = withTiming(...)` is automatically optimized by Reanimated to run on the UI thread. Using `runOnUI` adds unnecessary bridge crossing latency and queues updates behind busy JS cycles. Only use `runOnUI` when executing custom worklet functions that must run strictly on the UI thread.
-
-## Gesture Handler Patterns
-- Extract gesture handlers into `useMemo` to prevent recreation on parent re-renders
-- Memoize animated styles with `useAnimatedStyle`, not `useMemo`
-- Always clean up gesture handlers in `useEffect` cleanup
-
-## Feed Transition Architecture
-The feed reveal/dismiss uses `feedProgress` SharedValue (0→1) driving three animated layers:
-- **Main content**: `translateY: feedProgress * -screenHeight` (slides up)
-- **Feed layer**: `translateY: (1 - feedProgress) * screenHeight` (slides in from below)
-- **Nav bar**: `opacity: 1 - feedProgress`, `translateY: feedProgress * 80` (fades out and slides down)
-
-`LiquidGlassNav` must be **OUTSIDE** the `mainContent` `Animated.View` with its own `navAnimStyle`. Inside `mainContent` it gets pushed off-screen and bleeds into the feed during transition.
+## Feed Transition & Gestures
+- The home feed transition is gesture-driven via a 0.0 to 1.0 reveal progress value.
+- Drag frames must only update transforms (`Transform.translate`), not rebuild list items.
+- Feed video cards require:
+  1. Viewport intersection check (must be visible on screen).
+  2. Foreground / current route check (must be the active route).
+  3. Reveal progress >= 0.95 before initiating playback.
 
 ## Haptic Feedback
-`useSession` implements a 4-level escalating haptic pattern during idle danger. Thresholds are constants at the top of the file — adjust values there, not in comments. Each level fires exactly once per idle period (tracked via `lastHapticLevelRef`).
-
-## Video Auto-Play (Viewport-Driven)
-`FeedVideoCard`: `autoPlay` prop (viewport-driven) → `userPausedRef` (manual override) → `playingChange` listener (force-resume). **CRITICAL: `VideoView` has `pointerEvents: 'none'`**, use `Pressable` overlay with `zIndex` for taps.
-
-## Performance & Layout Sizing Rules
-- **Conditional Mounting**: Defer mounting expensive children inside expandable elements (like accordions or slide-outs) using a local React state (e.g., `shouldRenderContent`). Only mount when expanding, and unmount when collapsing completes via Reanimated's animation finished callback (using `runOnJS`).
-- **NO `BlurView` ANYWHERE**: Liquid-glass blur was deliberately removed app-wide. BlurView runs on the CPU on Android (stutter) and adds GPU passes on iOS with no visible benefit over solid surfaces on this AMOLED theme. Use solid translucent tokens (`theme.colors.overlayLockAndroid`, `glassSurface*`, `surfaceCard`) instead. If a new blur is ever required, it must be GPU-only on iOS and a solid fallback on Android — but prefer no blur.
-- **FlashList Dynamic Heights**: For lists with expanding/collapsing items, do NOT provide a fixed `getItemLayout` prop to `FlashList` or `FlatList`. A fixed `getItemLayout` causes layout conflicts and thrashing when items resize.
-- **Max 3 Visible Stacked Layers**: When building composite UI elements (e.g. floating pills, nav bars, glass cards), collapse visual layers into at most 3 stacked compositor layers: (1) background layer, (2) animating/moving layer, (3) interactive layer. Extra absolute-fill gradients and tint overlays add a per-frame compositor cost that becomes visible jank on throttled GPUs.
-- **No `pointerEvents` Inside `useAnimatedStyle`**: `pointerEvents` is a layout-level property, not a transform. Toggling it inside a worklet forces an extra native commit on every frame the threshold is crossed. Drive `pointerEvents` from React state (`visible` / `feedVisible`) on the consuming `Animated.View` instead, so it flips exactly once per transition rather than being re-evaluated every animation frame.
-
-## Aesthetics & Spring Parameters (Decent, Clean, Professional)
-- **Card shrink/fly-away pattern (save transitions)**: shrink cards with GPU `scaleX`/`scaleY` inside a full-size container (e.g. `saveWidth.value / screenWidth`), NEVER animate `width`/`height`/`padding` — the writing/PostWriting/AlignmentWriting fly-aways were converted to this pattern because layout animation re-flows the live editor every frame.
-
-- **Avoid Excessive/Playful Bounciness**: Animations must look clean, elegant, and professional rather than bouncy or hyperactive.
-- **Damping Over Stiffness**: When configuring spring presets, use higher damping values (e.g., `damping: 26` to `35`) to prevent overshooting, oscillation, or excessive bounce.
-- **Always Use `theme.animation.*` Presets — No Inline Spring Configs**: Inline `{ damping: ..., stiffness: ..., mass: ... }` objects passed to `withSpring` are **DEPRECATED**. Always reference a preset from `theme.animation` in `src/styles/theme.ts`:
-  - `springDefault` — modal entries, sheet slides, card expands (damping 30)
-  - `springSnappy` — quick press scales, snap-backs, tick snaps (damping 35)
-  - `springGentle` — visible-but-tamed motion like celebratory popups (damping 26)
-  - `springLight` — lighter-feeling springs (damping 28, mass 0.5)
-  - `springFeed` — the feed reveal gesture (damping 32)
-  If a new use case doesn't fit a preset, add a new preset to `theme.animation` rather than writing an inline config at the call site.
-- **Timing Transitions**: For micro-interactions (like tab switching, input fade-ins, and button presses), prefer clean timing transitions (`withTiming`) or highly-damped, non-oscillating springs (`withSpring` with high damping).
-- **Scale Factor**: Keep scaling factors subtle (e.g. `1.03` to `1.05` instead of `1.15`). Let the size shift remain modest.
+- Short tactile interactions (tab changes, buttons) use native `HapticFeedback.lightImpact()` or `HapticFeedback.selectionClick()`, throttled to avoid rapid bursts.
+- Longer warning patterns (writing danger countdown) use vibration patterns.
+- Toggling haptics off in settings must immediately cancel any active vibration pattern.

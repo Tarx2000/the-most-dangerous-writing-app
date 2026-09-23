@@ -24,6 +24,7 @@ class PreferencesState {
     this.logMode = false,
     this.lastReflectionDate,
     this.autoGenerateSummaries = true,
+    this.enableLiquidGlass = false,
   });
 
   final int fontIndex;
@@ -40,6 +41,7 @@ class PreferencesState {
   final bool logMode;
   final int? lastReflectionDate; // ms
   final bool autoGenerateSummaries;
+  final bool enableLiquidGlass;
 
   PreferencesState copyWith({
     int? fontIndex,
@@ -56,6 +58,7 @@ class PreferencesState {
     bool? logMode,
     int? lastReflectionDate,
     bool? autoGenerateSummaries,
+    bool? enableLiquidGlass,
   }) {
     return PreferencesState(
       fontIndex: fontIndex ?? this.fontIndex,
@@ -72,6 +75,7 @@ class PreferencesState {
       logMode: logMode ?? this.logMode,
       lastReflectionDate: lastReflectionDate ?? this.lastReflectionDate,
       autoGenerateSummaries: autoGenerateSummaries ?? this.autoGenerateSummaries,
+      enableLiquidGlass: enableLiquidGlass ?? this.enableLiquidGlass,
     );
   }
 }

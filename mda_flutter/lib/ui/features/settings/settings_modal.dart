@@ -346,6 +346,19 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                     const Divider(height: 1, color: AppColors.glassBorder),
                     const SizedBox(height: 18),
                     _ReadingSizePicker(prefs: prefs),
+                    const SizedBox(height: 18),
+                    const Divider(height: 1, color: AppColors.glassBorder),
+                    const SizedBox(height: 8),
+                    _PrefToggleRow(
+                      title: 'Liquid Glass Design',
+                      subtitle:
+                          'Apple iOS-style real-time GPU shader refraction for floating bars and controls. Toggle off for classic AMOLED solid styling.',
+                      icon: 'blur',
+                      value: prefs.enableLiquidGlass,
+                      onChanged: (v) => ref
+                          .read(appDataProvider.notifier)
+                          .setPreference(enableLiquidGlass: v),
+                    ),
                   ],
                 ),
 

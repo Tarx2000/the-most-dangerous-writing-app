@@ -8,9 +8,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
+import '../../../data/providers.dart';
 import '../../features/home/home_shell_types.dart';
 import 'animated_scale_button.dart';
 
@@ -30,7 +33,7 @@ class NavTabConfig {
   final bool urgent;
 }
 
-class LiquidGlassNav extends StatefulWidget {
+class LiquidGlassNav extends ConsumerStatefulWidget {
   const LiquidGlassNav({
     super.key,
     required this.tabs,
@@ -53,10 +56,10 @@ class LiquidGlassNav extends StatefulWidget {
   final double safeBottom;
 
   @override
-  State<LiquidGlassNav> createState() => _LiquidGlassNavState();
+  ConsumerState<LiquidGlassNav> createState() => _LiquidGlassNavState();
 }
 
-class _LiquidGlassNavState extends State<LiquidGlassNav> {
+class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
   static const double _height = 62;
   static const double _pillInset = 7;
 
@@ -65,6 +68,9 @@ class _LiquidGlassNavState extends State<LiquidGlassNav> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final pillWidth = screenWidth * 0.88;
     final tabWidth = pillWidth / widget.tabs.length;
+    final enableLiquidGlass = ref.watch(
+      preferencesProvider.select((p) => p.enableLiquidGlass),
+    );
 
     return Positioned(
       left: (screenWidth - pillWidth) / 2,
@@ -78,78 +84,133 @@ class _LiquidGlassNavState extends State<LiquidGlassNav> {
           offset: Offset(0, widget.feedProgress * 80),
           child: Opacity(
             opacity: (1 - widget.feedProgress).clamp(0.0, 1.0),
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.overlayLockAndroid,
-                borderRadius: BorderRadius.circular(_height / 2),
-                border: Border.all(
-                  color: AppColors.specularBorderStart,
-                  width: 1,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.navPillShadow,
-                    blurRadius: 24,
-                    offset: Offset(0, 10),
-                  ),
-                ],
+            child: enableLiquidGlass
+                ? _buildLiquidGlassNavBar(tabWidth)
+                : _buildClassicNavBar(tabWidth),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Classic rendering mode (SPEC §15 original):
+  /// Solid pill `overlayLockAndroid` fill, `specularBorderStart` 1 px border,
+  /// standard BoxShadow. Zero shader passes, zero backdrop reading.
+  Widget _buildClassicNavBar(double tabWidth) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.overlayLockAndroid,
+        borderRadius: BorderRadius.circular(_height / 2),
+        border: Border.all(
+          color: AppColors.specularBorderStart,
+          width: 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.navPillShadow,
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_height / 2),
+        child: _buildTabStack(tabWidth, isGlass: false),
+      ),
+    );
+  }
+
+  /// Liquid Glass rendering mode:
+  /// Uses `liquid_glass_easy` to simulate physical glass with real-time live
+  /// backdrop refraction, optical specular rim lighting, contact shadow,
+  /// and responsive touch deformation.
+  Widget _buildLiquidGlassNavBar(double tabWidth) {
+    return LiquidGlassLens(
+      style: LiquidGlassStyle(
+        shape: LiquidGlassShape.continuousRoundedRectangle(
+          cornerRadius: _height / 2,
+          borderWidth: 1.0,
+          borderType: const OpticalBorder(
+            ambientIntensity: 0.9,
+            borderSaturation: 1.15,
+            borderSolidity: 0.15,
+          ),
+          lightColor: AppColors.specularBorderStart,
+        ),
+        refraction: const LiquidGlassRefraction(
+          distortion: 0.08,
+          distortionWidth: 24,
+          magnification: 1.0,
+          chromaticAberration: 0.002,
+        ),
+        appearance: LiquidGlassAppearance(
+          color: AppColors.overlayLockAndroid.withValues(alpha: 0.55),
+          shadow: const LiquidGlassShadow(
+            blur: 16,
+            opacity: 0.6,
+          ),
+        ),
+      ),
+      touch: const LiquidGlassTouch(
+        flex: LiquidGlassFlex.subtle(),
+      ),
+      child: _buildTabStack(tabWidth, isGlass: true),
+    );
+  }
+
+  /// Tab stack: indicator bubble + interactive icon/label tab rows.
+  Widget _buildTabStack(double tabWidth, {required bool isGlass}) {
+    return Stack(
+      children: [
+        // Layer 2: sliding indicator bubble — RN parity:
+        // `left: 0; top: 6; translateX = index*tabWidth + PADDING`,
+        // height PILL_HEIGHT−12, width tabWidth − 2×PADDING.
+        AnimatedPositioned(
+          left: _indicatorLeft(
+            widget.tabs,
+            widget.activeId,
+            tabWidth,
+          ),
+          top: _pillInset,
+          height: _height - _pillInset * 2,
+          width: tabWidth - _pillInset * 2,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: Container(
+            decoration: BoxDecoration(
+              color: isGlass
+                  ? AppColors.navIndicatorBackground.withValues(alpha: 0.75)
+                  : AppColors.navIndicatorBackground,
+              borderRadius: BorderRadius.circular(
+                (_height - _pillInset * 2) / 2,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(_height / 2),
-                child: Stack(
-                  children: [
-                    // Layer 1: pill background (already the container)
-                    // Layer 2: sliding indicator bubble — RN parity:
-                    // `left: 0; top: 6; translateX = index*tabWidth + PADDING`,
-                    // height PILL_HEIGHT−12, width tabWidth − 2×PADDING.
-                    AnimatedPositioned(
-                      left: _indicatorLeft(
-                        widget.tabs,
-                        widget.activeId,
-                        tabWidth,
-                      ),
-                      top: _pillInset,
-                      height: _height - _pillInset * 2,
-                      width: tabWidth - _pillInset * 2,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.navIndicatorBackground,
-                          borderRadius: BorderRadius.circular(
-                            (_height - _pillInset * 2) / 2,
-                          ),
-                          border: Border.all(
-                            color: AppColors.navIndicatorBorder,
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Layer 3: tabs
-                    Row(
-                      children: [
-                        for (final tab in widget.tabs)
-                          Expanded(
-                            child: _NavTab(
-                              tab: tab,
-                              tabWidth: tabWidth,
-                              active: tab.id == widget.activeId,
-                              onTap: () {
-                                widget.onSelect(tab.id);
-                                widget.onFeedToggle?.call();
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
+              border: Border.all(
+                color: isGlass
+                    ? AppColors.navIndicatorBorder.withValues(alpha: 0.8)
+                    : AppColors.navIndicatorBorder,
+                width: 1,
               ),
             ),
           ),
         ),
-      ),
+        // Layer 3: tabs
+        Row(
+          children: [
+            for (final tab in widget.tabs)
+              Expanded(
+                child: _NavTab(
+                  tab: tab,
+                  tabWidth: tabWidth,
+                  active: tab.id == widget.activeId,
+                  onTap: () {
+                    widget.onSelect(tab.id);
+                    widget.onFeedToggle?.call();
+                  },
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 

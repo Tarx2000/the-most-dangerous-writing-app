@@ -304,6 +304,10 @@ class StorageNotifier extends Notifier<AppData> {
           SettingsKeys.autoGenerateSummaries,
           true,
         ),
+        enableLiquidGlass: await service.getBool(
+          SettingsKeys.enableLiquidGlass,
+          false,
+        ),
       );
     } catch (e) {
       logStorage.error('settings load failed', e);
@@ -877,6 +881,7 @@ class StorageNotifier extends Notifier<AppData> {
     bool? preferPinAuth,
     bool? logMode,
     bool? autoGenerateSummaries,
+    bool? enableLiquidGlass,
   }) async {
     final service = ref.read(settingsServiceProvider);
     final prefs = state.preferences;
@@ -892,6 +897,7 @@ class StorageNotifier extends Notifier<AppData> {
       preferPinAuth: preferPinAuth,
       logMode: logMode,
       autoGenerateSummaries: autoGenerateSummaries,
+      enableLiquidGlass: enableLiquidGlass,
     );
 
     final writes = <Future<void>>[];
@@ -936,6 +942,14 @@ class StorageNotifier extends Notifier<AppData> {
         service.setRaw(
           SettingsKeys.autoGenerateSummaries,
           '$autoGenerateSummaries',
+        ),
+      );
+    }
+    if (enableLiquidGlass != null) {
+      writes.add(
+        service.setRaw(
+          SettingsKeys.enableLiquidGlass,
+          '$enableLiquidGlass',
         ),
       );
     }

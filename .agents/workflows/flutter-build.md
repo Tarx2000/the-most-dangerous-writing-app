@@ -5,12 +5,10 @@ description: Local Android Build — tests, commit & push, then builds the Flutt
 <!-- 
   WORKFLOW: Local Android Release Build (Flutter-only)
 
-  The user decided on 2026-09-21: ONLY the Flutter app (`mda_flutter/`) is
-  built, installed and used from now on. The RN app (`mda_rn/`) is legacy —
-  it is NEVER built, committed for, or installed anymore. If any doc below
-  still mentions `mda_rn/` build steps, it is STALE — follow this file.
+  ONLY the Flutter app (`mda_flutter/`) is built, installed, and used.
+  The RN app (`mda_rn/`) is retired and legacy — it is NEVER built.
 
-  This workflow is fully automated (turbo-all). When invoked via /expo-build:
+  This workflow is fully automated (turbo-all). When invoked via /flutter-build:
   1. Commit and push any pending changes to remote
   2. Run the full Flutter test suite — ALL tests must pass
   3. Build the Flutter release APK for arm64 (S24 Ultra)
@@ -101,30 +99,23 @@ Build the optimized Flutter release APK for arm64 (Samsung Galaxy S24 Ultra).
 `--split-per-abi` produces per-architecture APKs; the arm64 one is renamed to
 the canonical `app-arm64-v8a-release.apk` name the user's phone recognizes as
 an update. `--no-tree-shake-icons` keeps the full MDI font (runtime
-`Mdi.get()` IconData prevents tree-shaking — parity with the RN app which
-bundles the full MDI font).
+`Mdi.get()` IconData prevents tree-shaking).
 
 ```bash
 cd mda_flutter && flutter build apk --release --no-tree-shake-icons --split-per-abi
-cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-(The `cp` is a no-op safeguard documenting the canonical filename; the real
-output of `--split-per-abi` already carries the `app-arm64-v8a-release.apk` name.)
-
 > [!NOTE]
-> `versionCode` comes from `pubspec.yaml` (`1.5.12+2005` → code 2005, kept
-> above the old per-ABI split build whose arm64 was 2001 — a lower code
-> would make Android reject the install as a downgrade). Bump the `+NNN`
-> suffix for every release so the phone accepts it as an update.
+> `versionCode` comes from `pubspec.yaml` (`1.5.12+2005` → code 2005). Bump the `+NNN`
+> suffix for every release so Android accepts it as an update.
 
 ---
 
 ## Step 5 — Report APK Location
 
-After a successful build, report the APK location to the user with a clickable link (use the local absolute path; example below):
+After a successful build, report the APK location to the user with a clickable link:
 
-**APK output path:** `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+**APK output path:** [mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk](file:///Users/tarikkuc/Coding%20Projektordner/MostDangerousWritingApp/mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk)
 
 ---
 
@@ -136,20 +127,11 @@ After a successful build, report the APK location to the user with a clickable l
   "package conflicts", not an update.
 - **versionCode must grow** with every release (`pubspec.yaml` `+NNN` suffix).
 - The RN app (`com.anonymous.themostdangerouswritingapp`, different package
-  AND different key) can NEVER be updated by a Flutter APK — it must be
-  uninstalled once; data moves via backup export/import.
-
----
-
-## Hardware Acceleration & Parallelization
-
-Flutter release builds are single-command; no Gradle flags needed. Keep
-`flutter analyze` + `flutter test --concurrency=1` as the gates.
+  AND different key) can NEVER be updated by a Flutter APK — data moves via backup export/import.
 
 ---
 
 ## Common Issues
 
-- **"App not installed as package conflicts with an existing package"**: package name or signing key differs from the installed app (e.g. RN app vs Flutter app, or debug vs release key). **Fix:** uninstall the conflicting app first (export a backup first!), then install the new APK.
+- **"App not installed as package conflicts with an existing package"**: package name or signing key differs from the installed app. **Fix:** uninstall the conflicting app first (export a backup first!), then install the new APK.
 - **"There was a problem parsing the package" / downgrade**: versionCode went down. **Fix:** bump the `+NNN` suffix in `mda_flutter/pubspec.yaml`.
-- **"Metro bundler error after installing native modules" (RN legacy only)**: Run `cd mda_rn && npx expo start -c` to clear cache.

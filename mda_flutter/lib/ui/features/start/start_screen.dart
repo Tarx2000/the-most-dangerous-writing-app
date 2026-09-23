@@ -7,6 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/haptics.dart';
@@ -398,14 +399,18 @@ class _StartScreenState extends ConsumerState<StartScreen> {
   }
 }
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends ConsumerWidget {
   const _TopBar({required this.streak, this.onCalendarPress});
 
   final int streak;
   final VoidCallback? onCalendarPress;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enableLiquidGlass = ref.watch(
+      preferencesProvider.select((p) => p.enableLiquidGlass),
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
@@ -414,32 +419,85 @@ class _TopBar extends StatelessWidget {
           // Streak button → streak calendar
           AnimatedScaleButton(
             onPress: onCalendarPress,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.glassBackground,
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: AppColors.glassBorder, width: 1),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Mdi.get('fire'),
-                    color: AppColors.primaryAction,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$streak',
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+            child: enableLiquidGlass
+                ? LiquidGlassLens(
+                    style: const LiquidGlassStyle(
+                      shape: LiquidGlassShape.continuousRoundedRectangle(
+                        cornerRadius: 30,
+                        borderWidth: 1.0,
+                        borderType: OpticalBorder(
+                          ambientIntensity: 0.8,
+                          borderSaturation: 1.1,
+                          borderSolidity: 0.1,
+                        ),
+                        lightColor: AppColors.glassBorder,
+                      ),
+                      refraction: LiquidGlassRefraction(
+                        distortion: 0.05,
+                        distortionWidth: 14,
+                      ),
+                      appearance: LiquidGlassAppearance(
+                        color: Color(0x33FFFFFF),
+                        shadow: LiquidGlassShadow(blur: 8, opacity: 0.35),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Mdi.get('fire'),
+                            color: AppColors.primaryAction,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$streak',
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.glassBackground,
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: AppColors.glassBorder,
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Mdi.get('fire'),
+                          color: AppColors.primaryAction,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$streak',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
           ),
           Row(
             children: [
@@ -614,7 +672,8 @@ class _VisionLockButton extends ConsumerWidget {
     // Re-evaluate on every tier change reactively.
     final unlocked = ref.watch(isNotesUnlockedProvider);
     final security = ref.read(securityControllerProvider);
-    final prefs = ref.read(preferencesProvider);
+    final prefs = ref.watch(preferencesProvider);
+    final enableLiquidGlass = prefs.enableLiquidGlass;
 
     return AnimatedScaleButton(
       onPress: () async {
@@ -640,46 +699,89 @@ class _VisionLockButton extends ConsumerWidget {
           security.lockAll();
         }
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: unlocked ? AppColors.glassBackground : AppColors.dangerTint,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: unlocked ? AppColors.glassBorder : AppColors.dangerBorder,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: Icon(
-                unlocked ? Mdi.get('pillar') : Mdi.get('lockOutline'),
-                key: ValueKey(unlocked),
-                color: unlocked ? AppColors.gold : AppColors.dangerIconOverlay,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: 6),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: Text(
-                unlocked ? 'Masteries' : 'Locked',
-                key: ValueKey(unlocked),
-                style: TextStyle(
+      child: enableLiquidGlass
+          ? LiquidGlassLens(
+              style: LiquidGlassStyle(
+                shape: const LiquidGlassShape.continuousRoundedRectangle(
+                  cornerRadius: 30,
+                  borderWidth: 1.0,
+                  borderType: OpticalBorder(
+                    ambientIntensity: 0.8,
+                    borderSaturation: 1.1,
+                    borderSolidity: 0.1,
+                  ),
+                  lightColor: AppColors.glassBorder,
+                ),
+                refraction: const LiquidGlassRefraction(
+                  distortion: 0.05,
+                  distortionWidth: 14,
+                ),
+                appearance: LiquidGlassAppearance(
                   color: unlocked
-                      ? AppColors.textPrimary
-                      : AppColors.dangerIconOverlay,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+                      ? const Color(0x33FFFFFF)
+                      : AppColors.dangerTint.withValues(alpha: 0.5),
+                  shadow: const LiquidGlassShadow(blur: 8, opacity: 0.35),
                 ),
               ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: _buildLockContent(unlocked),
+              ),
+            )
+          : AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: unlocked
+                    ? AppColors.glassBackground
+                    : AppColors.dangerTint,
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: unlocked
+                      ? AppColors.glassBorder
+                      : AppColors.dangerBorder,
+                  width: 1,
+                ),
+              ),
+              child: _buildLockContent(unlocked),
             ),
-          ],
+    );
+  }
+
+  static Widget _buildLockContent(bool unlocked) {
+    return Row(
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: Icon(
+            unlocked ? Mdi.get('pillar') : Mdi.get('lockOutline'),
+            key: ValueKey(unlocked),
+            color: unlocked ? AppColors.gold : AppColors.dangerIconOverlay,
+            size: 18,
+          ),
         ),
-      ),
+        const SizedBox(width: 6),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: Text(
+            unlocked ? 'Masteries' : 'Locked',
+            key: ValueKey(unlocked),
+            style: TextStyle(
+              color: unlocked
+                  ? AppColors.textPrimary
+                  : AppColors.dangerIconOverlay,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -694,8 +796,9 @@ class _SettingsCogButton extends ConsumerStatefulWidget {
 class _SettingsCogButtonState extends ConsumerState<_SettingsCogButton> {
   @override
   Widget build(BuildContext context) {
-    ref.watch(preferencesProvider.select((p) => p.devMode));
-    final devMode = ref.read(preferencesProvider).devMode;
+    final prefs = ref.watch(preferencesProvider);
+    final devMode = prefs.devMode;
+    final enableLiquidGlass = prefs.enableLiquidGlass;
 
     return AnimatedScaleButton(
       onPress: () {
@@ -722,22 +825,53 @@ class _SettingsCogButtonState extends ConsumerState<_SettingsCogButton> {
           ),
         );
       },
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.glassBackground,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: devMode ? AppColors.gold : AppColors.glassBorder,
-            width: devMode ? 2 : 1,
-          ),
-        ),
-        child: Icon(
-          Mdi.get('cog'),
-          color: devMode ? AppColors.gold : AppColors.textSecondary,
-          size: 20,
-        ),
-      ),
+      child: enableLiquidGlass
+          ? LiquidGlassLens(
+              style: LiquidGlassStyle(
+                shape: LiquidGlassShape.continuousRoundedRectangle(
+                  cornerRadius: 30,
+                  borderWidth: devMode ? 2.0 : 1.0,
+                  borderType: const OpticalBorder(
+                    ambientIntensity: 0.8,
+                    borderSaturation: 1.1,
+                    borderSolidity: 0.1,
+                  ),
+                  lightColor: devMode ? AppColors.gold : AppColors.glassBorder,
+                ),
+                refraction: const LiquidGlassRefraction(
+                  distortion: 0.05,
+                  distortionWidth: 12,
+                ),
+                appearance: const LiquidGlassAppearance(
+                  color: Color(0x33FFFFFF),
+                  shadow: LiquidGlassShadow(blur: 8, opacity: 0.35),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Icon(
+                  Mdi.get('cog'),
+                  color: devMode ? AppColors.gold : AppColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+            )
+          : Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.glassBackground,
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: devMode ? AppColors.gold : AppColors.glassBorder,
+                  width: devMode ? 2 : 1,
+                ),
+              ),
+              child: Icon(
+                Mdi.get('cog'),
+                color: devMode ? AppColors.gold : AppColors.textSecondary,
+                size: 20,
+              ),
+            ),
     );
   }
 }

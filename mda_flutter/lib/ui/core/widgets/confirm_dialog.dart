@@ -3,11 +3,14 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../data/providers.dart';
 import 'animated_scale_button.dart';
 
-class ConfirmDialog extends StatefulWidget {
+class ConfirmDialog extends ConsumerStatefulWidget {
   const ConfirmDialog({
     super.key,
     required this.title,
@@ -30,10 +33,10 @@ class ConfirmDialog extends StatefulWidget {
   final VoidCallback onCancel;
 
   @override
-  State<ConfirmDialog> createState() => _ConfirmDialogState();
+  ConsumerState<ConfirmDialog> createState() => _ConfirmDialogState();
 }
 
-class _ConfirmDialogState extends State<ConfirmDialog>
+class _ConfirmDialogState extends ConsumerState<ConfirmDialog>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -70,6 +73,9 @@ class _ConfirmDialogState extends State<ConfirmDialog>
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final cardWidth = (screenWidth - 48).clamp(280.0, 380.0);
+    final enableLiquidGlass = ref.watch(
+      preferencesProvider.select((p) => p.enableLiquidGlass),
+    );
 
     return Material(
       color: Colors.transparent,
@@ -91,120 +97,159 @@ class _ConfirmDialogState extends State<ConfirmDialog>
             scale: _scale,
             child: FadeTransition(
               opacity: _opacity,
-              child: Container(
-                width: cardWidth,
-                padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceRaised,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.glassBorderMedium),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.shadowDark,
-                      blurRadius: 30,
-                      offset: Offset(0, 12),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      widget.message,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 15,
-                        height: 1.45,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        // Cancel button
-                        Expanded(
-                          child: AnimatedScaleButton(
-                            onPress: () => _dismiss(widget.onCancel),
-                            activeScale: 0.97,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: AppColors.glassHighlight,
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.close, size: 18, color: AppColors.textPrimary),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    widget.cancelLabel,
-                                    style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+              child: enableLiquidGlass
+                  ? LiquidGlassLens(
+                      style: LiquidGlassStyle(
+                        shape: const LiquidGlassShape.continuousRoundedRectangle(
+                          cornerRadius: 20,
+                          borderWidth: 1.0,
+                          borderType: OpticalBorder(
+                            ambientIntensity: 0.9,
+                            borderSaturation: 1.15,
+                            borderSolidity: 0.15,
+                          ),
+                          lightColor: AppColors.glassBorderMedium,
+                        ),
+                        refraction: const LiquidGlassRefraction(
+                          distortion: 0.08,
+                          distortionWidth: 20,
+                        ),
+                        appearance: LiquidGlassAppearance(
+                          color: AppColors.surfaceRaised.withValues(alpha: 0.72),
+                          shadow: const LiquidGlassShadow(
+                            blur: 24,
+                            opacity: 0.6,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        // Confirm button
-                        Expanded(
-                          child: AnimatedScaleButton(
-                            onPress: () => _dismiss(widget.onConfirm),
-                            activeScale: 0.97,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: widget.destructive ? AppColors.danger : AppColors.primaryAction,
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    widget.confirmIcon ??
-                                        (widget.destructive ? Icons.delete_outline : Icons.check),
-                                    size: 18,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    widget.confirmLabel,
-                                    style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                      ),
+                      child: Container(
+                        width: cardWidth,
+                        padding: const EdgeInsets.all(28),
+                        child: _buildDialogContent(),
+                      ),
+                    )
+                  : Container(
+                      width: cardWidth,
+                      padding: const EdgeInsets.all(28),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceRaised,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.glassBorderMedium),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: AppColors.shadowDark,
+                            blurRadius: 30,
+                            offset: Offset(0, 12),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      child: _buildDialogContent(),
                     ),
-                  ],
-                ),
-              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDialogContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          widget.title,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          widget.message,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 15,
+            height: 1.45,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            // Cancel button
+            Expanded(
+              child: AnimatedScaleButton(
+                onPress: () => _dismiss(widget.onCancel),
+                activeScale: 0.97,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.glassHighlight,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.cancelLabel,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Confirm button
+            Expanded(
+              child: AnimatedScaleButton(
+                onPress: () => _dismiss(widget.onConfirm),
+                activeScale: 0.97,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.destructive
+                        ? AppColors.primaryAction
+                        : AppColors.gold,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (widget.confirmIcon != null) ...[
+                        Icon(
+                          widget.confirmIcon,
+                          color: AppColors.background,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        widget.confirmLabel,
+                        style: const TextStyle(
+                          color: AppColors.background,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -1,35 +1,23 @@
-# Domain Instruction: Security & Biometric Authentication
+# Domain Instruction: Security & Biometric Authentication (Flutter)
 
 ## Scope
-`src/lib/hooks/useSecurity.ts`, `SecurityProvider` wrapping the app root, any lock/unlock screen, or sensitive data access.
+`mda_flutter/lib/domain/use_cases/security_controller.dart`, `mda_flutter/lib/ui/core/widgets/security_boundary.dart`, `mda_flutter/lib/ui/core/widgets/pin_pad.dart`, and biometric authentication via `local_auth`.
 
-## Architecture
-- `SecurityProvider` (Context Provider): Manages the global biometric & PIN state, inactivity timers, and background grace period. Located at the root of the app.
-- `useSecurity` (Hook): Context consumer hook used by screens (Start, Library, Feed, etc.) to share the unified unlock state.
+## Architecture & Boundaries
+- **`SecurityBoundary`**: High-level widget wrapping the navigator. Owns lifecycle events (app pause/resume), inactivity timers, and background grace periods.
+- **Global PIN Layer**: Rendered above the router so unauthenticated navigation is strictly prohibited. The back dispatcher cancels pending authentication before delegating to underlying routes.
+- **Secure Key Storage**: PIN hashes, attempt counters, and lockout timestamps are stored exclusively in `flutter_secure_storage` (with `android:allowBackup="false"` in `AndroidManifest.xml`). They are NEVER saved to `SharedPreferences` or SQLite.
 
-## 3-Tier Biometric Lock
-The app uses a graduated security model:
-
-| Stage | Access Level | Unlock Method |
+## 3-Tier Security Model
+| Tier | Access Level | Description |
 |---|---|---|
-| 0 | Locked | No access |
-| 1 | Circles visible | Biometric or passcode (circles list only) |
-| 1.5 | Profile visible | Biometric or passcode (circle profiles) |
-| 2 | Full access | Biometric or passcode (notes, feed, all data) |
+| **0** | Locked | Complete lockout; PIN / Biometric prompt required |
+| **1** | Circles Visible | Circles list accessible |
+| **1.5** | Profile Visible | Circle profiles accessible |
+| **2** | Full Access | All notes, journal feed, vlogs, and masteries unlocked |
 
-## Auto-Lock Rules
-- **Idle timeout**: 3 minutes of inactivity (configurable via `timeoutMins`, where 0 = lock on background only)
-- **Background grace period**: 30 seconds — brief interruptions (messages, camera switch) don't require re-auth
-- **Immediate lock**: On `inactive` state (Control Center, notification overlay, task switcher)
-
-## Backup Security Policy (see `backup-system.md`)
-- The security PIN, its attempt counter and lockout timer are **never exported** into a backup (plaintext ZIPs stay portable, incl. the future Flutter port).
-- A restore **never overwrites** local PIN state — after `storage.clearAll()` the PIN keys are re-applied from the local snapshot, so the device keeps its own PIN ("PIN bleibt immer lokal"). On a fresh device the user simply sets a new PIN.
-- The AI API keys (Ollama/Neuralwatt) are stripped from the `settings`-table dump on export; they are never restored from a backup.
-- Backup integrity is verified before any data is touched: schema-version gate, manifest gate (entry sizes), free-space gate; rollback snapshots restore DB, dirs and AsyncStorage (incl. PIN) on failure.
-
-## Implementation Notes
-- Use `expo-local-authentication` for biometric checks
-- Fallback to device passcode/PIN when biometrics unavailable
-- Store no sensitive data in plain AsyncStorage — use the storage adapter layer
-- When editing lock screen transitions, ensure `feedProgress` SharedValue properly drives the dismiss gesture (follow-finger, then snap to 0 or 1)
+## Invariants & Edge Cases
+1. **Lifecycle Immunity during Biometrics**: When the native Android biometric prompt opens, it pauses the Flutter app lifecycle. `SecurityBoundary` must recognize that this lifecycle pause was triggered by authentication and must NOT invalidate or re-lock the session.
+2. **Manual Lock Precedence**: Manual lock immediately wipes current unlock tokens and invalidates any in-flight biometric or PIN verification.
+3. **Lockout Protection**: 3 incorrect PIN entries trigger a 30-second lockout (`PIN_LOCKOUT_DURATION_MS = 30_000`).
+4. **Backup Exclusion**: PIN material and attempt counters are strictly excluded from backups. A restore never overwrites or restores PIN state.

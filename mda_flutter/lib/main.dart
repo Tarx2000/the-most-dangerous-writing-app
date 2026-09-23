@@ -8,12 +8,14 @@
 ///      the UI never waits for data before first frame)
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
 import 'app.dart';
 import 'core/haptics.dart';
@@ -56,6 +58,14 @@ Future<void> main() async {
     logStartup.warn('haptics init skipped', e);
     return null;
   });
+
+  if (!_isFlutterTest) {
+    unawaited(
+      LiquidGlassShaders.ensureLoaded().catchError((Object e) {
+        logStartup.warn('liquid glass shaders prewarm skipped', e);
+      }),
+    );
+  }
 
   // The debug container is shared with the Marionette test extensions so
   // they operate on the same state the UI renders (UncontrolledProviderScope

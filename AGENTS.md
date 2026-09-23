@@ -1,119 +1,147 @@
 # The Most Dangerous Writing App — Monorepo Agent Context
 
-Monorepo containing **two implementations** of the same journaling app (stopping typing destroys your text; social circles, vlog recording, self-tracking growth masteries, alignment check-ins, and AI-powered title/summary generation via Ollama Cloud):
+Monorepo containing the journaling app where stopping typing destroys your text (social circles, vlog recording, growth masteries, alignment check-ins, and AI-powered title/summary generation):
 
-| Folder | Implementation | Role |
+| Folder | Implementation | Role | Status |
+|---|---|---|---|
+| `mda_flutter/` | Flutter (Dart 3.12, Flutter 3.44) | **The App & Single Source of Truth** | **Active** — built, tested, installed, and used |
+| `mda_rn/` | React Native (Expo SDK 55) | Legacy Behavioral Reference (Read-Only) | **Retired** — never edit, never build, never install |
+
+> [!IMPORTANT]
+> **Flutter (`mda_flutter/`) is the single source of truth.** All active development, bug fixes, features, tests, and builds happen exclusively in `mda_flutter/`.
+> The React Native codebase (`mda_rn/`) is retired and frozen; it is kept solely as an optional read-only reference for feature inspiration. **Never run commands inside `mda_rn/` and never edit files in `mda_rn/`.**
+
+---
+
+## Tech Stack (`mda_flutter/`)
+- **Framework & Language**: Flutter 3.44 + Dart 3.12
+- **State Management**: Riverpod 2 (`flutter_riverpod`) with domain-specific `Notifier` and `StateNotifierProvider` architecture
+- **Navigation**: `go_router` (custom transitions, transparent modal routes, Hero animations)
+- **Local Database**: `sqflite` (`mda_v2.db`, schema v6) with **dual-track versioning** (`PRAGMA user_version` + `SharedPreferences`)
+- **Secure Storage**: `flutter_secure_storage` for PIN hashes and attempt counters (`android:allowBackup="false"`)
+- **AI Streaming**: `http` (`StreamedResponse` + SSE line parsing) supporting Ollama Cloud, Neuralwatt, and OpenAI-compatible providers
+- **Media & Vlogs**: `camera`, `video_player`, `video_thumbnail`, `video_compress`, `wakelock_plus`
+- **Backup & Files**: `archive`, `gal`, `share_plus`, `file_picker`, `path_provider` (processed off the UI thread via Dart isolates)
+- **Visuals & Motion**: `liquid_glass_easy: ^4.3.1` (GLSL fragment shaders) with solid token fallback, `material_design_icons_flutter` (MDI glyphs), 8 bundled Google fonts
+
+---
+
+## Architecture (`mda_flutter/lib/`)
+```
+lib/
+├── main.dart / app.dart
+├── core/          # theme (AppColors AMOLED tokens), haptics, logger, perf, utils
+├── data/
+│   ├── database/  # db.dart (sqflite wrapper), migrations, repositories
+│   ├── models/    # immutable domain models (copyWith, serialization)
+│   ├── services/  # ai_service, backup_service, compression, storage, settings
+│   └── queues/    # ai_queue, compression_queue (singleton background managers)
+├── domain/        # use_cases: session_engine, streak_calculator, security_controller, mastery_logic
+└── ui/
+    ├── core/widgets/   # LiquidGlassNav, BaseModal, PinPad, TickDial, SecurityBoundary, MorphIcon
+    └── features/       # home, writing, post_writing, library, circles, feed,
+                        # pillars (masteries), alignment, vlogs, settings, sandbox
+```
+
+---
+
+## Core Product Invariants & Non-Negotiable Constraints
+
+1. **Pure AMOLED Black (`#000000`)**:
+   - Screen background is strictly pure black (`AppColors.background`).
+   - Surfaces use elevation ladder tokens (`surfaceDark`, `surfaceRaised`, `surfaceCard`). Never substitute dark gray for the root canvas.
+2. **Liquid Glass Standard with Solid Fallback**:
+   - Liquid glass via `liquid_glass_easy` / custom GLSL shaders is standard for navigation bars (`LiquidGlassNav`), floating pills, and elevated dialogs.
+   - **Mandatory Fallback**: Every liquid glass element must cleanly fall back to solid translucent tokens (`AppColors.overlayLockAndroid`, `glassBorder`) when disabled by the user or on unsupported devices.
+   - Backgrounds behind glass remain pure black. Avoid stacking multiple real-time glass shaders over high-frequency scrolling feeds.
+3. **Status Bar Permanently Hidden**:
+   - Fullscreen immersive mode across all screens via `SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: [SystemUiOverlay.bottom])`.
+   - The Android status bar (clock, battery, notifications) is permanently hidden. Nav bar is AMOLED black.
+4. **Masteries Rebranding (UI vs. Schema)**:
+   - All user-facing UI labels, headers, and domain logic are **Masteries** / **Mastery** (`mastery_logic.dart`, "New Mastery", "Edit Mastery").
+   - Code-level database tables and repositories remain **`pillars`** (`pillars_repository.dart`, `CREATE TABLE pillars`) to preserve 100% backward compatibility with existing backup ZIP archives (`.zip`).
+5. **3-Tier Biometrics & Security**:
+   - Security tiers: `0` (Locked), `1` (Circles visible), `1.5` (Profile visible), `2` (Full access).
+   - `SecurityBoundary` owns application lifecycle. Native biometric prompts pausing the app lifecycle must never invalidate authentication.
+   - PIN material and attempt counters live exclusively in `flutter_secure_storage`.
+6. **Backup Rules (Verifiable, Portable, Secret-Free)**:
+   - Backups are standard plaintext ZIPs (`backup_metadata.json` + media files).
+   - **Secrets are NEVER exported and NEVER restored**: PIN hashes and AI API keys are stripped.
+   - Dual-track schema compatibility: Backups from newer schema versions are rejected; older backups are column-filtered.
+7. **Crash-Proof Startup & Data Integrity**:
+   - Dual-track schema migrations (`PRAGMA user_version` + `SharedPreferences` max). Migrations are idempotent and self-healing.
+   - `loadAllData()` loads domains independently (`Future.wait` with per-domain try/catch); one corrupt row must never crash startup.
+   - Deleting a vlog deletes the SQLite row first, then the video file from disk (never reverse).
+   - Zero UI thread blocking: All archive compression, decompression, JSON parsing, and thumbnail processing run in Dart isolates (`compute`).
+
+---
+
+## Agent Self-Driving & Debug Harness (`marionette_flutter`)
+- **Harness Entrypoint**: `lib/marionette_harness.dart` installs `MarionetteBinding` (debug-only, gated by `kDebugMode && !FLUTTER_TEST`). Zero impact on release builds.
+- **Autonomous Test Extensions**:
+  - `mdaTest.seedNote` — seeds test notes directly into state
+  - `mdaTest.backupState` — returns live in-memory counts
+  - `mdaTest.exportBackup` — runs the real `StorageNotifier` export pipeline
+  - `mdaTest.importBackup` — verifies import and restores data autonomously
+- **Driving the App**: Launch app with `flutter run`, retrieve the VM Service URI, and drive the interface using the `marionette` CLI or MCP tools.
+
+---
+
+## Canonical Commands & Workflows
+
+| Action | Command | Rule |
 |---|---|---|
-| `mda_rn/` | React Native (Expo SDK 55) | **Source of truth** — the original app |
-| `mda_flutter/` | Flutter (Dart 3.12, Flutter 3.44) | Port — behavioral contract is `mda_flutter/SPEC_1TO1.md` |
+| **Analyze** | `cd mda_flutter && flutter analyze` | Must exit with **0 issues** before committing |
+| **Test Suite** | `cd mda_flutter && flutter test --concurrency=1` | Must pass **100% of tests** (widget tests must never do real DB I/O) |
+| **Release Build** | `/flutter-build` | Registered workflow in `.agents/workflows/flutter-build.md` |
+| **Manual Release Build** | `cd mda_flutter && flutter build apk --release --no-tree-shake-icons --split-per-abi` | Output: `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` |
 
-> **Flutter parity repair in progress**: the nine feature areas are implemented,
-> but the initial port had interaction, security, restore, and visual regressions.
-> See `mda_flutter/PORT_AUDIT.md` for verified repairs and remaining device checks.
-> A passing build alone does not establish behavioral or visual parity.
-> **The RN app remains the source of truth**; when in doubt, the code in `mda_rn/`
-> wins — update `SPEC_1TO1.md` and port the behavior.
-> Read `mda_flutter/AGENTS.md` before editing Flutter code.
-> **All RN commands (npm, expo, gradle) must be run from `mda_rn/`.**
+---
 
-## Tech Stack (React Native — `mda_rn/`)
-- React 19.2 + React Native 0.83.6 (Expo managed, custom native builds)
-- React Navigation v7 (Native Stack)
-- Reanimated v4 + `react-native-worklets` + Gesture Handler + Flubber
-- SQLite (expo-sqlite v15) + AsyncStorage + expo-file-system
-- AI Providers: Ollama Cloud & Neuralwatt (OpenAI-compatible) APIs via XHR streaming. Failures are classified into an `AiError` (kind: network/timeout/server/rateLimit/auth/config/cancelled/parse) with an actionable `userMessage`; the queue retries only retryable kinds and surfaces `AiFailureNotification`s (with `errorKind`) to the UI. See `.agents/instructions/ai-integration.md`.
-- Babel (`babel-plugin-react-compiler` target 19, `react-native-worklets/plugin` LAST entry), TypeScript 5.9 strict
+## Domain Instructions (`.agents/instructions/*.md`)
+Detailed architectural guides live in `.agents/instructions/`:
+- `state-management.md` — Riverpod 2 Notifiers, domain providers, optimistic updates, crash-proof boot
+- `animations.md` — Liquid glass shaders, solid fallback, clean & professional motion, feed transitions
+- `dart-rules.md` — Strict typing, `const` constructors, immutable domain models, zero-lint standards
+- `backup-system.md` — V2 backup layout, isolate processing, secret stripping, restore sequence
+- `security.md` — 3-tier biometrics, `SecurityBoundary`, `local_auth`, `flutter_secure_storage`
+- `theme-system.md` — Pure AMOLED `#000000`, `AppColors` token ladder, Liquid Glass styling
+- `ai-integration.md` — `AiQueue` & `CompressionQueue` singletons, SSE streaming, `AiError` classification
 
-> **Reanimated v4 Babel Requirement**: The worklet compiler plugin must be imported from `react-native-worklets/plugin` (NOT `react-native-reanimated/plugin`, which is the legacy v3 path) and must be the **last** entry in `babel.config.js` `plugins`. Otherwise worklets fall back to JS-thread shims and animations jank on throttled devices.
+---
 
-## Project Structure (React Native — `mda_rn/`)
-```
-mda_rn/
-  App.tsx                    — Entry point (providers and Root Stack Navigator)
-  src/
-    config/                  — App configurations (timers, difficulties, fonts, AI config)
-    types/                   — TypeScript type definitions and interfaces
-    lib/                     — Core utilities, hooks, SQLite database access (db.ts), and AI logic
-    screens/                 — Navigation screens (HomeScreen, StartScreen, WritingScreen, LibraryScreen, FeedScreen, VlogRecordingScreen, PillarsDashboardScreen, PillarDetailScreen, AlignmentWritingScreen, SandboxScreen, etc.)
-    components/ui/           — Reusable visual components (LiquidGlassNav, BaseModal, TickDial, PinPadModal, etc.)
-    components/features/     — Domain-specific components (writing/, library/, feed/, circles/, settings/, alignment/)
-    styles/                  — theme.ts (AMOLED tokens and styling utilities)
-  android/                   — Generated native project (prebuild); used for local release APK builds
-  credentials/               — Android signing keys (tracked, auto-copied during prebuild)
-  plugins/withAndroidSigning.js — Local config plugin that copies signing keys into android/
-```
-
-## Key Constraints (React Native — `mda_rn/`)
-- **Path alias**: `@/` maps to `src/` (tsconfig + babel)
-- **Build Setup**: Expo Go is used for rapid iterative testing. However, the app is built as a custom native build (e.g., local Android release APK) for distribution/production. Standard Expo Go compatibility must be maintained during testing, but custom native code/builds are supported for the final export.
-- **No Liquid Glass / BlurView**: Liquid-glass blur was deliberately removed app-wide (CPU blur on Android, no benefit on AMOLED). Use solid translucent tokens (`overlayLockAndroid`, `glassSurface*`). See `.agents/instructions/animations.md`.
-- **Status bar hidden everywhere**: `App.tsx` keeps `<StatusBar hidden translucent />`; never re-show it in screens. Android forces dark + hidden bar via `app.json` `androidStatusBar.hidden` and the native theme (see `android/app/src/main/res/values/styles.xml` + `MainActivity.kt` — prebuild-generated, so persist config in `app.json`).
-- **Android signing keys**: Signing keys for debug and release builds are stored in `credentials/` (tracked in Git) and are automatically copied to native `android/app/` during prebuild via the local config plugin `./plugins/withAndroidSigning.js`. This ensures identical signatures across all dev environments (Windows & macOS) so local updates do not trigger Android signature mismatch errors.
-- **Ollama API**: Streaming via `XMLHttpRequest` (not fetch). Base URL and model user-configurable.
-- **SQLite bridge bug**: Always use `db.ts` wrappers (`run`/`getAll`/`getFirst`). Never call `db.runAsync()` directly. This also applies to `src/lib/backupService.ts` (`exec` wrapper exists for parameter-less statements like PRAGMAs).
-- **Backup rules**: Never export secrets (security PIN, PIN counters, AI API keys); the PIN is never restored. Every new DB table must be registered in `SCOPE_TABLES` in `backupService.ts`. Backups are plaintext ZIPs (portability, incl. the Flutter port). Details: `.agents/instructions/backup-system.md`.
-- **Crash-proof startup**: The app must never crash on launch regardless of stored user data. DB migrations are idempotent/self-healing (schema version via `PRAGMA user_version` + AsyncStorage `max`), `getDb()` resets on failure, `loadAllData()` degrades gracefully (`Promise.allSettled`), and row converters / `safeParse` results are shape-guarded. Details: `.agents/instructions/state-management.md`.
-- **React Compiler active**: Don't add `useMemo`/`useCallback` where compiler handles it.
-- **Masteries Rebranding**: All user-facing references (headers, modals, lists, settings) are rebranded as **Masteries** (or **Mastery**), whereas code-level imports, hooks (`usePillars`), repositories, and database schemas remain `pillar` and `pillars` to guarantee data integrity and bypass migration corruption.
-
-## Domain Instructions
-Critical per-domain rules live in `.agents/instructions/*.md` (applies to the RN app in `mda_rn/`). Read the relevant file before editing that area.
-- `state-management.md` — Split-context pattern, fresh-read, optimistic updates, crash-proof startup
-- `animations.md` — SharedValue rules, feed transitions, haptics
-- `ai-integration.md` — Singleton queue, streaming, retry logic
-- `backup-system.md` — Backup format v2, scope mapping, verification gates, restore pipeline, secrets policy
-- `theme-system.md` — Color mappings, naming conventions, liquid glass
-- `security.md` — 3-tier biometric, auto-lock rules
-- `typescript-rules.md` — Strict mode, version pinning, code quality
-
-## Workflows
-
-- `.agents/workflows/expo-build.md` — canonical Local Android Release Build (**Flutter-only** since 2026-09-21: analyze → test → commit/push → `flutter build apk --release --no-tree-shake-icons --split-per-abi`). Registered in opencode as `/expo-build` (`.opencode/command/expo-build.md`). **All commands run inside `mda_flutter/`; APK output: `mda_flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.** **Always run this workflow when the user asks for a build, "expo build", or an APK** — do not improvise a build, and NEVER build `mda_rn/` (legacy, RN is no longer used or installed).
-
-## Agent Operating Rules (Mandatory)
+## Mandatory Agent Operating Rules
 
 ### 1. Code Must Be Well-Documented
-Every chunk of code must have good, simple-to-understand documentation. Comments explain the **"why"**, not just the **"what"**.
+Every chunk of code must have good, simple-to-understand documentation. Comments explain the **"why"**, not just the "what".
 
 ### 2. Documentation Must Stay Up to Date
-Whenever documentation or comments no longer fit the code, **update or remove them immediately**. Do not defer. Outdated documentation is worse than no documentation.
+Whenever documentation or comments no longer fit the code, **update or remove them immediately**. Outdated documentation is worse than no documentation.
 
 ### 3. Config Variables for Customization
-Define important customizable values as **config variables at the top of the file** or in a dedicated config file (e.g., `mda_rn/src/config/`).
+Define important customizable values as config constants at the top of the file or in dedicated config files (`mda_flutter/lib/core/` or `lib/domain/`).
 
 ### 4. List Used Skills in Every Response
 At the top of every answer, list which skills or instructions contributed to the response.
-
-*Example:* `**Used skills:** \`vercel-react-best-practices\`, \`.agents/instructions/animations.md\``
+*Example:* `**Used skills:** \`flutter-expert\`, \`.agents/instructions/animations.md\``
 
 ### 5. Explain Difficult Tech Terms
 When mentioning technical terms that a non-expert might not know, provide a **short, plain-English explanation** right there in the answer.
 
-*Example:* `XHR (XMLHttpRequest): A browser API for fetching data from servers. Unlike the modern fetch() API, it allows reading a response piece-by-piece as it arrives.`
-
 ### 6. Parallelize Work with Sub-Agents
-If a task can be broken into multiple independent pieces (e.g., researching different topics, editing several files, or running multiple commands), **launch parallel task agents** rather than doing everything sequentially. Do not avoid delegating because it feels like more work — parallel agents finish faster and produce better results.
+If a task can be broken into multiple independent pieces (e.g., researching different topics, editing several files, or running multiple commands), **launch parallel task agents** rather than doing everything sequentially.
 
-*Guidelines:*
-- Use the `task` tool for focused subtasks.
-- Split by domain or file when there's no cross-dependency.
-- Always give sub-agents complete context (they don't see your conversation history by default).
+### 7. Clean and Professional Animation Style
+Animations must always look clean, elegant, and professional rather than hyperactive or overly bouncy. Use smooth easing curves (`Curves.easeOutCubic`) or well-damped springs with modest scaling factors.
 
-### 7. Clean and Professional Animation Style (Mandatory)
-Animations must always look clean, elegant, and professional rather than hyperactive or overly bouncy. Prefer timing-based transitions or highly-damped springs (using high damping-to-stiffness ratios) with modest scaling factors (e.g. 1.03x to 1.05x max). Avoid excessive playfulness or overshooting.
+### 8. Mandatory Verification Gate (Critical)
+**Always run `flutter analyze` and `flutter test --concurrency=1` inside `mda_flutter/` before claiming a feature, bugfix, or task is complete.** Never declare success with broken tests or analyzer warnings.
 
-## Project Documentation Maintenance (Critical)
+---
 
-**AGENTS.md is the single source of truth.** You must proactively maintain it and reference the correct skill instructions when making changes:
+## Project Documentation Maintenance
 
-- **Look for Fitting Skills First:** Before starting any task or writing code, scan the `.agents/skills/` directory or run skill searches to check if there is an existing skill that guides that implementation. Always follow the guidelines defined in active skills.
-- **Incremental Updates:** Whenever you make architectural or logic changes that affect rules, patterns, or conventions, update `AGENTS.md` and related instruction files immediately in the same step. Do not defer documentation updates.
-- **Common Triggers:**
-  - Deprecate a pattern → remove or mark **DEPRECATED** in `AGENTS.md` + `.agents/instructions/*.md`
-  - Introduce a pattern → add to `AGENTS.md` or the correct domain instruction file
-  - Change a package version → update the Version Pinning table (if applicable)
-  - Change AI integration → update `AGENTS.md` + `.agents/instructions/ai-integration.md`
-  - Change state management → update `AGENTS.md` + `.agents/instructions/state-management.md`
-
-**Verification before finishing any task:**
-- **Final Documentation Check:** After all changes are completed, perform a final review check to verify if any of the modifications necessitate updates to `AGENTS.md` or `.agents/instructions/*.md`. Fix any stale, misleading, or contradictory instructions before declaring the task complete.
+**AGENTS.md is the single source of truth.** Proactively maintain it and reference the correct skills when making changes:
+- Scan `.agents/skills/` (`flutter-expert`, `flutter-apply-architecture-best-practices`, `flutter-build-responsive-layout`, `impeccable`, `ui-ux-pro-max`) for best-practice guidance.
+- Whenever you make architectural or logic changes that affect rules, patterns, or conventions, update `AGENTS.md` and related instruction files immediately in the same step.
+- Perform a final review check after any major task to ensure all instructions remain accurate and free of stale framework baggage.
