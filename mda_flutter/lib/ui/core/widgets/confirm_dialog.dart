@@ -104,21 +104,21 @@ class _ConfirmDialogState extends ConsumerState<ConfirmDialog>
                           cornerRadius: 20,
                           borderWidth: 1.0,
                           borderType: OpticalBorder(
-                            ambientIntensity: 0.9,
-                            borderSaturation: 1.15,
-                            borderSolidity: 0.15,
+                            ambientIntensity: 0.30,
+                            borderSaturation: 1.0,
+                            borderSolidity: 0.04,
                           ),
-                          lightColor: AppColors.glassBorderMedium,
+                          lightColor: Color(0x20FFFFFF),
                         ),
                         refraction: const LiquidGlassRefraction(
-                          distortion: 0.08,
-                          distortionWidth: 20,
+                          distortion: 0.07,
+                          distortionWidth: 18,
                         ),
-                        appearance: LiquidGlassAppearance(
-                          color: AppColors.surfaceRaised.withValues(alpha: 0.72),
-                          shadow: const LiquidGlassShadow(
+                        appearance: const LiquidGlassAppearance(
+                          color: Color(0x80141418),
+                          shadow: LiquidGlassShadow(
                             blur: 24,
-                            opacity: 0.6,
+                            opacity: 0.8,
                           ),
                         ),
                       ),

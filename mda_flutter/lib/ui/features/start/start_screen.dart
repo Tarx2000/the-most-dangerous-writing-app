@@ -426,19 +426,19 @@ class _TopBar extends ConsumerWidget {
                         cornerRadius: 30,
                         borderWidth: 1.0,
                         borderType: OpticalBorder(
-                          ambientIntensity: 0.8,
-                          borderSaturation: 1.1,
-                          borderSolidity: 0.1,
+                          ambientIntensity: 0.30,
+                          borderSaturation: 1.0,
+                          borderSolidity: 0.04,
                         ),
-                        lightColor: AppColors.glassBorder,
+                        lightColor: Color(0x1CFFFFFF),
                       ),
                       refraction: LiquidGlassRefraction(
                         distortion: 0.05,
                         distortionWidth: 14,
                       ),
                       appearance: LiquidGlassAppearance(
-                        color: Color(0x33FFFFFF),
-                        shadow: LiquidGlassShadow(blur: 8, opacity: 0.35),
+                        color: Color(0x401C1C20),
+                        shadow: LiquidGlassShadow(blur: 10, opacity: 0.5),
                       ),
                     ),
                     child: Padding(
@@ -706,11 +706,11 @@ class _VisionLockButton extends ConsumerWidget {
                   cornerRadius: 30,
                   borderWidth: 1.0,
                   borderType: OpticalBorder(
-                    ambientIntensity: 0.8,
-                    borderSaturation: 1.1,
-                    borderSolidity: 0.1,
+                    ambientIntensity: 0.30,
+                    borderSaturation: 1.0,
+                    borderSolidity: 0.04,
                   ),
-                  lightColor: AppColors.glassBorder,
+                  lightColor: Color(0x1CFFFFFF),
                 ),
                 refraction: const LiquidGlassRefraction(
                   distortion: 0.05,
@@ -718,9 +718,9 @@ class _VisionLockButton extends ConsumerWidget {
                 ),
                 appearance: LiquidGlassAppearance(
                   color: unlocked
-                      ? const Color(0x33FFFFFF)
-                      : AppColors.dangerTint.withValues(alpha: 0.5),
-                  shadow: const LiquidGlassShadow(blur: 8, opacity: 0.35),
+                      ? const Color(0x401C1C20)
+                      : AppColors.dangerTint.withValues(alpha: 0.3),
+                  shadow: const LiquidGlassShadow(blur: 10, opacity: 0.5),
                 ),
               ),
               child: Padding(
@@ -832,19 +832,19 @@ class _SettingsCogButtonState extends ConsumerState<_SettingsCogButton> {
                   cornerRadius: 30,
                   borderWidth: devMode ? 2.0 : 1.0,
                   borderType: const OpticalBorder(
-                    ambientIntensity: 0.8,
-                    borderSaturation: 1.1,
-                    borderSolidity: 0.1,
+                    ambientIntensity: 0.30,
+                    borderSaturation: 1.0,
+                    borderSolidity: 0.04,
                   ),
-                  lightColor: devMode ? AppColors.gold : AppColors.glassBorder,
+                  lightColor: devMode ? AppColors.gold : const Color(0x1CFFFFFF),
                 ),
                 refraction: const LiquidGlassRefraction(
                   distortion: 0.05,
                   distortionWidth: 12,
                 ),
                 appearance: const LiquidGlassAppearance(
-                  color: Color(0x33FFFFFF),
-                  shadow: LiquidGlassShadow(blur: 8, opacity: 0.35),
+                  color: Color(0x401C1C20),
+                  shadow: LiquidGlassShadow(blur: 10, opacity: 0.5),
                 ),
               ),
               child: Padding(

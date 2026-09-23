@@ -131,23 +131,23 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
           cornerRadius: _height / 2,
           borderWidth: 1.0,
           borderType: const OpticalBorder(
-            ambientIntensity: 0.9,
-            borderSaturation: 1.15,
-            borderSolidity: 0.15,
+            ambientIntensity: 0.30,
+            borderSaturation: 1.0,
+            borderSolidity: 0.04,
           ),
-          lightColor: AppColors.specularBorderStart,
+          lightColor: const Color(0x22FFFFFF),
         ),
         refraction: const LiquidGlassRefraction(
-          distortion: 0.08,
-          distortionWidth: 24,
+          distortion: 0.07,
+          distortionWidth: 20,
           magnification: 1.0,
           chromaticAberration: 0.002,
         ),
-        appearance: LiquidGlassAppearance(
-          color: AppColors.overlayLockAndroid.withValues(alpha: 0.55),
-          shadow: const LiquidGlassShadow(
-            blur: 16,
-            opacity: 0.6,
+        appearance: const LiquidGlassAppearance(
+          color: Color(0x60121216),
+          shadow: LiquidGlassShadow(
+            blur: 20,
+            opacity: 0.75,
           ),
         ),
       ),
@@ -179,14 +179,14 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
           child: Container(
             decoration: BoxDecoration(
               color: isGlass
-                  ? AppColors.navIndicatorBackground.withValues(alpha: 0.75)
+                  ? const Color(0x20FFFFFF)
                   : AppColors.navIndicatorBackground,
               borderRadius: BorderRadius.circular(
                 (_height - _pillInset * 2) / 2,
               ),
               border: Border.all(
                 color: isGlass
-                    ? AppColors.navIndicatorBorder.withValues(alpha: 0.8)
+                    ? const Color(0x18FFFFFF)
                     : AppColors.navIndicatorBorder,
                 width: 1,
               ),
