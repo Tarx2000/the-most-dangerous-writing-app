@@ -134,7 +134,12 @@ class CirclePickerBody extends ConsumerWidget {
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    0,
+                    16,
+                    MediaQuery.paddingOf(context).bottom + 20,
+                  ),
                   itemCount: persons.length,
                   itemBuilder: (context, index) {
                     final person = persons[index];

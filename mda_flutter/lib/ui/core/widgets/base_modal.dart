@@ -20,6 +20,7 @@ class BaseModal extends StatefulWidget {
     this.onClose,
     this.borderRadius = 24,
     this.showHandle = true,
+    this.contentPadding,
   });
 
   final Widget child;
@@ -28,6 +29,7 @@ class BaseModal extends StatefulWidget {
   final VoidCallback? onClose;
   final double borderRadius;
   final bool showHandle;
+  final EdgeInsetsGeometry? contentPadding;
 
   @override
   State<BaseModal> createState() => BaseModalState();
@@ -218,14 +220,14 @@ class BaseModalState extends State<BaseModal> with TickerProviderStateMixin {
                           ),
                           Expanded(
                             child: Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                20,
-                                8,
-                                20,
-                                bottomInset > 0
-                                    ? 20
-                                    : MediaQuery.paddingOf(context).bottom + 20,
-                              ),
+                              padding:
+                                  widget.contentPadding ??
+                                  EdgeInsets.fromLTRB(
+                                    20,
+                                    8,
+                                    20,
+                                    bottomInset > 0 ? 20 : 0,
+                                  ),
                               child: widget.child,
                             ),
                           ),
@@ -249,6 +251,7 @@ Future<void> showBaseModal(
   required Widget Function(VoidCallback close) builder,
   String? title,
   double heightFactor = 0.88,
+  EdgeInsetsGeometry? contentPadding,
 }) {
   final modalKey = GlobalKey<BaseModalState>();
   // A real modal route participates in Android Back handling and inherits
@@ -261,6 +264,7 @@ Future<void> showBaseModal(
       key: modalKey,
       title: title,
       heightFactor: heightFactor,
+      contentPadding: contentPadding,
       onClose: () => Navigator.of(modalContext).pop(),
       child: builder(() => modalKey.currentState?.dismiss()),
     ),

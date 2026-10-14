@@ -31,10 +31,7 @@ class AnimatedScaleButton extends StatefulWidget {
 
 class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 150),
-  );
+  late final AnimationController _controller;
   late final Animation<double> _scale = TweenSequence<double>([
     TweenSequenceItem(
       tween: Tween(begin: 1.0, end: widget.activeScale),
@@ -45,6 +42,17 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
     begin: 1.0,
     end: widget.activeOpacity,
   ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+  @override
+  void initState() {
+    super.initState();
+    // Glass can bypass AnimatedBuilder entirely, so the controller must not
+    // be lazily created for the first time by dispose() after deactivation.
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+  }
 
   void _onTapDown(_) {
     if (widget.disabled) return;
@@ -82,16 +90,20 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
         onTap: widget.disabled ? null : widget.onPress,
 
         behavior: HitTestBehavior.opaque,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Opacity(
-              opacity: _opacity.value,
-              child: Transform.scale(scale: _scale.value, child: child),
-            );
-          },
-          child: widget.child,
-        ),
+        child: widget.activeScale == 1 && widget.activeOpacity == 1
+            // Glass owns its deformation and reads the live backdrop.
+            // Do not put redundant animated opacity/transform layers around it.
+            ? widget.child
+            : AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _opacity.value,
+                    child: Transform.scale(scale: _scale.value, child: child),
+                  );
+                },
+                child: widget.child,
+              ),
       ),
     );
   }

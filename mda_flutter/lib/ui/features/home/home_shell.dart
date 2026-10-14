@@ -208,10 +208,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
   void _onFeedOverscrollEnd(double velocity) {
     if (!_dragArmed) return;
     _onCloseDragEnd(
-      DragEndDetails(
-        primaryVelocity: velocity,
-        globalPosition: Offset.zero,
-      ),
+      DragEndDetails(primaryVelocity: velocity, globalPosition: Offset.zero),
     );
   }
 
@@ -293,16 +290,13 @@ class _HomeShellState extends ConsumerState<HomeShell>
             ),
           // The navigation pill is independent of the sliding main content.
           // It must stop accepting touches as soon as the feed is committed.
-          AnimatedBuilder(
-            animation: _feedController,
-            builder: (context, _) => LiquidGlassNav(
-              tabs: defaultNavTabs(checkinUrgent: checkinUrgent),
-              activeId: _activeTab,
-              onSelect: _onNavSelect,
-              feedOpen: _feedOpen,
-              feedProgress: _feedProgress,
-              safeBottom: bottomInset + 14,
-            ),
+          LiquidGlassNav(
+            tabs: defaultNavTabs(checkinUrgent: checkinUrgent),
+            activeId: _activeTab,
+            onSelect: _onNavSelect,
+            feedOpen: _feedOpen,
+            feedProgress: _feedController,
+            safeBottom: bottomInset + 14,
           ),
         ],
       ),

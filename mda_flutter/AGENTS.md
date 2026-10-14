@@ -37,9 +37,23 @@ lib/
   `flutter-build-responsive-layout` (in repo root `.agents/skills/`) guide all Flutter work.
 - `const` constructors everywhere possible; `ConsumerWidget`/`Consumer` for state, not `setState` for app state.
 - Never block the UI thread (isolates/`compute` for ZIP, JSON, thumbnails).
-- Animations: damping 26–35 springs only, max 3 visual layers, scales ≤ 1.05, timing-based micro-interactions (see SPEC §5).
-- No blur/liquid glass anywhere — solid translucent tokens only.
-- Status bar hidden everywhere (`SystemChrome` + Android styles.xml); portrait only; AMOLED black.
+- Animations: damping 26–35 springs only, max 3 visual layers, scales ≤ 1.05, timing-based micro-interactions (see SPEC §5). Native package glass lift/morph physics are the explicit exception.
+- Classic mode uses solid translucent tokens. The optional `enableLiquidGlass`
+  preference enables package glass widgets; preserve the classic fallback.
+- Glass navigation uses `LiquidGlassTabBar` as a full-screen overlay
+  on shader-capable engines; preserve native hold/drag/snap and page hit testing.
+  Apply bottom safe-area padding once. Keep the functional Skia hold fallback.
+- StartScreen uses a bounded Column, never intrinsic measurement around glass
+  touch widgets. Header touch lenses need finite width and height in Rows.
+- Status bar hidden everywhere (`SystemChrome` + Android styles.xml); portrait only; AMOLED black in both rendering modes.
+  Only glass controls receive smoke tints and thin specular contours; never tint
+  the page or add ambient background light. Shared material lives in AppGlass
+  (liquid_glass_easy 5.x). Nav uses a black base with no grey fill. Start Writing
+  and nav have no shared outer contour. Difficulty uses public package motion
+  glass with hold/preview/release; commit session state only on selection.
+  Keep glass nav/difficulty motion builders local to moving parts, and batch only
+  non-overlapping header lenses. No extra Gaussian blur over flat AMOLED black.
+  Glass Start Writing is up to 320 × 64 px, with 130 px bottom clearance.
 - Every DB table registered in backup scopes; secrets never exported; PIN never restored.
 - Schema/behavior changes → update `SPEC_1TO1.md` + this file in the same step.
 

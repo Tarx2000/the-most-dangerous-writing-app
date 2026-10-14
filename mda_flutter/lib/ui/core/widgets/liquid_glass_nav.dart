@@ -7,15 +7,20 @@
 ///  - indicator slides with `withTiming` 180 ms cubic-out (zero overshoot)
 library;
 
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
+import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/providers.dart';
 import '../../features/home/home_shell_types.dart';
 import 'animated_scale_button.dart';
+import 'app_glass.dart';
 
 class NavTabConfig {
   const NavTabConfig({
@@ -41,7 +46,7 @@ class LiquidGlassNav extends ConsumerStatefulWidget {
     required this.onSelect,
     this.onFeedToggle,
     this.feedOpen = false,
-    this.feedProgress = 0,
+    this.feedProgress = const AlwaysStoppedAnimation(0),
     this.safeBottom = 14,
   });
 
@@ -52,7 +57,7 @@ class LiquidGlassNav extends ConsumerStatefulWidget {
   final bool feedOpen;
 
   /// 0..1 feed reveal progress (drives the fade/slide).
-  final double feedProgress;
+  final Animation<double> feedProgress;
   final double safeBottom;
 
   @override
@@ -62,34 +67,76 @@ class LiquidGlassNav extends ConsumerStatefulWidget {
 class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
   static const double _height = 62;
   static const double _pillInset = 7;
+  int? _previewIndex;
+
+  @override
+  void didUpdateWidget(covariant LiquidGlassNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.feedOpen) _previewIndex = null;
+  }
+
+  void _select(int index) {
+    if (widget.feedOpen || index < 0 || index >= widget.tabs.length) return;
+    final tab = widget.tabs[index];
+    if (tab.id == widget.activeId) return;
+    vibrate(HapticPatterns.tick);
+    widget.onSelect(tab.id);
+    widget.onFeedToggle?.call();
+  }
+
+  int _indexAt(double localX, double width) =>
+      ((localX - AppGlass.navInset) /
+              ((width - 2 * AppGlass.navInset) / widget.tabs.length))
+          .floor()
+          .clamp(0, widget.tabs.length - 1);
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final pillWidth = screenWidth * 0.88;
-    final tabWidth = pillWidth / widget.tabs.length;
     final enableLiquidGlass = ref.watch(
       preferencesProvider.select((p) => p.enableLiquidGlass),
     );
+    final pillWidth = screenWidth * (enableLiquidGlass ? 0.90 : 0.88);
+    final tabWidth = pillWidth / widget.tabs.length;
+    final nativeGlass =
+        enableLiquidGlass && ui.ImageFilter.isShaderFilterSupported;
+    final bar = enableLiquidGlass
+        ? _buildLiquidGlassNavBar(pillWidth, native: nativeGlass)
+        : _buildClassicNavBar(tabWidth);
+    final animatedBar = IgnorePointer(
+      ignoring: widget.feedOpen,
+      child: AnimatedBuilder(
+        animation: widget.feedProgress,
+        child: bar,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, widget.feedProgress.value * 80),
+          child: Opacity(
+            opacity: (1 - widget.feedProgress.value).clamp(0.0, 1.0),
+            child: child,
+          ),
+        ),
+      ),
+    );
 
+    // The native morph pill is a full-width overlay, not a 62 px lens.
+    // Its raised pill needs room outside the bar and uses global X positions.
+    // Remove system padding here: safeBottom already includes that inset.
+    if (nativeGlass) {
+      return Positioned.fill(
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          child: animatedBar,
+        ),
+      );
+    }
     return Positioned(
       left: (screenWidth - pillWidth) / 2,
       bottom: widget.safeBottom,
       width: pillWidth,
-      height: _height,
-      child: IgnorePointer(
-        ignoring: widget.feedOpen,
-        child: Transform.translate(
-          // The pill slides DOWN 80 px and fades as the feed opens (SPEC §14).
-          offset: Offset(0, widget.feedProgress * 80),
-          child: Opacity(
-            opacity: (1 - widget.feedProgress).clamp(0.0, 1.0),
-            child: enableLiquidGlass
-                ? _buildLiquidGlassNavBar(tabWidth)
-                : _buildClassicNavBar(tabWidth),
-          ),
-        ),
-      ),
+      height: enableLiquidGlass ? AppGlass.navHeight : _height,
+      child: animatedBar,
     );
   }
 
@@ -101,10 +148,7 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
       decoration: BoxDecoration(
         color: AppColors.overlayLockAndroid,
         borderRadius: BorderRadius.circular(_height / 2),
-        border: Border.all(
-          color: AppColors.specularBorderStart,
-          width: 1,
-        ),
+        border: Border.all(color: AppColors.specularBorderStart, width: 1),
         boxShadow: const [
           BoxShadow(
             color: AppColors.navPillShadow,
@@ -115,65 +159,168 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(_height / 2),
-        child: _buildTabStack(tabWidth, isGlass: false),
+        child: _buildClassicTabStack(tabWidth),
       ),
     );
   }
 
-  /// Liquid Glass rendering mode:
-  /// Uses `liquid_glass_easy` to simulate physical glass with real-time live
-  /// backdrop refraction, optical specular rim lighting, contact shadow,
-  /// and responsive touch deformation.
-  Widget _buildLiquidGlassNavBar(double tabWidth) {
-    return LiquidGlassLens(
-      style: LiquidGlassStyle(
-        shape: LiquidGlassShape.continuousRoundedRectangle(
-          cornerRadius: _height / 2,
-          borderWidth: 0.0,
-        ),
-        refraction: const LiquidGlassRefraction(
-          distortion: 0.07,
-          distortionWidth: 20,
-          magnification: 1.0,
-          chromaticAberration: 0.002,
-        ),
-        appearance: const LiquidGlassAppearance(
-          color: Color(0x60121216),
-          shadow: LiquidGlassShadow(
-            blur: 24,
-            opacity: 0.8,
+  /// Impeller uses the package's native hold/lift/drag/snap pipeline.
+  /// Skia keeps a frosted package bar with the same hold-to-select gesture.
+  Widget _buildLiquidGlassNavBar(double pillWidth, {required bool native}) {
+    final rawIndex = widget.tabs.indexWhere((t) => t.id == widget.activeId);
+    final activeIndex = _previewIndex ?? (rawIndex >= 0 ? rawIndex : 0);
+    final items = [
+      for (final tab in widget.tabs)
+        LiquidGlassTabBarItem(
+          label: tab.label,
+          iconBuilder: (context, glyph) => Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(Mdi.get(tab.icon), size: glyph.size, color: glyph.color),
+              if (tab.urgent)
+                Positioned(
+                  top: -2,
+                  right: -6,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.gold,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
-      ),
-      touch: const LiquidGlassTouch(
-        flex: LiquidGlassFlex.subtle(),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(_height / 2),
-          border: Border.all(
-            color: AppColors.glassBorderSubtle,
-            width: 1,
+    ];
+    final style = AppGlass.navigation;
+    const pill = LiquidGlassTabPillStyle(
+      mode: LiquidGlassPillMode.both,
+      animated: true,
+      growHeight: 4,
+      travelDamping: 31.4,
+      magnifierPill: LiquidGlassTabMagnifierPillStyle(enabled: false),
+      glassStyle: AppGlass.movingSelection,
+      rest: AppGlass.selection,
+      animationDuration: Duration(milliseconds: 180),
+      animationCurve: Curves.easeOutCubic,
+    );
+    const itemStyle = LiquidGlassTabItemStyle(
+      selectedColor: AppColors.navIconActive,
+      unselectedColor: Color(0xB3FFFFFF),
+      iconSize: 22,
+      underGlassIconSize: 23,
+      labelFontSize: 12,
+      iconLabelGap: 6,
+      selectedFontWeight: FontWeight.w500,
+      unselectedFontWeight: FontWeight.w400,
+    );
+    if (native) {
+      return Stack(
+        children: [
+          ExcludeSemantics(
+            child: LiquidGlassTabBar(
+              width: pillWidth,
+              height: AppGlass.navHeight,
+              margin: EdgeInsets.only(bottom: widget.safeBottom),
+              itemPadding: AppGlass.navInset,
+              selectedIndex: activeIndex,
+              onChanged: _select,
+              style: style,
+              pillStyle: pill,
+              itemStyle: itemStyle,
+              items: items,
+            ),
           ),
-        ),
-        child: _buildTabStack(tabWidth, isGlass: true),
+          // The package paints several clipped icon/label layers and owns
+          // one gesture surface. Expose one accessible action per real tab.
+          Positioned(
+            left: (MediaQuery.sizeOf(context).width - pillWidth) / 2,
+            bottom: widget.safeBottom,
+            width: pillWidth,
+            height: AppGlass.navHeight,
+            child: Row(
+              children: [
+                for (var i = 0; i < widget.tabs.length; i++)
+                  Expanded(
+                    child: Semantics(
+                      label: widget.tabs[i].urgent
+                          ? '${widget.tabs[i].label}, overdue'
+                          : widget.tabs[i].label,
+                      button: true,
+                      selected: widget.tabs[i].id == widget.activeId,
+                      onTap: () => _select(i),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: {
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                duration: const Duration(milliseconds: 100),
+              ),
+              (gesture) {
+                gesture.onLongPressStart = (details) {
+                  setState(
+                    () => _previewIndex = _indexAt(
+                      details.localPosition.dx,
+                      pillWidth,
+                    ),
+                  );
+                };
+                gesture.onLongPressMoveUpdate = (details) {
+                  setState(
+                    () => _previewIndex = _indexAt(
+                      details.localPosition.dx,
+                      pillWidth,
+                    ),
+                  );
+                };
+                gesture.onLongPressEnd = (_) {
+                  final selected = _previewIndex;
+                  setState(() => _previewIndex = null);
+                  if (selected != null) _select(selected);
+                };
+                gesture.onLongPressCancel = () =>
+                    setState(() => _previewIndex = null);
+              },
+            ),
+      },
+      child: LiquidGlassTabBar(
+        width: pillWidth,
+        height: AppGlass.navHeight,
+        margin: EdgeInsets.zero,
+        itemPadding: AppGlass.navInset,
+        selectedIndex: activeIndex,
+        onChanged: _select,
+        style: style,
+        pillStyle: pill.copyWith(mode: LiquidGlassPillMode.none),
+        itemStyle: itemStyle,
+        items: items,
       ),
     );
   }
 
-  /// Tab stack: indicator bubble + interactive icon/label tab rows.
-  Widget _buildTabStack(double tabWidth, {required bool isGlass}) {
+  /// Classic tab stack: indicator bubble + interactive icon/label tab rows.
+  Widget _buildClassicTabStack(double tabWidth) {
     return Stack(
       children: [
         // Layer 2: sliding indicator bubble — RN parity:
         // `left: 0; top: 6; translateX = index*tabWidth + PADDING`,
         // height PILL_HEIGHT−12, width tabWidth − 2×PADDING.
         AnimatedPositioned(
-          left: _indicatorLeft(
-            widget.tabs,
-            widget.activeId,
-            tabWidth,
-          ),
+          left: _indicatorLeft(widget.tabs, widget.activeId, tabWidth),
           top: _pillInset,
           height: _height - _pillInset * 2,
           width: tabWidth - _pillInset * 2,
@@ -181,18 +328,11 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
           curve: Curves.easeOutCubic,
           child: Container(
             decoration: BoxDecoration(
-              color: isGlass
-                  ? const Color(0x18FFFFFF)
-                  : AppColors.navIndicatorBackground,
+              color: AppColors.navIndicatorBackground,
               borderRadius: BorderRadius.circular(
                 (_height - _pillInset * 2) / 2,
               ),
-              border: Border.all(
-                color: isGlass
-                    ? const Color(0x10FFFFFF)
-                    : AppColors.navIndicatorBorder,
-                width: 1,
-              ),
+              border: Border.all(color: AppColors.navIndicatorBorder, width: 1),
             ),
           ),
         ),

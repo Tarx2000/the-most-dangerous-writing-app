@@ -329,7 +329,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         const SizedBox(height: 16),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 40),
+            padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -628,8 +628,13 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       context,
       title: 'What\'s New',
       heightFactor: 0.6,
-      builder: (close) => const SingleChildScrollView(
-        padding: EdgeInsets.symmetric(horizontal: 24),
+      builder: (close) => SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          0,
+          24,
+          MediaQuery.paddingOf(context).bottom + 24,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

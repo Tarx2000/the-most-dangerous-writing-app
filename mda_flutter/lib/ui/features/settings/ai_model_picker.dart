@@ -154,6 +154,9 @@ class _AiModelPickerState extends ConsumerState<AiModelPicker> {
           const SizedBox(height: 8),
           Expanded(
             child: ListView(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.paddingOf(context).bottom + 20,
+              ),
               children: [
                 if (widget.grammar)
                   ListTile(

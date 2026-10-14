@@ -72,7 +72,12 @@ class _ActionSheetBody<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.paddingOf(context).bottom + 20,
+      ),
       itemCount: options.length,
       itemBuilder: (context, index) {
         final option = options[index];

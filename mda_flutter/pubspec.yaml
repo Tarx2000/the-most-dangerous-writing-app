@@ -21,7 +21,7 @@ dependencies:
   go_router: ^17.5.0
   http: ^1.6.0
   intl: ^0.20.3
-  liquid_glass_easy: ^4.3.1
+  liquid_glass_easy: ^5.0.0
   local_auth: ^3.0.2
   marionette_flutter: ^0.6.0
   path: ^1.9.1

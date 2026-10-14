@@ -9,6 +9,7 @@ import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/providers.dart';
 import 'animated_scale_button.dart';
+import 'app_glass.dart';
 
 class ConfirmDialog extends ConsumerStatefulWidget {
   const ConfirmDialog({
@@ -44,10 +45,10 @@ class _ConfirmDialogState extends ConsumerState<ConfirmDialog>
   );
   // RN parity (`ConfirmDialog.tsx`): the card springs 0.9→1.0 instead of
   // growing from a point (0→1), which re-rasters the whole card every frame.
-  late final Animation<double> _scale = Tween<double>(begin: 0.9, end: 1.0)
-      .animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-      );
+  late final Animation<double> _scale = Tween<double>(
+    begin: 0.9,
+    end: 1.0,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
   late final Animation<double> _opacity = CurvedAnimation(
     parent: _controller,
     curve: Curves.easeOut,
@@ -99,22 +100,9 @@ class _ConfirmDialogState extends ConsumerState<ConfirmDialog>
               opacity: _opacity,
               child: enableLiquidGlass
                   ? LiquidGlassLens(
-                      style: const LiquidGlassStyle(
-                        shape: LiquidGlassShape.continuousRoundedRectangle(
-                          cornerRadius: 20,
-                          borderWidth: 0.0,
-                        ),
-                        refraction: LiquidGlassRefraction(
-                          distortion: 0.07,
-                          distortionWidth: 18,
-                        ),
-                        appearance: LiquidGlassAppearance(
-                          color: Color(0x80141418),
-                          shadow: LiquidGlassShadow(
-                            blur: 24,
-                            opacity: 0.8,
-                          ),
-                        ),
+                      style: AppGlass.surface(
+                        20,
+                        tint: const Color(0xC0303030),
                       ),
                       child: Container(
                         width: cardWidth,
