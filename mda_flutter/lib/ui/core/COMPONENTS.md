@@ -21,6 +21,9 @@
   `widgets/liquid_glass_options.dart`, composed from public `LiquidGlassMotionPill`
   and lens widgets. Local gesture/position state drives hold, continuous preview,
   release/cancel and spring snap; the package owns optical deformation and morph.
+  An opaque LiquidGlassLite rest face retains the rim after the moving shader
+  retires. It crossfades through the package cover, with zero blur/backdrop reads
+  or ongoing animation at rest.
   All controls share Start Writing's thin rim and dark glass material. The moving
   pill rebuilds independently; track and option labels remain stable between
   preview boundaries. Feed frames update only the cached nav's transform/fade.

@@ -43,6 +43,11 @@ all remaining RN parity requirements.
   Preview never changes the session's difficulty. Tick haptics occur only on
   committed changes, and the committed index is passed to the writing session.
   Preserve selection when toggling glass and respect reduced motion.
+  Keep the selected pill's thin rim visible permanently. Use a shader-free
+  LiquidGlassLite rest face (opaque #101010, same specular rim, zero blur) in
+  MotionPill.cover. Its built-in crossfade covers the moving shader before that
+  shader retires, avoiding a sudden border disappearance. No idle ticker or
+  extra backdrop read for the resting face.
 
 ## Navigation
 

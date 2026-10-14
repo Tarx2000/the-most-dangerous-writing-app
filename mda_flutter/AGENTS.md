@@ -51,6 +51,8 @@ lib/
   (liquid_glass_easy 5.x). Nav uses a black base with no grey fill. Start Writing
   and nav have no shared outer contour. Difficulty uses public package motion
   glass with hold/preview/release; commit session state only on selection.
+  Its selected pill keeps a persistent, shader-free rest rim; never leave a
+  borderless rest fill after the moving lens retires.
   Keep glass nav/difficulty motion builders local to moving parts, and batch only
   non-overlapping header lenses. No extra Gaussian blur over flat AMOLED black.
   Glass Start Writing is up to 320 × 64 px, with 130 px bottom clearance.

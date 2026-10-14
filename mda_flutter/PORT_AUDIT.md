@@ -105,3 +105,21 @@
   debug-simulator comparisons, not physical-device release FPS measurements.
 - Final native press/drag/cancel on the larger Start Writing button retained
   its glass deformation and returned to Journal without starting a session.
+
+## Persistent difficulty selection rim
+
+- Root cause: MotionPill disables its moving shader at the end of contraction,
+  but our cover was only a translucent fill, without the moving lens's rim.
+  The still-visible shader contour disappeared abruptly at that final handoff.
+- Replaced that cover with public LiquidGlassLite: same fine specular rim,
+  zero blur, and an opaque #101010 face matching the previous tint over black.
+  The package crossfade covers the outgoing shader before it switches off.
+  The selected capsule stays outlined without an idle backdrop read or ticker.
+- Pixel regression checks the selected rim before interaction, after release,
+  and after five seconds of idle; contrast remains present and identical after
+  idle, with no scheduled animation frame. All five options regressions pass.
+- Native Impeller hold/drag MID→HARD still previews without committing until
+  release. Inspected the settled selection's GPU screenshot with its rim intact.
+- Native idle inspection confirms morph=0 and ticker inactive while the rest
+  face remains LiquidGlassLite. Rechecked the idle GPU capture and restored the
+  original MID selection. Final analysis is clean; 221 tests passed, 1 skipped.

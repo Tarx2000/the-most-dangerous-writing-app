@@ -190,7 +190,18 @@ class _LiquidGlassOptionsState extends State<LiquidGlassOptions>
                         motion: const LiquidGlassLensMotionSpec(
                           maxDeformation: 0.05,
                         ),
-                        cover: const ColoredBox(color: Color(0x10FFFFFF)),
+                        // MotionPill retires its shader after contraction. Its
+                        // opaque rest face keeps the same rim and covers that
+                        // handoff smoothly, without an idle backdrop read.
+                        cover: const LiquidGlassLite(
+                          shape: LiquidGlassShape.roundedRectangle(
+                            cornerRadius: 999,
+                          ),
+                          specular: AppGlass.rim,
+                          glow: AppGlass.noGlow,
+                          color: Color(0xFF101010),
+                          blur: 0,
+                        ),
                       ),
                     ),
                   ),

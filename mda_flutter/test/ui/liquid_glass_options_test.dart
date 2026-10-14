@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 import 'package:mda_flutter/ui/core/widgets/liquid_glass_options.dart';
@@ -8,15 +11,19 @@ Future<void> _pumpOptions(WidgetTester tester, List<int> changes) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
+        backgroundColor: Colors.black,
         body: Center(
           child: StatefulBuilder(
-            builder: (context, setState) => LiquidGlassOptions(
-              options: const ['EASY', 'MID', 'HARD'],
-              selectedIndex: selection,
-              onChanged: (index) {
-                changes.add(index);
-                setState(() => selection = index);
-              },
+            builder: (context, setState) => RepaintBoundary(
+              key: const ValueKey('options-paint'),
+              child: LiquidGlassOptions(
+                options: const ['EASY', 'MID', 'HARD'],
+                selectedIndex: selection,
+                onChanged: (index) {
+                  changes.add(index);
+                  setState(() => selection = index);
+                },
+              ),
             ),
           ),
         ),
@@ -27,6 +34,66 @@ Future<void> _pumpOptions(WidgetTester tester, List<int> changes) async {
 }
 
 void main() {
+  testWidgets('selected rim stays visible after release and a long idle', (
+    tester,
+  ) async {
+    final changes = <int>[];
+    await _pumpOptions(tester, changes);
+
+    Future<int> rimBrightness(String label) async {
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(const ValueKey('options-paint')),
+      );
+      final center =
+          tester.getCenter(find.text(label)) -
+          tester.getTopLeft(find.byType(LiquidGlassOptions));
+      // Read the selected pill's top/bottom rim, away from text and track edges.
+      return (await tester.runAsync(() async {
+        final image = boundary.toImageSync(pixelRatio: 3);
+        try {
+          final bytes = (await image.toByteData(
+            format: ui.ImageByteFormat.rawRgba,
+          ))!;
+          var brightest = 0;
+          for (final y in [
+            for (var y = 9; y < 18; y++) y,
+            for (var y = 114; y < 123; y++) y,
+          ]) {
+            for (
+              var x = (center.dx * 3).round() - 24;
+              x <= (center.dx * 3).round() + 24;
+              x++
+            ) {
+              final red = bytes.getUint8((y * image.width + x) * 4);
+              if (red > brightest) brightest = red;
+            }
+          }
+          return brightest;
+        } finally {
+          image.dispose();
+        }
+      }))!;
+    }
+
+    await tester.pumpAndSettle();
+    expect(await rimBrightness('MID'), greaterThan(24));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('MID')),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    await gesture.moveTo(tester.getCenter(find.text('HARD')));
+    await tester.pump(const Duration(milliseconds: 150));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    final settled = await rimBrightness('HARD');
+    await tester.pump(const Duration(seconds: 5));
+    expect(await rimBrightness('HARD'), greaterThan(24));
+    expect(await rimBrightness('HARD'), settled);
+    expect(changes, [2]);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'hold follows the finger and commits only on release in both directions',
     (tester) async {
