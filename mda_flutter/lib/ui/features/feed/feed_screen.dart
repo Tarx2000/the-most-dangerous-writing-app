@@ -41,7 +41,7 @@ class FeedScreen extends ConsumerStatefulWidget {
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
   final ScrollController _scroll = ScrollController();
-  bool _showScrollTop = false;
+  final ValueNotifier<bool> _showScrollTop = ValueNotifier(false);
   bool _onlyBookmarked = false;
   bool _filterJournals = true;
   bool _filterTweets = true;
@@ -53,8 +53,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     super.initState();
     _scroll.addListener(() {
       final show = _scroll.offset > 300;
-      if (show != _showScrollTop) {
-        setState(() => _showScrollTop = show);
+      if (show != _showScrollTop.value) {
+        _showScrollTop.value = show;
       }
     });
   }
@@ -62,6 +62,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _showScrollTop.dispose();
     super.dispose();
   }
 
@@ -318,36 +319,41 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                   ),
                   // Scroll-to-top button
-                  if (_showScrollTop)
-                    Positioned(
-                      bottom: 24,
-                      right: 20,
-                      child: AnimatedScaleButton(
-                        onPress: () => _scroll.animateTo(
-                          0,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        ),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: AppColors.overlayLockAndroid,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.glassBorderMedium,
-                              width: 1,
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _showScrollTop,
+                    builder: (context, show, _) {
+                      if (!show) return const SizedBox.shrink();
+                      return Positioned(
+                        bottom: 24,
+                        right: 20,
+                        child: AnimatedScaleButton(
+                          onPress: () => _scroll.animateTo(
+                            0,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          ),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppColors.overlayLockAndroid,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: AppColors.glassBorderMedium,
+                                width: 1,
+                              ),
+                            ),
+                            child: Icon(
+                              Mdi.get('arrowUp'),
+                              color: AppColors.textPrimary,
+                              size: 20,
                             ),
                           ),
-                          child: Icon(
-                            Mdi.get('arrowUp'),
-                            color: AppColors.textPrimary,
-                            size: 20,
-                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),

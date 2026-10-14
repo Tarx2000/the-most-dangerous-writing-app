@@ -69,13 +69,15 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     callbacks: SessionCallbacks(
       onDeath: _onDeath,
       onTextWiped: _onTextWiped,
-      onSessionEnd: () {},
+      onSessionEnd: _onSessionEnd,
       onHapticLevel: _onHapticLevel,
     ),
   );
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ValueNotifier<bool> _isTextEmpty = ValueNotifier(true);
+  final ValueNotifier<bool> _canSaveNotifier = ValueNotifier(false);
 
   late final AnimationController _flyAwayController = AnimationController(
     vsync: this,
@@ -118,6 +120,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
       sessionDurationMin: sessionMins,
       quickNote: _isQuickNoteMode,
     );
+    _canSaveNotifier.value = _engine.canSave || _engine.hasLost;
     _focusNode.requestFocus();
   }
 
@@ -126,15 +129,26 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     _engine.dispose();
     _controller.dispose();
     _focusNode.dispose();
+    _isTextEmpty.dispose();
+    _canSaveNotifier.dispose();
     _flyAwayController.dispose();
     _shakeController.dispose();
     super.dispose();
   }
 
+  void _onSessionEnd() {
+    _canSaveNotifier.value = _engine.canSave || _engine.hasLost;
+  }
+
   void _onTextWiped() {
     // 200 ms after death: destroy written text (core premise of the app).
-    _controller.clear();
+    _controller.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    );
     _currentText = '';
+    _isTextEmpty.value = true;
+    _canSaveNotifier.value = _engine.canSave || _engine.hasLost;
     if (mounted) setState(() {});
   }
 
@@ -158,6 +172,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     // vibrates once in `triggerDeathState`). This handler only starts the
     // trauma shake and shows the overlay.
     _shakeController.forward(from: 0.0);
+    _canSaveNotifier.value = true;
     setState(() {}); // show death overlay
   }
 
@@ -173,7 +188,11 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
       text = blocked;
     }
     final previousLength = _currentText.length;
-    setState(() => _currentText = text);
+    _currentText = text;
+    final empty = text.isEmpty;
+    if (_isTextEmpty.value != empty) {
+      _isTextEmpty.value = empty;
+    }
     _engine.handleTextChange(text, isInsertion: text.length >= previousLength);
   }
 
@@ -219,9 +238,6 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final timeLeft = _engine.sessionSecondsRemaining.value;
-    final wordCount = _engine.wordCount.value;
-    final showSave = _engine.canSave || _engine.hasLost;
     final dead = _engine.phase.value == SessionPhase.death;
     final diffLimit = _engine.difficultyLimitMsValue;
 
@@ -275,17 +291,27 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                           letterSpacing: 1.5,
                         ),
                       ),
-                      Text(
-                        _isQuickNoteMode
-                            ? '$wordCount words'
-                            : '${_formatTime(timeLeft)} · $wordCount words',
-                        style: TextStyle(
-                          color: _isTweetMode && wordCount > tweetThreshold - 10
-                              ? AppColors.primaryAction
-                              : AppColors.textDim,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      AnimatedBuilder(
+                        animation: Listenable.merge([
+                          _engine.sessionSecondsRemaining,
+                          _engine.wordCount,
+                        ]),
+                        builder: (context, _) {
+                          final timeLeft = _engine.sessionSecondsRemaining.value;
+                          final wordCount = _engine.wordCount.value;
+                          return Text(
+                            _isQuickNoteMode
+                                ? '$wordCount words'
+                                : '${_formatTime(timeLeft)} · $wordCount words',
+                            style: TextStyle(
+                              color: _isTweetMode && wordCount > tweetThreshold - 10
+                                  ? AppColors.primaryAction
+                                  : AppColors.textDim,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -296,18 +322,23 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                   child: Stack(
                     children: [
                       // Hint (only while empty) — matches placeholder styling.
-                      if (_currentText.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
-                          child: Text(
-                            'Keep typing...',
-                            style: TextStyle(
-                              color: AppColors.placeholder,
-                              fontFamily: fontFamily,
-                              fontSize: fontSize,
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _isTextEmpty,
+                        builder: (context, isEmpty, _) {
+                          if (!isEmpty) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+                            child: Text(
+                              'Keep typing...',
+                              style: TextStyle(
+                                color: AppColors.placeholder,
+                                fontFamily: fontFamily,
+                                fontSize: fontSize,
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
+                      ),
                       // EditableText: buildTextSpan enables the inline
                       // vaporize effect (last 8 words' alpha decay).
                       Padding(
@@ -338,28 +369,33 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                   ),
                 ),
                 // Save action (visible when allowed)
-                if (showSave && !dead)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: AnimatedScaleButton(
-                      onPress: _saving ? null : _handleSave,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryAction,
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Text(
-                          _engine.hasLost ? 'SAVE WHAT\'S LEFT' : 'SAVE ENTRY',
-                          style: const TextStyle(
-                            color: AppColors.primaryActionText,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                ValueListenableBuilder<bool>(
+                  valueListenable: _canSaveNotifier,
+                  builder: (context, canSave, _) {
+                    if (!canSave || dead) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: AnimatedScaleButton(
+                        onPress: _saving ? null : _handleSave,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryAction,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            _engine.hasLost ? "SAVE WHAT'S LEFT" : 'SAVE ENTRY',
+                            style: const TextStyle(
+                              color: AppColors.primaryActionText,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
+                ),
               ],
             ),
             // Danger ambience (vignette/fog/heartbeat — own layer)
@@ -373,6 +409,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
               onSaveWhatsLeft: _currentText.trim().isNotEmpty ? _handleSave : null,
               onContinue: () {
                 _engine.resumeWritingFreely();
+                _canSaveNotifier.value = _engine.canSave;
                 setState(() {});
               },
             ),

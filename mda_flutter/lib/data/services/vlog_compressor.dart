@@ -1,13 +1,12 @@
-/// Vlog compression — ffmpeg-based (SPEC §11, presets from §2).
-/// Hardware acceleration: Android MediaCodec (h264_mediacodec), iOS
-/// VideoToolbox (h264_videotoolbox) via ffmpeg_kit_flutter_new.
+/// Vlog compression — native hardware acceleration via video_compress (SPEC §11).
+/// Uses Android MediaCodec and iOS AVAssetExportSession directly without bulky ffmpeg binaries.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
 import 'package:path/path.dart' as p;
+import 'package:video_compress/video_compress.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/utils.dart';
@@ -25,13 +24,14 @@ class CompressionResult {
   final int originalSizeBytes;
   final bool wasCompressed;
 
-  double get savingsPercent =>
-      originalSizeBytes <= 0 ? 0 : (1 - outputSizeBytes / originalSizeBytes) * 100;
+  double get savingsPercent => originalSizeBytes <= 0
+      ? 0
+      : (1 - outputSizeBytes / originalSizeBytes) * 100;
 }
 
-/// Wraps ffmpeg-kit (never called directly by screens — use the queue).
+/// Wraps native video compression (never called directly by screens — use the queue).
 class VlogCompressor {
-  /// True when the native ffmpeg module is linked (always in release builds).
+  /// True when video compression is available.
   static bool isCompressionAvailable() => true;
 
   static CompressionPreset? presetFor(String id) {
@@ -39,6 +39,20 @@ class VlogCompressor {
       if (preset.id == id) return preset;
     }
     return vlogCompressionPresets[2]; // balanced fallback
+  }
+
+  /// Maps app preset IDs to video_compress VideoQuality
+  static VideoQuality _qualityForPreset(String presetId) {
+    switch (presetId) {
+      case 'light':
+        return VideoQuality.HighestQuality;
+      case 'balanced':
+        return VideoQuality.MediumQuality;
+      case 'max':
+        return VideoQuality.LowQuality;
+      default:
+        return VideoQuality.MediumQuality;
+    }
   }
 
   /// Compresses [inputUri] per the preset; returns the original untouched
@@ -63,49 +77,33 @@ class VlogCompressor {
       );
     }
 
-    final outputPath = p.join(
-      p.dirname(inputUri),
-      'compressed_${generateId()}.mp4',
-    );
-
-    final String videoCodec;
-    if (Platform.isAndroid) {
-      videoCodec = 'h264_mediacodec';
-    } else if (Platform.isIOS || Platform.isMacOS) {
-      videoCodec = 'h264_videotoolbox';
-    } else {
-      videoCodec = 'libx264';
+    final quality = _qualityForPreset(presetId);
+    Subscription? subscription;
+    if (onProgress != null) {
+      subscription = VideoCompress.compressProgress$.subscribe((progress) {
+        onProgress(progress / 100.0);
+      });
     }
 
-    // -2 keeps even dimensions (required by h264); scale caps the height.
-    final command =
-        '-i "$inputUri" -c:v $videoCodec -preset veryfast -b:v ${preset.bitrate} '
-        '-vf "scale=-2:min(${preset.maxSize}\\,ih)" -c:a aac -movflags +faststart '
-        '-y "$outputPath"';
-
-    final session = await FFmpegKit.executeAsync(
-      command,
-      (completedSession) async {},
-      (log) {},
-      (statistics) {
-        // Normalize time ms if available
-        final timeMs = statistics.getTime();
-        if (timeMs > 0) {
-          onProgress?.call((timeMs / 10000).clamp(0.0, 0.99));
-        }
-      },
-    );
-    final returnCode = await session.getReturnCode();
-
-    if (!ReturnCode.isSuccess(returnCode)) {
-      final output = File(outputPath);
-      if (output.existsSync()) await output.delete();
-      throw StateError('ffmpeg compression failed (rc=$returnCode)');
+    MediaInfo? info;
+    try {
+      info = await VideoCompress.compressVideo(
+        inputUri,
+        quality: quality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+    } finally {
+      subscription?.unsubscribe();
     }
 
-    final compressed = File(outputPath);
+    if (info == null || info.path == null) {
+      throw StateError('video compression failed: no output produced');
+    }
+
+    final compressed = File(info.path!);
     if (!compressed.existsSync()) {
-      throw StateError('ffmpeg produced no output');
+      throw StateError('video compression output file missing');
     }
     final compressedSize = compressed.lengthSync();
 
@@ -121,12 +119,13 @@ class VlogCompressor {
       );
     }
 
-    // iOS-safe replacement: never move onto an existing path (SPEC §11).
+    // Move to destination directory alongside original file.
     final finalPath = p.join(
       p.dirname(inputUri),
       'compressed_${generateId()}.mp4',
     );
-    await compressed.rename(finalPath);
+    await compressed.copy(finalPath);
+    await compressed.delete();
     await input.delete();
     onProgress?.call(1);
 

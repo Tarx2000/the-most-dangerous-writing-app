@@ -92,7 +92,16 @@ Future<void> closeDb() async {
 /// Run a write statement with bind params.
 Future<void> run(String sql, [List<Object?>? params]) async {
   final db = await getDb();
-  await db.rawInsert(sql, params);
+  final trimmed = sql.trimLeft().toUpperCase();
+  if (trimmed.startsWith('INSERT')) {
+    await db.rawInsert(sql, params);
+  } else if (trimmed.startsWith('UPDATE')) {
+    await db.rawUpdate(sql, params);
+  } else if (trimmed.startsWith('DELETE')) {
+    await db.rawDelete(sql, params);
+  } else {
+    await db.execute(sql, params);
+  }
 }
 
 /// Run a read statement returning all rows.
