@@ -1,0 +1,23 @@
+{
+  "skill_name": "design-resources",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Empfiehl eine hochwertige kostenlose OTP-Komponente für eine kommerzielle Flutter-App. Kobra gefällt mir optisch. Welche Quelle soll ich nehmen und wie bekomme ich sie? Bitte noch nichts installieren.",
+      "expected_output": "Kobra Free nicht als kommerziell freigegeben; lizenzbestätigte Alternative wie beUI/Bencho/xevrion; konkreter Zugang; Flutter-Port statt React-Installation; Hinweise bewahren.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Verbessere unser Flutter-Bottom-Sheet mit Swipe und angenehmer Animation. Es gibt bereits lib/design_system/components/app_sheet.dart und ein Theme. Wie würdest du vorgehen? Noch keine Codeänderungen.",
+      "expected_output": "Vorhandenes Widget/Theme zuerst prüfen und erweitern; gezielter Quellvergleich falls nötig; iterative Prüfung in realem Screen, Touch/reduced motion/relevante Zustände; lokalen Bestand aktualisieren.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Ich brauche nur eine kostenlose Textwechsel-Animation für eine Flutter-App, keine komplette Library. Was empfiehlt die Sammlung und wie komme ich möglichst schnell an die Referenz?",
+      "expected_output": "Calligraph/Cube oder gezielter Motion-Baustein; direkter Source/README statt unnötigem MCP-/Kit-Setup; kommerzielle Lizenz/Notices; Flutter-Adaption.",
+      "files": []
+    }
+  ]
+}
