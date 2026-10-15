@@ -1,9 +1,9 @@
 name: mda_flutter
 description: "The Most Dangerous Writing App — Flutter rewrite. A journaling app where stopping typing destroys your text."
 publish_to: 'none'
-# versionCode stays above the old per-ABI split build (arm64 was 2001):
+# versionCode stays above the old per-ABI split build (arm64 was 4011):
 # a lower code would make Android reject the install as a downgrade.
-version: 1.5.18+2011
+version: 1.5.19+4012
 
 environment:
   sdk: ^3.12.2
