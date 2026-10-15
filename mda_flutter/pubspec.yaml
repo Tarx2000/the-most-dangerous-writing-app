@@ -3,7 +3,7 @@ description: "The Most Dangerous Writing App — Flutter rewrite. A journaling a
 publish_to: 'none'
 # versionCode stays above the old per-ABI split build (arm64 was 4011):
 # a lower code would make Android reject the install as a downgrade.
-version: 1.5.19+4012
+version: 1.5.20+4013
 
 environment:
   sdk: ^3.12.2
@@ -75,4 +75,3 @@ flutter:
 
   assets:
     - assets/fonts/
-    - assets/branding/
