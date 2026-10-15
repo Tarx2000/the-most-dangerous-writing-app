@@ -32,6 +32,8 @@ class NavTabConfig {
 
   final String id;
   final String icon;
+  IconData get iconData =>
+      id == HomeTab.checkin ? Icons.donut_large_rounded : Mdi.get(icon);
   final String label;
 
   /// Gold urgent dot (e.g. check-in overdue).
@@ -177,7 +179,7 @@ class _LiquidGlassNavState extends ConsumerState<LiquidGlassNav> {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              Icon(Mdi.get(tab.icon), size: glyph.size, color: glyph.color),
+              Icon(tab.iconData, size: glyph.size, color: glyph.color),
               if (tab.urgent)
                 Positioned(
                   top: -2,
@@ -396,7 +398,7 @@ class _NavTab extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Mdi.get(tab.icon),
+                  tab.iconData,
                   size: 22,
                   color: active
                       ? AppColors.navIconActive
@@ -450,7 +452,7 @@ List<NavTabConfig> defaultNavTabs({required bool checkinUrgent}) => [
   const NavTabConfig(id: HomeTab.vlog, icon: 'videoOutline', label: 'Vlog'),
   NavTabConfig(
     id: HomeTab.checkin,
-    icon: 'pillar',
+    icon: 'chartDonut',
     label: 'Check-in',
     urgent: checkinUrgent,
   ),

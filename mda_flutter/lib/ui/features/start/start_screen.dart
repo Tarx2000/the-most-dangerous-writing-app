@@ -11,6 +11,7 @@ import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/haptics.dart';
+import '../../../core/rating_day.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/models/person.dart';
@@ -22,9 +23,9 @@ import '../../core/widgets/liquid_glass_options.dart';
 import '../../core/widgets/base_modal.dart';
 import '../settings/settings_modal.dart';
 import '../../core/widgets/calendar_view.dart';
-import '../../core/widgets/morph_icon.dart';
-import '../../core/widgets/animated_symmetrical_ring.dart';
 import '../../core/widgets/custom_slider.dart';
+import '../../core/widgets/glass_action.dart';
+import '../../core/widgets/glass_pill.dart';
 import '../../core/widgets/tick_dial.dart';
 import '../circles/circle_picker_sheet.dart';
 
@@ -55,7 +56,19 @@ class _StartScreenState extends ConsumerState<StartScreen> {
   int _timeIndex = defaultSessionIndex; // 5 min
   int _vlogTimeIndex = 0;
   int _diffIndex = defaultDifficultyIndex; // MID
-  int _checkinScore = 5;
+  int? _checkinScore;
+  String? _scoreDay;
+  int? get _currentScore {
+    final day = RatingDay.at(DateTime.now()).key;
+    if (_scoreDay == day) return _checkinScore;
+    if (!ref.read(isNotesUnlockedProvider)) return null;
+    return ref
+        .read(wellbeingProvider)
+        .where((e) => e.dayKey == day)
+        .firstOrNull
+        ?.overall;
+  }
+
   String? _selectedPersonId;
 
   void _handleStart() {
@@ -74,10 +87,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
       case SessionMode.vlog:
         context.push('/vlog', extra: {'timeIndex': timeIndex});
       case SessionMode.checkin:
-        context.push(
-          '/checkin',
-          extra: {'alignmentScore': _checkinScore, 'timeIndex': timeIndex},
-        );
+        context.push('/checkin', extra: {'alignmentScore': _currentScore});
       case SessionMode.journal:
       case SessionMode.circles:
         context.push(
@@ -145,6 +155,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(isNotesUnlockedProvider);
     final streak = ref.watch(streakProvider).currentStreak;
     final enableLiquidGlass = ref.watch(
       preferencesProvider.select((p) => p.enableLiquidGlass),
@@ -152,13 +163,6 @@ class _StartScreenState extends ConsumerState<StartScreen> {
     final persons = ref.watch(personsProvider);
     final isCheckin = widget.mode == SessionMode.checkin;
     final isVlog = widget.mode == SessionMode.vlog;
-    final tierColor = isCheckin
-        ? AppColors.alignmentTierColorSmooth(_checkinScore.toDouble())
-        : AppColors.primaryAction;
-    final tierGlow = isCheckin
-        ? AppColors.alignmentTierGlowSmooth(_checkinScore.toDouble())
-        : null;
-    final tierLabel = AppColors.alignmentTierLabel(_checkinScore).toUpperCase();
 
     return SafeArea(
       child: LayoutBuilder(
@@ -166,102 +170,148 @@ class _StartScreenState extends ConsumerState<StartScreen> {
           // Keep the page bounded and leave vertical drags to HomeShell.
           // Glass touch uses LayoutBuilder and cannot take part in an
           // IntrinsicHeight pass. Compact only the hero on shorter screens.
-          final heroHeight =
-              (constraints.maxHeight - (enableLiquidGlass ? 470 : 430)).clamp(
-                150.0,
-                250.0,
-              );
+          if (isCheckin) {
+            ref.watch(wellbeingProvider);
+            ref.watch(ratingClockProvider);
+            final score = _currentScore;
+            return Column(
+              children: [
+                _TopBar(streak: streak, onCalendarPress: _openCalendar),
+                const Spacer(),
+                Flexible(
+                  flex: 6,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SizedBox(
+                      width: constraints.maxWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.track_changes_rounded,
+                            size: 48,
+                            color: AppColors.textPrimary,
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Check-in',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.8,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 32),
+                            child: Text(
+                              'How satisfied are you with your life right now?',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppColors.textBodyDim,
+                                fontSize: 16,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 26),
+                Text(
+                  score == null ? '—' : '$score / 10',
+                  style: const TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: CustomSlider(
+                    value: score,
+                    min: 0,
+                    max: 10,
+                    label: 'Overall satisfaction',
+                    enableGlass: enableLiquidGlass,
+                    onChanged: (v) => setState(() {
+                      _checkinScore = v;
+                      _scoreDay = RatingDay.at(DateTime.now()).key;
+                    }),
+                    onCancelled: (v) => setState(() {
+                      _checkinScore = v;
+                      _scoreDay = RatingDay.at(DateTime.now()).key;
+                    }),
+                  ),
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  child: GlassAction(
+                    label: 'Continue check-in',
+                    icon: Icons.arrow_forward_rounded,
+                    onPressed: _handleStart,
+                    height: 64,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.push('/checkin/history'),
+                  child: const Text(
+                    'View history',
+                    style: TextStyle(color: AppColors.textBodyDim),
+                  ),
+                ),
+                const SizedBox(height: 110),
+              ],
+            );
+          }
           return Column(
             children: [
               _TopBar(streak: streak, onCalendarPress: _openCalendar),
               const SizedBox(height: 8),
-              // Hero widget (Fixed height container with clean vertical layout without overlapping text)
-              SizedBox(
-                height: heroHeight,
+              Expanded(
+                flex: 6,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  alignment: Alignment.topCenter,
                   child: SizedBox(
                     width: constraints.maxWidth,
-                    height: 250,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Icon wrapper with AnimatedSymmetricalRing
-                        SizedBox(
-                          width: 72,
-                          height: 72,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              AnimatedSymmetricalRing(
-                                size: 68,
-                                strokeWidth: 4,
-                                color: tierColor,
-                                backgroundColor: isCheckin
-                                    ? AppColors.background
-                                    : Colors.transparent,
-                                isActive: isCheckin,
-                              ),
-                              LiquidMorphIcon(
-                                icon: _iconForMode(widget.mode),
-                                color: isCheckin
-                                    ? tierColor
-                                    : AppColors.primaryAction,
-                                size: isCheckin ? 40 : 42,
-                                glowColor: tierGlow,
-                              ),
-                            ],
-                          ),
+                        SizedBox.square(
+                          dimension: 96,
+                          child: widget.mode == SessionMode.journal
+                              ? Image.asset(
+                                  'assets/branding/app_icon.png',
+                                  cacheWidth: 288,
+                                  cacheHeight: 288,
+                                )
+                              : Icon(
+                                  isVlog
+                                      ? Icons.videocam_outlined
+                                      : Icons.people_outline_rounded,
+                                  color: AppColors.textPrimary,
+                                  size: 54,
+                                ),
                         ),
                         const SizedBox(height: 12),
-                        // Title label
                         Text(
                           isVlog
                               ? 'Video Journal'
-                              : isCheckin
-                              ? tierLabel
                               : widget.mode == SessionMode.circles
                               ? 'Relationship Journal'
                               : 'Free Writing',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: isCheckin
-                                ? tierColor
-                                : AppColors.textPrimary,
-                            fontSize: isCheckin ? 14 : 28,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: isCheckin ? 1.5 : -0.5,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.8,
                           ),
                         ),
-                        if (widget.mode == SessionMode.journal || isVlog) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            isVlog
-                                ? 'Record your thoughts on camera.'
-                                : 'Write continuously, or all is lost.',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 15),
-                        if (isCheckin)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 40),
-                            child: Transform.scale(
-                              scale: 0.9,
-                              child: CustomSlider(
-                                value: _checkinScore,
-                                color: tierColor,
-                                onChanged: (v) =>
-                                    setState(() => _checkinScore = v),
-                              ),
-                            ),
-                          )
-                        else if (isVlog)
+                        const SizedBox(height: 18),
+                        if (isVlog)
                           _QuickVideoPill(onPress: _startQuickVideo)
                         else if (widget.mode == SessionMode.circles) ...[
                           _PersonPickerPill(
@@ -272,10 +322,10 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                             onPress: _openCirclePicker,
                           ),
                           if (_selectedPersonId != null) ...[
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                             _TweetPill(onPress: _startTweet, isCircles: true),
                           ],
-                        ] else if (widget.mode == SessionMode.journal)
+                        ] else
                           _TweetPill(onPress: _startTweet, isCircles: false),
                       ],
                     ),
@@ -321,10 +371,12 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             for (var i = 0; i < difficultyLimitsMs.length; i++)
-                              _DifficultyPill(
-                                label: _difficultyLabel(i),
-                                active: _diffIndex == i,
-                                onTap: () => setState(() => _diffIndex = i),
+                              Flexible(
+                                child: _DifficultyPill(
+                                  label: _difficultyLabel(i),
+                                  active: _diffIndex == i,
+                                  onTap: () => setState(() => _diffIndex = i),
+                                ),
                               ),
                           ],
                         ),
@@ -339,7 +391,9 @@ class _StartScreenState extends ConsumerState<StartScreen> {
                       height: 64,
                       width: (constraints.maxWidth - 40).clamp(0.0, 320.0),
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      touch: AppGlass.buttonTouch,
+                      touch: MediaQuery.disableAnimationsOf(context)
+                          ? const LiquidGlassTouch()
+                          : AppGlass.buttonTouch,
                       style: AppGlass.surface(
                         32,
                         tint: const Color(0x10FFFFFF),
@@ -405,78 +459,59 @@ class _StartScreenState extends ConsumerState<StartScreen> {
     const names = ['EASY', 'MID', 'HARD'];
     return names[index];
   }
-
-  static String _iconForMode(SessionMode mode) {
-    switch (mode) {
-      case SessionMode.journal:
-        return 'notebookEdit';
-      case SessionMode.circles:
-        return 'accountGroup';
-      case SessionMode.vlog:
-        return 'videoOutline';
-      case SessionMode.checkin:
-        return 'starFourPoints';
-    }
-  }
 }
 
 class _TopBar extends ConsumerWidget {
   const _TopBar({required this.streak, this.onCalendarPress});
-
   final int streak;
   final VoidCallback? onCalendarPress;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final enableLiquidGlass = ref.watch(
+    final glass = ref.watch(
       preferencesProvider.select((p) => p.enableLiquidGlass),
     );
-
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Mdi.get('fire'), color: AppColors.primaryAction, size: 20),
+        const SizedBox(width: 6),
+        Text(
+          '$streak',
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
     return LiquidGlassBatch(
-      enabled: enableLiquidGlass,
+      enabled: glass,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Streak button → streak calendar
             AnimatedScaleButton(
               onPress: onCalendarPress,
-              activeScale: enableLiquidGlass ? 1 : 0.95,
-              activeOpacity: enableLiquidGlass ? 1 : 0.8,
-              child: enableLiquidGlass
+              semanticLabel: 'Streak: $streak days. Open calendar',
+              activeScale: glass ? 1 : 0.95,
+              activeOpacity: glass ? 1 : 0.8,
+              child: glass
                   ? _HeaderGlassPill(
                       label: '$streak',
                       labelStyle: const TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
                       iconSize: 20,
                       touch: AppGlass.headerTouch,
                       style: AppGlass.surface(30),
-                      child: Container(
+                      child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 10,
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Mdi.get('fire'),
-                              color: AppColors.primaryAction,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '$streak',
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: content,
                       ),
                     )
                   : Container(
@@ -487,40 +522,21 @@ class _TopBar extends ConsumerWidget {
                       decoration: BoxDecoration(
                         color: AppColors.glassBackground,
                         borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                          color: AppColors.glassBorder,
-                          width: 1,
-                        ),
+                        border: Border.all(color: AppColors.glassBorder),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Mdi.get('fire'),
-                            color: AppColors.primaryAction,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$streak',
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: content,
                     ),
             ),
-            Row(
-              children: [
-                // Vision lock button → Masteries (unlock gate, SPEC §12).
-                const _VisionLockButton(),
-                const SizedBox(width: 8),
-                // Settings cog (4 s long-press = dev mode toggle)
-                _SettingsCogButton(),
-              ],
+            const Spacer(),
+            const Expanded(
+              flex: 10,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _VisionLockButton(),
+              ),
             ),
+            const SizedBox(width: 8),
+            _SettingsCogButton(),
           ],
         ),
       ),
@@ -564,7 +580,13 @@ class _HeaderGlassPill extends StatelessWidget {
     painter.dispose();
     return SizedBox.fromSize(
       size: size,
-      child: LiquidGlassLens(touch: touch, style: style, child: child),
+      child: LiquidGlassLens(
+        touch: MediaQuery.disableAnimationsOf(context)
+            ? const LiquidGlassTouch()
+            : touch,
+        style: style,
+        child: FittedBox(fit: BoxFit.scaleDown, child: child),
+      ),
     );
   }
 }
@@ -598,12 +620,15 @@ class _DifficultyPill extends StatelessWidget {
               width: 1,
             ),
           ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),
@@ -619,27 +644,11 @@ class _TweetPill extends StatelessWidget {
   final bool isCircles;
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedScaleButton(
-      onPress: onPress,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.primaryAction,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: AppColors.dangerBorder, width: 1),
-        ),
-        child: Text(
-          isCircles ? 'Tweet' : 'New Tweet',
-          style: const TextStyle(
-            color: AppColors.background,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => GlassPill(
+    label: isCircles ? 'Tweet' : 'New Tweet',
+    icon: Icons.edit_outlined,
+    onPressed: onPress,
+  );
 }
 
 class _QuickVideoPill extends StatelessWidget {
@@ -654,14 +663,14 @@ class _QuickVideoPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.primaryAction,
+          color: AppColors.glassSurface,
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: AppColors.dangerBorder, width: 1),
+          border: Border.all(color: AppColors.glassBorder, width: 1),
         ),
         child: Text(
           'Quick Video',
           style: TextStyle(
-            color: AppColors.background,
+            color: AppColors.textBody,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -703,7 +712,7 @@ class _PersonPickerPill extends StatelessWidget {
           border: Border.all(color: AppColors.glassBorder, width: 1),
         ),
         child: Text(
-          selected != null ? '👤 ${selected.name}' : '👤 Choose a person',
+          selected != null ? selected.name : 'Choose a person',
           style: const TextStyle(
             color: AppColors.textSecondary,
             fontSize: 13,
@@ -731,6 +740,7 @@ class _VisionLockButton extends ConsumerWidget {
     final enableLiquidGlass = prefs.enableLiquidGlass;
 
     return AnimatedScaleButton(
+      semanticLabel: unlocked ? 'Masteries. Hold to lock' : 'Unlock Masteries',
       activeScale: enableLiquidGlass ? 1 : 0.95,
       activeOpacity: enableLiquidGlass ? 1 : 0.8,
       onPress: () async {
@@ -798,33 +808,37 @@ class _VisionLockButton extends ConsumerWidget {
   }
 
   static Widget _buildLockContent(bool unlocked) {
-    return Row(
-      children: [
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: Icon(
-            unlocked ? Mdi.get('pillar') : Mdi.get('lockOutline'),
-            key: ValueKey(unlocked),
-            color: unlocked ? AppColors.gold : AppColors.dangerIconOverlay,
-            size: 18,
-          ),
-        ),
-        const SizedBox(width: 6),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: Text(
-            unlocked ? 'Masteries' : 'Locked',
-            key: ValueKey(unlocked),
-            style: TextStyle(
-              color: unlocked
-                  ? AppColors.textPrimary
-                  : AppColors.dangerIconOverlay,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Icon(
+              unlocked ? Mdi.get('pillar') : Mdi.get('lockOutline'),
+              key: ValueKey(unlocked),
+              color: unlocked ? AppColors.gold : AppColors.dangerIconOverlay,
+              size: 18,
             ),
           ),
-        ),
-      ],
+          const SizedBox(width: 6),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Text(
+              unlocked ? 'Masteries' : 'Locked',
+              key: ValueKey(unlocked),
+              style: TextStyle(
+                color: unlocked
+                    ? AppColors.textPrimary
+                    : AppColors.dangerIconOverlay,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -844,6 +858,7 @@ class _SettingsCogButtonState extends ConsumerState<_SettingsCogButton> {
     final enableLiquidGlass = prefs.enableLiquidGlass;
 
     return AnimatedScaleButton(
+      semanticLabel: 'Settings',
       activeScale: enableLiquidGlass ? 1 : 0.95,
       activeOpacity: enableLiquidGlass ? 1 : 0.8,
       onPress: () {

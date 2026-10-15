@@ -49,6 +49,7 @@ abstract final class SettingsKeys {
   static const aiCustomPrompts = 'AI_CUSTOM_PROMPTS';
   static const aiFavoriteModels = 'AI_FAVORITE_MODELS';
   static const enableLiquidGlass = 'ENABLE_LIQUID_GLASS';
+  static const promptMasteries = 'PROMPT_MASTERIES';
 
   /// API-key settings that must be stripped from backups (SPEC §13).
   static const backupSecretKeys = {
@@ -66,7 +67,8 @@ class SettingsService {
 
   Future<String?> raw(String key) => _repository.getSetting(key);
 
-  Future<void> setRaw(String key, String value) => _repository.setSetting(key, value);
+  Future<void> setRaw(String key, String value) =>
+      _repository.setSetting(key, value);
 
   // -- Typed helpers -------------------------------------------------------
 
@@ -97,7 +99,10 @@ class SettingsService {
     }
   }
 
-  Future<Map<String, dynamic>> getJsonMap(String key, Map<String, dynamic> fallback) async {
+  Future<Map<String, dynamic>> getJsonMap(
+    String key,
+    Map<String, dynamic> fallback,
+  ) async {
     final raw = await _repository.getSetting(key);
     if (raw == null || raw.isEmpty) return fallback;
     try {

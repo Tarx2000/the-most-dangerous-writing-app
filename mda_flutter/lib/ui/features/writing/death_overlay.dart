@@ -1,11 +1,12 @@
-/// Death overlay — "YOU DIED" screen (SPEC §8).
-/// Fades in over 300 ms; buttons "Return to Menu" (primary) and "I don't care, let me write" (secondary).
+/// Session failure and recovery. Glass belongs to the return action; the
+/// surrounding surface stays black and quiet so the choices remain legible.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/glass_action.dart';
 
 class DeathOverlay extends StatelessWidget {
   const DeathOverlay({
@@ -30,119 +31,122 @@ class DeathOverlay extends StatelessWidget {
   final VoidCallback? onSaveWhatsLeft;
 
   @override
-  Widget build(BuildContext context) {
-    final effectiveSecondary = secondaryLabel ?? continueLabel;
-
-    return AnimatedOpacity(
-      opacity: visible ? 1 : 0,
-      duration: const Duration(milliseconds: 300),
-      child: IgnorePointer(
-        ignoring: !visible,
-        child: Container(
-          color: AppColors.deathOverlay,
-          padding: const EdgeInsets.symmetric(horizontal: 30),
-          child: SafeArea(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'YOU DIED',
-                    style: const TextStyle(
-                      color: AppColors.danger,
-                      fontSize: 44,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 15),
-                  Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 18,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  // Primary button: Return to Menu
-                  AnimatedScaleButton(
-                    onPress: onReturnToMenu,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 40),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryAction,
-                        borderRadius: BorderRadius.circular(AppRadius.round),
-                      ),
-                      child: Text(
-                        primaryLabel,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.primaryActionText,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (onSaveWhatsLeft != null) ...[
-                    const SizedBox(height: 14),
-                    AnimatedScaleButton(
-                      onPress: onSaveWhatsLeft,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 30),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceRaised,
-                          borderRadius: BorderRadius.circular(AppRadius.round),
-                          border: Border.all(color: AppColors.glassBorderMedium),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.save_outlined, color: AppColors.textPrimary, size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              "Save What's Left",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) => IgnorePointer(
+    ignoring: !visible,
+    child: BlockSemantics(
+      blocking: visible,
+      child: ExcludeSemantics(
+        excluding: !visible,
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 300),
+          child: ColoredBox(
+            color: AppColors.background,
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  28,
+                  24,
+                  28,
+                  24 + MediaQuery.viewInsetsOf(context).bottom,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, bounds) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: bounds.maxHeight),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.edit_off_outlined,
+                                color: AppColors.danger,
+                                size: 32,
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 15),
-                  // Secondary button: I don't care, let me write
-                  AnimatedScaleButton(
-                    onPress: onContinue,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      child: Text(
-                        effectiveSecondary,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+                              const SizedBox(height: 24),
+                              const Text(
+                                'YOU DIED',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 48,
+                                  height: 1.05,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                subtitle,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 16,
+                                  height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 40),
+                              GlassAction(
+                                label: primaryLabel,
+                                icon: Icons.arrow_back_rounded,
+                                onPressed: onReturnToMenu,
+                              ),
+                              if (onSaveWhatsLeft != null) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: onSaveWhatsLeft,
+                                    icon: const Icon(
+                                      Icons.save_outlined,
+                                      size: 18,
+                                    ),
+                                    label: const Text("Save What's Left"),
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 52),
+                                      foregroundColor: AppColors.textBody,
+                                      side: const BorderSide(
+                                        color: AppColors.glassBorderMedium,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                              AnimatedScaleButton(
+                                onPress: onContinue,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 16,
+                                  ),
+                                  child: Text(
+                                    secondaryLabel ?? continueLabel,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }

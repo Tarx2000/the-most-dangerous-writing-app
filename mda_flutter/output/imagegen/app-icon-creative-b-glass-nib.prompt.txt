@@ -1,0 +1,8 @@
+Use case: logo-brand
+Asset type: square iOS app icon artwork for a modern, focused writing app.
+Primary request: Design one original sculptural fountain-pen nib emblem made from folded optical glass and a single porcelain-white face. Simple, bold, modern, unusually beautiful. A compact asymmetric nib shape, slightly diagonal, has two broad sculptural planes and a deep black central ink slit; one side sweeps upward into a clean curved shoulder, the opposite side forms a precise cut. The sculpture must read immediately as a pen nib, while the clever interplay of opaque face, smoky transparent edge and black negative space gives it an ownable silhouette. Rich in form, sparse in elements.
+Scene/backdrop: flat pure AMOLED black, full bleed square, no enclosing icon border.
+Composition: one centered substantial emblem, about 61% of canvas, generous padding; strong readable silhouette at 48 pixels.
+Materials/light: white ceramic-like face, smoked clear glass flank, restrained physically plausible refraction and polished edge highlights, subtle internal depth. Restrict the glass effect to the emblem, with no surrounding lens or light bloom.
+Color palette: black, ivory-white, neutral silver; a tiny dark-red ink glint at the tip only.
+Constraints: no text, monogram, wordmark, watermark, feathers, wings, leaf shape, bubble, circular lens, floating particles, colorful gradient, neon, ornate pen barrel, generic outline icon. One finished app icon artwork, no device or presentation mockup.

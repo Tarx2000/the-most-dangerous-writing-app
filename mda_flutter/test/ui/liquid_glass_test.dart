@@ -74,19 +74,33 @@ void main() {
           );
           await tester.pump();
           expect(tester.takeException(), isNull, reason: '$mode');
-          expect(find.byType(TickDial).hitTestable(), findsOneWidget);
+          expect(
+            find.byType(TickDial).hitTestable(),
+            mode == SessionMode.checkin ? findsNothing : findsOneWidget,
+          );
           expect(
             find
                 .text(
                   mode == SessionMode.vlog
                       ? 'Start Recording'
+                      : mode == SessionMode.checkin
+                      ? 'Continue check-in'
                       : 'Start Writing',
                 )
                 .hitTestable(),
             findsOneWidget,
           );
           expect(
-            find.byType(LiquidGlassButton),
+            find.ancestor(
+              of: find.text(
+                mode == SessionMode.vlog
+                    ? 'Start Recording'
+                    : mode == SessionMode.checkin
+                    ? 'Continue check-in'
+                    : 'Start Writing',
+              ),
+              matching: find.byType(LiquidGlassButton),
+            ),
             glass ? findsOneWidget : findsNothing,
           );
         }
@@ -115,7 +129,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     storage.setGlass(true);
     await tester.pump();
-    expect(find.byType(LiquidGlassButton), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Start Writing'),
+        matching: find.byType(LiquidGlassButton),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('New Tweet'),
+        matching: find.byType(LiquidGlassButton),
+      ),
+      findsOneWidget,
+    );
     expect(tester.widget<TickDial>(find.byType(TickDial)).selectedIndex, 3);
     storage.setGlass(false);
     await tester.pump();

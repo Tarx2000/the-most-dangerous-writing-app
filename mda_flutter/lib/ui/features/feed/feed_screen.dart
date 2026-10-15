@@ -14,6 +14,7 @@ import '../../../data/models/saved_vlog.dart';
 import '../vlogs/vlog_viewer_modal.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/glass_pill.dart';
 import '../library/note_viewer_modal.dart';
 import 'feed_card.dart';
 
@@ -177,55 +178,57 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 ],
               ),
             ),
-            // Filter chips
+            // Separate scope from entry types; every filter is visible on
+            // phones, with wrapping instead of clipped labels at larger text.
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _FilterChip(
-                      label: 'All',
-                      active: !_onlyBookmarked,
-                      onTap: () => setState(() => _onlyBookmarked = false),
-                    ),
-                    _FilterChip(
-                      label: 'Bookmarked',
-                      icon: Mdi.get('bookmark'),
-                      active: _onlyBookmarked,
-                      onTap: () => setState(() => _onlyBookmarked = true),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 18,
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      color: AppColors.glassBorderSubtle,
-                    ),
-                    _FilterChip(
-                      label: 'Journals',
-                      active: _filterJournals,
-                      onTap: () =>
-                          setState(() => _filterJournals = !_filterJournals),
-                    ),
-                    _FilterChip(
-                      label: 'Tweets',
-                      active: _filterTweets,
-                      onTap: () =>
-                          setState(() => _filterTweets = !_filterTweets),
-                    ),
-                    _FilterChip(
-                      label: 'Vlogs',
-                      active: _filterVlogs,
-                      onTap: () => setState(() => _filterVlogs = !_filterVlogs),
-                    ),
-                    _FilterChip(
-                      label: 'Check-ins',
-                      active: _filterCheckins,
-                      onTap: () =>
-                          setState(() => _filterCheckins = !_filterCheckins),
-                    ),
-                  ],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    children: [
+                      _FilterChip(
+                        label: 'All',
+                        active: !_onlyBookmarked,
+                        onTap: () => setState(() => _onlyBookmarked = false),
+                      ),
+                      _FilterChip(
+                        label: 'Bookmarked',
+                        icon: Mdi.get('bookmark'),
+                        active: _onlyBookmarked,
+                        onTap: () => setState(() => _onlyBookmarked = true),
+                      ),
+                    ],
+                  ),
+                  Wrap(
+                    children: [
+                      _FilterChip(
+                        label: 'Journals',
+                        active: _filterJournals,
+                        onTap: () =>
+                            setState(() => _filterJournals = !_filterJournals),
+                      ),
+                      _FilterChip(
+                        label: 'Tweets',
+                        active: _filterTweets,
+                        onTap: () =>
+                            setState(() => _filterTweets = !_filterTweets),
+                      ),
+                      _FilterChip(
+                        label: 'Vlogs',
+                        active: _filterVlogs,
+                        onTap: () =>
+                            setState(() => _filterVlogs = !_filterVlogs),
+                      ),
+                      _FilterChip(
+                        label: 'Check-ins',
+                        active: _filterCheckins,
+                        onTap: () =>
+                            setState(() => _filterCheckins = !_filterCheckins),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 4),
@@ -386,48 +389,14 @@ class _FilterChip extends StatelessWidget {
   final IconData? icon;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: AnimatedScaleButton(
-        onPress: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: active ? AppColors.dangerTint : AppColors.glassSurfaceSubtle,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: active
-                  ? AppColors.dangerBorder
-                  : AppColors.glassBorderFaint,
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(
-                  icon,
-                  size: 13,
-                  color:
-                      active ? AppColors.primaryAction : AppColors.textSecondary,
-                ),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  color:
-                      active ? AppColors.primaryAction : AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
+    child: GlassPill(
+      label: label,
+      compact: true,
+      icon: icon,
+      selected: active,
+      onPressed: onTap,
+    ),
+  );
 }

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mda_flutter/data/app_data.dart';
 import 'package:mda_flutter/data/providers.dart';
 import 'package:mda_flutter/ui/features/home/home_shell.dart';
+import 'package:mda_flutter/ui/features/start/start_screen.dart';
 import 'package:mda_flutter/ui/core/widgets/liquid_glass_nav.dart';
 import 'package:mda_flutter/ui/core/widgets/tick_dial.dart';
 
@@ -94,20 +95,36 @@ void main() {
               }
               // Moving the preview must not change the active session yet.
               final currentTitle = switch (current) {
-                'Check-in' => 'OKAY',
+                'Check-in' => 'Check-in',
                 'Vlog' => 'Video Journal',
                 _ => 'Free Writing',
               };
-              expect(find.text(currentTitle).hitTestable(), findsOneWidget);
+              expect(
+                find
+                    .descendant(
+                      of: find.byType(StartScreen),
+                      matching: find.text(currentTitle),
+                    )
+                    .hitTestable(),
+                findsOneWidget,
+              );
               await gesture.up();
               await tester.pumpAndSettle();
               final title = switch (target) {
-                'Check-in' => 'OKAY',
+                'Check-in' => 'Check-in',
                 'Vlog' => 'Video Journal',
                 'Circles' => 'Relationship Journal',
                 _ => 'Free Writing',
               };
-              expect(find.text(title).hitTestable(), findsOneWidget);
+              expect(
+                find
+                    .descendant(
+                      of: find.byType(StartScreen),
+                      matching: find.text(title),
+                    )
+                    .hitTestable(),
+                findsOneWidget,
+              );
             }
             expect(tester.takeException(), isNull);
             await tester.pumpWidget(const SizedBox());
@@ -124,7 +141,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 200));
           await gesture.up();
           await tester.pumpAndSettle();
-          expect(find.text('OKAY').hitTestable(), findsOneWidget);
+          expect(find.text('Check-in').first.hitTestable(), findsOneWidget);
           gesture = await tester.startGesture(const Offset(325, 805));
           await tester.pump(const Duration(milliseconds: 150));
           await gesture.moveTo(const Offset(-100, 805));
@@ -155,7 +172,7 @@ void main() {
           );
           await _tapTab(tester, 'Check-in');
           await tester.pump(const Duration(milliseconds: 300));
-          expect(find.text('OKAY'), findsOneWidget);
+          expect(find.text('Check-in').first, findsOneWidget);
           await tester.pumpWidget(const SizedBox());
         },
       );

@@ -1,0 +1,126 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Current App - Before</title>
+<link rel="stylesheet" href="device.css">
+<style>
+  .screen { background: #000000; color: #FFFFFF; font-family: var(--sf); }
+  .content {
+    position: absolute; inset: var(--safe-top) 20px var(--safe-bottom);
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    padding: 12px 0 20px;
+  }
+  .top-bar {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+  }
+  .top-pill {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px; padding: 6px 14px; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .hero {
+    display: flex; flex-direction: column; align-items: center; margin-top: 20px;
+  }
+  .hero-ring {
+    width: 110px; height: 110px; border-radius: 55px; border: 2px solid rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center; position: relative;
+    box-shadow: 0 0 30px rgba(255,77,77,0.15);
+  }
+  .hero-ring::after {
+    content: ''; position: absolute; inset: 12px; border-radius: 45px;
+    border: 1px dashed rgba(255,255,255,0.25);
+  }
+  .hero-icon { font-size: 36px; }
+  .hero-title {
+    font-size: 28px; font-weight: 900; letter-spacing: -0.5px; margin: 16px 0 6px;
+  }
+  .hero-sub {
+    font-size: 15px; color: rgba(255,255,255,0.5); margin: 0 0 16px;
+  }
+  .action-subpill {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px; padding: 8px 18px; font-size: 13px; color: rgba(255,255,255,0.7);
+  }
+  .dial-container {
+    width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .dial-ticks {
+    display: flex; justify-content: center; align-items: center; gap: 24px;
+    font-size: 14px; color: rgba(255,255,255,0.4); font-family: var(--sf-mono);
+  }
+  .dial-tick.active {
+    font-size: 22px; font-weight: 700; color: #fff;
+  }
+  .difficulty-container {
+    width: 270px; height: 44px; border-radius: 22px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+    display: flex; padding: 3px;
+  }
+  .diff-opt {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.5px; border-radius: 18px;
+    color: rgba(255,255,255,0.4);
+  }
+  .diff-opt.active {
+    background: #1C1C1E; color: #fff; border: 1px solid rgba(255,255,255,0.2);
+  }
+  .btn-start {
+    width: 320px; height: 64px; border-radius: 32px;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), 0 8px 24px rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    font-size: 19px; font-weight: 700; color: #fff;
+  }
+  .tabbar {
+    width: 360px; height: 64px; border-radius: 32px;
+    background: rgba(18,18,20,0.85); border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(20px);
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 0 12px;
+  }
+  .tab-item {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    color: rgba(255,255,255,0.4); font-size: 10px; font-weight: 600;
+  }
+  .tab-item.active { color: #fff; }
+</style></head><body>
+<section class="screen" data-name="before-start" data-chrome="light">
+  <div class="content">
+    <div class="top-bar">
+      <div class="top-pill">🔥 12 Days</div>
+      <div class="top-pill">🔒 Vision Lock</div>
+      <div class="top-pill">⚙️</div>
+    </div>
+    <div class="hero">
+      <div class="hero-ring">
+        <div class="hero-icon">✍️</div>
+      </div>
+      <div class="hero-title">Free Writing</div>
+      <div class="hero-sub">Write continuously, or all is lost.</div>
+      <div class="action-subpill">⚡ 280-char Sprint</div>
+    </div>
+    <div class="dial-container">
+      <div class="dial-ticks">
+        <span class="dial-tick">3</span>
+        <span class="dial-tick active">5 min</span>
+        <span class="dial-tick">10</span>
+        <span class="dial-tick">15</span>
+      </div>
+    </div>
+    <div class="difficulty-container">
+      <div class="diff-opt">EASY</div>
+      <div class="diff-opt active">MID</div>
+      <div class="diff-opt">HARD</div>
+    </div>
+    <div class="btn-start">
+      <span>Start Writing</span>
+      <span>→</span>
+    </div>
+    <div class="tabbar" data-float>
+      <div class="tab-item active"><span>✍️</span><span>Journal</span></div>
+      <div class="tab-item"><span>👥</span><span>Circles</span></div>
+      <div class="tab-item"><span>📹</span><span>Vlog</span></div>
+      <div class="tab-item"><span>🎯</span><span>Check-In</span></div>
+    </div>
+  </div>
+</section>
+<script src="device.js"></script>
+</body></html>

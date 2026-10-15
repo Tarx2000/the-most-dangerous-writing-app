@@ -12,30 +12,32 @@ import 'package:mda_flutter/domain/use_cases/session_engine.dart';
 import 'package:mda_flutter/ui/features/writing/writing_screen.dart';
 
 Widget _wrap(Widget child) {
-  return ProviderScope(
-    child: MaterialApp(
-      home: child,
-    ),
-  );
+  return ProviderScope(child: MaterialApp(home: child));
 }
 
 void main() {
-  testWidgets('typing updates the word counter and the death flow works',
-      (tester) async {
-    await tester.pumpWidget(_wrap(const WritingScreen(
-      params: WritingParams(
-        timeIndex: 1,
-        diffIndex: 1, // MID = 8 s idle limit
-        mode: 'journal',
+  testWidgets('typing updates the word counter and the death flow works', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(
+        const WritingScreen(
+          params: WritingParams(
+            timeIndex: 1,
+            diffIndex: 1, // MID = 8 s idle limit
+            mode: 'journal',
+          ),
+        ),
       ),
-    )));
+    );
 
     // The engine lives on the private state class — access it dynamically.
     final dynamic state = tester.state(find.byType(WritingScreen));
     final engine = state.engineForTesting as SessionEngine;
 
     // Session countdown visible (5 min = 05:00).
-    expect(find.text('FREE WRITE'), findsOneWidget);
+    expect(find.text('05:00'), findsOneWidget);
+    expect(find.text('FREE WRITE'), findsNothing);
 
     // Simulate typing through the real onChanged handler.
     await _type(tester, 'one two three four');
@@ -63,14 +65,18 @@ void main() {
   });
 
   testWidgets('tweet mode blocks typing past 45 words', (tester) async {
-    await tester.pumpWidget(_wrap(const WritingScreen(
-      params: WritingParams(
-        timeIndex: 0,
-        diffIndex: 1,
-        mode: 'journal',
-        isTweet: true,
+    await tester.pumpWidget(
+      _wrap(
+        const WritingScreen(
+          params: WritingParams(
+            timeIndex: 0,
+            diffIndex: 1,
+            mode: 'journal',
+            isTweet: true,
+          ),
+        ),
       ),
-    )));
+    );
 
     final dynamic state = tester.state(find.byType(WritingScreen));
     final engine = state.engineForTesting as SessionEngine;
@@ -81,7 +87,8 @@ void main() {
     // Counter clamps to 45 (blocked), no more.
     expect(engine.wordCount.value, 45);
     expect(find.textContaining('45 words'), findsOneWidget);
-    expect(find.text('NEW TWEET'), findsOneWidget);
+    expect(find.text('NEW TWEET'), findsNothing);
+    expect(find.textContaining('45 words'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });

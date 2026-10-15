@@ -155,13 +155,13 @@ class FeedCard extends ConsumerWidget {
     final n = note;
     switch (item.type) {
       case FeedItemType.checkin:
-        final score = n?.alignmentScore ?? 5;
-        final details = getAlignmentTier(score);
+        final score = n?.alignmentScore;
+        final details = score == null ? null : getAlignmentTier(score);
         return [
           Row(
             children: [
               Text(
-                '$score/10',
+                score == null ? 'Reflection' : '$score/10',
                 style: TextStyle(
                   color: _accentFor(item),
                   fontSize: 15,
@@ -170,7 +170,7 @@ class FeedCard extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                details.label.toUpperCase(),
+                details?.label.toUpperCase() ?? '',
                 style: TextStyle(
                   color: _accentFor(item),
                   fontSize: 11,
@@ -316,10 +316,7 @@ class _Avatar extends StatelessWidget {
     final (Color borderColor, Widget child) = switch (item.type) {
       FeedItemType.checkin => (
         accent,
-        Text(
-          getAlignmentTier(item.note?.alignmentScore ?? 5).emoji,
-          style: const TextStyle(fontSize: 18),
-        ),
+        Icon(Icons.track_changes_rounded, color: accent, size: 19),
       ),
       FeedItemType.circle => (
         AppColors.primaryAction,
@@ -469,9 +466,7 @@ class _CommentSectionState extends ConsumerState<_CommentSection> {
             LikeButton(
               size: LikeButtonSize.sm,
               liked: widget.isBookmarked,
-              label: widget.isBookmarked
-                  ? 'Remove bookmark'
-                  : 'Bookmark entry',
+              label: widget.isBookmarked ? 'Remove bookmark' : 'Bookmark entry',
               onLikedChange: (_) => ref
                   .read(appDataProvider.notifier)
                   .toggleBookmark(widget.entryId),

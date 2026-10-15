@@ -1,6 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 import 'package:mda_flutter/data/app_data.dart';
 import 'package:mda_flutter/data/models/saved_vlog.dart';
 import 'package:mda_flutter/data/providers.dart';
@@ -37,6 +40,45 @@ class _Storage extends StorageNotifier {
 }
 
 void main() {
+  testWidgets(
+    'glass type filters toggle their selection and actual feed items',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appDataProvider.overrideWith(_Storage.new)],
+          child: const MaterialApp(home: Scaffold(body: FeedScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(LiquidGlassButton), findsNWidgets(6));
+      expect(find.byType(FeedCard), findsOneWidget);
+      await tester.ensureVisible(find.text('Vlogs'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Vlogs'))
+            .flagsCollection
+            .isSelected,
+        ui.Tristate.isTrue,
+      );
+      await tester.tap(find.text('Vlogs'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FeedCard), findsNothing);
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Vlogs'))
+            .flagsCollection
+            .isSelected,
+        ui.Tristate.isFalse,
+      );
+      await tester.tap(find.text('Vlogs'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FeedCard), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('vlog actions use vlog ID and fullscreen callback', (
     tester,
   ) async {

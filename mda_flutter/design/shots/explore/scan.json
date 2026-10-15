@@ -1,0 +1,93 @@
+[
+  {
+    "name": "explore-a-lens",
+    "fails": [],
+    "warns": [
+      "7 distinct left edges in the left third. Align to fewer verticals."
+    ],
+    "facts": {
+      "fonts": {
+        "SF Pro": 12
+      },
+      "sizes": [
+        32,
+        22,
+        18,
+        15,
+        13
+      ],
+      "weights": [
+        "500",
+        "600",
+        "700",
+        "800"
+      ],
+      "leftEdges": 7,
+      "accentHues": [
+        0
+      ],
+      "cards": 2
+    }
+  },
+  {
+    "name": "explore-b-telemetry",
+    "fails": [],
+    "warns": [],
+    "facts": {
+      "fonts": {
+        "SF Mono": 8,
+        "SF Pro": 4
+      },
+      "sizes": [
+        52,
+        17,
+        16,
+        15,
+        13,
+        12,
+        11
+      ],
+      "weights": [
+        "400",
+        "600",
+        "700",
+        "800"
+      ],
+      "leftEdges": 4,
+      "accentHues": [
+        24,
+        0
+      ],
+      "cards": 3
+    }
+  },
+  {
+    "name": "explore-c-manifesto",
+    "fails": [],
+    "warns": [],
+    "facts": {
+      "fonts": {
+        "SF Pro": 6,
+        "New York": 4
+      },
+      "sizes": [
+        52,
+        20,
+        16,
+        15,
+        12
+      ],
+      "weights": [
+        "400",
+        "600",
+        "700",
+        "800"
+      ],
+      "leftEdges": 3,
+      "accentHues": [
+        0
+      ],
+      "cards": 0
+    }
+  }
+]

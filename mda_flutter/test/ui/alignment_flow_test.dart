@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mda_flutter/data/app_data.dart';
 import 'package:mda_flutter/data/models/pillar.dart';
 import 'package:mda_flutter/data/providers.dart';
+import 'package:mda_flutter/data/security_providers.dart';
 import 'package:mda_flutter/ui/features/alignment/alignment_writing_screen.dart';
 import 'package:mda_flutter/ui/features/writing/death_overlay.dart';
+import 'package:mda_flutter/ui/features/writing/danger_overlay.dart';
 
 class _Storage extends StorageNotifier {
   @override
@@ -21,6 +23,10 @@ class _Storage extends StorageNotifier {
       ),
     ],
   );
+
+  @override
+  Future<List<Pillar>> getStableCheckinSelection(bool isWeekly) async =>
+      getPillarsForCheckIn(isWeekly);
 
   @override
   Future<void> completeCheckin(int timestamp) async {
@@ -62,9 +68,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('LOG & CONTINUE'));
+      await tester.tap(find.text('Continue to reflections'));
       await tester.pumpAndSettle();
-      expect(find.text('WRITE REFLECTIONS'), findsOneWidget);
+      expect(find.text('Reflections'), findsOneWidget);
       expect(find.text('Take a quiet moment'), findsOneWidget);
       expect(container.read(preferencesProvider).lastReflectionDate, isNotNull);
       await tester.pumpWidget(const SizedBox());
@@ -74,18 +80,41 @@ void main() {
   testWidgets(
     'logging enters the deck; typing resets danger and idle death clears text',
     (tester) async {
+      final keyboard = ValueNotifier(0.0);
+      addTearDown(keyboard.dispose);
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [appDataProvider.overrideWith(_Storage.new)],
-          child: const MaterialApp(home: AlignmentWritingScreen()),
+          overrides: [
+            appDataProvider.overrideWith(_Storage.new),
+            isNotesUnlockedProvider.overrideWithValue(true),
+          ],
+          child: MaterialApp(
+            builder: (context, child) => ValueListenableBuilder<double>(
+              valueListenable: keyboard,
+              builder: (context, height, _) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  viewInsets: EdgeInsets.only(bottom: height),
+                  padding: const EdgeInsets.only(top: 62, bottom: 34),
+                ),
+                child: child!,
+              ),
+            ),
+            home: const AlignmentWritingScreen(),
+          ),
         ),
       );
-      await tester.pump();
-      await tester.tap(find.text('LOG & CONTINUE'));
       await tester.pumpAndSettle();
-      expect(find.text('WRITE REFLECTIONS'), findsOneWidget);
+      await tester.tap(find.text('Continue to reflections'));
+      await tester.pumpAndSettle();
+      expect(find.text('Reflections'), findsOneWidget);
       await tester.tap(find.text('Sleep'));
       await tester.pump();
+      keyboard.value = 280;
+      await tester.pump();
+      expect(
+        tester.getRect(find.byType(DangerOverlay)),
+        tester.getRect(find.byType(Scaffold)),
+      );
       await tester.enterText(find.byType(TextField), 'First thought');
       await tester.pump(const Duration(seconds: 8));
       await tester.enterText(

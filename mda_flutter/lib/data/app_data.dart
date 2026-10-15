@@ -7,6 +7,7 @@ import 'models/person.dart';
 import 'models/pillar.dart';
 import 'models/saved_note.dart';
 import 'models/saved_vlog.dart';
+import 'models/wellbeing_checkin.dart';
 
 class PreferencesState {
   const PreferencesState({
@@ -24,7 +25,8 @@ class PreferencesState {
     this.logMode = false,
     this.lastReflectionDate,
     this.autoGenerateSummaries = true,
-    this.enableLiquidGlass = false,
+    this.enableLiquidGlass = true,
+    this.promptMasteries = true,
   });
 
   final int fontIndex;
@@ -42,6 +44,7 @@ class PreferencesState {
   final int? lastReflectionDate; // ms
   final bool autoGenerateSummaries;
   final bool enableLiquidGlass;
+  final bool promptMasteries;
 
   PreferencesState copyWith({
     int? fontIndex,
@@ -59,6 +62,7 @@ class PreferencesState {
     int? lastReflectionDate,
     bool? autoGenerateSummaries,
     bool? enableLiquidGlass,
+    bool? promptMasteries,
   }) {
     return PreferencesState(
       fontIndex: fontIndex ?? this.fontIndex,
@@ -74,20 +78,30 @@ class PreferencesState {
       preferPinAuth: preferPinAuth ?? this.preferPinAuth,
       logMode: logMode ?? this.logMode,
       lastReflectionDate: lastReflectionDate ?? this.lastReflectionDate,
-      autoGenerateSummaries: autoGenerateSummaries ?? this.autoGenerateSummaries,
+      autoGenerateSummaries:
+          autoGenerateSummaries ?? this.autoGenerateSummaries,
       enableLiquidGlass: enableLiquidGlass ?? this.enableLiquidGlass,
+      promptMasteries: promptMasteries ?? this.promptMasteries,
     );
   }
 }
 
 class StreakState {
-  const StreakState({this.currentStreak = 0, this.lastWinDate = '', this.streakHistory = const []});
+  const StreakState({
+    this.currentStreak = 0,
+    this.lastWinDate = '',
+    this.streakHistory = const [],
+  });
 
   final int currentStreak;
   final String lastWinDate; // YYYY-MM-DD
   final List<String> streakHistory;
 
-  StreakState copyWith({int? currentStreak, String? lastWinDate, List<String>? streakHistory}) {
+  StreakState copyWith({
+    int? currentStreak,
+    String? lastWinDate,
+    List<String>? streakHistory,
+  }) {
     return StreakState(
       currentStreak: currentStreak ?? this.currentStreak,
       lastWinDate: lastWinDate ?? this.lastWinDate,
@@ -128,6 +142,8 @@ class AppData {
     this.vlogs = const [],
     this.pillars = const [],
     this.adviceCards = const [],
+    this.wellbeing = const [],
+    this.pillarLogs = const [],
     this.lastLogDate,
     this.preferences = const PreferencesState(),
     this.streak = const StreakState(),
@@ -140,6 +156,8 @@ class AppData {
   final List<SavedVlog> vlogs;
   final List<Pillar> pillars;
   final List<AdviceCard> adviceCards;
+  final List<WellbeingCheckin> wellbeing;
+  final List<PillarLog> pillarLogs;
   final int? lastLogDate; // ms of most recent check-in
   final PreferencesState preferences;
   final StreakState streak;
@@ -154,6 +172,8 @@ class AppData {
     List<SavedVlog>? vlogs,
     List<Pillar>? pillars,
     List<AdviceCard>? adviceCards,
+    List<WellbeingCheckin>? wellbeing,
+    List<PillarLog>? pillarLogs,
     int? lastLogDate,
     PreferencesState? preferences,
     StreakState? streak,
@@ -166,6 +186,8 @@ class AppData {
       vlogs: vlogs ?? this.vlogs,
       pillars: pillars ?? this.pillars,
       adviceCards: adviceCards ?? this.adviceCards,
+      wellbeing: wellbeing ?? this.wellbeing,
+      pillarLogs: pillarLogs ?? this.pillarLogs,
       lastLogDate: lastLogDate ?? this.lastLogDate,
       preferences: preferences ?? this.preferences,
       streak: streak ?? this.streak,

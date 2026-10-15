@@ -22,8 +22,10 @@ class LibraryNotesList extends StatelessWidget {
     required this.emptySubtitle,
     this.reflectionsOnly = false,
     this.onNoteTap,
+    this.header,
   });
 
+  final Widget? header;
   final List<SavedNote> notes;
   final SortOption sortBy;
   final String emptyTitle;
@@ -36,7 +38,7 @@ class LibraryNotesList extends StatelessWidget {
     final sorted = _sortNotes(notes, sortBy);
     final groups = _groupNotes(sorted, sortBy);
 
-    if (groups.isEmpty) {
+    if (groups.isEmpty && header == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -49,7 +51,10 @@ class LibraryNotesList extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.glassSurfaceMinimal,
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.dangerBorderLight, width: 1),
+                  border: Border.all(
+                    color: AppColors.dangerBorderLight,
+                    width: 1,
+                  ),
                 ),
                 child: const Icon(
                   Icons.edit_outlined,
@@ -70,7 +75,10 @@ class LibraryNotesList extends StatelessWidget {
               Text(
                 emptySubtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
               ),
             ],
           ),
@@ -80,9 +88,21 @@ class LibraryNotesList extends StatelessWidget {
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
-      itemCount: groups.length,
+      itemCount:
+          groups.length + (header == null ? 0 : 1) + (groups.isEmpty ? 1 : 0),
       itemBuilder: (context, index) {
-        final group = groups[index];
+        if (header != null && index == 0) return header!;
+        final groupIndex = index - (header == null ? 0 : 1);
+        if (groups.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              emptySubtitle,
+              style: const TextStyle(color: AppColors.textBodyDim),
+            ),
+          );
+        }
+        final group = groups[groupIndex];
         if (group is _GroupHeader) {
           // RN parity: plain group title, no divider row (the Divider made
           // the header Row overflow on narrow phones).
@@ -161,8 +181,18 @@ class LibraryNotesList extends StatelessWidget {
 
   static String _monthLabel(DateTime dt) {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[dt.month - 1]} ${dt.year}';
   }
@@ -185,8 +215,8 @@ class _NoteCardItem extends StatelessWidget {
     final durationLabel = note.isTweet
         ? 'Tweet'
         : note.isQuickNote
-            ? 'Quick Note'
-            : '${note.durationMin} Min';
+        ? 'Quick Note'
+        : '${note.durationMin} Min';
     final winIcon = note.won ? '🔥' : '💀';
 
     return Padding(
@@ -217,7 +247,10 @@ class _NoteCardItem extends StatelessWidget {
                   ),
                   Text(
                     _dateLabel(note.dateTime),
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -265,7 +298,20 @@ class _NoteCardItem extends StatelessWidget {
     final day = DateTime(dt.year, dt.month, dt.day);
     if (day == today) return 'Today';
     if (day == today.subtract(const Duration(days: 1))) return 'Yesterday';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${months[dt.month - 1]} ${dt.day}';
   }
 }

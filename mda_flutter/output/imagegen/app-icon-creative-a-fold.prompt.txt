@@ -1,0 +1,8 @@
+Use case: logo-brand
+Asset type: square iOS app icon artwork for a minimalist, modern writing app.
+Primary request: Create a distinctive, creatively designed pen emblem, simple enough to recognize at small app-icon size but with the crafted originality of a premium industrial-design object. ONE continuous broad satin-platinum ribbon folds through space and terminates in a crisp fountain-pen nib. The folded ribbon itself IS the pen symbol: an elegant diagonal folded upper body, one expressive return fold, a sharply cut nib and a generous black negative-space slit. Clever, sculptural, memorable silhouette rather than a stock pen pictogram.
+Scene/backdrop: pure uniform AMOLED black, full bleed square, no border or rounded-square container.
+Composition: one compact central emblem occupying about 64% of the square, generous clear padding, strong balanced diagonal silhouette.
+Materials and light: pale silver satin metal, one controlled bright folded edge, subtle restrained dimensional shading. Keep large clean planar faces; not a detailed realistic pen. The creativity comes from the folded geometry.
+Color palette: black and platinum, with a tiny deep-crimson accent only at the writing tip.
+Constraints: no text, letters, initials, watermark, badge, background gradient, halo, glow, glass bubble, separate decorations, generic clip-art nib, stock toolbar pencil, ornate engraving or visible pen hardware. No photographed physical scene. Produce one finished icon, not a board of options. Modern, quiet, distinctive.

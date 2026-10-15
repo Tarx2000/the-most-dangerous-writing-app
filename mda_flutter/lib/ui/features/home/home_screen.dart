@@ -19,6 +19,7 @@ class HomeScreen extends ConsumerWidget {
     final popup = ref.watch(pendingStreakPopupProvider);
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
@@ -27,7 +28,8 @@ class HomeScreen extends ConsumerWidget {
             StreakPopup(
               streak: popup.streak,
               streakHistory: popup.history,
-              onClose: () => ref.read(appDataProvider.notifier).dismissStreakPopup(),
+              onClose: () =>
+                  ref.read(appDataProvider.notifier).dismissStreakPopup(),
             ),
         ],
       ),

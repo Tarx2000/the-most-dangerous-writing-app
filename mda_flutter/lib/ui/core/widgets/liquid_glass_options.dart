@@ -1,6 +1,5 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
 import 'app_glass.dart';
@@ -92,13 +91,10 @@ class _LiquidGlassOptionsState extends State<LiquidGlassOptions>
     }
     try {
       await _position
-          .animateWith(
-            SpringSimulation(
-              const SpringDescription(mass: 1, stiffness: 320, damping: 31.4),
-              _position.value,
-              index.toDouble(),
-              0,
-            ),
+          .animateTo(
+            index.toDouble(),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
           )
           .orCancel;
     } on TickerCanceled {
@@ -185,8 +181,12 @@ class _LiquidGlassOptionsState extends State<LiquidGlassOptions>
                         restSize: Size(cellWidth, widget.height - 2 * _inset),
                         activeSize: Size(cellWidth + 4, widget.height - 2),
                         style: AppGlass.movingSelection,
-                        expandDamping: 28,
-                        contractDamping: 28,
+                        // Native morph physics; contract promptly when the
+                        // 180 ms navigation-matched position travel finishes.
+                        expandStiffness: 1200,
+                        expandDamping: 60,
+                        contractStiffness: 1600,
+                        contractDamping: 72,
                         motion: const LiquidGlassLensMotionSpec(
                           maxDeformation: 0.05,
                         ),

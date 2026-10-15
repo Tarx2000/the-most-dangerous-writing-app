@@ -168,28 +168,25 @@ void main() {
     },
   );
 
-  test(
-    'unknown free space never blocks a restore (weak phones)',
-    () async {
-      // Probe failure (-1) or throw must proceed, not refuse: a phone that
-      // cannot answer the capacity question still restores fine.
-      final path = await writeBackup({
-        'backupVersion': 2,
-        'sqlite': {'notes': []},
-        'fileManifest': {'vlogs': [], 'thumbnails': []},
-      });
-      for (final probe in [
-        () async => -1,
-        () async => throw StateError('probe crashed'),
-      ]) {
-        final result = await service.importBackupZip(
-          zipPath: path,
-          freeSpaceProvider: probe,
-        );
-        expect(result.success, isTrue, reason: result.error);
-      }
-    },
-  );
+  test('unknown free space never blocks a restore (weak phones)', () async {
+    // Probe failure (-1) or throw must proceed, not refuse: a phone that
+    // cannot answer the capacity question still restores fine.
+    final path = await writeBackup({
+      'backupVersion': 2,
+      'sqlite': {'notes': []},
+      'fileManifest': {'vlogs': [], 'thumbnails': []},
+    });
+    for (final probe in [
+      () async => -1,
+      () async => throw StateError('probe crashed'),
+    ]) {
+      final result = await service.importBackupZip(
+        zipPath: path,
+        freeSpaceProvider: probe,
+      );
+      expect(result.success, isTrue, reason: result.error);
+    }
+  });
 
   test(
     'size mismatch inside one file aborts with attribution (not the gate)',
@@ -456,6 +453,82 @@ void main() {
       expect(await File(row['thumbnail_path'] as String).readAsBytes(), [3]);
     },
   );
+
+  test(
+    'v7 ratings and stable selections survive an actual backup roundtrip',
+    () async {
+      await run("INSERT INTO wellbeing_checkins VALUES (?, ?, ?, ?, ?)", [
+        '2026-10-15',
+        0,
+        '{"health":10}',
+        100,
+        100,
+      ]);
+      await run("INSERT INTO checkin_selections VALUES (?, ?, ?)", [
+        '2026-10-15',
+        'daily',
+        '["mock_pillar_sleep"]',
+      ]);
+      await run(
+        "UPDATE pillars SET reactivated_at = 123 WHERE id = 'mock_pillar_sleep'",
+      );
+      await run(
+        "INSERT INTO pillar_logs (id, pillar_id, value_num, timestamp, day_key) VALUES (?, ?, ?, ?, ?)",
+        ['today', 'mock_pillar_sleep', 7, 100, '2026-10-15'],
+      );
+      final exported = await service.exportBackupZip(
+        scopes: ['notes', 'masteries', 'settings'],
+      );
+      expect(exported.success, isTrue, reason: exported.error);
+      await run('DELETE FROM wellbeing_checkins');
+      await run('DELETE FROM checkin_selections');
+      final restored = await service.importBackupZip(
+        zipPath: exported.zipPath!,
+      );
+      expect(restored.success, isTrue, reason: restored.error);
+      expect(
+        (await getFirst('SELECT * FROM wellbeing_checkins'))?['overall'],
+        0,
+      );
+      expect(
+        (await getFirst('SELECT * FROM wellbeing_checkins'))?['domains'],
+        '{"health":10}',
+      );
+      expect(
+        (await getFirst('SELECT * FROM checkin_selections'))?['pillar_ids'],
+        '["mock_pillar_sleep"]',
+      );
+      expect(
+        (await getFirst(
+          "SELECT * FROM pillars WHERE id = 'mock_pillar_sleep'",
+        ))?['reactivated_at'],
+        123,
+      );
+      expect(
+        (await getFirst('SELECT * FROM pillar_logs'))?['day_key'],
+        '2026-10-15',
+      );
+    },
+  );
+
+  test('malformed v7 domain values are rejected before replacement', () async {
+    final path = await writeBackup({
+      'backupVersion': 2,
+      'sqlite': {
+        'wellbeing_checkins': [
+          {
+            'day_key': '2026-10-15',
+            'overall': 7,
+            'domains': '{"health":11}',
+            'updated_at': 100,
+          },
+        ],
+      },
+    });
+    final result = await service.importBackupZip(zipPath: path);
+    expect(result.success, isFalse);
+    expect(await getAll('SELECT * FROM notes'), hasLength(1));
+  });
 
   test('export→import roundtrip preserves notes and settings', () async {
     final export = await service.exportBackupZip(scopes: ['notes', 'settings']);
@@ -1022,90 +1095,85 @@ void main() {
     },
   );
 
-  test(
-    'resume: already-staged files are skipped, not re-extracted',
-    () async {
-      // Simulates a kill AFTER two videos staged: the byte-exact staged
-      // files must be reused (fast resume), the missing ones extracted, and
-      // the import must still succeed with byte-exact results.
-      final zipPath = p.join(tempDir.path, 'resume_backup.zip');
-      final encoder = ZipFileEncoder()..create(zipPath);
-      final payloads = <String, List<int>>{
-        'vlogs/r1.mp4': List<int>.filled(1024 * 1024, 11),
-        'vlogs/r2.mp4': List<int>.filled(512 * 1024, 22),
-        'vlogs/r3.mp4': List<int>.filled(256 * 1024, 33),
-      };
-      final manifest = <Map<String, dynamic>>[];
-      final rows = <Map<String, dynamic>>[];
-      var timestamp = 2000;
-      for (final e in payloads.entries) {
-        final id = p.basenameWithoutExtension(e.key);
-        encoder.addArchiveFile(ArchiveFile.bytes(e.key, e.value));
-        manifest.add({
-          'vlogId': id,
-          'entryPath': e.key,
-          'kind': 'video',
-          'sizeBytes': e.value.length,
-          'included': true,
-          'reason': null,
-        });
-        rows.add({
-          'id': id,
-          'file_path': '/old/device/${e.key}',
-          'date_str': '2026-08-11',
-          'timestamp': timestamp++,
-          'duration_sec': 10,
-          'file_size_bytes': e.value.length,
-        });
-      }
-      encoder.addArchiveFile(
-        ArchiveFile.bytes(
-          'backup_metadata.json',
-          utf8.encode(
-            jsonEncode({
-              'backupVersion': 2,
-              'schemaVersion': 6,
-              'appVersion': '1.5.8',
-              'createdAt': 1723670000000,
-              'scopes': ['vlogs'],
-              'sqlite': {
-                'vlogs': rows,
-              },
-              'asyncStorage': <String, dynamic>{},
-              'fileManifest': {'vlogs': manifest, 'thumbnails': []},
-            }),
-          ),
+  test('resume: already-staged files are skipped, not re-extracted', () async {
+    // Simulates a kill AFTER two videos staged: the byte-exact staged
+    // files must be reused (fast resume), the missing ones extracted, and
+    // the import must still succeed with byte-exact results.
+    final zipPath = p.join(tempDir.path, 'resume_backup.zip');
+    final encoder = ZipFileEncoder()..create(zipPath);
+    final payloads = <String, List<int>>{
+      'vlogs/r1.mp4': List<int>.filled(1024 * 1024, 11),
+      'vlogs/r2.mp4': List<int>.filled(512 * 1024, 22),
+      'vlogs/r3.mp4': List<int>.filled(256 * 1024, 33),
+    };
+    final manifest = <Map<String, dynamic>>[];
+    final rows = <Map<String, dynamic>>[];
+    var timestamp = 2000;
+    for (final e in payloads.entries) {
+      final id = p.basenameWithoutExtension(e.key);
+      encoder.addArchiveFile(ArchiveFile.bytes(e.key, e.value));
+      manifest.add({
+        'vlogId': id,
+        'entryPath': e.key,
+        'kind': 'video',
+        'sizeBytes': e.value.length,
+        'included': true,
+        'reason': null,
+      });
+      rows.add({
+        'id': id,
+        'file_path': '/old/device/${e.key}',
+        'date_str': '2026-08-11',
+        'timestamp': timestamp++,
+        'duration_sec': 10,
+        'file_size_bytes': e.value.length,
+      });
+    }
+    encoder.addArchiveFile(
+      ArchiveFile.bytes(
+        'backup_metadata.json',
+        utf8.encode(
+          jsonEncode({
+            'backupVersion': 2,
+            'schemaVersion': 6,
+            'appVersion': '1.5.8',
+            'createdAt': 1723670000000,
+            'scopes': ['vlogs'],
+            'sqlite': {'vlogs': rows},
+            'asyncStorage': <String, dynamic>{},
+            'fileManifest': {'vlogs': manifest, 'thumbnails': []},
+          }),
         ),
-      );
-      await encoder.close();
+      ),
+    );
+    await encoder.close();
 
-      // First import stages everything.
-      final first = await service.importBackupZip(zipPath: zipPath);
-      expect(first.success, isTrue, reason: first.error);
-      expect(first.videosIncluded, 3);
+    // First import stages everything.
+    final first = await service.importBackupZip(zipPath: zipPath);
+    expect(first.success, isTrue, reason: first.error);
+    expect(first.videosIncluded, 3);
 
-      // Wipe DB rows (simulate the retry after a kill before the merge
-      // finished) but keep the staged dir intact — the service stages under
-      // its snapshot dir, so re-run against a fresh snapshot: resume here
-      // means "no re-decode of finished files", proven by the per-file
-      // ticks still covering all three without touching bytes.
-      await run('DELETE FROM vlogs');
-      final ticks = <String>[];
-      final second = await service.importBackupZip(
-        zipPath: zipPath,
-        onFileProgress: (done, total) => ticks.add('$done/$total'),
-      );
-      expect(second.success, isTrue, reason: second.error);
-      expect(second.videosIncluded, 3);
-      expect(ticks, hasLength(3));
-      for (final e in payloads.entries) {
-        final id = p.basenameWithoutExtension(e.key);
-        final row = await getFirst('SELECT * FROM vlogs WHERE id = ?', [id]);
-        expect(row, isNotNull);
-        expect(await File(row!['file_path'] as String).length(), e.value.length);
-      }
-    },
-  );
+    // Wipe DB rows (simulate the retry after a kill before the merge
+    // finished) but keep the staged dir intact — the service stages under
+    // its snapshot dir, so re-run against a fresh snapshot: resume here
+    // means "no re-decode of finished files", proven by the per-file
+    // ticks still covering all three without touching bytes.
+    await run('DELETE FROM vlogs');
+    final ticks = <String>[];
+    final second = await service.importBackupZip(
+      zipPath: zipPath,
+      onFileProgress: (done, total) => ticks.add('$done/$total'),
+    );
+    expect(second.success, isTrue, reason: second.error);
+    expect(second.videosIncluded, 3);
+    expect(ticks, hasLength(3));
+    for (final e in payloads.entries) {
+      final id = p.basenameWithoutExtension(e.key);
+      final row = await getFirst('SELECT * FROM vlogs WHERE id = ?', [id]);
+      expect(row, isNotNull);
+      expect(await File(row!['file_path'] as String).length(), e.value.length);
+    }
+  });
 
   test(
     'isolate entry points capture no UI state (S24 2026-09-22 regression)',
@@ -1142,34 +1210,34 @@ void main() {
 
       // 1. Decode entry point works on a real archive (with a media file, so
       // the central-directory + metadata path is exercised).
-      final zipPath = await writeBackup({
-        'backupVersion': 2,
-        'schemaVersion': 6,
-        'appVersion': '1.5.8',
-        'createdAt': 1723670000000,
-        'scopes': ['notes'],
-        'sqlite': {
-          'notes': [],
+      final zipPath = await writeBackup(
+        {
+          'backupVersion': 2,
+          'schemaVersion': 6,
+          'appVersion': '1.5.8',
+          'createdAt': 1723670000000,
+          'scopes': ['notes'],
+          'sqlite': {'notes': []},
+          'asyncStorage': <String, dynamic>{},
+          'fileManifest': {
+            'vlogs': [
+              {
+                'vlogId': 'v1',
+                'entryPath': 'vlogs/v1.mp4',
+                'kind': 'video',
+                'sizeBytes': 4,
+                'included': true,
+              },
+            ],
+            'thumbnails': [],
+          },
         },
-        'asyncStorage': <String, dynamic>{},
-        'fileManifest': {
-          'vlogs': [
-            {
-              'vlogId': 'v1',
-              'entryPath': 'vlogs/v1.mp4',
-              'kind': 'video',
-              'sizeBytes': 4,
-              'included': true,
-            },
-          ],
-          'thumbnails': [],
+        files: {
+          'vlogs/v1.mp4': [1, 2, 3, 4],
         },
-      }, files: {'vlogs/v1.mp4': [1, 2, 3, 4]});
-      final decoded = await decodeBackupInIsolate(zipPath);
-      expect(
-        decoded.entrySizes(),
-        containsPair('vlogs/v1.mp4', 4),
       );
+      final decoded = await decodeBackupInIsolate(zipPath);
+      expect(decoded.entrySizes(), containsPair('vlogs/v1.mp4', 4));
       expect(decoded.metadataBytes, isNotEmpty);
 
       // 2. Extract entry point stages the file. The callbacks the UI passes
@@ -1193,10 +1261,7 @@ void main() {
         },
       ]);
       expect(staged['vlogs/v1.mp4'], 4);
-      expect(
-        await File(p.join(stagedDir.path, 'vlogs', 'v1.mp4')).length(),
-        4,
-      );
+      expect(await File(p.join(stagedDir.path, 'vlogs', 'v1.mp4')).length(), 4);
 
       // 3. Full import through the hostile service still succeeds end to end.
       final result = await hostileService.importBackupZip(zipPath: zipPath);
@@ -1232,16 +1297,10 @@ void main() {
                 'appVersion': '1.5.8',
                 'createdAt': 1723670000000,
                 'scopes': ['notes'],
-                'sqlite': {
-                  'notes': [],
-                },
+                'sqlite': {'notes': []},
                 'asyncStorage': <String, dynamic>{},
                 'fileManifest':
-                    manifest ??
-                    const {
-                      'vlogs': [],
-                      'thumbnails': [],
-                    },
+                    manifest ?? const {'vlogs': [], 'thumbnails': []},
               }),
             ),
           ),
@@ -1265,7 +1324,9 @@ void main() {
         final own = await makeZip(
           sysTemp.path,
           ownName,
-          files: {'vlogs/v1.mp4': [1, 2, 3, 4]},
+          files: {
+            'vlogs/v1.mp4': [1, 2, 3, 4],
+          },
           manifest: {
             'vlogs': [
               {
@@ -1294,10 +1355,7 @@ void main() {
           reason: 'own temp ZIP must be deleted after staging',
         );
         // The staged video landed in the docs dir (== sysTemp here).
-        expect(
-          await File(p.join(sysTemp.path, 'vlogs', 'v1.mp4')).length(),
-          4,
-        );
+        expect(await File(p.join(sysTemp.path, 'vlogs', 'v1.mp4')).length(), 4);
       } finally {
         await sysTemp.delete(recursive: true);
       }
@@ -1331,9 +1389,7 @@ void main() {
                 'appVersion': '1.5.8',
                 'createdAt': 1723670000000,
                 'scopes': ['notes'],
-                'sqlite': {
-                  'notes': [],
-                },
+                'sqlite': {'notes': []},
                 'asyncStorage': <String, dynamic>{},
                 'fileManifest': {'vlogs': [], 'thumbnails': []},
               }),

@@ -34,6 +34,30 @@ Future<void> _pumpOptions(WidgetTester tester, List<int> changes) async {
 }
 
 void main() {
+  testWidgets('tap arrives in 180 ms and retires its glass promptly', (
+    tester,
+  ) async {
+    final changes = <int>[];
+    await _pumpOptions(tester, changes);
+    await tester.tap(find.text('HARD'));
+    await tester.pump();
+    // Pump actual frames, including the package's own morph ticker.
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final pill = tester.widget<LiquidGlassMotionPill>(
+      find.byType(LiquidGlassMotionPill),
+    );
+    expect(changes, [2]);
+    expect(pill.center.dx, closeTo(222.333, 0.01));
+    expect(pill.active, isFalse);
+    for (var i = 0; i < 25; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('selected rim stays visible after release and a long idle', (
     tester,
   ) async {

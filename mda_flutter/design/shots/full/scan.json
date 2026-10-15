@@ -1,0 +1,112 @@
+[
+  {
+    "name": "01-setup",
+    "fails": [],
+    "warns": [
+      "6 distinct left edges in the left third. Align to fewer verticals.",
+      "7 elements cast shadows. Depth should come from one or two layers, not every tile."
+    ],
+    "facts": {
+      "fonts": {
+        "SF Pro": 10,
+        "SF Mono": 5
+      },
+      "sizes": [
+        38,
+        32,
+        18,
+        16,
+        13,
+        12
+      ],
+      "weights": [
+        "600",
+        "700",
+        "800"
+      ],
+      "leftEdges": 6,
+      "accentHues": [
+        0
+      ],
+      "cards": 1
+    }
+  },
+  {
+    "name": "02-writing-flow",
+    "fails": [],
+    "warns": [],
+    "facts": {
+      "fonts": {
+        "SF Mono": 3,
+        "SF Pro": 2
+      },
+      "sizes": [
+        18,
+        16,
+        13
+      ],
+      "weights": [
+        "400",
+        "600",
+        "800"
+      ],
+      "leftEdges": 1,
+      "accentHues": [],
+      "cards": 0
+    }
+  },
+  {
+    "name": "03-danger-vaporize",
+    "fails": [],
+    "warns": [],
+    "facts": {
+      "fonts": {
+        "SF Mono": 3,
+        "SF Pro": 5
+      },
+      "sizes": [
+        18,
+        16,
+        13
+      ],
+      "weights": [
+        "400",
+        "600",
+        "800"
+      ],
+      "leftEdges": 2,
+      "accentHues": [],
+      "cards": 0
+    }
+  },
+  {
+    "name": "04-alignment",
+    "fails": [],
+    "warns": [],
+    "facts": {
+      "fonts": {
+        "SF Pro": 10,
+        "SF Mono": 5
+      },
+      "sizes": [
+        28,
+        26,
+        16,
+        15,
+        14,
+        13,
+        12
+      ],
+      "weights": [
+        "400",
+        "600",
+        "700",
+        "800",
+        "900"
+      ],
+      "leftEdges": 4,
+      "accentHues": [],
+      "cards": 5
+    }
+  }
+]

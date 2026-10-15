@@ -15,9 +15,12 @@ const _scopeDescriptions = {
   ),
   'notes': (
     'Notes & Circles',
-    'Journal entries, relationships, comments, and bookmarks',
+    'Writing, circles, life ratings, comments, and bookmarks',
   ),
-  'masteries': ('Masteries', 'Masteries, check-ins, and alignment history'),
+  'masteries': (
+    'Masteries',
+    'Goals, mastery ratings, advice, and daily suggestions',
+  ),
   'vlogs': ('Vlogs', 'Recorded videos and their metadata'),
 };
 

@@ -19,7 +19,9 @@ import '../../../data/providers.dart';
 import '../../../data/security_providers.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/glass_pill.dart';
 import '../vlogs/vlog_calendar_gallery.dart';
+import '../alignment/wellbeing_history_section.dart';
 import 'library_notes_list.dart';
 import 'note_viewer_modal.dart';
 import 'person_profile_modal.dart';
@@ -212,7 +214,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       ),
                       const _AiProcessingBadge(),
                       Text(
-                        '${notes.length} Entries • ${persons.length} Circles',
+                        _tabIndex == 1
+                            ? '${ref.watch(wellbeingProvider).length} check-ins • ${checkins.length} reflections'
+                            : '${notes.length} Entries • ${persons.length} Circles',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -244,6 +248,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               child: _SortDropdown(
                 sortBy: _sortBy,
                 onPress: _openSortSheet,
+                prefix: _tabIndex == 1 ? 'Reflections: ' : 'Sort by: ',
               ),
             ),
           // RN has NO header tab pills: the visible section is driven only by
@@ -272,6 +277,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   onNoteTap: _openNoteViewer,
                 ),
                 1 => LibraryNotesList(
+                  header: const WellbeingHistorySection(),
                   notes: checkins,
                   sortBy: _sortBy,
                   emptyTitle: 'No check-ins yet',
@@ -296,7 +302,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   // Kept as documentation of the RN tab order (the visible section is driven
   // by the shared session mode, not by local state). Referenced by the lock
   // card copy helper below so it never goes stale.
-  static const List<String> tabOrder = ['Notes', 'Check-ins', 'Circles', 'Vlogs'];
+  static const List<String> tabOrder = [
+    'Notes',
+    'Check-ins',
+    'Circles',
+    'Vlogs',
+  ];
 }
 
 /// Lock/unlock cross-fade (RN `unlockProgress` parity).
@@ -379,9 +390,7 @@ class _LockCrossFadeState extends State<_LockCrossFade>
               opacity: 1 - progress,
               child: Transform.translate(
                 offset: Offset(0, -widget.screenHeight * progress),
-                child: progress >= 1
-                    ? const SizedBox.shrink()
-                    : widget.overlay,
+                child: progress >= 1 ? const SizedBox.shrink() : widget.overlay,
               ),
             ),
           ],
@@ -434,7 +443,7 @@ class _LibraryLockedContent extends StatelessWidget {
     // muted centered, line-height 22; red pill 16/28 radius 100 with red
     // shadow (elevation 8); fingerprint 22 white + 16/w800 white label.
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Container(
           width: double.infinity,
@@ -550,9 +559,14 @@ class _LibraryTab extends StatelessWidget {
 }
 
 class _SortRow extends StatelessWidget {
-  const _SortRow({required this.sortBy, required this.onPress});
+  const _SortRow({
+    required this.sortBy,
+    required this.onPress,
+    this.prefix = 'Sort by: ',
+  });
 
   final SortOption sortBy;
+  final String prefix;
   final VoidCallback onPress;
 
   static const _labels = {
@@ -580,7 +594,7 @@ class _SortRow extends StatelessWidget {
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  text: 'Sort by: ',
+                  text: prefix,
                   style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 14,
@@ -663,313 +677,22 @@ class _AiProcessingBadge extends ConsumerWidget {
   }
 }
 
-/// Morphing lock/unlock pill (RN `AnimatedScaleButton` + `AnimatedLockIcon`
-/// parity): red "Unlock" pill when locked, glass "Lock" pill when unlocked.
-/// The label cross-fades with scale (Unlock 0.85→1 → Lock 1→0.85 over
-/// 250 ms); the lock icon rotates open like a shackle over 300 ms.
-class _LockPill extends StatefulWidget {
+/// Keep each action a single label: clipping individual letters breaks with
+/// Flutter font metrics and accessibility text scaling.
+class _LockPill extends StatelessWidget {
   const _LockPill({required this.locked, required this.onTap});
 
   final bool locked;
   final VoidCallback onTap;
 
-  /// Intrinsic pill widths (RN ANIM_WIDTHS + icon + paddings), measured so
-  /// the parent Row can reserve exact space and the pill never overflows.
-  /// Content max: 16 (icon) + 6 (gap) + 17.5 (Un) + 4.5 (l) + 7.2 (L, hidden
-  /// when Un shows) + ~31 (ock @14px w600) = ~75; + 30 padding + 2 border.
-  /// NOTE: the "Unlock Notes" card button (~200 px) is much wider than the
-  /// header pill — it must NOT reuse this budget. Keep separate constants.
-  // ignore: unused_field — documents the RN-measured pill budget (see above).
-  static const double pillWidth = 122;
-
   @override
-  State<_LockPill> createState() => _LockPillState();
-}
-
-class _LockPillState extends State<_LockPill>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 300),
+  Widget build(BuildContext context) => GlassPill(
+    label: locked ? 'Unlock' : 'Lock',
+    semanticLabel: locked ? 'Unlock Library' : 'Lock Library',
+    icon: locked ? Icons.lock_outline_rounded : Icons.lock_open_rounded,
+    selected: locked,
+    onPressed: onTap,
   );
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.value = widget.locked ? 1 : 0;
-  }
-
-  @override
-  void didUpdateWidget(covariant _LockPill oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.locked != oldWidget.locked) {
-      // 250 ms cubic-out text/color morph (RN `prefixAnim` parity).
-      _controller.animateTo(
-        widget.locked ? 1 : 0,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedScaleButton(
-      onPress: widget.onTap,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          // RN ANIM_WIDTHS: Un 17.5, l 4.5, L 7.2 — "Un"+"l" collapse while
-          // "L" expands, "ock" stays static. Locked (Unlock) = 1.
-          //
-          // Layout contract (must never overflow the header row): the pill is
-          // intrinsically sized by its content, so the parent Row gives it
-          // unbounded width on narrow phones. The three morph segments report
-          // only their CURRENT width (clipped remainder is invisible), which
-          // keeps the pill exactly as wide as its visible text.
-          final p = _controller.value;
-          final textColor = Color.lerp(
-            AppColors.textPrimary,
-            AppColors.primaryActionText,
-            p,
-          )!;
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-              decoration: BoxDecoration(
-                color: Color.lerp(
-                  AppColors.glassBackground,
-                  AppColors.primaryAction,
-                  p,
-                ),
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(
-                  color: Color.lerp(
-                    AppColors.glassBorder,
-                    AppColors.primaryAction,
-                    p,
-                  )!,
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 3D swing-gate shackle (RN `AnimatedLockIcon` parity):
-                  // rotateY 0→180° around the hinge, NOT a flat 2D spin.
-                  _SwingLockIcon(openAmount: 1 - p, color: textColor),
-                  const SizedBox(width: 6),
-                  // No Flexible here: each morph segment sizes itself to its
-                // visible width, so the pill can never exceed its content.
-                ClipRect(
-                  child: SizedBox(
-                    width: 17.5 * p,
-                    height: 20,
-                    child: OverflowBox(
-                      minWidth: 30,
-                      maxWidth: 30,
-                      alignment: Alignment.centerLeft,
-                      child: Opacity(
-                        opacity: p,
-                        child: Text(
-                          'Un',
-                          style: TextStyle(
-                            color: Color.lerp(
-                              AppColors.textPrimary,
-                              AppColors.primaryActionText,
-                              p,
-                            ),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                ClipRect(
-                  child: SizedBox(
-                    width: 4.5 * p,
-                    height: 20,
-                    child: OverflowBox(
-                      minWidth: 10,
-                      maxWidth: 10,
-                      alignment: Alignment.centerLeft,
-                      child: Opacity(
-                        opacity: p,
-                        child: Text(
-                          'l',
-                          style: TextStyle(
-                            color: Color.lerp(
-                              AppColors.textPrimary,
-                              AppColors.primaryActionText,
-                              p,
-                            ),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                ClipRect(
-                  child: SizedBox(
-                    width: 7.2 * (1 - p),
-                    height: 20,
-                    child: OverflowBox(
-                      minWidth: 15,
-                      maxWidth: 15,
-                      alignment: Alignment.centerLeft,
-                      child: Opacity(
-                        opacity: 1 - p,
-                        child: Text(
-                          'L',
-                          style: TextStyle(
-                            color: Color.lerp(
-                              AppColors.textPrimary,
-                              AppColors.primaryActionText,
-                              p,
-                            ),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Text(
-                  'ock',
-                  style: TextStyle(
-                    color: Color.lerp(
-                      AppColors.textPrimary,
-                      AppColors.primaryActionText,
-                      p,
-                    ),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 3D swing-gate lock icon (RN `AnimatedLockIcon` 1:1 port).
-///
-/// The SHACKLE (arc) rotates 180° around the Y axis (hinge pivot at 7,11 in
-/// the 30×24 viewBox) over 300 ms `easeOutQuad` — it swings open like a gate,
-/// it never flat-spins. The body rect + keyhole stay fixed; the keyhole fades
-/// out over 200 ms when unlocked. Rendered via CustomPainter (no SVG dep).
-class _SwingLockIcon extends StatelessWidget {
-  const _SwingLockIcon({
-    required this.openAmount,
-    this.color = const Color(0xFFFFFFFF),
-  });
-
-  /// 0 = locked (shackle closed), 1 = unlocked (shackle swung open).
-  final double openAmount;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 16,
-      height: 16,
-      child: CustomPaint(
-        painter: _SwingLockPainter(
-          openAmount: openAmount.clamp(0.0, 1.0),
-          color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _SwingLockPainter extends CustomPainter {
-  _SwingLockPainter({required this.openAmount, required this.color});
-
-  final double openAmount;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Map the 30×24 viewBox onto the 16×16 box.
-    final scaleX = size.width / 30;
-    final scaleY = size.height / 24;
-    canvas.save();
-    canvas.scale(scaleX, scaleY);
-    canvas.translate(6, 0);
-
-    final stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    // Body: rect x=3 y=11 w=18 h=11 r=2.
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(3, 11, 18, 11),
-        const Radius.circular(2),
-      ),
-      stroke,
-    );
-
-    // Keyhole fades 200 ms (RN keyholeGProps): approximate by opacity.
-    if (openAmount < 1) {
-      final keyOpacity = (1.0 - openAmount).clamp(0.0, 1.0);
-      final keyPaint = Paint()
-        ..color = color.withValues(alpha: keyOpacity)
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(const Offset(12, 16), 1.5, keyPaint);
-      final linePaint = Paint()
-        ..color = color.withValues(alpha: keyOpacity)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(const Offset(12, 17.5), const Offset(12, 19), linePaint);
-    }
-
-    // Shackle 3D swing gate: rotates 180° around Y at the left hinge (7, 11).
-    // Uses Matrix4 3D transform with subtle perspective so it swings outward to the left when open.
-    canvas.save();
-    final matrix = Matrix4.identity()
-      ..setEntry(3, 2, 0.002) // perspective
-      ..translateByDouble(7.0, 11.0, 0.0, 1.0)
-      ..rotateY(openAmount * 3.141592653589793)
-      ..translateByDouble(-7.0, -11.0, 0.0, 1.0);
-    canvas.transform(matrix.storage);
-
-    final shackle = Path()
-      ..moveTo(7, 11)
-      ..lineTo(7, 7)
-      ..arcToPoint(
-        const Offset(17, 7),
-        radius: const Radius.circular(5),
-        clockwise: true,
-      )
-      ..lineTo(17, 11);
-    canvas.drawPath(shackle, stroke);
-    canvas.restore();
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _SwingLockPainter old) =>
-      old.openAmount != openAmount || old.color != color;
 }
 
 /// Circles tab — person list; tap opens the profile modal.

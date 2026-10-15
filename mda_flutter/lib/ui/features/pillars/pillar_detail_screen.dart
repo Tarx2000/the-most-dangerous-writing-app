@@ -9,11 +9,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/haptics.dart';
+import '../../../core/rating_day.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/models/pillar.dart';
 import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
+import '../../core/widgets/glass_action.dart';
+import 'mastery_rating_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
 
@@ -51,7 +55,9 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
   }
 
   Future<void> _loadLogs() async {
-    final logs = await ref.read(appDataProvider.notifier).getPillarLogs(widget.pillarId);
+    final logs = await ref
+        .read(appDataProvider.notifier)
+        .getPillarLogs(widget.pillarId);
     if (mounted) setState(() => _logs = logs);
   }
 
@@ -80,19 +86,44 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
+    final security = ref.read(securityControllerProvider);
+    if (!security.isNotesUnlocked) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Center(
+            child: FilledButton(
+              onPressed: () async {
+                final prefs = ref.read(preferencesProvider);
+                await security.unlockNotes(
+                  preferPinAuth: prefs.preferPinAuth,
+                  useBiometrics: prefs.useBiometrics,
+                );
+              },
+              child: const Text('Unlock Masteries'),
+            ),
+          ),
+        ),
+      );
+    }
     final pillar = _pillar;
     if (pillar == null) {
       return const Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
-          child: Text('Mastery not found', style: TextStyle(color: AppColors.textMuted)),
+          child: Text(
+            'Mastery not found',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
         ),
       );
     }
     final reflections = _reflections;
-    final recentLogs = _logs.length <= _maxLogPoints
-        ? _logs
-        : _logs.sublist(_logs.length - _maxLogPoints);
+    final numeric = _logs.where((l) => l.valueNum != null).toList();
+    final recentLogs = numeric.length <= _maxLogPoints
+        ? numeric
+        : numeric.sublist(numeric.length - _maxLogPoints);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -105,8 +136,12 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
               child: Row(
                 children: [
                   IconButton(
+                    tooltip: 'Back',
                     onPressed: () => context.pop(),
-                    icon: Icon(Mdi.get('arrowLeft'), color: AppColors.textSecondary),
+                    icon: Icon(
+                      Mdi.get('arrowLeft'),
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   Expanded(
                     child: Column(
@@ -117,7 +152,7 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
                           style: const TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 22,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         if (pillar.description != null)
@@ -125,14 +160,20 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
                             pillar.description!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
                           ),
                       ],
                     ),
                   ),
                   if (pillar.version > 1)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.glassSurface,
                         borderRadius: BorderRadius.circular(10),
@@ -142,14 +183,18 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
                         style: const TextStyle(
                           color: AppColors.primaryAction,
                           fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   const SizedBox(width: 8),
                   IconButton(
+                    tooltip: 'Edit Mastery',
                     onPressed: _openEditModal,
-                    icon: Icon(Mdi.get('pencilOutline'), color: AppColors.textSecondary),
+                    icon: Icon(
+                      Mdi.get('pencilOutline'),
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -158,8 +203,27 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 children: [
+                  if (pillar.isActive) ...[
+                    GlassAction(
+                      label: 'Rate today',
+                      icon: Icons.tune_rounded,
+                      onPressed: () => showBaseModal(
+                        context,
+                        title: 'Rate mastery',
+                        heightFactor: 0.7,
+                        builder: (close) => MasteryRatingSheet(
+                          pillar: pillar,
+                          onSaved: () {
+                            close();
+                            _loadLogs();
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                  ],
                   // Trend graph
-                  if (recentLogs.isNotEmpty) ...[
+                  if (recentLogs.length > 1) ...[
                     _TrendGraph(
                       logs: recentLogs,
                       scrubIndex: _scrubIndex,
@@ -168,13 +232,56 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
                     ),
                     const SizedBox(height: 20),
                   ],
+                  if (_logs.isNotEmpty) ...[
+                    const Text(
+                      'Recent ratings',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    for (final log in _logs.reversed.take(5))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                log.dayKey ??
+                                    RatingDay.at(
+                                      DateTime.fromMillisecondsSinceEpoch(
+                                        log.timestamp,
+                                      ),
+                                    ).key,
+                                style: const TextStyle(
+                                  color: AppColors.textBodyDim,
+                                ),
+                              ),
+                            ),
+                            Flexible(
+                              child: Text(
+                                pillar.type == PillarType.boolean
+                                    ? (log.valueNum == 1 ? 'Yes' : 'No')
+                                    : log.valueNum != null
+                                    ? '${log.valueNum!.toStringAsFixed(pillar.type == PillarType.time ? 1 : 0)}${pillar.type == PillarType.time ? ' h' : ''}'
+                                    : log.valueStr ?? '',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 24),
+                  ],
                   // Reflections
                   Text(
                     'REFLECTIONS (${reflections.length})',
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       letterSpacing: 1.5,
                     ),
                   ),
@@ -184,7 +291,10 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
                       padding: EdgeInsets.symmetric(vertical: 20),
                       child: Text(
                         'Reflections from your check-ins appear here.',
-                        style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   for (final note in reflections)
@@ -232,9 +342,10 @@ class _TrendGraph extends StatelessWidget {
           height: height,
           child: GestureDetector(
             onHorizontalDragUpdate: (details) {
-              final index = (details.localPosition.dx / width * (logs.length - 1))
-                  .round()
-                  .clamp(0, logs.length - 1);
+              final index =
+                  (details.localPosition.dx / width * (logs.length - 1))
+                      .round()
+                      .clamp(0, logs.length - 1);
               if (index != scrubIndex) {
                 vibrate(10);
                 onScrub(index);
@@ -251,8 +362,10 @@ class _TrendGraph extends StatelessWidget {
                 // Scrub bubble
                 if (selected != null && selected < logs.length)
                   Positioned(
-                    left: (selected / (logs.length - 1) * width - 65)
-                        .clamp(0.0, width - 130),
+                    left: (selected / (logs.length - 1) * width - 65).clamp(
+                      0.0,
+                      width - 130,
+                    ),
                     top: 4,
                     child: Container(
                       width: 130,
@@ -260,7 +373,10 @@ class _TrendGraph extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: AppColors.surfaceRaised,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.glassBorderMedium, width: 1),
+                        border: Border.all(
+                          color: AppColors.glassBorderMedium,
+                          width: 1,
+                        ),
                       ),
                       child: Column(
                         children: [
@@ -272,12 +388,15 @@ class _TrendGraph extends StatelessWidget {
                             style: const TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 15,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           Text(
                             _dateShort(logs[selected].timestamp),
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 10,
+                            ),
                           ),
                         ],
                       ),
@@ -293,7 +412,20 @@ class _TrendGraph extends StatelessWidget {
 
   static String _dateShort(int ms) {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${months[dt.month - 1]} ${dt.day}';
   }
 }
@@ -357,7 +489,8 @@ class _ReflectionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPrior = pillar.lastEditedAt != null &&
+    final isPrior =
+        pillar.lastEditedAt != null &&
         note.timestamp < pillar.lastEditedAt! &&
         pillar.lastEditedAt! > pillar.createdAt + 2000;
     final version = note.pillarVersion;
@@ -382,12 +515,15 @@ class _ReflectionRow extends StatelessWidget {
                     style: const TextStyle(
                       color: AppColors.gold,
                       fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 if (version != null && version < pillar.version)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.glassSurface,
                       borderRadius: BorderRadius.circular(8),
@@ -397,14 +533,17 @@ class _ReflectionRow extends StatelessWidget {
                       style: const TextStyle(
                         color: AppColors.primaryAction,
                         fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 if (isPrior) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.dangerTint,
                       borderRadius: BorderRadius.circular(8),
@@ -414,7 +553,7 @@ class _ReflectionRow extends StatelessWidget {
                       style: TextStyle(
                         color: AppColors.gold,
                         fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -422,7 +561,10 @@ class _ReflectionRow extends StatelessWidget {
                 const Spacer(),
                 Text(
                   _dateLabel(note.dateTime),
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
@@ -431,7 +573,11 @@ class _ReflectionRow extends StatelessWidget {
               note.text,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
           ],
         ),
@@ -440,7 +586,20 @@ class _ReflectionRow extends StatelessWidget {
   }
 
   static String _dateLabel(DateTime dt) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${months[dt.month - 1]} ${dt.day}';
   }
 }
@@ -464,8 +623,9 @@ class _DetailEditForm extends StatefulWidget {
 }
 
 class _DetailEditFormState extends State<_DetailEditForm> {
-  late final TextEditingController _titleController =
-      TextEditingController(text: widget.pillar.title);
+  late final TextEditingController _titleController = TextEditingController(
+    text: widget.pillar.title,
+  );
   late final TextEditingController _descriptionController =
       TextEditingController(text: widget.pillar.description ?? '');
   bool _confirmDelete = false;
@@ -499,7 +659,10 @@ class _DetailEditFormState extends State<_DetailEditForm> {
           TextField(
             controller: _descriptionController,
             maxLines: 2,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+            ),
             cursorColor: AppColors.primaryAction,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -520,10 +683,12 @@ class _DetailEditFormState extends State<_DetailEditForm> {
               final newDescription = _descriptionController.text.trim().isEmpty
                   ? null
                   : _descriptionController.text.trim();
-              widget.onSave(pillar.copyWith(
-                title: newTitle,
-                description: () => newDescription,
-              ));
+              widget.onSave(
+                pillar.copyWith(
+                  title: newTitle,
+                  description: () => newDescription,
+                ),
+              );
               widget.onClose();
             },
             child: Container(
@@ -539,7 +704,7 @@ class _DetailEditFormState extends State<_DetailEditForm> {
                 style: const TextStyle(
                   color: AppColors.primaryActionText,
                   fontSize: 15,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -553,7 +718,10 @@ class _DetailEditFormState extends State<_DetailEditForm> {
               decoration: BoxDecoration(
                 color: AppColors.dangerSubtle,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.dangerBorderLight, width: 1),
+                border: Border.all(
+                  color: AppColors.dangerBorderLight,
+                  width: 1,
+                ),
               ),
               child: const Text(
                 'DELETE MASTERY',
@@ -570,7 +738,10 @@ class _DetailEditFormState extends State<_DetailEditForm> {
             const SizedBox(height: 10),
             Text(
               'This deletes the mastery and all its history forever.',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 8),
             AnimatedScaleButton(
@@ -591,7 +762,7 @@ class _DetailEditFormState extends State<_DetailEditForm> {
                   style: TextStyle(
                     color: AppColors.primaryActionText,
                     fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -605,7 +776,8 @@ class _DetailEditFormState extends State<_DetailEditForm> {
 
 /// Deletes a mastery via the nearest ProviderScope container.
 Future<void> refDeleteMastery(BuildContext context, String pillarId) {
-  return ProviderScope.containerOf(context, listen: false)
-      .read(appDataProvider.notifier)
-      .deletePillar(pillarId);
+  return ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appDataProvider.notifier).deletePillar(pillarId);
 }

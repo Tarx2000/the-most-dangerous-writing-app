@@ -228,7 +228,10 @@ class BaseModalState extends State<BaseModal> with TickerProviderStateMixin {
                                     20,
                                     bottomInset > 0 ? 20 : 0,
                                   ),
-                              child: widget.child,
+                              child: Material(
+                                type: MaterialType.transparency,
+                                child: widget.child,
+                              ),
                             ),
                           ),
                         ],

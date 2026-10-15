@@ -11,6 +11,7 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../core/utils.dart';
+import '../../../core/rating_day.dart';
 import '../../../data/models/pillar.dart';
 import '../../../data/providers.dart';
 import '../../../data/security_providers.dart';
@@ -22,10 +23,12 @@ class PillarsDashboardScreen extends ConsumerStatefulWidget {
   const PillarsDashboardScreen({super.key});
 
   @override
-  ConsumerState<PillarsDashboardScreen> createState() => _PillarsDashboardScreenState();
+  ConsumerState<PillarsDashboardScreen> createState() =>
+      _PillarsDashboardScreenState();
 }
 
-class _PillarsDashboardScreenState extends ConsumerState<PillarsDashboardScreen> {
+class _PillarsDashboardScreenState
+    extends ConsumerState<PillarsDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     // Security gate (SPEC §12): the dashboard requires the notes tier.
@@ -60,43 +63,32 @@ class _PillarsDashboardScreenState extends ConsumerState<PillarsDashboardScreen>
               child: Row(
                 children: [
                   IconButton(
+                    tooltip: 'Back',
                     onPressed: () => context.pop(),
-                    icon: Icon(Mdi.get('arrowLeft'), color: AppColors.textSecondary),
-                  ),
-                  Icon(Mdi.get('pillar'), color: AppColors.gold, size: 24),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'Masteries',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
+                    icon: Icon(
+                      Mdi.get('arrowLeft'),
+                      color: AppColors.textSecondary,
                     ),
                   ),
-                  const Spacer(),
-                  AnimatedScaleButton(
-                    onPress: _openCreateModal,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                      decoration: BoxDecoration(
-                        color: AppColors.dangerTint,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.dangerBorder, width: 1),
+                  const Expanded(
+                    child: Text(
+                      'Masteries',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.7,
                       ),
-                      child: Row(
-                        children: [
-                          Icon(Mdi.get('plus'), color: AppColors.primaryAction, size: 16),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'New Mastery',
-                            style: TextStyle(
-                              color: AppColors.primaryAction,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'New Mastery',
+                    onPressed: _openCreateModal,
+                    icon: const Icon(
+                      Icons.add_rounded,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                 ],
@@ -113,7 +105,10 @@ class _PillarsDashboardScreenState extends ConsumerState<PillarsDashboardScreen>
                         child: Text(
                           'No masteries yet — create your first growth area.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ),
@@ -127,7 +122,7 @@ class _PillarsDashboardScreenState extends ConsumerState<PillarsDashboardScreen>
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 13,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: 1.5,
                         ),
                       ),
@@ -170,8 +165,11 @@ class _PillarCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref
-        .watch(_pillarLogsProvider(pillar.id))
-        .valueOrNull ?? <PillarLog>[];
+        .watch(pillarLogsProvider)
+        .where((l) => l.pillarId == pillar.id)
+        .toList();
+    final now = ref.watch(ratingClockProvider).valueOrNull ?? DateTime.now();
+    final overdue = masteryOverdueDays(pillar, progress, now);
     final adaptive = adaptiveProgress(pillar: pillar, logs: progress);
     final spark = sparklineValues(progress);
 
@@ -183,10 +181,14 @@ class _PillarCard extends ConsumerWidget {
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: paused ? AppColors.glassSurfaceSubtle : AppColors.cardBackground,
+            color: paused
+                ? AppColors.glassSurfaceSubtle
+                : AppColors.cardBackground,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: paused ? AppColors.glassBorderFaint : AppColors.glassBorder,
+              color: paused
+                  ? AppColors.glassBorderFaint
+                  : AppColors.glassBorder,
               width: 1,
             ),
           ),
@@ -196,13 +198,15 @@ class _PillarCard extends ConsumerWidget {
               Row(
                 children: [
                   Icon(
-                    Mdi.get(pillar.type == PillarType.rating
-                        ? 'starOutline'
-                        : pillar.type == PillarType.time
-                            ? 'clockOutline'
-                            : pillar.type == PillarType.boolean
-                                ? 'toggleSwitchOutline'
-                                : 'textBoxOutline'),
+                    Mdi.get(
+                      pillar.type == PillarType.rating
+                          ? 'starOutline'
+                          : pillar.type == PillarType.time
+                          ? 'clockOutline'
+                          : pillar.type == PillarType.boolean
+                          ? 'toggleSwitchOutline'
+                          : 'textBoxOutline',
+                    ),
                     color: paused ? AppColors.textMuted : AppColors.gold,
                     size: 20,
                   ),
@@ -211,15 +215,20 @@ class _PillarCard extends ConsumerWidget {
                     child: Text(
                       pillar.title,
                       style: TextStyle(
-                        color: paused ? AppColors.textMuted : AppColors.textPrimary,
+                        color: paused
+                            ? AppColors.textMuted
+                            : AppColors.textPrimary,
                         fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                   if (pillar.version > 1)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.glassSurface,
                         borderRadius: BorderRadius.circular(10),
@@ -229,7 +238,7 @@ class _PillarCard extends ConsumerWidget {
                         style: const TextStyle(
                           color: AppColors.primaryAction,
                           fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -247,28 +256,54 @@ class _PillarCard extends ConsumerWidget {
                           value: adaptive,
                           minHeight: 6,
                           backgroundColor: AppColors.glassSurface,
-                          valueColor: const AlwaysStoppedAnimation(AppColors.gold),
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppColors.gold,
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Text(
                       '${(uniqueDaysOf(pillar.id, progress))}/${pillar.adaptiveDays} days',
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
                   adaptive >= 1
-                      ? 'Graduated! 🎉'
+                      ? 'Weekly rhythm'
                       : '${(adaptive * 100).round()}% to graduate',
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
               ] else
                 Text(
                   '${pillar.scope.name} · ${pillar.type.name}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              if (!paused)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    overdue >= 0
+                        ? (overdue == 0 ? 'Due today' : '$overdue days overdue')
+                        : 'Up to date',
+                    style: TextStyle(
+                      color: overdue >= 0
+                          ? AppColors.gold
+                          : AppColors.textBodyDim,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               if (spark.isNotEmpty) ...[
                 const SizedBox(height: 10),
@@ -276,7 +311,10 @@ class _PillarCard extends ConsumerWidget {
                   height: 30,
                   width: 80,
                   child: CustomPaint(
-                    painter: _SparklinePainter(values: spark, color: AppColors.primaryAction),
+                    painter: _SparklinePainter(
+                      values: spark,
+                      color: AppColors.primaryAction,
+                    ),
                   ),
                 ),
               ],
@@ -289,19 +327,15 @@ class _PillarCard extends ConsumerWidget {
 }
 
 /// Unique adaptive days for a pillar (dashboard label).
-int uniqueDaysOf(String pillarId, List<PillarLog> logs) {
-  return logs
-      .map((log) {
-        final dt = DateTime.fromMillisecondsSinceEpoch(log.timestamp);
-        return '${dt.year}-${dt.month}-${dt.day}';
-      })
-      .toSet()
-      .length;
-}
-
-final _pillarLogsProvider = FutureProvider.family<List<PillarLog>, String>(
-  (ref, pillarId) => ref.read(appDataProvider.notifier).getPillarLogs(pillarId),
-);
+int uniqueDaysOf(String pillarId, List<PillarLog> logs) => logs
+    .where((log) => log.pillarId == pillarId)
+    .map(
+      (log) =>
+          log.dayKey ??
+          RatingDay.at(DateTime.fromMillisecondsSinceEpoch(log.timestamp)).key,
+    )
+    .toSet()
+    .length;
 
 class _SparklinePainter extends CustomPainter {
   const _SparklinePainter({required this.values, required this.color});
@@ -351,8 +385,11 @@ class _PillarFormModal extends StatefulWidget {
 
 class _PillarFormModalState extends State<_PillarFormModal> {
   late final TextEditingController _titleController = TextEditingController();
-  late final TextEditingController _descriptionController = TextEditingController();
-  late final TextEditingController _daysController = TextEditingController(text: '14');
+  late final TextEditingController _descriptionController =
+      TextEditingController();
+  late final TextEditingController _daysController = TextEditingController(
+    text: '14',
+  );
   PillarType _type = PillarType.rating;
   PillarScope _scope = PillarScope.daily;
 
@@ -385,7 +422,10 @@ class _PillarFormModalState extends State<_PillarFormModal> {
           TextField(
             controller: _descriptionController,
             maxLines: 2,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+            ),
             cursorColor: AppColors.primaryAction,
             decoration: const InputDecoration(
               hintText: 'Description (optional)',
@@ -399,7 +439,7 @@ class _PillarFormModalState extends State<_PillarFormModal> {
             style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               letterSpacing: 1.5,
             ),
           ),
@@ -421,7 +461,7 @@ class _PillarFormModalState extends State<_PillarFormModal> {
             style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               letterSpacing: 1.5,
             ),
           ),
@@ -457,19 +497,21 @@ class _PillarFormModalState extends State<_PillarFormModal> {
               final title = _titleController.text.trim();
               if (title.isEmpty) return;
               final days = int.tryParse(_daysController.text.trim()) ?? 14;
-              widget.onSave(Pillar(
-                id: generateId(),
-                title: title,
-                type: _type,
-                scope: _scope,
-                createdAt: DateTime.now().millisecondsSinceEpoch,
-                adaptiveDays: days.clamp(1, 365),
-                isActive: true,
-                description: _descriptionController.text.trim().isEmpty
-                    ? null
-                    : _descriptionController.text.trim(),
-                version: 1,
-              ));
+              widget.onSave(
+                Pillar(
+                  id: generateId(),
+                  title: title,
+                  type: _type,
+                  scope: _scope,
+                  createdAt: DateTime.now().millisecondsSinceEpoch,
+                  adaptiveDays: days.clamp(1, 365),
+                  isActive: true,
+                  description: _descriptionController.text.trim().isEmpty
+                      ? null
+                      : _descriptionController.text.trim(),
+                  version: 1,
+                ),
+              );
               widget.onClose();
             },
             child: Container(
@@ -485,7 +527,7 @@ class _PillarFormModalState extends State<_PillarFormModal> {
                 style: const TextStyle(
                   color: AppColors.primaryActionText,
                   fontSize: 15,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -497,7 +539,11 @@ class _PillarFormModalState extends State<_PillarFormModal> {
 }
 
 class _ChoiceChip extends StatelessWidget {
-  const _ChoiceChip({required this.label, required this.active, required this.onTap});
+  const _ChoiceChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
 
   final String label;
   final bool active;
@@ -546,14 +592,18 @@ class _LockedScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Mdi.get('lockOutline'), color: AppColors.dangerIconOverlay, size: 40),
+              Icon(
+                Mdi.get('lockOutline'),
+                color: AppColors.dangerIconOverlay,
+                size: 40,
+              ),
               const SizedBox(height: 18),
               const Text(
                 'Masteries Protected',
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 22,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 8),
@@ -566,7 +616,10 @@ class _LockedScreen extends StatelessWidget {
               AnimatedScaleButton(
                 onPress: onUnlock,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primaryAction,
                     borderRadius: BorderRadius.circular(30),
@@ -581,14 +634,18 @@ class _LockedScreen extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Mdi.get('fingerprint'), color: AppColors.primaryActionText, size: 20),
+                      Icon(
+                        Mdi.get('fingerprint'),
+                        color: AppColors.primaryActionText,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       const Text(
                         'Unlock Masteries',
                         style: TextStyle(
                           color: AppColors.primaryActionText,
                           fontSize: 15,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],

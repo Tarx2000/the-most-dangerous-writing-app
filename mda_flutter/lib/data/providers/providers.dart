@@ -8,11 +8,13 @@ import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/config/app_config.dart' show tweetThreshold;
 import '../../core/haptics.dart';
 import '../../core/logger.dart';
+import '../../core/rating_day.dart';
 import '../../core/utils.dart';
 import '../../domain/use_cases/mastery_logic.dart';
 import '../../domain/use_cases/streak_calculator.dart';
@@ -22,10 +24,12 @@ import '../database/repositories/persons_repository.dart';
 import '../database/repositories/pillars_repository.dart';
 import '../database/repositories/settings_repository.dart';
 import '../database/repositories/vlogs_repository.dart';
+import '../database/repositories/wellbeing_repository.dart';
 import '../models/person.dart';
 import '../models/pillar.dart';
 import '../models/saved_note.dart';
 import '../models/saved_vlog.dart';
+import '../models/wellbeing_checkin.dart';
 import '../queues/compression_queue.dart';
 import '../services/backup_service.dart';
 import '../services/secure_storage_service.dart';
@@ -60,6 +64,43 @@ final personsRepositoryProvider = Provider<PersonsRepository>(
 final pillarsRepositoryProvider = Provider<PillarsRepository>(
   (ref) => PillarsRepository(),
 );
+
+final wellbeingRepositoryProvider = Provider<WellbeingRepository>(
+  (ref) => WellbeingRepository(),
+);
+final wellbeingProvider = Provider<List<WellbeingCheckin>>(
+  (ref) => ref.watch(appDataProvider.select((s) => s.wellbeing)),
+);
+final pillarLogsProvider = Provider<List<PillarLog>>(
+  (ref) => ref.watch(appDataProvider.select((s) => s.pillarLogs)),
+);
+
+/// Refresh day-dependent UI while the app stays open, without ticking glass.
+final ratingClockProvider = StreamProvider.autoDispose<DateTime>((ref) {
+  final controller = StreamController<DateTime>();
+  Timer? timer;
+  void refresh() {
+    timer?.cancel();
+    final now = DateTime.now();
+    controller.add(now);
+    final untilBoundary = RatingDay.at(now).end.difference(now);
+    timer = Timer(
+      untilBoundary < const Duration(seconds: 30)
+          ? untilBoundary
+          : const Duration(seconds: 30),
+      refresh,
+    );
+  }
+
+  refresh();
+  final lifecycle = AppLifecycleListener(onResume: refresh);
+  ref.onDispose(() {
+    lifecycle.dispose();
+    timer?.cancel();
+    controller.close();
+  });
+  return controller.stream;
+});
 
 final vlogsRepositoryProvider = Provider<VlogsRepository>(
   (ref) => VlogsRepository(),
@@ -232,6 +273,8 @@ class StorageNotifier extends Notifier<AppData> {
       _loadVlogs(),
       _loadPillars(),
       _loadFeed(),
+      _loadWellbeing(),
+      _loadPillarLogs(),
     ]);
 
     // AI config + queue boot (loads persisted jobs, recovers orphans).
@@ -255,6 +298,8 @@ class StorageNotifier extends Notifier<AppData> {
       adviceCards: adviceCards,
       lastLogDate: lastLog,
       feed: deferred[2] as FeedState,
+      wellbeing: deferred[3] as List<WellbeingCheckin>,
+      pillarLogs: deferred[4] as List<PillarLog>,
     );
     logStartup.info('loadAllData done');
   }
@@ -306,7 +351,11 @@ class StorageNotifier extends Notifier<AppData> {
         ),
         enableLiquidGlass: await service.getBool(
           SettingsKeys.enableLiquidGlass,
-          false,
+          true,
+        ),
+        promptMasteries: await service.getBool(
+          SettingsKeys.promptMasteries,
+          true,
         ),
       );
     } catch (e) {
@@ -355,6 +404,36 @@ class StorageNotifier extends Notifier<AppData> {
       logStorage.error('pillars load failed', e);
       return (<Pillar>[], <AdviceCard>[], null);
     }
+  }
+
+  Future<List<WellbeingCheckin>> _loadWellbeing() async {
+    try {
+      return await ref.read(wellbeingRepositoryProvider).getAllCheckins();
+    } catch (e) {
+      logStorage.error('wellbeing load failed', e);
+      return [];
+    }
+  }
+
+  Future<List<PillarLog>> _loadPillarLogs() async {
+    try {
+      return await ref.read(pillarsRepositoryProvider).getAllLogs();
+    } catch (e) {
+      logStorage.error('mastery history load failed', e);
+      return [];
+    }
+  }
+
+  Future<void> saveWellbeing(WellbeingCheckin entry) async {
+    await ref.read(wellbeingRepositoryProvider).save(entry);
+    state = state.copyWith(
+      wellbeing: [
+        entry,
+        for (final old in state.wellbeing)
+          if (old.dayKey != entry.dayKey) old,
+      ]..sort((a, b) => b.dayKey.compareTo(a.dayKey)),
+    );
+    await completeCheckin(entry.updatedAt);
   }
 
   Future<FeedState> _loadFeed() async {
@@ -775,6 +854,7 @@ class StorageNotifier extends Notifier<AppData> {
         for (final p in state.pillars)
           if (p.id != id) p,
       ],
+      pillarLogs: state.pillarLogs.where((l) => l.pillarId != id).toList(),
     );
   }
 
@@ -783,11 +863,20 @@ class StorageNotifier extends Notifier<AppData> {
     final pillar = state.pillars.where((p) => p.id == id).firstOrNull;
     if (pillar == null) return;
     final next = !pillar.isActive;
-    await repo.updatePillar(id, {'is_active': next ? 1 : 0});
+    final anchor = next
+        ? DateTime.now().millisecondsSinceEpoch
+        : pillar.reactivatedAt;
+    await repo.updatePillar(id, {
+      'is_active': next ? 1 : 0,
+      'reactivated_at': anchor,
+    });
     state = state.copyWith(
       pillars: [
         for (final p in state.pillars)
-          if (p.id == id) p.copyWith(isActive: next) else p,
+          if (p.id == id)
+            p.copyWith(isActive: next, reactivatedAt: anchor)
+          else
+            p,
       ],
     );
   }
@@ -817,8 +906,15 @@ class StorageNotifier extends Notifier<AppData> {
   /// Saves a check-in log and tracks the 3-hour rate limit (SPEC §10).
   Future<void> savePillarLog(PillarLog log) async {
     final repo = ref.read(pillarsRepositoryProvider);
-    await repo.insertPillarLog(log);
-    state = state.copyWith(lastLogDate: DateTime.now().millisecondsSinceEpoch);
+    final saved = await repo.saveCurrentLog(log);
+    state = state.copyWith(
+      lastLogDate: saved.timestamp,
+      pillarLogs: [
+        for (final old in state.pillarLogs)
+          if (old.id != saved.id) old,
+        saved,
+      ]..sort((a, b) => a.timestamp.compareTo(b.timestamp)),
+    );
   }
 
   /// Check-in completion is separate from log rate limiting: weekly advice-only
@@ -855,9 +951,31 @@ class StorageNotifier extends Notifier<AppData> {
     return pickSmartAdvice(cards: state.adviceCards);
   }
 
-  /// Check-in pillar pick (SPEC §10): 2 daily / 3 weekly + shuffle.
+  /// Due-only weighted pick: up to 2 daily / 3 weekly, without replacement.
   List<Pillar> getPillarsForCheckIn(bool isWeekly) {
-    return pickPillarsForCheckIn(allPillars: state.pillars, isWeekly: isWeekly);
+    return pickPillarsForCheckIn(
+      allPillars: state.pillars,
+      isWeekly: isWeekly,
+      logs: state.pillarLogs,
+    );
+  }
+
+  Future<List<Pillar>> getStableCheckinSelection(bool isWeekly) async {
+    final day = RatingDay.at(DateTime.now()).key;
+    final scope = isWeekly ? 'weekly' : 'daily';
+    final repo = ref.read(pillarsRepositoryProvider);
+    var ids = await repo.getSelection(day, scope);
+    if (ids == null) {
+      final pick = getPillarsForCheckIn(isWeekly);
+      await repo.saveSelection(day, scope, pick.map((p) => p.id).toList());
+      ids =
+          await repo.getSelection(day, scope) ?? pick.map((p) => p.id).toList();
+    }
+    return [
+      for (final id in ids)
+        for (final p in state.pillars)
+          if (p.id == id && p.isActive) p,
+    ];
   }
 
   /// True when the check-in rate limit (3 h) has not elapsed since the last log.
@@ -882,6 +1000,7 @@ class StorageNotifier extends Notifier<AppData> {
     bool? logMode,
     bool? autoGenerateSummaries,
     bool? enableLiquidGlass,
+    bool? promptMasteries,
   }) async {
     final service = ref.read(settingsServiceProvider);
     final prefs = state.preferences;
@@ -898,9 +1017,15 @@ class StorageNotifier extends Notifier<AppData> {
       logMode: logMode,
       autoGenerateSummaries: autoGenerateSummaries,
       enableLiquidGlass: enableLiquidGlass,
+      promptMasteries: promptMasteries,
     );
 
     final writes = <Future<void>>[];
+    if (promptMasteries != null) {
+      writes.add(
+        service.setRaw(SettingsKeys.promptMasteries, '$promptMasteries'),
+      );
+    }
     if (fontIndex != null) {
       writes.add(service.setRaw(SettingsKeys.userFontIdx, '$fontIndex'));
     }
@@ -947,10 +1072,7 @@ class StorageNotifier extends Notifier<AppData> {
     }
     if (enableLiquidGlass != null) {
       writes.add(
-        service.setRaw(
-          SettingsKeys.enableLiquidGlass,
-          '$enableLiquidGlass',
-        ),
+        service.setRaw(SettingsKeys.enableLiquidGlass, '$enableLiquidGlass'),
       );
     }
     await Future.wait(writes);

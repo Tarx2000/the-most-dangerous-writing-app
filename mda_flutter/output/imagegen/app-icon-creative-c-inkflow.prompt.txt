@@ -1,0 +1,8 @@
+Use case: logo-brand
+Asset type: square iOS app icon artwork for a simple, modern writing app.
+Primary request: Create a highly distinctive minimalist pen-and-ink emblem. A single broad ivory-white calligraphic ribbon sweeps in one confident open curve and resolves into a sharply defined fountain-pen nib at its lower end, with a precise black ink slit. The flowing ribbon and the nib form ONE integrated compact symbol, like a moment of writing frozen into a sculptural mark. The open black center and asymmetric sweep should feel intentional and memorable. Not a literal long pen plus a separate doodle, not a stock nib pictogram.
+Scene/backdrop: uniform pure black, edge to edge square.
+Composition: centered compact emblem, about 64% of square, balanced negative space and broad visible strokes. One flowing gesture and one unmistakable nib; keep the silhouette readable at small app-icon size.
+Style: contemporary editorial identity, vector-clean outer edges with very subtle raised porcelain depth. A slender deep-red ink continuation leaves the tip for a short expressive taper, a small purposeful accent.
+Color palette: black, warm white, restrained deep crimson.
+Constraints: no letters, no initials, no infinity symbol, no heart, no decorative swirls, no extra objects, no text, no watermark, no rounded-square frame, no glow, no neon or background gradients. No detailed realistic pen parts. One finished icon, not a concept sheet.

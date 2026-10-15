@@ -1,0 +1,41 @@
+[
+  {
+    "name": "before-start",
+    "fails": [
+      "Text below 11pt (iOS floor): 10px \"✍️\"; 10px \"Journal\"; 10px \"👥\"; 10px \"Circles\"",
+      "Contrast below WCAG on solid ground: 3.66:1 14px \"3\"; 3.66:1 14px \"10\"; 3.66:1 14px \"15\"; 3.80:1 12px \"EASY\"; 3.80:1 12px \"HARD\"",
+      "Emoji in UI copy or as icons: 🔥 🔒 ⚙ ✍ ⚡ 👥 📹 🎯",
+      "Coloured zero-offset glow shadow x1."
+    ],
+    "warns": [
+      "9 distinct text sizes. A type scale has 5 to 7 steps: 36, 28, 22, 19, 15, 14, 13, 12, 10",
+      "6 distinct left edges in the left third. Align to fewer verticals."
+    ],
+    "facts": {
+      "fonts": {
+        "SF Pro": 20,
+        "SF Mono": 4
+      },
+      "sizes": [
+        36,
+        28,
+        22,
+        19,
+        15,
+        14,
+        13,
+        12,
+        10
+      ],
+      "weights": [
+        "400",
+        "600",
+        "700",
+        "900"
+      ],
+      "leftEdges": 6,
+      "accentHues": [],
+      "cards": 2
+    }
+  }
+]

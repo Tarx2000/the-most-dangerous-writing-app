@@ -1,0 +1,67 @@
+[
+  {
+    "name": "before-old",
+    "fails": [
+      "Contrast below WCAG on solid ground: 3.66:1 14px \"3\"; 3.66:1 14px \"10\"; 3.66:1 14px \"15\"; 3.80:1 12px \"EASY\"; 3.80:1 12px \"HARD\"",
+      "Emoji in UI copy or as icons: 🔥 🔒 ⚙ ✍",
+      "Coloured zero-offset glow shadow x1."
+    ],
+    "warns": [],
+    "facts": {
+      "fonts": {
+        "SF Pro": 11,
+        "SF Mono": 4
+      },
+      "sizes": [
+        32,
+        28,
+        20,
+        18,
+        14,
+        13,
+        12
+      ],
+      "weights": [
+        "400",
+        "600",
+        "700",
+        "900"
+      ],
+      "leftEdges": 5,
+      "accentHues": [],
+      "cards": 1
+    }
+  },
+  {
+    "name": "02-after-redesign",
+    "fails": [],
+    "warns": [
+      "6 distinct left edges in the left third. Align to fewer verticals.",
+      "7 elements cast shadows. Depth should come from one or two layers, not every tile."
+    ],
+    "facts": {
+      "fonts": {
+        "SF Pro": 10,
+        "SF Mono": 5
+      },
+      "sizes": [
+        38,
+        32,
+        18,
+        16,
+        13,
+        12
+      ],
+      "weights": [
+        "600",
+        "700",
+        "800"
+      ],
+      "leftEdges": 6,
+      "accentHues": [
+        0
+      ],
+      "cards": 1
+    }
+  }
+]

@@ -36,6 +36,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/app_config.dart';
 import '../../core/logger.dart';
 import '../database/db.dart';
+import '../models/wellbeing_checkin.dart';
+import '../../core/rating_day.dart';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIGURABLE VALUES & CONSTANTS
@@ -63,8 +65,20 @@ const double freeSpaceMarginFactor = 2.5;
 /// Scope → tables mapping (SPEC §13).
 const Map<String, List<String>> scopeTables = {
   'settings': ['settings'],
-  'notes': ['notes', 'persons', 'feed_bookmarks', 'feed_comments'],
-  'masteries': ['pillars', 'advice_cards', 'pillar_logs', 'pillar_versions'],
+  'notes': [
+    'notes',
+    'persons',
+    'feed_bookmarks',
+    'feed_comments',
+    'wellbeing_checkins',
+  ],
+  'masteries': [
+    'pillars',
+    'advice_cards',
+    'pillar_logs',
+    'pillar_versions',
+    'checkin_selections',
+  ],
   'vlogs': ['vlogs'],
   'system': ['ai_jobs', 'ai_logs'],
 };
@@ -738,8 +752,7 @@ class BackupService {
                 included: true,
               ),
             );
-          } else if (name.startsWith('thumbnails/') &&
-              name != 'thumbnails/') {
+          } else if (name.startsWith('thumbnails/') && name != 'thumbnails/') {
             final id = p.basenameWithoutExtension(name).split('_').first;
             thumbEntries.add(
               BackupFileEntry(
@@ -1262,6 +1275,18 @@ class BackupService {
             )) {
           throw FormatException('Corrupt backup row in ${entry.key}.');
         }
+        if (entry.key == 'wellbeing_checkins') {
+          WellbeingCheckin.fromRow(row.cast<String, Object?>());
+        }
+        if (entry.key == 'checkin_selections') {
+          RatingDay.parse(row['day_key'] as String);
+          final ids = jsonDecode(row['pillar_ids'] as String);
+          if (!['daily', 'weekly'].contains(row['scope']) ||
+              ids is! List ||
+              ids.any((id) => id is! String)) {
+            throw const FormatException('Invalid check-in selection.');
+          }
+        }
       }
     }
     final manifests = raw['tableManifest'];
@@ -1612,9 +1637,7 @@ class BackupService {
     }
     if (method == _ZipMethod.deflate) {
       var written = 0;
-      final outSink = ChunkedConversionSink<List<int>>.withCallback((
-        chunks,
-      ) {
+      final outSink = ChunkedConversionSink<List<int>>.withCallback((chunks) {
         for (final chunk in chunks) {
           written += chunk.length;
           if (maxOutputBytes != null && written > maxOutputBytes) {
@@ -1954,7 +1977,8 @@ class BackupService {
     }
   }
 
-  static String _isoTimestamp() {    final now = DateTime.now();
+  static String _isoTimestamp() {
+    final now = DateTime.now();
     return '${now.year}${_two(now.month)}${_two(now.day)}-${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
   }
 

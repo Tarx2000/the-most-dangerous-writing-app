@@ -6,11 +6,15 @@ enum PillarType { rating, time, boolean, text }
 
 enum PillarScope { daily, weekly, adaptive }
 
-PillarType pillarTypeFromString(String? raw) =>
-    PillarType.values.firstWhere((t) => t.name == raw, orElse: () => PillarType.rating);
+PillarType pillarTypeFromString(String? raw) => PillarType.values.firstWhere(
+  (t) => t.name == raw,
+  orElse: () => PillarType.rating,
+);
 
-PillarScope pillarScopeFromString(String? raw) =>
-    PillarScope.values.firstWhere((s) => s.name == raw, orElse: () => PillarScope.daily);
+PillarScope pillarScopeFromString(String? raw) => PillarScope.values.firstWhere(
+  (s) => s.name == raw,
+  orElse: () => PillarScope.daily,
+);
 
 class Pillar {
   const Pillar({
@@ -24,6 +28,7 @@ class Pillar {
     this.description,
     this.lastEditedAt,
     this.version = 1,
+    this.reactivatedAt,
   });
 
   final String id;
@@ -36,6 +41,7 @@ class Pillar {
   final String? description;
   final int? lastEditedAt; // ms
   final int version;
+  final int? reactivatedAt;
 
   Pillar copyWith({
     String? title,
@@ -46,6 +52,7 @@ class Pillar {
     String? Function()? description,
     int? lastEditedAt,
     int? version,
+    int? reactivatedAt,
   }) {
     return Pillar(
       id: id,
@@ -58,6 +65,7 @@ class Pillar {
       description: description != null ? description() : this.description,
       lastEditedAt: lastEditedAt ?? this.lastEditedAt,
       version: version ?? this.version,
+      reactivatedAt: reactivatedAt ?? this.reactivatedAt,
     );
   }
 
@@ -73,6 +81,7 @@ class Pillar {
       'description': description,
       'last_edited_at': lastEditedAt,
       'version': version,
+      'reactivated_at': reactivatedAt,
     };
   }
 
@@ -92,6 +101,7 @@ class Pillar {
         description: row['description'] as String?,
         lastEditedAt: (row['last_edited_at'] as num?)?.toInt(),
         version: (row['version'] as num?)?.toInt() ?? 1,
+        reactivatedAt: (row['reactivated_at'] as num?)?.toInt(),
       );
     } catch (_) {
       return null;
@@ -107,6 +117,7 @@ class PillarLog {
     this.valueStr,
     required this.timestamp,
     this.noteId,
+    this.dayKey,
   });
 
   final String id;
@@ -115,6 +126,7 @@ class PillarLog {
   final String? valueStr;
   final int timestamp; // ms
   final String? noteId;
+  final String? dayKey;
 
   Map<String, Object?> toRow() {
     return {
@@ -124,6 +136,7 @@ class PillarLog {
       'value_str': valueStr,
       'timestamp': timestamp,
       'note_id': noteId,
+      'day_key': dayKey,
     };
   }
 
@@ -139,6 +152,7 @@ class PillarLog {
         valueStr: row['value_str'] as String?,
         timestamp: (row['timestamp'] as num?)?.toInt() ?? 0,
         noteId: row['note_id'] as String?,
+        dayKey: row['day_key'] as String?,
       );
     } catch (_) {
       return null;

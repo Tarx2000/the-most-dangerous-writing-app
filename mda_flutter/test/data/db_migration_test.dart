@@ -37,7 +37,7 @@ void main() {
     await closeDb();
   });
 
-  test('migrates an empty DB to schema v6', () async {
+  test('migrates an empty DB to schema v7', () async {
     final db = await getDb();
     final version = await getCurrentSchemaVersion();
     expect(version, currentSchemaVersion);
@@ -53,8 +53,20 @@ void main() {
     expect(
       names,
       containsAll({
-        'notes', 'persons', 'vlogs', 'settings', 'feed_bookmarks', 'feed_comments',
-        'ai_jobs', 'ai_logs', 'pillars', 'advice_cards', 'pillar_logs', 'pillar_versions',
+        'notes',
+        'persons',
+        'vlogs',
+        'settings',
+        'feed_bookmarks',
+        'feed_comments',
+        'ai_jobs',
+        'ai_logs',
+        'pillars',
+        'advice_cards',
+        'pillar_logs',
+        'pillar_versions',
+        'wellbeing_checkins',
+        'checkin_selections',
       }),
     );
   });
@@ -66,16 +78,26 @@ void main() {
     expect(pragma.first.values.first, currentSchemaVersion);
   });
 
-  test('seed pillars + advice cards land exactly once (INSERT OR IGNORE)', () async {
-    await getDb();
-    final db = await getDb();
-    final pillars = await db.rawQuery('SELECT * FROM pillars');
-    final cards = await db.rawQuery('SELECT * FROM advice_cards');
-    expect(pillars.length, 3);
-    expect(cards.length, 2);
-    final pillarIds = pillars.map((r) => r['id']).toList();
-    expect(pillarIds, containsAll(['mock_pillar_sleep', 'mock_pillar_comfort', 'mock_pillar_mindfulness']));
-  });
+  test(
+    'seed pillars + advice cards land exactly once (INSERT OR IGNORE)',
+    () async {
+      await getDb();
+      final db = await getDb();
+      final pillars = await db.rawQuery('SELECT * FROM pillars');
+      final cards = await db.rawQuery('SELECT * FROM advice_cards');
+      expect(pillars.length, 3);
+      expect(cards.length, 2);
+      final pillarIds = pillars.map((r) => r['id']).toList();
+      expect(
+        pillarIds,
+        containsAll([
+          'mock_pillar_sleep',
+          'mock_pillar_comfort',
+          'mock_pillar_mindfulness',
+        ]),
+      );
+    },
+  );
 
   test('pillar_versions backfilled for seed pillars (v6)', () async {
     await getDb();
@@ -105,12 +127,15 @@ void main() {
     expect(pragma.first.values.first, currentSchemaVersion);
   });
 
-  test('a prefs marker ahead of the DB file still yields the effective max', () async {
-    await getDb();
-    prefs.values[schemaVersionKey] = '6';
-    final version = await getCurrentSchemaVersion();
-    expect(version, 6);
-  });
+  test(
+    'a prefs marker ahead of the DB file still yields the effective max',
+    () async {
+      await getDb();
+      prefs.values[schemaVersionKey] = '${currentSchemaVersion + 1}';
+      final version = await getCurrentSchemaVersion();
+      expect(version, currentSchemaVersion + 1);
+    },
+  );
 
   test('notes table has all migrated columns', () async {
     await getDb();
@@ -120,10 +145,27 @@ void main() {
     expect(
       names,
       containsAll({
-        'id', 'text', 'date_str', 'timestamp', 'duration_min', 'won', 'person_id',
-        'is_quick_note', 'is_tweet', 'ai_title', 'ai_summary', 'ai_model_used',
-        'is_alignment_reflection', 'alignment_score', 'stop_text', 'start_text',
-        'continue_text', 'pillar_id', 'advice_id', 'pillar_value', 'pillar_version',
+        'id',
+        'text',
+        'date_str',
+        'timestamp',
+        'duration_min',
+        'won',
+        'person_id',
+        'is_quick_note',
+        'is_tweet',
+        'ai_title',
+        'ai_summary',
+        'ai_model_used',
+        'is_alignment_reflection',
+        'alignment_score',
+        'stop_text',
+        'start_text',
+        'continue_text',
+        'pillar_id',
+        'advice_id',
+        'pillar_value',
+        'pillar_version',
       }),
     );
   });

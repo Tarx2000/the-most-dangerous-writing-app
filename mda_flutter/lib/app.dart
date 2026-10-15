@@ -15,6 +15,8 @@ import 'data/security_providers.dart';
 import 'ui/core/widgets/pin_pad_modal.dart';
 import 'ui/core/widgets/security_boundary.dart';
 import 'ui/features/alignment/alignment_writing_screen.dart';
+import 'ui/features/alignment/wellbeing_screen.dart';
+import 'ui/features/library/library_screen.dart';
 import 'ui/features/home/home_screen.dart';
 import 'ui/features/pillars/pillar_detail_screen.dart';
 import 'ui/features/pillars/pillars_dashboard_screen.dart';
@@ -63,8 +65,41 @@ final GoRouter goRouter = GoRouter(
     GoRoute(
       path: '/checkin',
       pageBuilder: (context, state) => _transparentPage(
+        WellbeingScreen(
+          initialOverall: (state.extra as Map?)?['alignmentScore'] as int?,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/checkin/reflections',
+      pageBuilder: (context, state) => _transparentPage(
         AlignmentWritingScreen(
           isWeekly: (state.extra as Map?)?['isWeekly'] == true,
+          overallScore: (state.extra as Map?)?['alignmentScore'] as int?,
+          includeMasteries: (state.extra as Map?)?['includeMasteries'] != false,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/checkin/history',
+      pageBuilder: (context, state) => _transparentPage(
+        Scaffold(
+          backgroundColor: AppColors.background,
+          body: SafeArea(
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    tooltip: 'Back',
+                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                ),
+                const Expanded(child: LibraryScreen(mode: 'checkin')),
+              ],
+            ),
+          ),
         ),
       ),
     ),

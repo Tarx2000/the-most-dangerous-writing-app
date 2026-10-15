@@ -22,7 +22,7 @@ const String databaseFileName = 'mda_v2.db';
 const String schemaVersionKey = '__DB_SCHEMA_VERSION__';
 
 /// Current schema version of this app build.
-const int currentSchemaVersion = 6;
+const int currentSchemaVersion = 7;
 
 /// In-memory DB factory override for tests (set via `databaseFactory` in tests).
 /// The app itself always uses the platform factory.
@@ -60,9 +60,12 @@ Future<Database> getDb() {
 
 Future<Database> _openInternal() async {
   final factory = await _resolveFactory();
-  final path = _dbPathOverride ??
+  final path =
+      _dbPathOverride ??
       '${await factory.getDatabasesPath()}/$databaseFileName';
-  final db = await factory.openDatabase(path, options: OpenDatabaseOptions(
+  final db = await factory.openDatabase(
+    path,
+    options: OpenDatabaseOptions(
       // No version → sqflite skips its own version management entirely and
       // leaves `PRAGMA user_version` alone (we run the dual-track migration
       // manually right after opening).
@@ -105,13 +108,19 @@ Future<void> run(String sql, [List<Object?>? params]) async {
 }
 
 /// Run a read statement returning all rows.
-Future<List<Map<String, Object?>>> getAll(String sql, [List<Object?>? params]) async {
+Future<List<Map<String, Object?>>> getAll(
+  String sql, [
+  List<Object?>? params,
+]) async {
   final db = await getDb();
   return db.rawQuery(sql, params);
 }
 
 /// Run a read statement returning the first row (or null).
-Future<Map<String, Object?>?> getFirst(String sql, [List<Object?>? params]) async {
+Future<Map<String, Object?>?> getFirst(
+  String sql, [
+  List<Object?>? params,
+]) async {
   final rows = await getAll(sql, params);
   return rows.isEmpty ? null : rows.first;
 }
@@ -175,7 +184,9 @@ Future<int> getCurrentSchemaVersion() async {
   final prefs = await _prefsReader();
   final asyncVersion = prefs?[schemaVersionKey];
   final pragmaVersion = await _pragmaUserVersion();
-  final asyncNum = asyncVersion != null ? int.tryParse('$asyncVersion') ?? 0 : 0;
+  final asyncNum = asyncVersion != null
+      ? int.tryParse('$asyncVersion') ?? 0
+      : 0;
   return asyncNum > pragmaVersion ? asyncNum : pragmaVersion;
 }
 
@@ -235,7 +246,9 @@ Future<void> _defaultPrefsWriter(String key, Object value) async {
 Future<void> migrate(Database db) async {
   final prefs = await _prefsReader();
   final asyncVersion = prefs?[schemaVersionKey];
-  final asyncNum = asyncVersion != null ? int.tryParse('$asyncVersion') ?? 0 : 0;
+  final asyncNum = asyncVersion != null
+      ? int.tryParse('$asyncVersion') ?? 0
+      : 0;
   var pragmaVersion = 0;
   try {
     final r = await db.rawQuery('PRAGMA user_version');
@@ -260,10 +273,15 @@ Future<void> migrate(Database db) async {
             await txn.execute(stmt);
           } catch (e) {
             final msg = '$e';
-            final isDuplicate = RegExp(r'duplicate column name|already exists', caseSensitive: false)
-                .hasMatch(msg);
+            final isDuplicate = RegExp(
+              r'duplicate column name|already exists',
+              caseSensitive: false,
+            ).hasMatch(msg);
             if (!isDuplicate) rethrow;
-            logDb.warn('Migration v${migration.version} skipped statement (already applied)', stmt);
+            logDb.warn(
+              'Migration v${migration.version} skipped statement (already applied)',
+              stmt,
+            );
           }
         }
       });
@@ -273,7 +291,10 @@ Future<void> migrate(Database db) async {
       logDb.info('Migration applied → v${migration.version}');
     } catch (e) {
       // Self-healing: record the attempted version, keep going (crash-proof startup).
-      logDb.error('Migration v${migration.version} failed (best-effort continue)', e);
+      logDb.error(
+        'Migration v${migration.version} failed (best-effort continue)',
+        e,
+      );
       current = migration.version;
     }
   }
@@ -441,5 +462,24 @@ const List<_Migration> _migrations = [
     'ALTER TABLE notes ADD COLUMN pillar_version INTEGER',
     '''INSERT OR IGNORE INTO pillar_versions (id, pillar_id, version, title, description, created_at)
         SELECT id || '_v1', id, 1, title, description, created_at FROM pillars''',
+  ]),
+  _Migration(7, [
+    '''CREATE TABLE IF NOT EXISTS wellbeing_checkins (
+      day_key TEXT PRIMARY KEY,
+      overall INTEGER CHECK(overall BETWEEN 0 AND 10),
+      domains TEXT NOT NULL DEFAULT '{}',
+      completed_wheel_at INTEGER,
+      updated_at INTEGER NOT NULL
+    )''',
+    'ALTER TABLE pillars ADD COLUMN reactivated_at INTEGER',
+    'ALTER TABLE pillar_logs ADD COLUMN day_key TEXT',
+    '''CREATE UNIQUE INDEX IF NOT EXISTS idx_pillar_logs_day
+       ON pillar_logs(pillar_id, day_key) WHERE day_key IS NOT NULL''',
+    '''CREATE TABLE IF NOT EXISTS checkin_selections (
+      day_key TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      pillar_ids TEXT NOT NULL,
+      PRIMARY KEY(day_key, scope)
+    )''',
   ]),
 ];

@@ -7,7 +7,7 @@ RN codebase at `mda_rn/` wins; update `SPEC_1TO1.md` and port the behavior.
 ## Tech Stack
 - Riverpod 2 (`flutter_riverpod`) for state — Notifier/Provider per domain (maps 1:1 to the old split-contexts)
 - go_router for navigation (custom transitions for transparent-modal screens, Hero for button morphs)
-- sqflite for SQLite (`mda_v2.db`, schema v6, **dual-track versioning** via `PRAGMA user_version` + SharedPreferences marker)
+- sqflite for SQLite (`mda_v2.db`, schema v7, **dual-track versioning** via `PRAGMA user_version` + SharedPreferences marker)
 - flutter_secure_storage for PIN/attempt counters (never in backups; `allowBackup=false` in AndroidManifest)
 - http (StreamedResponse + SSE line parser) for AI streaming (XHR-equivalent)
 - camera / video_player / video_thumbnail / video_compress / wakelock_plus for vlogs
@@ -56,6 +56,18 @@ lib/
   Keep glass nav/difficulty motion builders local to moving parts, and batch only
   non-overlapping header lenses. No extra Gaussian blur over flat AMOLED black.
   Glass Start Writing is up to 320 × 64 px, with 130 px bottom clearance.
+  Difficulty travel is 180 ms easeOutCubic; native lift/contract springs are
+  1200/60 and 1600/72, with no idle ticker. Shared GlassPill owns New Tweet,
+  Library Lock/Unlock (whole labels) and wrapping red-active Feed filters.
+  Setup shows minutes only; the writing countdown retains seconds.
+- Writing warning is the explicit content-blur exception: a continuous red veil
+  covers the full Flutter window, including safe insets/behind the keyboard.
+  Never cut out the centre or draw moving side curtains/ovals. Keep black fog;
+  one Gaussian (0–6 px), off at rest/death. Smooth 10 Hz engine ratios over
+  100 ms in the warning leaf only; clear immediately on typing. Reduced motion
+  skips smoothing/pulsing. Reflection safe/keyboard padding belongs inside its
+  full-window overlay stack.
+  YOU DIED stays AMOLED with a glass return action and keyboard-safe recovery.
 - Every DB table registered in backup scopes; secrets never exported; PIN never restored.
 - Schema/behavior changes → update `SPEC_1TO1.md` + this file in the same step.
 
@@ -124,9 +136,10 @@ lib/
 - Validate backup metadata/table shapes before replacement. Stage media separately,
   preserve rollback copies until successful commit, and strip secrets on import
   as well as export. ZIP/media work belongs off the UI isolate.
-- Check-in logging and optional reflections are separate phases. Capture the
-  entry rate-limit decision before saving this check-in's own logs. Reflections
-  use SessionEngine typing/idle/wipe callbacks, and stop timers on save/exit.
+- Check-in logging and optional reflections are separate phases. The confirmed
+  redesign uses per-day upserts and due-only prompts; the legacy global log
+  cooldown must not block current-day rating corrections. Reflections use
+  SessionEngine typing/idle/wipe callbacks, and stop timers on save/exit.
 - Native short haptics use HapticFeedback, throttled to avoid pointer-event bursts;
   longer warning patterns use vibration. Disabling haptics cancels active patterns.
 - A compression timeout marks failure but must not start overlapping native jobs.
@@ -137,3 +150,15 @@ lib/
   constructor snapshot. Generate/retry actions must enqueue real work.
 - Completed check-ins persist LAST_REFLECTION_DATE, independently of pillar-log
   rate limiting; weekly advice-only sessions also count for the reminder dot.
+- Redesign contract: `design/REDESIGN_BRIEF.md` is the confirmed Q1–Q46 scope.
+  Rating days run 03:00–02:59 local (calendar arithmetic across DST). Only the
+  current rating day may be edited or individually deleted. Wellbeing lives
+  independently in `wellbeing_checkins` (notes backup scope); untouched 0–10
+  sliders are missing. Gray history interpolation is drawing-only, with markers
+  only for observations. Weekly wheel reminder depends on actual wheel completion.
+- Masteries use due-only weighted sampling `(1 + overdueDays)^2`, persisted
+  daily selections (`checkin_selections`, masteries backup scope), one log per
+  mastery/rating day, adaptive graduation and a reactivation scheduling anchor.
+  Concrete target values and relative day/week comparisons are deferred;
+  `design/FUTURE_IDEAS.md` is a backlog only. New-install glass defaults on;
+  saved preferences and Classic fallback remain authoritative.

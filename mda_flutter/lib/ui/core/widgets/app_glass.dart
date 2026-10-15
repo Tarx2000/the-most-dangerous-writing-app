@@ -36,6 +36,21 @@ abstract final class AppGlass {
 
   static LiquidGlassStyle get navigation =>
       surface(navHeight / 2, tint: Colors.transparent);
+
+  static LiquidGlassStyle control(double radius, {bool active = false}) =>
+      surface(radius, tint: active ? const Color(0x38C3242C) : null).copyWith(
+        specular: active
+            ? const LiquidGlassLight.specular(
+                thickness: 0.9,
+                sharpness: 0.8,
+                angle: 135,
+                spread: 0.75,
+                intensity: 0.75,
+                oppositeIntensity: 0.45,
+                color: Color(0xD9FFB1AC),
+              )
+            : rim,
+      );
   // The package paints its resting highlight as a plain translucent fill.
   // Lights/refraction belong to the lifted moving selection.
   static const selection = LiquidGlassStyle(
@@ -55,9 +70,10 @@ abstract final class AppGlass {
 
   static final buttonTouch = LiquidGlassTouch(
     flex: const LiquidGlassFlex.pronounced().copyWith(
-      holdScale: 0.025,
-      tapScale: 0.015,
-      maxPull: 14,
+      stretch: 12,
+      holdScale: 0.02,
+      tapScale: 0.012,
+      maxPull: 28,
       advanced: const LiquidGlassFlexAdvanced(
         stiffness: 300,
         damping: 28,

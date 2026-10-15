@@ -4,6 +4,7 @@ library;
 
 import 'dart:math';
 
+import '../../core/rating_day.dart';
 import '../../data/models/pillar.dart';
 
 /// Alignment tier for a score (0–10). Pure threshold table (SPEC §3/§10).
@@ -50,18 +51,80 @@ List<Pillar> pickPillarsForCheckIn({
   required List<Pillar> allPillars,
   required bool isWeekly,
   Random? random,
+  List<PillarLog> logs = const [],
+  DateTime? now,
 }) {
   final rng = random ?? Random();
-  final scope = isWeekly ? PillarScope.weekly : PillarScope.daily;
   final limit = isWeekly ? weeklyPickLimit : dailyPickLimit;
-
+  final instant = now ?? DateTime.now();
   final eligible = allPillars
       .where((p) => p.isActive)
-      .where((p) => p.scope == scope || p.scope == PillarScope.adaptive)
-      .toList()
-    ..shuffle(rng);
+      .where(
+        (p) => isWeekly
+            ? effectiveScope(p, logs) != PillarScope.daily
+            : effectiveScope(p, logs) != PillarScope.weekly,
+      )
+      .where((p) => masteryOverdueDays(p, logs, instant) >= 0)
+      .toList();
+  final result = <Pillar>[];
+  while (eligible.isNotEmpty && result.length < limit) {
+    final weights = [
+      for (final p in eligible)
+        pow(1 + masteryOverdueDays(p, logs, instant), 2).toDouble(),
+    ];
+    var roll = rng.nextDouble() * weights.reduce((a, b) => a + b);
+    var index = weights.length - 1;
+    for (var i = 0; i < weights.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) {
+        index = i;
+        break;
+      }
+    }
+    result.add(eligible.removeAt(index));
+  }
+  return result;
+}
 
-  return eligible.take(limit).toList();
+RatingDay _logDay(PillarLog log) => log.dayKey == null
+    ? RatingDay.at(DateTime.fromMillisecondsSinceEpoch(log.timestamp))
+    : RatingDay.parse(log.dayKey!);
+
+PillarScope effectiveScope(Pillar pillar, List<PillarLog> logs) =>
+    pillar.scope == PillarScope.adaptive &&
+        adaptiveProgress(pillar: pillar, logs: logs) >= 1
+    ? PillarScope.weekly
+    : pillar.scope;
+
+/// -1 (or less) means not due. Zero means due today, so never-rated goals
+/// and just-reactivated goals start without an artificial overdue bonus.
+int masteryOverdueDays(Pillar pillar, List<PillarLog> logs, DateTime now) {
+  if (!pillar.isActive) return -1;
+  final own = logs.where((l) => l.pillarId == pillar.id).toList()
+    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  final today = RatingDay.at(now);
+  final last = own.lastOrNull;
+  if (pillar.reactivatedAt != null &&
+      (last == null || last.timestamp < pillar.reactivatedAt!)) {
+    return today.daysSince(
+      RatingDay.at(DateTime.fromMillisecondsSinceEpoch(pillar.reactivatedAt!)),
+    );
+  }
+  if (last != null && _logDay(last).key == today.key) return -1;
+  if (last == null) {
+    return pillar.createdAt <= 0
+        ? 0
+        : max(
+            0,
+            today.daysSince(
+              RatingDay.at(
+                DateTime.fromMillisecondsSinceEpoch(pillar.createdAt),
+              ),
+            ),
+          );
+  }
+  final interval = effectiveScope(pillar, own) == PillarScope.weekly ? 7 : 1;
+  return today.daysSince(_logDay(last)) - interval;
 }
 
 /// Weighted random advice pick (SPEC §10):
@@ -98,13 +161,20 @@ AdviceCard? pickSmartAdvice({
 
 /// Adaptive graduation progress = min(uniqueDays / adaptiveDays, 1).
 /// Non-adaptive pillars always return 0 (SPEC §10).
-double adaptiveProgress({required Pillar pillar, required List<PillarLog> logs}) {
+double adaptiveProgress({
+  required Pillar pillar,
+  required List<PillarLog> logs,
+}) {
   if (pillar.scope != PillarScope.adaptive) return 0;
   final uniqueDays = logs
-      .map((log) {
-        final dt = DateTime.fromMillisecondsSinceEpoch(log.timestamp);
-        return '${dt.year}-${dt.month}-${dt.day}';
-      })
+      .where((log) => log.pillarId == pillar.id)
+      .map(
+        (log) =>
+            log.dayKey ??
+            RatingDay.at(
+              DateTime.fromMillisecondsSinceEpoch(log.timestamp),
+            ).key,
+      )
       .toSet()
       .length;
   return (uniqueDays / max(1, pillar.adaptiveDays)).clamp(0.0, 1.0);
@@ -112,7 +182,10 @@ double adaptiveProgress({required Pillar pillar, required List<PillarLog> logs})
 
 /// Sparkline values for the dashboard card: last 7 logs normalized 0–1.
 List<double> sparklineValues(List<PillarLog> logs) {
-  final last7 = logs.length <= 7 ? logs : logs.sublist(logs.length - 7);
+  final numeric = logs.where((l) => l.valueNum != null).toList();
+  final last7 = numeric.length <= 7
+      ? numeric
+      : numeric.sublist(numeric.length - 7);
   if (last7.isEmpty) return const [];
   final values = last7.map((l) => l.valueNum ?? 0).toList();
   final minV = values.reduce(min);

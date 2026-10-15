@@ -226,7 +226,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
           .importBackupZip(
             path,
             onProgress: (progress) {
-              if (mounted) setState(() => _backupProgress = 0.1 + progress * 0.9);
+              if (mounted) {
+                setState(() => _backupProgress = 0.1 + progress * 0.9);
+              }
             },
             onStage: (stage) {
               if (mounted) setState(() => _backupStatus = stage);
@@ -329,7 +331,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
         const SizedBox(height: 16),
         Expanded(
           child: SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 40),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.paddingOf(context).bottom + 40,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -352,7 +356,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                     _PrefToggleRow(
                       title: 'Liquid Glass Design',
                       subtitle:
-                          'Apple iOS-style real-time GPU shader refraction for floating bars and controls. Toggle off for classic AMOLED solid styling.',
+                          'Refractive controls and responsive glass. Turn off for Classic.',
                       icon: 'blur',
                       value: prefs.enableLiquidGlass,
                       onChanged: (v) => ref
@@ -374,6 +378,21 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                   ),
                 ),
                 _LivePreview(prefs: prefs),
+                const SizedBox(height: 20),
+
+                SettingsCard(
+                  children: [
+                    _PrefToggleRow(
+                      title: 'Masteries in Check-in',
+                      subtitle: 'Suggest due goals after your life ratings.',
+                      icon: 'pillar',
+                      value: prefs.promptMasteries,
+                      onChanged: (v) => ref
+                          .read(appDataProvider.notifier)
+                          .setPreference(promptMasteries: v),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 20),
 
                 // -- Security & Storage -----------------------------------------

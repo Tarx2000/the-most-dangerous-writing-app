@@ -50,7 +50,7 @@ class _TickDialState extends State<TickDial> {
   /// directly at `pad + i * snap`. Setting `_pad` to `width / 2` aligns Tick 0
   /// precisely with the red indicator needle (at `width / 2`) and ensures
   /// `maxScrollExtent` lands exactly on the final tick without clamping bounce.
-  double get _pad => MediaQuery.sizeOf(context).width / 2;
+  double _pad = 0;
 
   @override
   void initState() {
@@ -88,6 +88,7 @@ class _TickDialState extends State<TickDial> {
 
   void _pulse() {
     vibrate(HapticPatterns.tick);
+    if (MediaQuery.disableAnimationsOf(context)) return;
     setState(() => _scalePulse = 1.03);
     _pulseTimer?.cancel();
     _pulseTimer = Timer(const Duration(milliseconds: 110), () {
@@ -117,127 +118,144 @@ class _TickDialState extends State<TickDial> {
       return;
     }
     _snapping = true;
-    _controller.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
-    ).whenComplete(() {
-      _snapping = false;
-      if (mounted) {
-        _justSnapped = true;
-        if (index != widget.selectedIndex) {
-          widget.onSelect(index);
-        }
-      }
-    });
+    _controller
+        .animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          _snapping = false;
+          if (mounted) {
+            _justSnapped = true;
+            if (index != widget.selectedIndex) {
+              widget.onSelect(index);
+            }
+          }
+        });
   }
 
   @override
   Widget build(BuildContext context) {
     final scaleBase =
-        0.95 + (widget.data.length > 1 ? widget.selectedIndex / (widget.data.length - 1) * 0.15 : 0);
+        0.95 +
+        (widget.data.length > 1
+            ? widget.selectedIndex / (widget.data.length - 1) * 0.05
+            : 0);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Big value (TextSpan children only — `text` + `children` would
-        // double-render and look like an underline).
-        AnimatedScale(
-          scale: scaleBase * _scalePulse,
-          duration: const Duration(milliseconds: 90),
-          child: Text.rich(
-            TextSpan(
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 44,
-                fontWeight: FontWeight.w200,
-                height: 1.0,
-                decoration: TextDecoration.none,
-              ),
-              children: [
-                TextSpan(text: '${widget.data[widget.selectedIndex]}'),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _pad = constraints.maxWidth / 2;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Big value (TextSpan children only — `text` + `children` would
+            // double-render and look like an underline).
+            AnimatedScale(
+              scale: MediaQuery.disableAnimationsOf(context)
+                  ? 1
+                  : (scaleBase * _scalePulse).clamp(0.95, 1.05),
+              duration: const Duration(milliseconds: 90),
+              child: Text.rich(
                 TextSpan(
-                  text: ' ${widget.unit}',
                   style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w300,
+                    color: AppColors.textPrimary,
+                    fontSize: 44,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -1.5,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                    height: 1.0,
                     decoration: TextDecoration.none,
                   ),
+                  children: [
+                    TextSpan(text: '${widget.data[widget.selectedIndex]}'),
+                    TextSpan(
+                      text: ' ${widget.unit}',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w300,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-        // Ruler — the red center needle paints LAST (on top of the ticks).
-        // RN parity (`TickDial.tsx` indicator has zIndex 10): the opaque red
-        // needle must cover the white ticks beneath it, never the other way
-        // round. IgnorePointer keeps horizontal drags reaching the scroller.
-        SizedBox(
-          height: 62,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Tick strip
-              NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  if (notification is ScrollStartNotification) {
-                    _dragging = true;
-                    _snapping = false;
-                  } else if (notification is ScrollEndNotification) {
-                    _dragging = false;
-                    _snapToNearest();
-                  }
-                  return false;
-                },
-                child: Listener(
-                  onPointerDown: (_) {
-                    _dragging = true;
-                    _snapping = false;
-                  },
-                  onPointerUp: (_) {
-                    _dragging = false;
-                    _snapToNearest();
-                  },
-                  onPointerCancel: (_) {
-                    _dragging = false;
-                    _snapToNearest();
-                  },
-                  child: SingleChildScrollView(
-                    controller: _controller,
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: SizedBox(
-                      width: _pad * 2 + (widget.data.length - 1) * _snap,
-                      height: 62,
-                      child: CustomPaint(
-                        painter: _TickPainter(
-                          count: widget.data.length,
-                          pad: _pad,
-                          snap: _snap,
-                          gap: _gap,
+            // Ruler — the red center needle paints LAST (on top of the ticks).
+            // RN parity (`TickDial.tsx` indicator has zIndex 10): the opaque red
+            // needle must cover the white ticks beneath it, never the other way
+            // round. IgnorePointer keeps horizontal drags reaching the scroller.
+            SizedBox(
+              height: 62,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Tick strip
+                  NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification is ScrollStartNotification) {
+                        _dragging = true;
+                        _snapping = false;
+                      } else if (notification is ScrollEndNotification) {
+                        _dragging = false;
+                        _snapToNearest();
+                      }
+                      return false;
+                    },
+                    child: Listener(
+                      onPointerDown: (_) {
+                        _dragging = true;
+                        _snapping = false;
+                      },
+                      onPointerUp: (_) {
+                        _dragging = false;
+                        _snapToNearest();
+                      },
+                      onPointerCancel: (_) {
+                        _dragging = false;
+                        _snapToNearest();
+                      },
+                      child: SingleChildScrollView(
+                        controller: _controller,
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: SizedBox(
+                          width: _pad * 2 + (widget.data.length - 1) * _snap,
+                          height: 62,
+                          child: CustomPaint(
+                            painter: _TickPainter(
+                              values: widget.data,
+                              pad: _pad,
+                              snap: _snap,
+                              gap: _gap,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              // Center indicator (exact screen center, above the ticks)
-              IgnorePointer(
-                child: Container(
-                  width: 3,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryAction,
-                    borderRadius: BorderRadius.circular(2),
+                  // Center indicator (exact screen center, above the ticks)
+                  Positioned(
+                    top: 2,
+                    child: IgnorePointer(
+                      child: Container(
+                        width: 3,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryAction,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-      ],
+            ),
+            const SizedBox(height: 4),
+          ],
+        );
+      },
     );
   }
 }
@@ -245,23 +263,37 @@ class _TickDialState extends State<TickDial> {
 /// Paints major ticks (28 px) and minor ticks (12 px) per the RN geometry.
 class _TickPainter extends CustomPainter {
   const _TickPainter({
-    required this.count,
+    required this.values,
     required this.pad,
     required this.snap,
     required this.gap,
   });
 
-  final int count;
+  final List<int> values;
+  int get count => values.length;
   final double pad;
   final double snap;
   final double gap;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY = size.height / 2;
+    const centerY = 21.0;
     for (var i = 0; i < count; i++) {
       final majorX = pad + i * snap;
       _drawTick(canvas, majorX, centerY, major: true);
+      final label = TextPainter(
+        text: TextSpan(
+          text: '${values[i]}',
+          style: const TextStyle(
+            color: AppColors.textBodyDim,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, Offset(majorX - label.width / 2, 44));
+      label.dispose();
       if (i < count - 1) {
         for (var j = 1; j <= 4; j++) {
           _drawTick(canvas, majorX + j * gap, centerY, major: false);
@@ -270,7 +302,12 @@ class _TickPainter extends CustomPainter {
     }
   }
 
-  void _drawTick(Canvas canvas, double x, double centerY, {required bool major}) {
+  void _drawTick(
+    Canvas canvas,
+    double x,
+    double centerY, {
+    required bool major,
+  }) {
     final w = major ? 2.5 : 1.5;
     final h = major ? 28.0 : 12.0;
     canvas.drawRRect(
@@ -278,11 +315,12 @@ class _TickPainter extends CustomPainter {
         Rect.fromCenter(center: Offset(x, centerY), width: w, height: h),
         const Radius.circular(1.5),
       ),
-      Paint()..color = major ? AppColors.lightGrey : AppColors.glassBorderMedium,
+      Paint()
+        ..color = major ? AppColors.lightGrey : AppColors.glassBorderMedium,
     );
   }
 
   @override
   bool shouldRepaint(covariant _TickPainter oldDelegate) =>
-      oldDelegate.count != count || oldDelegate.pad != pad;
+      oldDelegate.values != values || oldDelegate.pad != pad;
 }

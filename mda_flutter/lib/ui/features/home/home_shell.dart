@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/providers.dart';
+import '../../../domain/use_cases/wellbeing_history.dart';
 import '../../core/widgets/liquid_glass_nav.dart';
 import '../feed/feed_screen.dart';
 import '../library/library_screen.dart';
@@ -303,13 +304,9 @@ class _HomeShellState extends ConsumerState<HomeShell>
     );
   }
 
-  /// Gold urgent dot when no check-in happened in the last 7 days (SPEC §14).
+  /// Gold dot seven rating days after the last completed life wheel.
   bool _isCheckinUrgent() {
-    final lastReflection = ref.watch(preferencesProvider).lastReflectionDate;
-    if (lastReflection == null) return true;
-    return DateTime.now()
-            .difference(DateTime.fromMillisecondsSinceEpoch(lastReflection))
-            .inDays >=
-        7;
+    final now = ref.watch(ratingClockProvider).valueOrNull ?? DateTime.now();
+    return isWheelDue(ref.watch(wellbeingProvider), now);
   }
 }

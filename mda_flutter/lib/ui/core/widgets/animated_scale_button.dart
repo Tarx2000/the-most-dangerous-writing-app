@@ -15,6 +15,7 @@ class AnimatedScaleButton extends StatefulWidget {
     this.activeOpacity = 0.8,
     this.disabled = false,
     this.child,
+    this.semanticLabel,
   });
 
   final VoidCallback? onPress;
@@ -24,6 +25,7 @@ class AnimatedScaleButton extends StatefulWidget {
   final double activeOpacity;
   final bool disabled;
   final Widget? child;
+  final String? semanticLabel;
 
   @override
   State<AnimatedScaleButton> createState() => _AnimatedScaleButtonState();
@@ -72,38 +74,44 @@ class _AnimatedScaleButtonState extends State<AnimatedScaleButton>
 
   @override
   Widget build(BuildContext context) {
-    return RawGestureDetector(
-      gestures: {
-        if (widget.onLongPress != null && !widget.disabled)
-          LongPressGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-                () => LongPressGestureRecognizer(
-                  duration: widget.longPressDuration,
+    return Semantics(
+      label: widget.semanticLabel,
+      button: true,
+      child: RawGestureDetector(
+        gestures: {
+          if (widget.onLongPress != null && !widget.disabled)
+            LongPressGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  LongPressGestureRecognizer
+                >(
+                  () => LongPressGestureRecognizer(
+                    duration: widget.longPressDuration,
+                  ),
+                  (instance) => instance.onLongPress = widget.onLongPress,
                 ),
-                (instance) => instance.onLongPress = widget.onLongPress,
-              ),
-      },
-      child: GestureDetector(
-        onTapDown: _onTapDown,
-        onTapUp: _onTapUp,
-        onTapCancel: _onTapCancel,
-        onTap: widget.disabled ? null : widget.onPress,
+        },
+        child: GestureDetector(
+          onTapDown: _onTapDown,
+          onTapUp: _onTapUp,
+          onTapCancel: _onTapCancel,
+          onTap: widget.disabled ? null : widget.onPress,
 
-        behavior: HitTestBehavior.opaque,
-        child: widget.activeScale == 1 && widget.activeOpacity == 1
-            // Glass owns its deformation and reads the live backdrop.
-            // Do not put redundant animated opacity/transform layers around it.
-            ? widget.child
-            : AnimatedBuilder(
-                animation: _controller,
-                builder: (context, child) {
-                  return Opacity(
-                    opacity: _opacity.value,
-                    child: Transform.scale(scale: _scale.value, child: child),
-                  );
-                },
-                child: widget.child,
-              ),
+          behavior: HitTestBehavior.opaque,
+          child: widget.activeScale == 1 && widget.activeOpacity == 1
+              // Glass owns its deformation and reads the live backdrop.
+              // Do not put redundant animated opacity/transform layers around it.
+              ? widget.child
+              : AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return Opacity(
+                      opacity: _opacity.value,
+                      child: Transform.scale(scale: _scale.value, child: child),
+                    );
+                  },
+                  child: widget.child,
+                ),
+        ),
       ),
     );
   }

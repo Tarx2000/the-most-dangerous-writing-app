@@ -45,13 +45,13 @@ class WritingParams {
   final bool isQuickNote;
 
   static WritingParams fromExtra(Map<String, dynamic> extra) => WritingParams(
-        timeIndex: (extra['timeIndex'] as num?)?.toInt() ?? defaultSessionIndex,
-        diffIndex: (extra['diffIndex'] as num?)?.toInt() ?? defaultDifficultyIndex,
-        mode: extra['mode'] as String? ?? 'journal',
-        personId: extra['personId'] as String?,
-        isTweet: extra['isTweet'] == true,
-        isQuickNote: extra['isQuickNote'] == true,
-      );
+    timeIndex: (extra['timeIndex'] as num?)?.toInt() ?? defaultSessionIndex,
+    diffIndex: (extra['diffIndex'] as num?)?.toInt() ?? defaultDifficultyIndex,
+    mode: extra['mode'] as String? ?? 'journal',
+    personId: extra['personId'] as String?,
+    isTweet: extra['isTweet'] == true,
+    isQuickNote: extra['isQuickNote'] == true,
+  );
 }
 
 class WritingScreen extends ConsumerStatefulWidget {
@@ -112,9 +112,17 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
   @override
   void initState() {
     super.initState();
-    final diffLimit = difficultyLimitsMs[widget.params.diffIndex.clamp(0, difficultyLimitsMs.length - 1)];
-    final sessionMins =
-        _isQuickNoteMode ? 0 : sessionOptionsMins[widget.params.timeIndex.clamp(0, sessionOptionsMins.length - 1)];
+    final diffLimit =
+        difficultyLimitsMs[widget.params.diffIndex.clamp(
+          0,
+          difficultyLimitsMs.length - 1,
+        )];
+    final sessionMins = _isQuickNoteMode
+        ? 0
+        : sessionOptionsMins[widget.params.timeIndex.clamp(
+            0,
+            sessionOptionsMins.length - 1,
+          )];
     _engine.start(
       difficultyLimitMs: diffLimit,
       sessionDurationMin: sessionMins,
@@ -206,11 +214,15 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
 
     setState(() => _saving = true);
     final outcome = _engine.buildSaveOutcome();
-    final result = await ref.read(appDataProvider.notifier).saveEntry(
+    final result = await ref
+        .read(appDataProvider.notifier)
+        .saveEntry(
           text: text,
           won: outcome.won,
           durationMin: outcome.durationMin,
-          personId: widget.params.mode == 'circles' ? widget.params.personId : null,
+          personId: widget.params.mode == 'circles'
+              ? widget.params.personId
+              : null,
           isQuickNote: _isQuickNoteMode,
           isTweet: _isTweetMode,
         );
@@ -221,7 +233,10 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
       await _animateTweetFlyAway();
       if (mounted) context.pop();
     } else {
-      context.pushReplacement('/post-writing', extra: {'noteId': result.note.id});
+      context.pushReplacement(
+        '/post-writing',
+        extra: {'noteId': result.note.id},
+      );
     }
   }
 
@@ -242,7 +257,8 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     final diffLimit = _engine.difficultyLimitMsValue;
 
     final prefs = ref.watch(userPreferencesProvider);
-    final readingSize = readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
+    final readingSize =
+        readingSizes[prefs.sizeIndex.clamp(0, readingSizes.length - 1)];
     final fontSize = readingSize.fontSize;
     final lineHeight = readingSize.lineHeight;
     final fontFamily = fontFamilyForIndex(prefs.fontIndex);
@@ -256,7 +272,10 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
           final progress = _flyAwayAnim.value;
           final screenWidth = MediaQuery.sizeOf(context).width;
           return Transform.translate(
-            offset: Offset(_shakeAnim.value + progress * (screenWidth * 1.1), -progress * 40),
+            offset: Offset(
+              _shakeAnim.value + progress * (screenWidth * 1.1),
+              -progress * 40,
+            ),
             child: Transform.scale(
               scale: 1.0 - (progress * 0.2),
               child: Opacity(
@@ -276,19 +295,18 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        _isTweetMode
-                            ? 'NEW TWEET'
-                            : _isQuickNoteMode
-                                ? 'QUICK NOTE'
-                                : widget.params.mode == 'circles'
-                                    ? 'CIRCLE WRITE'
-                                    : 'FREE WRITE',
-                        style: const TextStyle(
-                          color: AppColors.primaryAction,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5,
+                      ValueListenableBuilder<int?>(
+                        valueListenable: _engine.sessionSecondsRemaining,
+                        builder: (context, seconds, _) => Text(
+                          _isTweetMode || _isQuickNoteMode
+                              ? ''
+                              : _formatTime(seconds),
+                          style: const TextStyle(
+                            color: AppColors.textBody,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       AnimatedBuilder(
@@ -297,14 +315,13 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                           _engine.wordCount,
                         ]),
                         builder: (context, _) {
-                          final timeLeft = _engine.sessionSecondsRemaining.value;
                           final wordCount = _engine.wordCount.value;
                           return Text(
-                            _isQuickNoteMode
-                                ? '$wordCount words'
-                                : '${_formatTime(timeLeft)} · $wordCount words',
+                            '$wordCount words',
                             style: TextStyle(
-                              color: _isTweetMode && wordCount > tweetThreshold - 10
+                              color:
+                                  _isTweetMode &&
+                                      wordCount > tweetThreshold - 10
                                   ? AppColors.primaryAction
                                   : AppColors.textDim,
                               fontSize: 13,
@@ -378,7 +395,10 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                       child: AnimatedScaleButton(
                         onPress: _saving ? null : _handleSave,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 44,
+                            vertical: 14,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primaryAction,
                             borderRadius: BorderRadius.circular(30),
@@ -398,15 +418,17 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                 ),
               ],
             ),
-            // Danger ambience (vignette/fog/heartbeat — own layer)
-            DangerOverlay(engine: _engine),
+            // Danger ambience (side fog/blur/heartbeat — own layer)
+            if (!dead) Positioned.fill(child: DangerOverlay(engine: _engine)),
             // Death overlay
             DeathOverlay(
               visible: dead,
               subtitle: 'You stopped writing for too long.',
               continueLabel: "I don't care, let me write",
               onReturnToMenu: _exitToMenu,
-              onSaveWhatsLeft: _currentText.trim().isNotEmpty ? _handleSave : null,
+              onSaveWhatsLeft: _currentText.trim().isNotEmpty
+                  ? _handleSave
+                  : null,
               onContinue: () {
                 _engine.resumeWritingFreely();
                 _canSaveNotifier.value = _engine.canSave;
