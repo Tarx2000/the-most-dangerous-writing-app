@@ -94,7 +94,8 @@ class SavedNote {
       aiTitle: aiTitle != null ? aiTitle() : this.aiTitle,
       aiSummary: aiSummary ?? this.aiSummary,
       aiModelUsed: aiModelUsed != null ? aiModelUsed() : this.aiModelUsed,
-      isAlignmentReflection: isAlignmentReflection ?? this.isAlignmentReflection,
+      isAlignmentReflection:
+          isAlignmentReflection ?? this.isAlignmentReflection,
       alignmentScore: alignmentScore ?? this.alignmentScore,
       stopText: stopText != null ? stopText() : this.stopText,
       startText: startText != null ? startText() : this.startText,
@@ -133,26 +134,38 @@ class SavedNote {
     };
   }
 
+  static bool _parseBool(Object? v) => v is bool ? v : (v as num?) == 1;
+
   /// Shape-guarded row converter — malformed rows never crash startup.
   static SavedNote? fromRow(Map<String, Object?> row) {
     try {
       final id = row['id'];
       final text = row['text'];
       if (id == null || text == null) return null;
+      final rawSummary = row['ai_summary'];
+      final List<String>? parsedSummary = switch (rawSummary) {
+        final List<String> list => list,
+        final List<dynamic> list => [
+          for (final item in list)
+            if (item is String) item,
+        ],
+        final String s => _decodeSummary(s),
+        _ => null,
+      };
       return SavedNote(
         id: id as String,
         text: text as String,
         dateStr: (row['date_str'] as String?) ?? '',
         timestamp: (row['timestamp'] as num?)?.toInt() ?? 0,
         durationMin: (row['duration_min'] as num?)?.toInt() ?? 0,
-        won: (row['won'] as num?) == 1,
+        won: _parseBool(row['won']),
         personId: row['person_id'] as String?,
-        isQuickNote: (row['is_quick_note'] as num?) == 1,
-        isTweet: (row['is_tweet'] as num?) == 1,
+        isQuickNote: _parseBool(row['is_quick_note']),
+        isTweet: _parseBool(row['is_tweet']),
         aiTitle: row['ai_title'] as String?,
-        aiSummary: _decodeSummary(row['ai_summary'] as String?),
+        aiSummary: parsedSummary,
         aiModelUsed: row['ai_model_used'] as String?,
-        isAlignmentReflection: (row['is_alignment_reflection'] as num?) == 1,
+        isAlignmentReflection: _parseBool(row['is_alignment_reflection']),
         alignmentScore: (row['alignment_score'] as num?)?.toInt(),
         stopText: row['stop_text'] as String?,
         startText: row['start_text'] as String?,
@@ -181,7 +194,10 @@ class SavedNote {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is List) {
-        return [for (final item in decoded) if (item is String) item];
+        return [
+          for (final item in decoded)
+            if (item is String) item,
+        ];
       }
       return null;
     } catch (_) {

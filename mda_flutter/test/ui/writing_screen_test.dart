@@ -8,7 +8,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mda_flutter/core/utils.dart';
 import 'package:mda_flutter/domain/use_cases/session_engine.dart';
+import 'package:mda_flutter/ui/features/writing/vaporizing_editable_text.dart';
 import 'package:mda_flutter/ui/features/writing/writing_screen.dart';
 
 Widget _wrap(Widget child) {
@@ -64,7 +66,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tweet mode blocks typing past 45 words', (tester) async {
+  testWidgets('tweet mode blocks typing past 45 words and preserves newlines', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _wrap(
         const WritingScreen(
@@ -81,17 +85,65 @@ void main() {
     final dynamic state = tester.state(find.byType(WritingScreen));
     final engine = state.engineForTesting as SessionEngine;
 
-    final words = List.generate(60, (i) => 'w$i').join(' ');
+    final words = List.generate(60, (i) => i == 10 ? 'w$i\n' : 'w$i').join(' ');
     await _type(tester, words);
 
-    // Counter clamps to 45 (blocked), no more.
+    // Counter clamps to 45 (blocked), no more, and preserves line breaks.
     expect(engine.wordCount.value, 45);
     expect(find.textContaining('45 words'), findsOneWidget);
     expect(find.text('NEW TWEET'), findsNothing);
-    expect(find.textContaining('45 words'), findsOneWidget);
+    final editable = tester.widget<EditableText>(
+      find.bySubtype<EditableText>(),
+    );
+    expect(editable.controller.text.contains('\n'), isTrue);
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  test(
+    'simultaneous word vaporization fades the entire displayed text together',
+    () {
+      const sample =
+          'first second third fourth fifth sixth seventh eighth ninth tenth';
+      const baseStyle = TextStyle(color: Color(0xFFFFFFFF), fontSize: 18);
+
+      // Below threshold (<= 0.30): full opacity, single unsplit TextSpan.
+      final spanIdle = buildVaporizingTextSpan(
+        text: sample,
+        ratio: 0.25,
+        style: baseStyle,
+      );
+      expect(spanIdle.text, sample);
+      expect(spanIdle.children, isNull);
+      expect(spanIdle.style?.color?.a, closeTo(1.0, 0.001));
+
+      // Mid danger (0.65): every word in the span fades simultaneously.
+      final spanMid = buildVaporizingTextSpan(
+        text: sample,
+        ratio: 0.65,
+        style: baseStyle,
+      );
+      expect(spanMid.text, sample);
+      expect(spanMid.children, isNull);
+      final midAlpha = spanMid.style!.color!.a;
+      expect(midAlpha, lessThan(1.0));
+      expect(midAlpha, greaterThan(vaporizeMinOpacity));
+
+      // Peak danger (>= 0.95): reaches vaporizeMinOpacity across all words.
+      final spanPeak = buildVaporizingTextSpan(
+        text: sample,
+        ratio: 0.96,
+        style: baseStyle,
+      );
+      expect(spanPeak.style?.color?.a, closeTo(vaporizeMinOpacity, 0.001));
+
+      // truncateToWords preserves line breaks while clamping word count.
+      expect(
+        truncateToWords('hello world\nthird fourth fifth', 3),
+        'hello world\nthird',
+      );
+    },
+  );
 }
 
 /// Drives a text change through the real `onChanged` path:

@@ -75,21 +75,25 @@ final pillarLogsProvider = Provider<List<PillarLog>>(
   (ref) => ref.watch(appDataProvider.select((s) => s.pillarLogs)),
 );
 
-/// Refresh day-dependent UI while the app stays open, without ticking glass.
+/// Refresh day-dependent UI at the 03:00 rating-day boundary (and on app
+/// resume) without unnecessary 30-second rebuild storms.
 final ratingClockProvider = StreamProvider.autoDispose<DateTime>((ref) {
   final controller = StreamController<DateTime>();
   Timer? timer;
+  String? lastKey;
   void refresh() {
     timer?.cancel();
     final now = DateTime.now();
-    controller.add(now);
+    final currentKey = RatingDay.at(now).key;
+    if (lastKey != currentKey) {
+      lastKey = currentKey;
+      controller.add(now);
+    }
     final untilBoundary = RatingDay.at(now).end.difference(now);
-    timer = Timer(
-      untilBoundary < const Duration(seconds: 30)
-          ? untilBoundary
-          : const Duration(seconds: 30),
-      refresh,
-    );
+    final delay = untilBoundary.isNegative
+        ? const Duration(seconds: 1)
+        : untilBoundary + const Duration(milliseconds: 250);
+    timer = Timer(delay, refresh);
   }
 
   refresh();
@@ -157,48 +161,48 @@ final compressionQueueStateProvider = StreamProvider<CompressionQueueState>((
   return controller.stream;
 });
 
-// -- Domain providers (derived slices of AppData) ---------------------------
+// -- Domain providers (derived slices of AppData via .select) ---------------
 
 final appDataProvider = NotifierProvider<StorageNotifier, AppData>(
   StorageNotifier.new,
 );
 
 final notesProvider = Provider<List<SavedNote>>(
-  (ref) => ref.watch(appDataProvider).notes,
+  (ref) => ref.watch(appDataProvider.select((s) => s.notes)),
 );
 
 final personsProvider = Provider<List<Person>>(
-  (ref) => ref.watch(appDataProvider).persons,
+  (ref) => ref.watch(appDataProvider.select((s) => s.persons)),
 );
 
 final vlogsProvider = Provider<List<SavedVlog>>(
-  (ref) => ref.watch(appDataProvider).vlogs,
+  (ref) => ref.watch(appDataProvider.select((s) => s.vlogs)),
 );
 
 final pillarsProvider = Provider<List<Pillar>>(
-  (ref) => ref.watch(appDataProvider).pillars,
+  (ref) => ref.watch(appDataProvider.select((s) => s.pillars)),
 );
 
 final adviceCardsProvider = Provider<List<AdviceCard>>(
-  (ref) => ref.watch(appDataProvider).adviceCards,
+  (ref) => ref.watch(appDataProvider.select((s) => s.adviceCards)),
 );
 
 final preferencesProvider = Provider<PreferencesState>(
-  (ref) => ref.watch(appDataProvider).preferences,
+  (ref) => ref.watch(appDataProvider.select((s) => s.preferences)),
 );
 
 final userPreferencesProvider = preferencesProvider;
 
 final streakProvider = Provider<StreakState>(
-  (ref) => ref.watch(appDataProvider).streak,
+  (ref) => ref.watch(appDataProvider.select((s) => s.streak)),
 );
 
 final feedDataProvider = Provider<FeedState>(
-  (ref) => ref.watch(appDataProvider).feed,
+  (ref) => ref.watch(appDataProvider.select((s) => s.feed)),
 );
 
 final isAppLoadedProvider = Provider<bool>(
-  (ref) => ref.watch(appDataProvider).isLoaded,
+  (ref) => ref.watch(appDataProvider.select((s) => s.isLoaded)),
 );
 
 /// Streak popup event (set by saveEntry; the StartScreen renders it once and
@@ -243,18 +247,21 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> loadAll({bool force = false}) async {
     if (state.isLoaded && !force) return;
 
-    // Phase 1 — critical domains (parallel, individually guarded).
+    // Fetch the entire settings table in a single SQLite query instead of 40
+    // sequential single-key lookups.
     final results = await Future.wait([
       _loadNotes(),
       _loadPersons(),
-      _loadSettings(),
-      _loadStreak(),
+      _loadAllSettingsMap(),
     ]);
 
     final notes = results[0] as List<SavedNote>;
     final persons = results[1] as List<Person>;
-    final prefs = results[2] as PreferencesState;
-    final streak = results[3] as StreakState;
+    final settingsMap = results[2] as Map<String, String>;
+
+    final prefs = _parseSettings(settingsMap);
+    final streak = _parseStreak(settingsMap);
+    final feed = _parseFeed(settingsMap);
 
     // Sync global runtime flags from the loaded preferences.
     setGlobalHapticsEnabled(prefs.enableHaptics);
@@ -265,6 +272,7 @@ class StorageNotifier extends Notifier<AppData> {
       persons: persons,
       preferences: prefs,
       streak: streak,
+      feed: feed,
       isLoaded: true,
     );
 
@@ -272,15 +280,12 @@ class StorageNotifier extends Notifier<AppData> {
     final deferred = await Future.wait([
       _loadVlogs(),
       _loadPillars(),
-      _loadFeed(),
       _loadWellbeing(),
       _loadPillarLogs(),
     ]);
 
-    // AI config + queue boot (loads persisted jobs, recovers orphans).
-    // Awaited so the boot is deterministic (no dangling futures that could
-    // outlive the DB handle); failure is guarded inside load().
-    await ref.read(aiConfigProvider.notifier).load();
+    // AI config + queue boot (reuses the prefetched settings map).
+    await ref.read(aiConfigProvider.notifier).load(prefetched: settingsMap);
 
     // Compression queue boot (mirror pattern, crash-proof).
     try {
@@ -297,9 +302,8 @@ class StorageNotifier extends Notifier<AppData> {
       pillars: pillars,
       adviceCards: adviceCards,
       lastLogDate: lastLog,
-      feed: deferred[2] as FeedState,
-      wellbeing: deferred[3] as List<WellbeingCheckin>,
-      pillarLogs: deferred[4] as List<PillarLog>,
+      wellbeing: deferred[2] as List<WellbeingCheckin>,
+      pillarLogs: deferred[3] as List<PillarLog>,
     );
     logStartup.info('loadAllData done');
   }
@@ -322,63 +326,110 @@ class StorageNotifier extends Notifier<AppData> {
     }
   }
 
-  Future<PreferencesState> _loadSettings() async {
-    final service = ref.read(settingsServiceProvider);
+  Future<Map<String, String>> _loadAllSettingsMap() async {
     try {
-      final lastReflection = await service.getInt(
+      return await ref.read(settingsServiceProvider).getAll();
+    } catch (e) {
+      logStorage.error('settings table load failed', e);
+      return const {};
+    }
+  }
+
+  PreferencesState _parseSettings(Map<String, String> map) {
+    try {
+      final lastReflection = SettingsService.intFromMap(
+        map,
         SettingsKeys.lastReflectionDate,
         0,
       );
       return PreferencesState(
-        fontIndex: await service.getInt(SettingsKeys.userFontIdx, 0),
-        sizeIndex: await service.getInt(SettingsKeys.userSizeIdx, 1),
-        useBiometrics: await service.getBool(SettingsKeys.useBiometrics, true),
-        enableHaptics: await service.getBool(SettingsKeys.enableHaptics, true),
-        lockTimeoutMins: await service.getInt(SettingsKeys.lockTimeoutMins, 3),
-        vlogQuality: await service.getString(SettingsKeys.vlogQuality, '1080p'),
-        compressionPreset: await service.getString(
+        fontIndex: SettingsService.intFromMap(map, SettingsKeys.userFontIdx, 0),
+        sizeIndex: SettingsService.intFromMap(map, SettingsKeys.userSizeIdx, 1),
+        useBiometrics: SettingsService.boolFromMap(
+          map,
+          SettingsKeys.useBiometrics,
+          true,
+        ),
+        enableHaptics: SettingsService.boolFromMap(
+          map,
+          SettingsKeys.enableHaptics,
+          true,
+        ),
+        lockTimeoutMins: SettingsService.intFromMap(
+          map,
+          SettingsKeys.lockTimeoutMins,
+          3,
+        ),
+        vlogQuality: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.vlogQuality,
+          '1080p',
+        ),
+        compressionPreset: SettingsService.stringFromMap(
+          map,
           SettingsKeys.compressionPreset,
           'balanced',
         ),
-        devMode: await service.getBool(SettingsKeys.devMode, false),
-        debugLayout: await service.getBool(SettingsKeys.debugLayout, false),
-        preferPinAuth: await service.getBool(SettingsKeys.preferPinAuth, false),
-        logMode: await service.getBool(SettingsKeys.logMode, kDebugMode),
+        devMode: SettingsService.boolFromMap(map, SettingsKeys.devMode, false),
+        debugLayout: SettingsService.boolFromMap(
+          map,
+          SettingsKeys.debugLayout,
+          false,
+        ),
+        preferPinAuth: SettingsService.boolFromMap(
+          map,
+          SettingsKeys.preferPinAuth,
+          false,
+        ),
+        logMode: SettingsService.boolFromMap(
+          map,
+          SettingsKeys.logMode,
+          kDebugMode,
+        ),
         lastReflectionDate: lastReflection == 0 ? null : lastReflection,
-        autoGenerateSummaries: await service.getBool(
+        autoGenerateSummaries: SettingsService.boolFromMap(
+          map,
           SettingsKeys.autoGenerateSummaries,
           true,
         ),
-        enableLiquidGlass: await service.getBool(
+        enableLiquidGlass: SettingsService.boolFromMap(
+          map,
           SettingsKeys.enableLiquidGlass,
           true,
         ),
-        promptMasteries: await service.getBool(
+        promptMasteries: SettingsService.boolFromMap(
+          map,
           SettingsKeys.promptMasteries,
           true,
         ),
       );
     } catch (e) {
-      logStorage.error('settings load failed', e);
+      logStorage.error('settings parse failed', e);
       return const PreferencesState();
     }
   }
 
-  /// Loads the persisted streak state (CURRENT_STREAK / LAST_WIN_DATE /
-  /// STREAK_HISTORY) — runs as part of the critical boot phase.
-  Future<StreakState> _loadStreak() async {
-    final service = ref.read(settingsServiceProvider);
+  StreakState _parseStreak(Map<String, String> map) {
     try {
       return StreakState(
-        currentStreak: await service.getInt(SettingsKeys.currentStreak, 0),
-        lastWinDate: await service.getString(SettingsKeys.lastWinDate, ''),
-        streakHistory: (await service.getJsonList(
+        currentStreak: SettingsService.intFromMap(
+          map,
+          SettingsKeys.currentStreak,
+          0,
+        ),
+        lastWinDate: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.lastWinDate,
+          '',
+        ),
+        streakHistory: SettingsService.jsonListFromMap(
+          map,
           SettingsKeys.streakHistory,
-          [],
-        )).whereType<String>().toList(),
+          const [],
+        ).whereType<String>().toList(),
       );
     } catch (e) {
-      logStorage.error('streak load failed', e);
+      logStorage.error('streak parse failed', e);
       return const StreakState();
     }
   }
@@ -436,23 +487,28 @@ class StorageNotifier extends Notifier<AppData> {
     await completeCheckin(entry.updatedAt);
   }
 
-  Future<FeedState> _loadFeed() async {
-    final service = ref.read(settingsServiceProvider);
+  FeedState _parseFeed(Map<String, String> map) {
     try {
-      final comments = await service.getJsonMap(SettingsKeys.feedComments, {});
+      final comments = SettingsService.jsonMapFromMap(
+        map,
+        SettingsKeys.feedComments,
+        const {},
+      );
       return FeedState(
-        bookmarkedNoteIds: (await service.getJsonList(
+        bookmarkedNoteIds: SettingsService.jsonListFromMap(
+          map,
           SettingsKeys.bookmarkedNoteIds,
-          [],
-        )).whereType<String>().toList(),
+          const [],
+        ).whereType<String>().toList(),
         feedComments: comments.map((k, v) => MapEntry(k, '$v')),
-        autoPlayFeedVideos: await service.getBool(
+        autoPlayFeedVideos: SettingsService.boolFromMap(
+          map,
           SettingsKeys.autoPlayFeedVideos,
           true,
         ),
       );
     } catch (e) {
-      logStorage.error('feed load failed', e);
+      logStorage.error('feed parse failed', e);
       return const FeedState();
     }
   }
@@ -705,8 +761,25 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> updateNote(String id, Map<String, Object?> updates) async {
     final repo = ref.read(notesRepositoryProvider);
     await repo.updateNote(id, updates);
-    final all = await repo.getAllNotes();
-    state = state.copyWith(notes: all);
+    var found = false;
+    final updatedNotes = [
+      for (final n in state.notes)
+        if (n.id == id)
+          (() {
+            found = true;
+            return SavedNote.fromRow({...n.toRow(), ...updates}) ?? n;
+          })()
+        else
+          n,
+    ];
+    if (found) {
+      state = state.copyWith(notes: updatedNotes);
+    } else {
+      final fetched = await repo.getNoteById(id);
+      if (fetched != null) {
+        state = state.copyWith(notes: [fetched, ...state.notes]);
+      }
+    }
   }
 
   Future<void> deleteNote(String id) async {
@@ -740,8 +813,25 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> updatePerson(String id, Map<String, Object?> updates) async {
     final repo = ref.read(personsRepositoryProvider);
     await repo.updatePerson(id, updates);
-    final all = await repo.getAllPersons();
-    state = state.copyWith(persons: all);
+    var found = false;
+    final updatedPersons = [
+      for (final p in state.persons)
+        if (p.id == id)
+          (() {
+            found = true;
+            return Person.fromRow({...p.toRow(), ...updates}) ?? p;
+          })()
+        else
+          p,
+    ];
+    if (found) {
+      state = state.copyWith(persons: updatedPersons);
+    } else {
+      final fetched = await repo.getPersonById(id);
+      if (fetched != null) {
+        state = state.copyWith(persons: [fetched, ...state.persons]);
+      }
+    }
   }
 
   Future<void> deletePerson(String id) async {
@@ -764,8 +854,23 @@ class StorageNotifier extends Notifier<AppData> {
   Future<void> updateVlog(String id, Map<String, Object?> updates) async {
     final repo = ref.read(vlogsRepositoryProvider);
     await repo.updateVlog(id, updates);
-    final all = await repo.getAllVlogs();
-    state = state.copyWith(vlogs: all);
+    var found = false;
+    final updatedVlogs = [
+      for (final v in state.vlogs)
+        if (v.id == id)
+          (() {
+            found = true;
+            return SavedVlog.fromRow({...v.toRow(), ...updates}) ?? v;
+          })()
+        else
+          v,
+    ];
+    if (found) {
+      state = state.copyWith(vlogs: updatedVlogs);
+    } else {
+      final all = await repo.getAllVlogs();
+      state = state.copyWith(vlogs: all);
+    }
   }
 
   Future<void> deleteVlog(String id) async {

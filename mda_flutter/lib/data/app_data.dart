@@ -3,6 +3,8 @@
 /// preferences, feed, vlogs, pillars) in one immutable snapshot.
 library;
 
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
+
 import 'models/person.dart';
 import 'models/pillar.dart';
 import 'models/saved_note.dart';
@@ -84,6 +86,47 @@ class PreferencesState {
       promptMasteries: promptMasteries ?? this.promptMasteries,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PreferencesState &&
+          fontIndex == other.fontIndex &&
+          sizeIndex == other.sizeIndex &&
+          useBiometrics == other.useBiometrics &&
+          enableHaptics == other.enableHaptics &&
+          lockTimeoutMins == other.lockTimeoutMins &&
+          vlogQuality == other.vlogQuality &&
+          compressionPreset == other.compressionPreset &&
+          devMode == other.devMode &&
+          debugLayout == other.debugLayout &&
+          mapEquals(visionBoard, other.visionBoard) &&
+          preferPinAuth == other.preferPinAuth &&
+          logMode == other.logMode &&
+          lastReflectionDate == other.lastReflectionDate &&
+          autoGenerateSummaries == other.autoGenerateSummaries &&
+          enableLiquidGlass == other.enableLiquidGlass &&
+          promptMasteries == other.promptMasteries;
+
+  @override
+  int get hashCode => Object.hash(
+    fontIndex,
+    sizeIndex,
+    useBiometrics,
+    enableHaptics,
+    lockTimeoutMins,
+    vlogQuality,
+    compressionPreset,
+    devMode,
+    debugLayout,
+    visionBoard == null ? null : Object.hashAll(visionBoard!.entries),
+    preferPinAuth,
+    logMode,
+    lastReflectionDate,
+    autoGenerateSummaries,
+    enableLiquidGlass,
+    promptMasteries,
+  );
 }
 
 class StreakState {
@@ -108,6 +151,18 @@ class StreakState {
       streakHistory: streakHistory ?? this.streakHistory,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StreakState &&
+          currentStreak == other.currentStreak &&
+          lastWinDate == other.lastWinDate &&
+          listEquals(streakHistory, other.streakHistory);
+
+  @override
+  int get hashCode =>
+      Object.hash(currentStreak, lastWinDate, Object.hashAll(streakHistory));
 }
 
 class FeedState {
@@ -132,6 +187,21 @@ class FeedState {
       autoPlayFeedVideos: autoPlayFeedVideos ?? this.autoPlayFeedVideos,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FeedState &&
+          autoPlayFeedVideos == other.autoPlayFeedVideos &&
+          listEquals(bookmarkedNoteIds, other.bookmarkedNoteIds) &&
+          mapEquals(feedComments, other.feedComments);
+
+  @override
+  int get hashCode => Object.hash(
+    autoPlayFeedVideos,
+    Object.hashAll(bookmarkedNoteIds),
+    Object.hashAll(feedComments.entries),
+  );
 }
 
 /// Immutable snapshot of the whole app state (fresh-read source for actions).

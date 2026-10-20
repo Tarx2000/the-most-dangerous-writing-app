@@ -168,7 +168,7 @@ class _MasteryRatingSheetState extends ConsumerState<MasteryRatingSheet> {
                 ChoiceChip(
                   label: Text(value ? 'Yes' : 'No'),
                   selected: _boolean == value,
-                  selectedColor: const Color(0xFF444444),
+                  selectedColor: AppColors.borderStrong,
                   onSelected: (_) => setState(() => _boolean = value),
                 ),
             ],

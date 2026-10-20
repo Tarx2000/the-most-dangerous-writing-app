@@ -132,7 +132,7 @@ class _CustomSliderState extends State<CustomSlider> {
                     child: Container(
                       height: 6,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF242424),
+                        color: AppColors.sliderTrack,
                         borderRadius: BorderRadius.circular(3),
                       ),
                     ),
@@ -184,8 +184,8 @@ class _CustomSliderState extends State<CustomSlider> {
                                       decoration: BoxDecoration(
                                         color:
                                             widget.value == null && !_dragging
-                                            ? const Color(0xFF777777)
-                                            : const Color(0xFFF2F2F2),
+                                            ? AppColors.sliderThumbUnset
+                                            : AppColors.sliderThumbActive,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                     ),
@@ -201,7 +201,7 @@ class _CustomSliderState extends State<CustomSlider> {
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: widget.value == null && !_dragging
-                                          ? const Color(0xFF777777)
+                                          ? AppColors.sliderThumbUnset
                                           : AppColors.textPrimary,
                                     ),
                                   ),

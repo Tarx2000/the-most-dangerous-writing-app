@@ -32,7 +32,7 @@ class GlassPill extends ConsumerWidget {
       preferencesProvider.select((p) => p.enableLiquidGlass),
     );
     final active = selected ?? false;
-    final foreground = active ? const Color(0xFFFFA09A) : AppColors.textBody;
+    final foreground = active ? AppColors.dangerCoral : AppColors.textBody;
     final padding = compact ? 11.0 : 15.0;
     final textStyle = DefaultTextStyle.of(context).style.merge(
       TextStyle(fontSize: compact ? 12 : 13, fontWeight: FontWeight.w600),
@@ -47,16 +47,19 @@ class GlassPill extends ConsumerWidget {
             .clamp(44.0, double.infinity);
     final height = (measure.height + 20).clamp(44.0, double.infinity);
     measure.dispose();
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 17, color: foreground),
-          const SizedBox(width: 7),
+    final content = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 17, color: foreground),
+            const SizedBox(width: 7),
+          ],
+          Text(label, style: textStyle.copyWith(color: foreground)),
         ],
-        Text(label, style: textStyle.copyWith(color: foreground)),
-      ],
+      ),
     );
     return Semantics(
       label: semanticLabel ?? label,
@@ -82,6 +85,7 @@ class GlassPill extends ConsumerWidget {
               child: Container(
                 width: width,
                 height: height,
+                padding: EdgeInsets.symmetric(horizontal: padding),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: active ? AppColors.dangerTint : AppColors.glassSurface,

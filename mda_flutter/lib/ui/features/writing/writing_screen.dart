@@ -2,13 +2,12 @@
 ///
 /// Key implementation choices (Flutter-native, same behavior):
 ///  - The vaporize preview is rendered INSIDE the TextField via
-///    `buildTextSpan` — the last 8 words' color alpha decays with the idle
-///    ratio, exactly like the RN overlay but with zero alignment risk.
+///    `buildTextSpan` — all visible words' color alpha decays simultaneously
+///    with the idle ratio, with zero alignment risk.
 ///  - The danger overlay + heartbeat are painted on their own layer
 ///    (RepaintBoundary + CustomPainter), so 10 Hz idle ticks never rebuild
 ///    the text field.
-///  - Keyboard "pan" (no resize): the Scaffold never resizes for the
-///    keyboard; Android `adjustPan` (manifest) pans the window instead.
+///  - Keyboard handling: the Scaffold keeps the canvas stable while typing.
 library;
 
 import 'package:flutter/material.dart';
@@ -185,10 +184,9 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
   }
 
   void _handleTextChange(String text) {
-    // Tweet mode: hard-block past the 45-word limit (SPEC §8).
+    // Tweet mode: hard-block past the 45-word limit while preserving newlines (SPEC §8).
     if (_isTweetMode && countWords(text) > tweetThreshold) {
-      final words = text.trim().split(RegExp(r'\s+'));
-      final blocked = words.take(tweetThreshold).join(' ');
+      final blocked = truncateToWords(text, tweetThreshold);
       _controller.value = TextEditingValue(
         text: blocked,
         selection: TextSelection.collapsed(offset: blocked.length),
@@ -357,7 +355,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                         },
                       ),
                       // EditableText: buildTextSpan enables the inline
-                      // vaporize effect (last 8 words' alpha decay).
+                      // simultaneous vaporize effect across all visible words.
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 16, 20, 200),
                         child: VaporizingEditableText(
@@ -418,7 +416,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                 ),
               ],
             ),
-            // Danger ambience (side fog/blur/heartbeat — own layer)
+            // Danger ambience (4-sided edge fog/blur/heartbeat — own layer)
             if (!dead) Positioned.fill(child: DangerOverlay(engine: _engine)),
             // Death overlay
             DeathOverlay(

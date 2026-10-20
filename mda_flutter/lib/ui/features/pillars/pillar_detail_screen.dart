@@ -17,6 +17,7 @@ import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
 import '../../../data/security_providers.dart';
 import '../../core/widgets/glass_action.dart';
+import '../../core/widgets/rating_unlock.dart';
 import 'mastery_rating_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
@@ -86,23 +87,24 @@ class _PillarDetailScreenState extends ConsumerState<PillarDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(securityControllerProvider.select((c) => c.tierVersion.value));
+    final isUnlocked = ref.watch(isNotesUnlockedProvider);
     final security = ref.read(securityControllerProvider);
-    if (!security.isNotesUnlocked) {
+    if (!isUnlocked) {
       return Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
-          child: Center(
-            child: FilledButton(
-              onPressed: () async {
-                final prefs = ref.read(preferencesProvider);
-                await security.unlockNotes(
-                  preferPinAuth: prefs.preferPinAuth,
-                  useBiometrics: prefs.useBiometrics,
-                );
-              },
-              child: const Text('Unlock Masteries'),
-            ),
+          child: VaultLockCard(
+            title: 'Masteries Protected',
+            subtitle: 'Unlock with your fingerprint or PIN to see your growth.',
+            buttonLabel: 'Unlock Masteries',
+            onUnlock: () async {
+              final prefs = ref.read(preferencesProvider);
+              final ok = await security.unlockNotes(
+                preferPinAuth: prefs.preferPinAuth,
+                useBiometrics: prefs.useBiometrics,
+              );
+              if (ok && mounted) vibrate(HapticPatterns.unlockSuccess);
+            },
           ),
         ),
       );
@@ -670,9 +672,9 @@ class _DetailEditFormState extends State<_DetailEditForm> {
             ),
           ),
           const SizedBox(height: 16),
-          Text(
+          const Text(
             'Saving bumps the version when title or description changes.',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
           const SizedBox(height: 12),
           AnimatedScaleButton(
@@ -736,12 +738,9 @@ class _DetailEditFormState extends State<_DetailEditForm> {
           ),
           if (_confirmDelete) ...[
             const SizedBox(height: 10),
-            Text(
+            const Text(
               'This deletes the mastery and all its history forever.',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 8),
             AnimatedScaleButton(

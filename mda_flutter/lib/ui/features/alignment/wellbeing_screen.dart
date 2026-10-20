@@ -189,7 +189,7 @@ class _WellbeingScreenState extends ConsumerState<WellbeingScreen> {
                             style: TextStyle(color: AppColors.textBodyDim),
                           ),
                           value: draft.fullWheel,
-                          activeTrackColor: const Color(0xFF777777),
+                          activeTrackColor: AppColors.sliderThumbUnset,
                           onChanged: edit.setFullWheel,
                         ),
                         if (draft.fullWheel) ...[
@@ -243,7 +243,12 @@ class _WellbeingScreenState extends ConsumerState<WellbeingScreen> {
                           Center(child: LifeWheel(values: draft.domains)),
                         const SizedBox(height: 12),
                         GlassAction(
-                          label: ref.watch(preferencesProvider).promptMasteries
+                          label:
+                              ref.watch(
+                                preferencesProvider.select(
+                                  (p) => p.promptMasteries,
+                                ),
+                              )
                               ? 'Masteries & reflections'
                               : 'Write a reflection',
                           icon: Icons.arrow_forward_rounded,
@@ -308,10 +313,12 @@ class RatingRow extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
     decoration: BoxDecoration(
-      color: const Color(0xFF0A0A0A),
+      color: AppColors.surfaceDark,
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
-        color: highlighted ? const Color(0xFF777777) : const Color(0xFF252525),
+        color: highlighted
+            ? AppColors.sliderThumbUnset
+            : AppColors.borderSubtle,
       ),
     ),
     child: Column(

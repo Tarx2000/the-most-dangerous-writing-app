@@ -11,10 +11,15 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/mdi.dart';
 import 'animated_scale_button.dart';
 
 class CalendarView extends StatefulWidget {
-  const CalendarView({super.key, required this.currentStreak, required this.streakHistory});
+  const CalendarView({
+    super.key,
+    required this.currentStreak,
+    required this.streakHistory,
+  });
 
   final int currentStreak;
   final List<String> streakHistory;
@@ -43,7 +48,9 @@ class CalendarViewState extends State<CalendarView> {
     // stops at the current month (offset 0). Without the clamp the label
     // could show a FUTURE month while the ring logic still compares days
     // against `now` — the "eingekreiste 21" symptom from the bug report.
-    setState(() => _monthOffset = CalendarViewState.clampOffset(_monthOffset + delta));
+    setState(
+      () => _monthOffset = CalendarViewState.clampOffset(_monthOffset + delta),
+    );
     _pager.jumpToPage(1); // always recenter on the new "current" month
   }
 
@@ -90,8 +97,22 @@ class CalendarViewState extends State<CalendarView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Hero streak header
-        const Text('🔥', style: TextStyle(fontSize: 36)),
-        const SizedBox(height: 12),
+        Container(
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.dangerTint,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.dangerBorder, width: 1),
+          ),
+          child: Icon(
+            Mdi.get('fire'),
+            color: AppColors.primaryAction,
+            size: 30,
+          ),
+        ),
+        const SizedBox(height: 14),
         Text.rich(
           TextSpan(
             style: const TextStyle(
@@ -182,8 +203,11 @@ class CalendarViewState extends State<CalendarView> {
                       }
                     },
                     itemBuilder: (context, page) {
-                      final monthDate =
-                          DateTime(month.year, month.month - 1 + page, 1);
+                      final monthDate = DateTime(
+                        month.year,
+                        month.month - 1 + page,
+                        1,
+                      );
                       return _MonthGrid(
                         year: monthDate.year,
                         month: monthDate.month,
@@ -228,8 +252,18 @@ class CalendarViewState extends State<CalendarView> {
 
   static String _monthName(int month) {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return months[month - 1];
   }
@@ -271,39 +305,42 @@ class _MonthGrid extends StatelessWidget {
       final dateStr =
           '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
       final hasRecord = recordDays.contains(dateStr);
-      final isToday = showTodayRing &&
+      final isToday =
+          showTodayRing &&
           now.year == year &&
           now.month == month &&
           now.day == day;
 
-      cells.add(Container(
-        key: ValueKey('cal-day-$dateStr'),
-        width: daySize,
-        height: daySize,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: hasRecord ? AppColors.primaryAction : null,
-          shape: BoxShape.circle,
-          border: isToday
-              ? Border.all(
-                  color: AppColors.textPrimary,
-                  width: hasRecord ? 2 : 1.5,
-                )
-              : null,
-        ),
-        child: Text(
-          '$day',
-          style: TextStyle(
-            color: hasRecord
-                ? AppColors.primaryActionText
-                : isToday
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-            fontSize: 14,
-            fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+      cells.add(
+        Container(
+          key: ValueKey('cal-day-$dateStr'),
+          width: daySize,
+          height: daySize,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: hasRecord ? AppColors.primaryAction : null,
+            shape: BoxShape.circle,
+            border: isToday
+                ? Border.all(
+                    color: AppColors.textPrimary,
+                    width: hasRecord ? 2 : 1.5,
+                  )
+                : null,
+          ),
+          child: Text(
+            '$day',
+            style: TextStyle(
+              color: hasRecord
+                  ? AppColors.primaryActionText
+                  : isToday
+                  ? AppColors.textPrimary
+                  : AppColors.textSecondary,
+              fontSize: 14,
+              fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+            ),
           ),
         ),
-      ));
+      );
     }
 
     return Center(

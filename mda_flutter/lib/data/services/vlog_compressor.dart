@@ -64,10 +64,10 @@ class VlogCompressor {
   ) async {
     final preset = presetFor(presetId);
     final input = File(inputUri);
-    if (!input.existsSync()) {
+    if (!await input.exists()) {
       throw StateError('input video missing: $inputUri');
     }
-    final originalSize = input.lengthSync();
+    final originalSize = await input.length();
     if (preset == null || preset.maxSize <= 0 || preset.bitrate <= 0) {
       return CompressionResult(
         outputUri: inputUri,
@@ -102,10 +102,10 @@ class VlogCompressor {
     }
 
     final compressed = File(info.path!);
-    if (!compressed.existsSync()) {
+    if (!await compressed.exists()) {
       throw StateError('video compression output file missing');
     }
-    final compressedSize = compressed.lengthSync();
+    final compressedSize = await compressed.length();
 
     // Output larger than the original → keep the original (no data loss).
     if (compressedSize >= originalSize) {
@@ -119,13 +119,18 @@ class VlogCompressor {
       );
     }
 
-    // Move to destination directory alongside original file.
+    // Move atomically to destination directory alongside original file; fall
+    // back to copy + delete only when crossing filesystem boundaries.
     final finalPath = p.join(
       p.dirname(inputUri),
       'compressed_${generateId()}.mp4',
     );
-    await compressed.copy(finalPath);
-    await compressed.delete();
+    try {
+      await compressed.rename(finalPath);
+    } catch (_) {
+      await compressed.copy(finalPath);
+      await compressed.delete();
+    }
     await input.delete();
     onProgress?.call(1);
 

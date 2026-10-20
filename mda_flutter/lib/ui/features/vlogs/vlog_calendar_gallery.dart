@@ -54,25 +54,14 @@ class _VlogCalendarGalleryState extends ConsumerState<VlogCalendarGallery> {
 
   /// Horizontal swipe state for month navigation (RN gesture parity:
   /// threshold 20 % of the grid width, spring-back when not committed).
-  double _dragDx = 0;
+  /// Uses a ValueNotifier so dragging never rebuilds the 31-day grid.
+  final ValueNotifier<double> _dragDx = ValueNotifier<double>(0);
   static const double _swipeFraction = 0.2;
 
-  /// Vlogs grouped by LOCAL calendar day from `timestamp`
-  /// (RN `vlogsByDate`: key `year-month-day`, each day newest first).
-  /// `timestamp` (not the `dateStr` string) is authoritative: the RN app's
-  /// own backups carry German display strings (`18.4.2026 14:20`) that never
-  /// match a `YYYY-MM-DD` lookup — grouping by them hides every video.
-  Map<String, List<SavedVlog>> _byDay(List<SavedVlog> vlogs) {
-    final map = <String, List<SavedVlog>>{};
-    for (final vlog in vlogs) {
-      final d = DateTime.fromMillisecondsSinceEpoch(vlog.timestamp);
-      final key = '${d.year}-${d.month}-${d.day}';
-      map.putIfAbsent(key, () => []).add(vlog);
-    }
-    for (final day in map.values) {
-      day.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    }
-    return map;
+  @override
+  void dispose() {
+    _dragDx.dispose();
+    super.dispose();
   }
 
   DateTime get _displayMonth {
@@ -81,9 +70,9 @@ class _VlogCalendarGalleryState extends ConsumerState<VlogCalendarGallery> {
   }
 
   void _goToMonth(int delta) {
+    _dragDx.value = 0;
     setState(() {
       _monthOffset = (_monthOffset + delta).clamp(0, 1200);
-      _dragDx = 0;
     });
   }
 
@@ -94,7 +83,7 @@ class _VlogCalendarGalleryState extends ConsumerState<VlogCalendarGallery> {
   @override
   Widget build(BuildContext context) {
     final vlogs = ref.watch(vlogsProvider);
-    final byDay = _byDay(vlogs);
+    final byDay = groupVlogsByLocalDay(vlogs);
     final month = _displayMonth;
     final monthLabel = _monthName(month.month);
     final totalSeconds = vlogs.fold<int>(0, (sum, v) => sum + v.durationSec);
@@ -157,21 +146,26 @@ class _VlogCalendarGalleryState extends ConsumerState<VlogCalendarGallery> {
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onHorizontalDragUpdate: (details) {
-              setState(() => _dragDx += details.delta.dx);
+              _dragDx.value += details.delta.dx;
             },
             onHorizontalDragEnd: (details) {
               final threshold = screenWidth * _swipeFraction;
-              if (_dragDx > threshold) {
+              final dx = _dragDx.value;
+              if (dx > threshold) {
                 _goToMonth(1); // swipe right → older month
-              } else if (_dragDx < -threshold && canGoForward) {
+              } else if (dx < -threshold && canGoForward) {
                 _goToMonth(-1); // swipe left → newer month
               } else {
-                setState(() => _dragDx = 0); // spring back
+                _dragDx.value = 0; // spring back
               }
             },
-            onHorizontalDragCancel: () => setState(() => _dragDx = 0),
-            child: Transform.translate(
-              offset: Offset(_dragDx * 0.15, 0),
+            onHorizontalDragCancel: () => _dragDx.value = 0,
+            child: ValueListenableBuilder<double>(
+              valueListenable: _dragDx,
+              builder: (context, dx, child) => Transform.translate(
+                offset: Offset(dx * 0.15, 0),
+                child: child,
+              ),
               child: _MonthGrid(
                 key: ValueKey('vlog-month-${month.year}-${month.month}'),
                 year: month.year,
@@ -302,10 +296,9 @@ class _MonthGrid extends ConsumerWidget {
     }
 
     for (var day = 1; day <= daysInMonth; day++) {
-      // RN key format `year-month-day` (matches [_byDay]).
+      // RN key format `year-month-day` (matches [groupVlogsByLocalDay]).
       final dayVlogs = byDay['$year-$month-$day'] ?? const [];
-      final isToday =
-          now.year == year && now.month == month && now.day == day;
+      final isToday = now.year == year && now.month == month && now.day == day;
       if (dayVlogs.isNotEmpty) {
         // Lazily backfill a missing thumbnail (RN `ThumbnailFetcher`):
         // fire-and-forget, persisted via updateVlog, never blocks the grid.
@@ -381,74 +374,77 @@ class _MonthGrid extends ConsumerWidget {
                             fit: StackFit.expand,
                             children: [
                               _DayThumbnail(vlog: dayVlogs.first),
-                          // Day number
-                          Positioned(
-                            top: 3,
-                            left: 5,
-                            child: Text(
-                              '$day',
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                shadows: [
-                                  Shadow(color: Colors.black, blurRadius: 3),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // Duration badge
-                          Positioned(
-                            bottom: 3,
-                            right: 4,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.overlayVideoStrong,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                _durationLabel(dayVlogs.first.durationSec),
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Stack counter
-                          if (dayVlogs.length > 1)
-                            Positioned(
-                              top: 3,
-                              right: 4,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryAction,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
+                              // Day number
+                              Positioned(
+                                top: 3,
+                                left: 5,
                                 child: Text(
-                                  '${dayVlogs.length}',
+                                  '$day',
                                   style: const TextStyle(
-                                    color: AppColors.primaryActionText,
-                                    fontSize: 10,
+                                    color: AppColors.textPrimary,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w800,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black,
+                                        blurRadius: 3,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                              // Duration badge
+                              Positioned(
+                                bottom: 3,
+                                right: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.overlayVideoStrong,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    _durationLabel(dayVlogs.first.durationSec),
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Stack counter
+                              if (dayVlogs.length > 1)
+                                Positioned(
+                                  top: 3,
+                                  right: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryAction,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${dayVlogs.length}',
+                                      style: const TextStyle(
+                                        color: AppColors.primaryActionText,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                 ),
+              ),
             );
           },
         ),
@@ -479,6 +475,9 @@ class _MonthGrid extends ConsumerWidget {
           const SizedBox(height: 10),
           Expanded(
             child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.paddingOf(context).bottom + 110,
+              ),
               child: Wrap(spacing: 0, runSpacing: 6, children: cells),
             ),
           ),
@@ -509,10 +508,11 @@ class _DayThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final path = vlog.thumbnailPath;
-    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+    if (path != null && path.isNotEmpty) {
       return Image.file(
         File(path),
         fit: BoxFit.cover,
+        cacheWidth: 240,
         errorBuilder: (_, _, _) => _placeholderIcon(),
       );
     }
@@ -538,8 +538,7 @@ class _ThumbnailBackfill extends ConsumerStatefulWidget {
   final SavedVlog vlog;
 
   @override
-  ConsumerState<_ThumbnailBackfill> createState() =>
-      _ThumbnailBackfillState();
+  ConsumerState<_ThumbnailBackfill> createState() => _ThumbnailBackfillState();
 }
 
 class _ThumbnailBackfillState extends ConsumerState<_ThumbnailBackfill> {
@@ -558,7 +557,8 @@ class _ThumbnailBackfillState extends ConsumerState<_ThumbnailBackfill> {
     if (!mounted) return;
     final vlog = widget.vlog;
     final video = File(vlog.filePath);
-    if (!video.existsSync()) return;
+    if (!await video.exists()) return;
+    if (!mounted) return;
     final thumb = await ref
         .read(thumbnailServiceProvider)
         .getThumbnail(vlogId: vlog.id, videoPath: vlog.filePath);
@@ -578,12 +578,7 @@ Map<String, List<SavedVlog>> groupVlogsByLocalDay(List<SavedVlog> vlogs) {
   final map = <String, List<SavedVlog>>{};
   for (final vlog in vlogs) {
     final d = DateTime.fromMillisecondsSinceEpoch(vlog.timestamp);
-    map
-        .putIfAbsent(
-          '${d.year}-${d.month}-${d.day}',
-          () => [],
-        )
-        .add(vlog);
+    map.putIfAbsent('${d.year}-${d.month}-${d.day}', () => []).add(vlog);
   }
   for (final day in map.values) {
     day.sort((a, b) => b.timestamp.compareTo(a.timestamp));

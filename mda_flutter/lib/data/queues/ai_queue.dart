@@ -206,6 +206,7 @@ class AiQueueManager {
     _config = config;
     _jobs.clear();
     _notifications.clear();
+    await logger.load();
     await _loadPersisted();
     _recoverOrphans();
     await _migrateLegacyQueue();

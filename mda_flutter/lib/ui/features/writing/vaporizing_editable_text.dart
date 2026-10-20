@@ -1,7 +1,8 @@
-/// VaporizingEditableText — an `EditableText` whose text span renders the
-/// vaporize preview inline: the last [wordsToVaporize] words' alpha decays
-/// with the idle ratio (SPEC §8). Replaces the RN overlay approach with zero
-/// alignment risk — the effect lives in the real text span.
+/// VaporizingEditableText — an `EditableText` (plus reusable
+/// `VaporizingTextEditingController`) whose text span renders the simultaneous
+/// vaporize preview inline: all visible words' alpha decays smoothly together
+/// with the idle ratio. Replaces the RN overlay approach with zero alignment
+/// risk and O(1) span construction.
 ///
 /// IME composition is preserved: while a composing range is active the
 /// default span logic takes over (underline etc.).
@@ -11,6 +12,94 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/use_cases/session_engine.dart';
+
+/// Shared opacity curve for simultaneous word vaporization.
+/// Starts fading at `ratio = 0.30` and reaches [vaporizeMinOpacity] at `0.95`.
+double vaporizeOpacityForRatio(double ratio) {
+  if (ratio <= 0.30) return 1.0;
+  if (ratio >= 0.95) return vaporizeMinOpacity;
+  final progress = ((ratio - 0.30) / 0.65).clamp(0.0, 1.0);
+  // Smooth cubic ease for natural simultaneous fade-out across all words.
+  final eased = progress * progress * (3.0 - 2.0 * progress);
+  return 1.0 - eased * (1.0 - vaporizeMinOpacity);
+}
+
+/// Shared O(1) [TextSpan] builder that fades all displayed words simultaneously.
+TextSpan buildVaporizingTextSpan({
+  required String text,
+  required double ratio,
+  TextStyle? style,
+}) {
+  final base = style ?? const TextStyle();
+  if (text.isEmpty || ratio <= 0.30) {
+    return TextSpan(style: base, text: text);
+  }
+  final opacity = vaporizeOpacityForRatio(ratio);
+  final baseColor = base.color ?? AppColors.textInput;
+  return TextSpan(
+    style: base.copyWith(color: baseColor.withValues(alpha: opacity)),
+    text: text,
+  );
+}
+
+/// Reusable [TextEditingController] that brings simultaneous word vaporization
+/// to any standard [TextField] (e.g. Check-in Reflections).
+class VaporizingTextEditingController extends TextEditingController {
+  VaporizingTextEditingController({
+    super.text,
+    ValueNotifier<double>? idleRatioListenable,
+  }) {
+    this.idleRatioListenable = idleRatioListenable;
+  }
+
+  ValueNotifier<double>? _idleRatioListenable;
+  double _lastRatio = 0.0;
+
+  set idleRatioListenable(ValueNotifier<double>? listenable) {
+    if (_idleRatioListenable == listenable) return;
+    _idleRatioListenable?.removeListener(_onIdleTick);
+    _idleRatioListenable = listenable;
+    _lastRatio = _idleRatioListenable?.value ?? 0.0;
+    _idleRatioListenable?.addListener(_onIdleTick);
+  }
+
+  void _onIdleTick() {
+    final current = _idleRatioListenable?.value ?? 0.0;
+    final wasActive = _lastRatio > 0.30;
+    final isActive = current > 0.30;
+    _lastRatio = current;
+    if (wasActive || isActive) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (value.isComposingRangeValid && withComposing) {
+      return super.buildTextSpan(
+        context: context,
+        style: style,
+        withComposing: withComposing,
+      );
+    }
+    final ratio = _idleRatioListenable?.value ?? 0.0;
+    return buildVaporizingTextSpan(
+      text: value.text,
+      ratio: ratio,
+      style: style,
+    );
+  }
+
+  @override
+  void dispose() {
+    _idleRatioListenable?.removeListener(_onIdleTick);
+    super.dispose();
+  }
+}
 
 class VaporizingEditableText extends EditableText {
   VaporizingEditableText({
@@ -46,10 +135,12 @@ class VaporizingEditableText extends EditableText {
 
 class _VaporizingEditableTextState extends EditableTextState {
   VaporizingEditableText get _vWidget => widget as VaporizingEditableText;
+  double _lastRatio = 0.0;
 
   @override
   void initState() {
     super.initState();
+    _lastRatio = _vWidget.idleRatioListenable?.value ?? _vWidget.idleRatio;
     _vWidget.idleRatioListenable?.addListener(_onIdleTick);
   }
 
@@ -59,6 +150,7 @@ class _VaporizingEditableTextState extends EditableTextState {
     if (oldWidget is VaporizingEditableText &&
         oldWidget.idleRatioListenable != _vWidget.idleRatioListenable) {
       oldWidget.idleRatioListenable?.removeListener(_onIdleTick);
+      _lastRatio = _vWidget.idleRatioListenable?.value ?? _vWidget.idleRatio;
       _vWidget.idleRatioListenable?.addListener(_onIdleTick);
     }
   }
@@ -70,8 +162,14 @@ class _VaporizingEditableTextState extends EditableTextState {
   }
 
   void _onIdleTick() {
-    // Only rebuilds this specific EditableText widget on idle tick
-    if (mounted) setState(() {});
+    final current = _vWidget.idleRatioListenable?.value ?? _vWidget.idleRatio;
+    final wasActive = _lastRatio > 0.30;
+    final isActive = current > 0.30;
+    _lastRatio = current;
+    // Skip rebuilds while below the 0.30 vaporization threshold.
+    if ((wasActive || isActive) && mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -81,67 +179,11 @@ class _VaporizingEditableTextState extends EditableTextState {
     if (value.isComposingRangeValid) {
       return super.buildTextSpan();
     }
-    final base = widget.style;
     final ratio = _vWidget.idleRatioListenable?.value ?? _vWidget.idleRatio;
-    return _vaporizedSpan(
-      value.text,
-      ratio,
-      _vWidget.difficultyLimit,
-      base,
+    return buildVaporizingTextSpan(
+      text: value.text,
+      ratio: ratio,
+      style: widget.style,
     );
-  }
-
-  /// Non-destructive tokenization that preserves all whitespaces and newlines.
-  static List<String> _tokenize(String text) {
-    if (text.isEmpty) return const [];
-    final tokens = <String>[];
-    final regExp = RegExp(r'\S+|\s+');
-    for (final match in regExp.allMatches(text)) {
-      tokens.add(match.group(0)!);
-    }
-    return tokens;
-  }
-
-  /// Last 8 words decay per SPEC §8: word *i* from the end starts fading at
-  /// `min(0.85, 0.3 + i*0.05)` and is fully faded at `min(0.95, 0.5 + i*0.05)`
-  /// down to opacity 0.3.
-  static TextSpan _vaporizedSpan(
-    String text,
-    double ratio,
-    int difficultyLimit,
-    TextStyle base,
-  ) {
-    if (text.isEmpty) return TextSpan(style: base, text: '');
-    final tokens = _tokenize(text);
-    final wordCount = tokens.where((t) => RegExp(r'\S').hasMatch(t)).length;
-    var indexFromEnd = wordCount - 1;
-
-    final spans = <TextSpan>[];
-    for (final token in tokens) {
-      final isWord = RegExp(r'\S').hasMatch(token);
-      if (isWord && indexFromEnd < wordsToVaporize) {
-        final i = indexFromEnd;
-        indexFromEnd -= 1;
-        final startR = (0.3 + i * 0.05).clamp(0.0, 0.85);
-        final endR = (0.5 + i * 0.05).clamp(0.0, 0.95);
-        double opacity = 1.0;
-        if (ratio > startR) {
-          if (ratio >= endR) {
-            opacity = vaporizeMinOpacity;
-          } else {
-            final progress = (ratio - startR) / (endR - startR);
-            opacity = 1.0 - progress * (1.0 - vaporizeMinOpacity);
-          }
-        }
-        spans.add(TextSpan(
-          text: token,
-          style: base.copyWith(color: AppColors.textInput.withValues(alpha: opacity)),
-        ));
-      } else {
-        if (isWord) indexFromEnd -= 1;
-        spans.add(TextSpan(text: token, style: base));
-      }
-    }
-    return TextSpan(style: base, children: spans);
   }
 }

@@ -95,6 +95,8 @@ const List<String> backupScopes = allBackupScopes;
 const Set<String> settingSecretKeys = {
   'AI_OLLAMA_API_KEY',
   'AI_NEURALWATT_API_KEY',
+  'AI_CODEX_API_KEY',
+  'AI_OPENROUTER_API_KEY',
 };
 
 /// SharedPreferences / AsyncStorage allowlist that travels in backups.
@@ -1567,8 +1569,7 @@ class BackupService {
   /// is authoritative for verification. Real RN backups mix both (e.g. a
   /// compressed video whose row carries the pre-compression size), so never
   /// use one where the other belongs.
-  static _ZipLocation _locateEntry(String zipPath, String entryPath) {
-    final target = entryPath.replaceAll('\\', '/');
+  static ZipDirectory _readZipDirectory(String zipPath) {
     final dirInput = InputFileStream(zipPath);
     final directory = ZipDirectory();
     try {
@@ -1576,6 +1577,16 @@ class BackupService {
     } finally {
       dirInput.close();
     }
+    return directory;
+  }
+
+  static _ZipLocation _locateEntry(
+    String zipPath,
+    String entryPath, {
+    ZipDirectory? cachedDirectory,
+  }) {
+    final target = entryPath.replaceAll('\\', '/');
+    final directory = cachedDirectory ?? _readZipDirectory(zipPath);
     for (final header in directory.fileHeaders) {
       final name = header.filename.replaceAll('\\', '/');
       if (name == target || name.endsWith('/$target')) {
@@ -1691,10 +1702,10 @@ class BackupService {
     String stagingPath,
     List<Map<String, dynamic>> entries,
   ) async {
+    await _extractMediaWorker(zipPath, stagingPath, entries);
     final stagedBytes = <String, int>{};
     for (final raw in entries) {
       final entry = BackupFileEntry.fromJson(raw);
-      await _extractMediaWorker(zipPath, stagingPath, [raw]);
       final staged = File(
         p.join(
           stagingPath,
@@ -1716,6 +1727,7 @@ class BackupService {
     for (final folder in ['vlogs', 'vlog_thumbnails']) {
       await Directory(p.join(stagingPath, folder)).create(recursive: true);
     }
+    final cachedDirectory = entries.isEmpty ? null : _readZipDirectory(zipPath);
     // Checkpointed + resume-safe: skip files that are ALREADY staged
     // byte-exact (a previous attempt finished them before the kill — redoing
     // 1.3 GB after every interruption is what made retries hopeless).
@@ -1749,6 +1761,7 @@ class BackupService {
         entry.entryPath,
         outputPath,
         expectedSizeBytes: entry.sizeBytes,
+        cachedDirectory: cachedDirectory,
       );
     }
   }
@@ -1770,8 +1783,13 @@ class BackupService {
     String entryPath,
     String outputPath, {
     int? expectedSizeBytes,
+    ZipDirectory? cachedDirectory,
   }) async {
-    final location = _locateEntry(zipPath, entryPath);
+    final location = _locateEntry(
+      zipPath,
+      entryPath,
+      cachedDirectory: cachedDirectory,
+    );
     final partPath = '$outputPath.part';
     final raf = File(zipPath).openSync();
     try {

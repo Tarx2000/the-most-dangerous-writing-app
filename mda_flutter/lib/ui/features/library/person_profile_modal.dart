@@ -109,7 +109,8 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
 
   Future<void> _save() async {
     final person = _person;
-    if (person == null) return;    vibrate(HapticPatterns.unlockSuccess);
+    if (person == null) return;
+    vibrate(HapticPatterns.unlockSuccess);
     await ref.read(appDataProvider.notifier).updatePerson(person.id, {
       'name': _nameController.text.trim().isEmpty
           ? person.name
@@ -187,6 +188,9 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
             decoration: const BoxDecoration(
               color: AppColors.surfaceDark,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(
+                top: BorderSide(color: AppColors.glassBorderSubtle),
+              ),
             ),
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(
@@ -377,18 +381,36 @@ class _PersonProfileModalState extends ConsumerState<PersonProfileModal> {
                       ),
                     ] else ...[
                       if (person.bio != null || person.birthday != null) ...[
-                        Text(
-                          [
-                            if (person.birthday != null)
-                              '🎂 ${person.birthday}',
-                            if (person.bio != null) person.bio!,
-                          ].join('\n'),
-                          style: const TextStyle(
-                            color: AppColors.textBody,
-                            fontSize: 14,
-                            height: 1.5,
+                        if (person.birthday != null) ...[
+                          Row(
+                            children: [
+                              Icon(
+                                Mdi.get('cakeVariantOutline'),
+                                size: 16,
+                                color: AppColors.gold,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                person.birthday!,
+                                style: const TextStyle(
+                                  color: AppColors.textBody,
+                                  fontSize: 14,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                          if (person.bio != null) const SizedBox(height: 6),
+                        ],
+                        if (person.bio != null)
+                          Text(
+                            person.bio!,
+                            style: const TextStyle(
+                              color: AppColors.textBody,
+                              fontSize: 14,
+                              height: 1.5,
+                            ),
+                          ),
                         const SizedBox(height: 20),
                       ],
                       // Recent entries

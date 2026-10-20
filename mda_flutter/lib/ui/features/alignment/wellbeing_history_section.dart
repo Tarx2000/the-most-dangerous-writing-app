@@ -29,6 +29,9 @@ class _WellbeingHistorySectionState
   @override
   Widget build(BuildContext context) {
     final entries = ref.watch(wellbeingProvider);
+    final enableGlass = ref.watch(
+      preferencesProvider.select((p) => p.enableLiquidGlass),
+    );
     final domain = LifeDomain.values
         .where((d) => d.name == _metric)
         .firstOrNull;
@@ -68,7 +71,7 @@ class _WellbeingHistorySectionState
           DropdownButton<String>(
             isExpanded: true,
             value: _metric,
-            dropdownColor: const Color(0xFF171717),
+            dropdownColor: AppColors.surfaceElevated,
             underline: const SizedBox(),
             items: [
               const DropdownMenuItem(
@@ -91,7 +94,7 @@ class _WellbeingHistorySectionState
                   child: ChoiceChip(
                     label: Text(days == 0 ? 'All' : '${days}d'),
                     selected: _range == days,
-                    selectedColor: const Color(0xFF333333),
+                    selectedColor: AppColors.borderMuted,
                     showCheckmark: false,
                     onSelected: (_) => setState(() {
                       _range = days;
@@ -114,7 +117,7 @@ class _WellbeingHistorySectionState
                         '${selection.isObserved ? selection.value.toInt() : selection.value.toStringAsFixed(1)} / 10',
                         style: TextStyle(
                           color: selection.isObserved
-                              ? Colors.white
+                              ? AppColors.textPrimary
                               : AppColors.textBodyDim,
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -214,7 +217,7 @@ class _WellbeingHistorySectionState
                 DropdownButton<String>(
                   value: wheel.dayKey,
                   underline: const SizedBox(),
-                  dropdownColor: const Color(0xFF171717),
+                  dropdownColor: AppColors.surfaceElevated,
                   items: [
                     for (final w in wheels)
                       DropdownMenuItem(
@@ -250,7 +253,7 @@ class _WellbeingHistorySectionState
                 valueFormatter: (index) => DateFormat(
                   'd MMM y',
                 ).format(DateTime.parse(wheels[index].dayKey)),
-                enableGlass: ref.watch(preferencesProvider).enableLiquidGlass,
+                enableGlass: enableGlass,
                 onChanged: (index) =>
                     setState(() => _wheelDay = wheels[index].dayKey),
               ),
@@ -263,7 +266,7 @@ class _WellbeingHistorySectionState
             ),
           ],
           const SizedBox(height: 24),
-          const Divider(color: Color(0xFF252525)),
+          const Divider(color: AppColors.borderSubtle),
           const SizedBox(height: 14),
           const Text(
             'Reflections',
@@ -326,7 +329,7 @@ class WellbeingTrendPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     const inset = 10.0;
     final grid = Paint()
-      ..color = const Color(0xFF252525)
+      ..color = AppColors.borderSubtle
       ..strokeWidth = 0.7;
     for (final value in [0, 5, 10]) {
       final y = inset + (1 - value / 10) * (size.height - 2 * inset);
@@ -344,15 +347,19 @@ class WellbeingTrendPainter extends CustomPainter {
         point(i - 1),
         point(i),
         Paint()
-          ..color = observed ? const Color(0xFFF1F1F1) : const Color(0xFF747474)
+          ..color = observed ? AppColors.textSoftWhite : AppColors.textNeutral
           ..strokeWidth = 2
           ..strokeCap = StrokeCap.round,
       );
     }
     for (var i = 0; i < series.length; i++) {
       if (series[i].isObserved) {
-        canvas.drawCircle(point(i), 3.3, Paint()..color = Colors.white);
-        canvas.drawCircle(point(i), 1.4, Paint()..color = Colors.black);
+        canvas.drawCircle(
+          point(i),
+          3.3,
+          Paint()..color = AppColors.textPrimary,
+        );
+        canvas.drawCircle(point(i), 1.4, Paint()..color = AppColors.background);
       }
     }
     if (selectedIndex != null && selectedIndex! < series.length) {
@@ -361,7 +368,7 @@ class WellbeingTrendPainter extends CustomPainter {
         Offset(p.dx, inset),
         Offset(p.dx, size.height - inset),
         Paint()
-          ..color = const Color(0xFF777777)
+          ..color = AppColors.sliderThumbUnset
           ..strokeWidth = 0.8,
       );
     }

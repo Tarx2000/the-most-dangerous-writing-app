@@ -20,6 +20,7 @@ import '../../../data/security_providers.dart';
 import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/glass_pill.dart';
+import '../../core/widgets/rating_unlock.dart';
 import '../vlogs/vlog_calendar_gallery.dart';
 import '../alignment/wellbeing_history_section.dart';
 import 'library_notes_list.dart';
@@ -168,12 +169,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final security = ref.watch(securityControllerProvider);
     // RN parity: circles/vlogs unlock on the LOWER tier (circles OR notes);
     // notes/check-ins require the full notes tier.
+    final isNotesUnlocked = ref.watch(isNotesUnlockedProvider);
+    final isCirclesUnlocked = ref.watch(
+      securityControllerProvider.select((c) => c.isCirclesUnlocked),
+    );
     final locked = (_tabIndex == 2 || _tabIndex == 3)
-        ? (!security.isCirclesUnlocked && !security.isNotesUnlocked)
-        : !security.isNotesUnlocked;
+        ? (!isCirclesUnlocked && !isNotesUnlocked)
+        : !isNotesUnlocked;
     final notes = ref.watch(notesProvider);
     final persons = ref.watch(personsProvider);
     final checkins = notes.where((n) => n.isAlignmentReflection).toList();
@@ -215,7 +219,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       const _AiProcessingBadge(),
                       Text(
                         _tabIndex == 1
-                            ? '${ref.watch(wellbeingProvider).length} check-ins • ${checkins.length} reflections'
+                            ? '${ref.watch(wellbeingProvider.select((w) => w.length))} check-ins • ${checkins.length} reflections'
                             : '${notes.length} Entries • ${persons.length} Circles',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -235,7 +239,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       _unlockCurrentTab();
                     } else {
                       vibrate(HapticPatterns.lockAll);
-                      security.lockAll();
+                      ref.read(securityControllerProvider).lockAll();
                     }
                   },
                 ),
@@ -438,123 +442,12 @@ class _LibraryLockedContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = _lockCopyForTab(tabIndex);
-    // RN `circlesLockCard`: glassBackground, radius 24, padding 40, 1 px
-    // glassBorder, full width; 48 px red lock; title 22/w900; subtitle 15
-    // muted centered, line-height 22; red pill 16/28 radius 100 with red
-    // shadow (elevation 8); fingerprint 22 white + 16/w800 white label.
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(40),
-          decoration: BoxDecoration(
-            color: AppColors.glassBackground,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.glassBorder, width: 1),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Mdi.get('lockOutline'),
-                color: AppColors.primaryAction,
-                size: 48,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                copy.title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                copy.subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 15,
-                  height: 22 / 15,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // RN `circlesUnlockBtn`: the card button sizes itself to its
-              // label (Row mainAxisSize.min) — it must never force the card
-              // wider than the screen (padding 40×2 + 20×2 = 120 gutter).
-              Flexible(
-                child: AnimatedScaleButton(
-                  onPress: onUnlock,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryAction,
-                      borderRadius: BorderRadius.circular(100),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: AppColors.bloodGlow,
-                          offset: Offset(0, 4),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Mdi.get('fingerprint'),
-                          color: AppColors.primaryActionText,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            copy.button,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.primaryActionText,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return VaultLockCard(
+      title: copy.title,
+      subtitle: copy.subtitle,
+      buttonLabel: copy.button,
+      onUnlock: onUnlock,
     );
-  }
-}
-
-/// Placeholder: the RN header has no tab pills (dead code, never
-/// instantiated — kept so the removal stays reviewable in the diff).
-// ignore: unused_element
-class _LibraryTab extends StatelessWidget {
-  const _LibraryTab({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.shrink();
   }
 }
 
@@ -713,7 +606,12 @@ class _CirclesTab extends StatelessWidget {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        MediaQuery.paddingOf(context).bottom + 110,
+      ),
       itemCount: persons.length,
       itemBuilder: (context, index) {
         final person = persons[index];
@@ -726,6 +624,7 @@ class _CirclesTab extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.surfaceCard,
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.glassBorderFaint, width: 1),
               ),
               child: Row(
                 children: [

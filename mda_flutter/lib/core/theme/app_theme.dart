@@ -6,6 +6,44 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 
+/// Shared typography tokens for the Obsidian & Liquid Glass design language.
+abstract final class AppTypography {
+  static const screenTitle = TextStyle(
+    color: AppColors.textPrimary,
+    fontSize: 28,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.7,
+    height: 1.15,
+  );
+
+  static const modalTitle = TextStyle(
+    color: AppColors.textPrimary,
+    fontSize: 20,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.4,
+  );
+
+  static const sectionEyebrow = TextStyle(
+    color: AppColors.textSecondary,
+    fontSize: 12,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.2,
+  );
+
+  static const cardTitle = TextStyle(
+    color: AppColors.textPrimary,
+    fontSize: 17,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.2,
+  );
+
+  static const metaCaption = TextStyle(
+    color: AppColors.textMuted,
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+  );
+}
+
 /// Registers the bundled font families as static asset fonts.
 /// Returns a map of family name → registered (only the 8 Google fonts).
 Map<String, String> bundledFontFamilies() {

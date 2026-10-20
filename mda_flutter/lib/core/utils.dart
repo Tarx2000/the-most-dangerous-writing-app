@@ -6,6 +6,8 @@ import 'dart:math';
 
 import 'config/app_config.dart';
 
+final RegExp _nonWhitespaceWordPattern = RegExp(r'\S+');
+
 /// Generates a unique id — base-36 millisecond timestamp + random suffix
 /// (same shape as the RN `generateId()`, e.g. `lxyz1234_a7f3k9p`).
 String generateId() {
@@ -22,11 +24,36 @@ String toLocalDateString(DateTime dt) {
   return '$y-$m-$d';
 }
 
-/// Word count — the single source of truth (matches `countWords` in utils.ts).
+/// Word count — the single source of truth (matches `countWords` in utils.ts)
+/// without allocating intermediate split lists.
 int countWords(String text) {
-  final trimmed = text.trim();
-  if (trimmed.isEmpty) return 0;
-  return trimmed.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+  if (text.isEmpty) return 0;
+  return _nonWhitespaceWordPattern.allMatches(text).length;
+}
+
+/// Truncates [text] to at most [maxWords] words while preserving original
+/// whitespace and line breaks (`\n`). Optionally appends `...` when truncated.
+String truncateToWords(
+  String text,
+  int maxWords, {
+  bool appendEllipsis = false,
+}) {
+  if (text.isEmpty || maxWords <= 0) return '';
+  var count = 0;
+  var endOffset = text.length;
+  var truncated = false;
+  for (final match in _nonWhitespaceWordPattern.allMatches(text)) {
+    count += 1;
+    if (count == maxWords) {
+      endOffset = match.end;
+    } else if (count > maxWords) {
+      truncated = true;
+      break;
+    }
+  }
+  if (!truncated) return text;
+  final slice = text.substring(0, endOffset);
+  return appendEllipsis ? '$slice...' : slice;
 }
 
 /// Tweet classification: at or below [tweetThreshold] words.
@@ -57,8 +84,18 @@ String formatRelativeTime(DateTime dt) {
 /// Session date label like the RN `formatSessionDate` (e.g. "Aug 11, 2026").
 String formatSessionDate(DateTime dt) {
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
 }

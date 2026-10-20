@@ -70,7 +70,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   List<FeedItemData> _buildItems() {
     final notes = ref.watch(notesProvider);
     final vlogs = ref.watch(vlogsProvider);
-    final bookmarks = ref.watch(feedDataProvider).bookmarkedNoteIds;
+    final bookmarks = ref.watch(
+      feedDataProvider.select((f) => f.bookmarkedNoteIds),
+    );
 
     final persons = {
       for (final person in ref.watch(personsProvider)) person.id: person.name,
@@ -268,6 +270,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         return false;
                       },
                       child: ListView.builder(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.paddingOf(context).bottom + 80,
+                        ),
                         physics: const ClampingScrollPhysics(
                           parent: AlwaysScrollableScrollPhysics(),
                         ),

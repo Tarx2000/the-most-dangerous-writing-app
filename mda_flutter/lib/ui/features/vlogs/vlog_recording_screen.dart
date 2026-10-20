@@ -4,6 +4,7 @@
 /// backgrounding stops the recording safely.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -24,37 +25,63 @@ import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 
 class VlogRecordingScreen extends ConsumerStatefulWidget {
-  const VlogRecordingScreen({super.key, required this.timeIndex, this.isQuickVideo = false});
+  const VlogRecordingScreen({
+    super.key,
+    required this.timeIndex,
+    this.isQuickVideo = false,
+  });
 
   final int timeIndex;
   final bool isQuickVideo;
 
   @override
-  ConsumerState<VlogRecordingScreen> createState() => _VlogRecordingScreenState();
+  ConsumerState<VlogRecordingScreen> createState() =>
+      _VlogRecordingScreenState();
 }
 
 enum _RecPhase { permission, countdown, recording, canStop }
 
-class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
+class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen>
+    with WidgetsBindingObserver {
   CameraController? _camera;
+  Timer? _timer;
   _RecPhase _phase = _RecPhase.permission;
   int _countdown = 3;
   int _elapsedSeconds = 0;
   int _remainingSeconds = 0;
   bool _recording = false;
+  bool _finishing = false;
   XFile? _tempFile;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setup();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      if (_finishing) return;
+      if (_recording &&
+          (_phase == _RecPhase.canStop ||
+              (widget.isQuickVideo && _elapsedSeconds > 0))) {
+        _save();
+      } else if (_phase != _RecPhase.permission) {
+        _cancel();
+      }
+    }
   }
 
   Future<void> _setup() async {
     final prefs = ref.read(preferencesProvider);
     try {
       final cameras = await availableCameras();
-      final front = cameras.where((c) => c.lensDirection == CameraLensDirection.front).firstOrNull;
+      final front = cameras
+          .where((c) => c.lensDirection == CameraLensDirection.front)
+          .firstOrNull;
       final controller = CameraController(
         front ?? cameras.first,
         _resolutionFor(prefs.vlogQuality),
@@ -62,13 +89,18 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
       await controller.initialize();
-      if (!mounted) return;
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
       setState(() => _camera = controller);
       await WakelockPlus.enable();
-      await Future<void>.delayed(const Duration(milliseconds: permissionGrantedDelayMs));
+      await Future<void>.delayed(
+        const Duration(milliseconds: permissionGrantedDelayMs),
+      );
       if (!mounted) return;
       setState(() => _phase = _RecPhase.countdown);
-      _runCountdown();
+      _startCountdownTimer();
     } catch (e) {
       if (mounted) context.pop();
     }
@@ -85,14 +117,19 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
     }
   }
 
-  void _runCountdown() {
+  void _startCountdownTimer() {
     vibrate(50);
-    Future.delayed(const Duration(seconds: 1), () {
-      if (!mounted) return;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_countdown > 1) {
+        vibrate(50);
         setState(() => _countdown--);
-        _runCountdown();
       } else {
+        timer.cancel();
         vibrate(50);
         setState(() {
           _countdown = 0;
@@ -100,19 +137,27 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
           if (widget.isQuickVideo) {
             _remainingSeconds = -1; // unlimited elapsed
           } else {
-            final mins = vlogSessionOptionsMins[widget.timeIndex.clamp(0, vlogSessionOptionsMins.length - 1)];
+            final mins =
+                vlogSessionOptionsMins[widget.timeIndex.clamp(
+                  0,
+                  vlogSessionOptionsMins.length - 1,
+                )];
             _remainingSeconds = mins * 60;
           }
         });
         _startRecording();
-        _tickTimer();
+        _startSessionTimer();
       }
     });
   }
 
-  void _tickTimer() {
-    Future.delayed(const Duration(seconds: 1), () {
-      if (!mounted || _phase == _RecPhase.permission) return;
+  void _startSessionTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _phase == _RecPhase.permission) {
+        timer.cancel();
+        return;
+      }
       setState(() {
         if (widget.isQuickVideo) {
           _elapsedSeconds++;
@@ -120,11 +165,12 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
           _remainingSeconds--;
         }
       });
-      if (!widget.isQuickVideo && _remainingSeconds == 0 && _phase == _RecPhase.recording) {
+      if (!widget.isQuickVideo &&
+          _remainingSeconds == 0 &&
+          _phase == _RecPhase.recording) {
         vibrate(HapticPatterns.sessionEnd);
         setState(() => _phase = _RecPhase.canStop);
-      } else {
-        _tickTimer();
+        timer.cancel();
       }
     });
   }
@@ -139,6 +185,7 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
   }
 
   Future<void> _stopRecording() async {
+    _timer?.cancel();
     final camera = _camera;
     if (camera == null || !_recording) return;
     try {
@@ -148,6 +195,9 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
   }
 
   Future<void> _cancel() async {
+    if (_finishing) return;
+    _finishing = true;
+    _timer?.cancel();
     if (_recording) await _stopRecording();
     final temp = _tempFile;
     if (temp != null) {
@@ -159,9 +209,14 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
   }
 
   Future<void> _save() async {
+    if (_finishing) return;
+    _finishing = true;
     await _stopRecording();
     final temp = _tempFile;
-    if (temp == null || !mounted) return;
+    if (temp == null || !mounted) {
+      _finishing = false;
+      return;
+    }
 
     final prefs = ref.read(preferencesProvider);
     final id = generateId();
@@ -186,7 +241,9 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
       filePath: permanentPath,
       dateStr: toLocalDateString(DateTime.now()),
       timestamp: DateTime.now().millisecondsSinceEpoch,
-      durationSec: widget.isQuickVideo ? _elapsedSeconds : vlogSessionOptionsMins[widget.timeIndex] * 60,
+      durationSec: widget.isQuickVideo
+          ? _elapsedSeconds
+          : vlogSessionOptionsMins[widget.timeIndex] * 60,
       fileSizeBytes: rawSize,
       compressionPreset: willCompress ? preset : 'off',
       originalFileSizeBytes: willCompress ? rawSize : null,
@@ -194,7 +251,9 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
     );
     await ref.read(appDataProvider.notifier).saveVlog(vlog);
     if (willCompress) {
-      ref.read(compressionQueueManagerProvider).enqueueVlog(id, permanentPath, preset);
+      ref
+          .read(compressionQueueManagerProvider)
+          .enqueueVlog(id, permanentPath, preset);
     }
 
     await WakelockPlus.disable();
@@ -206,6 +265,8 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
     WakelockPlus.disable();
     _camera?.dispose();
     super.dispose();
@@ -221,9 +282,7 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
         children: [
           // Camera preview
           if (camera != null && camera.value.isInitialized)
-            Positioned.fill(
-              child: CameraPreview(camera),
-            ),
+            Positioned.fill(child: CameraPreview(camera)),
           // Dark overlay for legibility
           const Positioned.fill(
             child: ColoredBox(color: AppColors.overlaySubtle),
@@ -235,7 +294,9 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
               child: Row(
                 children: [
                   AnimatedScaleButton(
-                    onPress: _phase == _RecPhase.recording || _phase == _RecPhase.canStop
+                    onPress:
+                        _phase == _RecPhase.recording ||
+                            _phase == _RecPhase.canStop
                         ? _cancel
                         : () => context.pop(),
                     child: Container(
@@ -244,13 +305,21 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
                         color: AppColors.overlayVideoStrong,
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      child: Icon(Mdi.get('close'), color: AppColors.textPrimary, size: 20),
+                      child: Icon(
+                        Mdi.get('close'),
+                        color: AppColors.textPrimary,
+                        size: 20,
+                      ),
                     ),
                   ),
                   const Spacer(),
-                  if (_phase == _RecPhase.recording || _phase == _RecPhase.canStop)
+                  if (_phase == _RecPhase.recording ||
+                      _phase == _RecPhase.canStop)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.overlayVideoStrong,
                         borderRadius: BorderRadius.circular(20),
@@ -301,7 +370,10 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.overlayVideoStrong,
                     borderRadius: BorderRadius.circular(20),
@@ -354,7 +426,11 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
       // Regular session: hint that recording is in progress.
       return const Text(
         'Recording...',
-        style: TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
+        style: TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
       );
     }
 
@@ -386,7 +462,11 @@ class _VlogRecordingScreenState extends ConsumerState<VlogRecordingScreen> {
                 ),
               ],
             ),
-            child: Icon(Mdi.get('stop'), color: AppColors.primaryActionText, size: 32),
+            child: Icon(
+              Mdi.get('stop'),
+              color: AppColors.primaryActionText,
+              size: 32,
+            ),
           ),
         ),
       ],

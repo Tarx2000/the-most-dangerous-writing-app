@@ -156,7 +156,7 @@ class _StartScreenState extends ConsumerState<StartScreen> {
   @override
   Widget build(BuildContext context) {
     ref.watch(isNotesUnlockedProvider);
-    final streak = ref.watch(streakProvider).currentStreak;
+    final streak = ref.watch(streakProvider.select((s) => s.currentStreak));
     final enableLiquidGlass = ref.watch(
       preferencesProvider.select((p) => p.enableLiquidGlass),
     );
@@ -657,27 +657,11 @@ class _QuickVideoPill extends StatelessWidget {
   final VoidCallback onPress;
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedScaleButton(
-      onPress: onPress,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.glassSurface,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: AppColors.glassBorder, width: 1),
-        ),
-        child: Text(
-          'Quick Video',
-          style: TextStyle(
-            color: AppColors.textBody,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => GlassPill(
+    label: 'Quick Video',
+    icon: Icons.videocam_outlined,
+    onPressed: onPress,
+  );
 }
 
 class _PersonPickerPill extends StatelessWidget {
@@ -685,13 +669,13 @@ class _PersonPickerPill extends StatelessWidget {
     required this.persons,
     required this.selectedId,
     required this.onSelect,
-    this.onPress,
+    required this.onPress,
   });
 
   final List<Person> persons;
   final String? selectedId;
   final ValueChanged<String> onSelect;
-  final VoidCallback? onPress;
+  final VoidCallback onPress;
 
   @override
   Widget build(BuildContext context) {
@@ -702,24 +686,11 @@ class _PersonPickerPill extends StatelessWidget {
         break;
       }
     }
-    return AnimatedScaleButton(
-      onPress: onPress,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.glassSurfaceSubtle,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: AppColors.glassBorder, width: 1),
-        ),
-        child: Text(
-          selected != null ? selected.name : 'Choose a person',
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+    return GlassPill(
+      label: selected != null ? selected.name : 'Choose a person',
+      icon: Icons.person_outline_rounded,
+      selected: selected != null,
+      onPressed: onPress,
     );
   }
 }

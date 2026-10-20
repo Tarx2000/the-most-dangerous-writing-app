@@ -304,9 +304,12 @@ class CompressionQueueManager {
         job.presetId,
         (progress) {
           // A late progress event must not resurrect a timed-out job.
+          // Progress updates are memory-only (`persist: false`) to avoid
+          // writing SharedPreferences dozens of times per second.
           if (getJobForVlog(job.vlogId)?.status == 'processing') {
             _replaceJob(
               processing.copyWith(progress: progress.clamp(0.0, 1.0)),
+              persist: false,
             );
           }
         },
@@ -498,11 +501,11 @@ class CompressionQueueManager {
     );
   }
 
-  void _replaceJob(CompressionJob job) {
+  void _replaceJob(CompressionJob job, {bool persist = true}) {
     final index = _jobs.indexWhere((j) => j.id == job.id);
     if (index >= 0) _jobs[index] = job;
     _notify();
-    _persist();
+    if (persist) _persist();
   }
 
   void _notify() {

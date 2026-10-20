@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/mdi.dart';
 import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
@@ -87,7 +88,12 @@ class LibraryNotesList extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.paddingOf(context).bottom + 110,
+      ),
       itemCount:
           groups.length + (header == null ? 0 : 1) + (groups.isEmpty ? 1 : 0),
       itemBuilder: (context, index) {
@@ -217,7 +223,6 @@ class _NoteCardItem extends StatelessWidget {
         : note.isQuickNote
         ? 'Quick Note'
         : '${note.durationMin} Min';
-    final winIcon = note.won ? '🔥' : '💀';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -237,13 +242,26 @@ class _NoteCardItem extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '$durationLabel $winIcon',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        durationLabel,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Icon(
+                        Mdi.get(note.won ? 'fire' : 'skullOutline'),
+                        size: 14,
+                        color: note.won
+                            ? AppColors.primaryAction
+                            : AppColors.textMuted,
+                      ),
+                    ],
                   ),
                   Text(
                     _dateLabel(note.dateTime),
@@ -270,8 +288,10 @@ class _NoteCardItem extends StatelessWidget {
               ],
               Consumer(
                 builder: (context, ref, _) {
-                  final prefs = ref.watch(userPreferencesProvider);
-                  final fontFamily = fontFamilyForIndex(prefs.fontIndex);
+                  final fontIndex = ref.watch(
+                    userPreferencesProvider.select((p) => p.fontIndex),
+                  );
+                  final fontFamily = fontFamilyForIndex(fontIndex);
                   return Text(
                     note.text,
                     maxLines: note.aiTitle != null ? 1 : 3,

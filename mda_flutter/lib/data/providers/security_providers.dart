@@ -14,7 +14,7 @@ final securityControllerProvider = ChangeNotifierProvider<SecurityController>((
 });
 
 /// True when the notes tier is unlocked (everything visible).
+/// Uses `.select` so 1 Hz lockout countdown ticks do not rebuild unlocked views.
 final isNotesUnlockedProvider = Provider<bool>((ref) {
-  final controller = ref.watch(securityControllerProvider);
-  return controller.isNotesUnlocked;
+  return ref.watch(securityControllerProvider.select((c) => c.isNotesUnlocked));
 });

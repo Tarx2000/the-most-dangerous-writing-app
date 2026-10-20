@@ -220,89 +220,111 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
   @override
   AiConfigState build() => const AiConfigState();
 
-  /// Loads the persisted AI settings (SPEC §7 keys).
+  /// Loads the persisted AI settings (SPEC §7 keys) in a single DB read (or
+  /// reuses [prefetched] when supplied by `StorageNotifier.loadAll`).
   /// Fully guarded: AI boot must never break app startup.
-  Future<void> load() async {
+  Future<void> load({Map<String, String>? prefetched}) async {
     try {
-      final service = ref.read(settingsServiceProvider);
+      final map =
+          prefetched ?? await ref.read(settingsServiceProvider).getAll();
       final state = AiConfigState(
-        provider: await service.getString(
+        provider: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiProvider,
           AiProvider.ollama,
         ),
-        ollamaApiKey: await service.getString(
+        ollamaApiKey: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOllamaApiKey,
           AiDefaults.ollamaApiKey,
         ),
-        ollamaBaseUrl: await service.getString(
+        ollamaBaseUrl: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOllamaBaseUrl,
           AiDefaults.ollamaBaseUrl,
         ),
-        ollamaModel: await service.getString(
+        ollamaModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOllamaModel,
           AiDefaults.ollamaModel,
         ),
-        ollamaGrammarModel: await service.getString(
+        ollamaGrammarModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOllamaGrammarModel,
           '',
         ),
-        neuralwattApiKey: await service.getString(
+        neuralwattApiKey: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiNeuralwattApiKey,
           '',
         ),
-        neuralwattBaseUrl: await service.getString(
+        neuralwattBaseUrl: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiNeuralwattBaseUrl,
           AiDefaults.neuralwattBaseUrl,
         ),
-        neuralwattModel: await service.getString(
+        neuralwattModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiNeuralwattModel,
           AiDefaults.neuralwattModel,
         ),
-        neuralwattGrammarModel: await service.getString(
+        neuralwattGrammarModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiNeuralwattGrammarModel,
           '',
         ),
-        codexApiKey: await service.getString(
+        codexApiKey: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiCodexApiKey,
           AiDefaults.codexApiKey,
         ),
-        codexBaseUrl: await service.getString(
+        codexBaseUrl: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiCodexBaseUrl,
           AiDefaults.codexBaseUrl,
         ),
-        codexModel: await service.getString(
+        codexModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiCodexModel,
           AiDefaults.codexModel,
         ),
-        codexGrammarModel: await service.getString(
+        codexGrammarModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiCodexGrammarModel,
           '',
         ),
-        openrouterApiKey: await service.getString(
+        openrouterApiKey: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOpenRouterApiKey,
           AiDefaults.openrouterApiKey,
         ),
-        openrouterBaseUrl: await service.getString(
+        openrouterBaseUrl: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOpenRouterBaseUrl,
           AiDefaults.openrouterBaseUrl,
         ),
-        openrouterModel: await service.getString(
+        openrouterModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOpenRouterModel,
           AiDefaults.openrouterModel,
         ),
-        openrouterGrammarModel: await service.getString(
+        openrouterGrammarModel: SettingsService.stringFromMap(
+          map,
           SettingsKeys.aiOpenRouterGrammarModel,
           '',
         ),
-        customPrompts: (await service.getJsonMap(
+        customPrompts: SettingsService.jsonMapFromMap(
+          map,
           SettingsKeys.aiCustomPrompts,
-          {},
-        )).map((k, v) => MapEntry(k, '$v')),
-        favoriteModels: (await service.getJsonList(
+          const {},
+        ).map((k, v) => MapEntry(k, '$v')),
+        favoriteModels: SettingsService.jsonListFromMap(
+          map,
           SettingsKeys.aiFavoriteModels,
-          [],
-        )).whereType<String>().toList(),
-        autoGenerateSummaries: await service.getBool(
+          const [],
+        ).whereType<String>().toList(),
+        autoGenerateSummaries: SettingsService.boolFromMap(
+          map,
           SettingsKeys.autoGenerateSummaries,
           true,
         ),

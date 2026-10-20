@@ -10,6 +10,7 @@ abstract final class AppColors {
   static const background = Color(0xFF000000);
   static const surfaceDark = Color(0xFF0A0A0A);
   static const surfaceRaised = Color(0xFF1A1A1A);
+  static const surfaceElevated = Color(0xFF171717);
   static const surfaceMedium = Color(0xFF111111);
   static const surfaceLight = Color(0xFF222222);
   static const surfaceCard = Color(0xFF161616);
@@ -19,13 +20,23 @@ abstract final class AppColors {
   static const modalBackground = Color(0x99000000); // rgba(0,0,0,0.6)
   static const overlayLockAndroid = Color(0xE00A0A0A); // rgba(10,10,10,0.88)
 
+  // Borders & tracks (Obsidian scale)
+  static const sliderTrack = Color(0xFF242424);
+  static const borderSubtle = Color(0xFF252525);
+  static const borderMuted = Color(0xFF333333);
+  static const borderStrong = Color(0xFF444444);
+  static const sliderThumbUnset = Color(0xFF777777);
+  static const sliderThumbActive = Color(0xFFF2F2F2);
+
   // Text (white ladder)
   static const textPrimary = Colors.white;
+  static const textSoftWhite = Color(0xFFF1F1F1);
   static const textBody = Color(0xD9FFFFFF); // rgba(255,255,255,0.85)
   static const textInput = Color(0xE6FFFFFF); // rgba(255,255,255,0.9)
   static const textTweet = Color(0xE0FFFFFF); // rgba(255,255,255,0.88)
   static const textBodyDim = Color(0xB3FFFFFF); // rgba(255,255,255,0.7)
   static const textSecondary = Color(0x99FFFFFF); // rgba(255,255,255,0.6)
+  static const textNeutral = Color(0xFF747474);
   static const textDim = Color(0x66FFFFFF); // rgba(255,255,255,0.4)
   static const textMuted = Color(0x4DFFFFFF); // rgba(255,255,255,0.3)
   static const lightGrey = Color(0x80FFFFFF); // rgba(255,255,255,0.5)
@@ -36,6 +47,7 @@ abstract final class AppColors {
   // Danger / primary action (True Red)
   static const primaryAction = Color(0xFFFF2A2A);
   static const danger = primaryAction;
+  static const dangerCoral = Color(0xFFFFA09A);
   static const primaryActionText = Colors.white;
   static const dangerSubtle = Color(0x0FFF2A2A); // rgba(255,42,42,0.06)
   static const dangerLight = Color(0x14FF2A2A); // 0.08
@@ -108,7 +120,9 @@ abstract final class AppColors {
 
   // Video / clip accents
   static const videoAccentTint = Color(0x1AFF6B35); // rgba(255, 107, 53, 0.1)
-  static const videoAccentBorder = Color(0x26FF6B35); // rgba(255, 107, 53, 0.15)
+  static const videoAccentBorder = Color(
+    0x26FF6B35,
+  ); // rgba(255, 107, 53, 0.15)
   static const videoFlashBackground = Color(0x66000000); // rgba(0, 0, 0, 0.4)
 
   // Gold accents (dev tools, calendar highlights, badges)
@@ -193,14 +207,14 @@ abstract final class AppColors {
     return base.withValues(alpha: 0.3);
   }
 
-  /// Tier emoji per score (SPEC §3).
-  static String alignmentTierEmoji(int score) {
-    if (score <= 2) return '😵';
-    if (score <= 4) return '😕';
-    if (score == 5) return '😐';
-    if (score <= 7) return '😊';
-    if (score <= 9) return '😄';
-    return '😎';
+  /// Tier icon name (MDI) per score — replaces legacy emoji tiers.
+  static String alignmentTierIcon(int score) {
+    if (score <= 2) return 'alertCircleOutline';
+    if (score <= 4) return 'weatherCloudy';
+    if (score == 5) return 'minusCircleOutline';
+    if (score <= 7) return 'checkCircleOutline';
+    if (score <= 9) return 'starOutline';
+    return 'autoFix';
   }
 
   /// Tier label per score (SPEC §3).
@@ -236,17 +250,37 @@ abstract final class AppRadius {
 /// Mapped to Flutter `SpringDescription`s for `withSpring`.
 abstract final class AppSprings {
   /// Modal entries, sheet slides, card expands.
-  static const springDefault = SpringDescription(damping: 30, stiffness: 200, mass: 0.8);
+  static const springDefault = SpringDescription(
+    damping: 30,
+    stiffness: 200,
+    mass: 0.8,
+  );
 
   /// Press scales, tick snaps, feed commit.
-  static const springSnappy = SpringDescription(damping: 35, stiffness: 250, mass: 0.8);
+  static const springSnappy = SpringDescription(
+    damping: 35,
+    stiffness: 250,
+    mass: 0.8,
+  );
 
   /// Celebratory popups.
-  static const springGentle = SpringDescription(damping: 26, stiffness: 120, mass: 0.8);
+  static const springGentle = SpringDescription(
+    damping: 26,
+    stiffness: 120,
+    mass: 0.8,
+  );
 
   /// Lighter feel.
-  static const springLight = SpringDescription(damping: 28, stiffness: 150, mass: 0.5);
+  static const springLight = SpringDescription(
+    damping: 28,
+    stiffness: 150,
+    mass: 0.5,
+  );
 
   /// Feed reveal.
-  static const springFeed = SpringDescription(damping: 32, stiffness: 160, mass: 0.9);
+  static const springFeed = SpringDescription(
+    damping: 32,
+    stiffness: 160,
+    mass: 0.9,
+  );
 }

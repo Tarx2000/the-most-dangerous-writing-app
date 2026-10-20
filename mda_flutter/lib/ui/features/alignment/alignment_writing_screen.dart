@@ -28,6 +28,7 @@ import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/custom_slider.dart';
 import '../writing/death_overlay.dart';
 import '../writing/danger_overlay.dart';
+import '../writing/vaporizing_editable_text.dart';
 
 /// One reflection deck item (a mastery to reflect on).
 class _DeckItem {
@@ -90,18 +91,21 @@ class _AlignmentWritingScreenState
       },
     ),
   );
-  final TextEditingController _textController = TextEditingController();
+  late final VaporizingTextEditingController _textController;
 
   @override
   void initState() {
     super.initState();
+    _textController = VaporizingTextEditingController(
+      idleRatioListenable: _engine.idleRatio,
+    );
     _preparePhase1();
   }
 
   @override
   void dispose() {
-    _engine.dispose();
     _textController.dispose();
+    _engine.dispose();
     super.dispose();
   }
 
@@ -442,6 +446,9 @@ class _AlignmentWritingScreenState
   }
 
   Widget _buildPillarInput(Pillar pillar) {
+    final enableGlass = ref.watch(
+      preferencesProvider.select((p) => p.enableLiquidGlass),
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
@@ -475,7 +482,7 @@ class _AlignmentWritingScreenState
           switch (pillar.type) {
             PillarType.rating => CustomSlider(
               value: _values[pillar.id]?.round(),
-              enableGlass: ref.watch(preferencesProvider).enableLiquidGlass,
+              enableGlass: enableGlass,
               label: pillar.title,
               color: AppColors.alignmentTierColor(
                 (_values[pillar.id] ?? 5).round(),
@@ -498,7 +505,7 @@ class _AlignmentWritingScreenState
               max: 48,
               label: '${pillar.title}, half-hour steps',
               valueFormatter: (v) => '${(v / 2).toStringAsFixed(1)} hours',
-              enableGlass: ref.watch(preferencesProvider).enableLiquidGlass,
+              enableGlass: enableGlass,
               onChanged: (v) => setState(() => _values[pillar.id] = v / 2),
               onCancelled: (v) => setState(() {
                 if (v == null) {
@@ -588,6 +595,7 @@ class _AlignmentWritingScreenState
               tileColor: AppColors.surfaceCard,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppColors.glassBorderFaint),
               ),
               title: Text(
                 _deck[index].label,
@@ -617,9 +625,10 @@ class _AlignmentWritingScreenState
       ),
       Padding(
         padding: const EdgeInsets.all(20),
-        child: FilledButton(
+        child: GlassAction(
+          label: 'Finish Check-in',
           onPressed: _goHome,
-          child: const Text('Finish Check-in'),
+          icon: Icons.check_rounded,
         ),
       ),
     ],
@@ -694,7 +703,7 @@ class _AlignmentWritingScreenState
                         color: AppColors.textInput,
                         fontFamily: fontFamilyForIndex(prefs.fontIndex),
                         fontSize: reading.fontSize,
-                        height: reading.lineHeight,
+                        height: reading.lineHeight / reading.fontSize,
                       ),
                       cursorColor: AppColors.primaryAction,
                       decoration: const InputDecoration(
@@ -719,29 +728,10 @@ class _AlignmentWritingScreenState
                 if (!dead &&
                     (_engine.canSave || _textController.text.trim().isNotEmpty))
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Center(
-                      child: AnimatedScaleButton(
-                        onPress: _saveReflection,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 40,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryAction,
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: const Text(
-                            'SAVE REFLECTION',
-                            style: TextStyle(
-                              color: AppColors.primaryActionText,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
+                    padding: const EdgeInsets.fromLTRB(40, 0, 40, 16),
+                    child: GlassAction(
+                      label: 'SAVE REFLECTION',
+                      onPressed: _saveReflection,
                     ),
                   ),
               ],

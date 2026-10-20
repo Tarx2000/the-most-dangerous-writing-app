@@ -1,6 +1,6 @@
 /// NoteViewerModal — full note reader (port of `NoteViewerModal.tsx`, SPEC §15).
-/// Backdrop `overlayVideoStrong` · sheet `surfaceMedium`, radius 32 ·
-/// AI title 22/900 · date 20/900 · meta "123 words • 5 min" red uppercase ·
+/// Backdrop `overlayVideoStrong` · sheet `surfaceDark`, radius 32 ·
+/// AI title 22/800 · date subtitle · meta "123 words • 5 min" red uppercase ·
 /// AI summary card · failure/retry states · Generate AI
 /// Summary pill · full text in the user font/size · Delete (confirm-in-sheet).
 library;
@@ -73,8 +73,11 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
           child: Container(
             height: MediaQuery.sizeOf(context).height * 0.88 + 20,
             decoration: const BoxDecoration(
-              color: AppColors.surfaceMedium,
+              color: AppColors.surfaceDark,
               borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              border: Border(
+                top: BorderSide(color: AppColors.glassBorderSubtle),
+              ),
             ),
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(
@@ -86,10 +89,10 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                   const SizedBox(height: 10),
                   Container(
                     width: 40,
-                    height: 5,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.grey,
-                      borderRadius: BorderRadius.circular(3),
+                      color: AppColors.textMuted,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                   // Header
@@ -116,17 +119,17 @@ class _NoteViewerModalState extends ConsumerState<NoteViewerModal> {
                                 style: const TextStyle(
                                   color: AppColors.textPrimary,
                                   fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.1,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.15,
                                 ),
                               ),
-                              const SizedBox(height: 2),
+                              const SizedBox(height: 4),
                               Text(
                                 note.dateStr,
                                 style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ],

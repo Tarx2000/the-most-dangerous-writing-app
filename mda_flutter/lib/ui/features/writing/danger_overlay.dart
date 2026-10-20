@@ -1,12 +1,13 @@
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../domain/use_cases/session_engine.dart';
 
-/// A continuous full-window veil: the centre is never cut out. Only this leaf
-/// interpolates the engine's 10 Hz samples; the editor is not rebuilt per frame.
+/// A continuous full-window veil with 4-sided rectangular edge onset: the
+/// centre is never cut out, and all four edges (left, right, top, bottom)
+/// build smoothly without a circular vignette. Only this leaf interpolates the
+/// engine's 10 Hz samples; the editor is not rebuilt per frame.
 class DangerOverlay extends StatefulWidget {
   const DangerOverlay({super.key, required this.engine});
   final SessionEngine engine;
@@ -25,6 +26,7 @@ class _DangerOverlayState extends State<DangerOverlay>
     duration: const Duration(milliseconds: 820),
   );
   bool _reduceMotion = false;
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +117,59 @@ class DangerPainter extends CustomPainter {
   final ValueListenable<double> idleRatio;
   final Animation<double> heartbeat;
 
+  static const Color _dangerRed = Color(0xFFBA2833);
+
+  static const List<double> _stops = [
+    0.0,
+    0.0625,
+    0.125,
+    0.1875,
+    0.25,
+    0.3125,
+    0.375,
+    0.4375,
+    0.5,
+    0.5625,
+    0.625,
+    0.6875,
+    0.75,
+    0.8125,
+    0.875,
+    0.9375,
+    1.0,
+  ];
+
+  // Precomputed `(1 + cos(x * 2 * pi)) / 2` for each stop in `_stops`.
+  static const List<double> _edgeWeights = [
+    1.0,
+    0.9619397662556434,
+    0.8535533905932737,
+    0.6913417161825449,
+    0.5,
+    0.3086582838174551,
+    0.14644660940672627,
+    0.03806023374435663,
+    0.0,
+    0.03806023374435663,
+    0.14644660940672627,
+    0.3086582838174551,
+    0.5,
+    0.6913417161825449,
+    0.8535533905932737,
+    0.9619397662556434,
+    1.0,
+  ];
+
+  static const List<double> _verticalEdgeStops = [
+    0.0,
+    0.12,
+    0.28,
+    0.5,
+    0.72,
+    0.88,
+    1.0,
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
@@ -131,49 +186,55 @@ class DangerPainter extends CustomPainter {
     if (ratio <= 0.15) return;
     final progress = (ratio - 0.15) / 0.85;
     final intensity = progress * progress * (3 - 2 * progress);
-    // A low-amplitude cosine pulse has no abrupt joins or spatial movement.
-    final pulse = (1 - math.cos(heartbeat.value * 2 * math.pi)) / 2;
+    // Smooth triangle-to-cubic pulse without trig overhead per frame.
+    final hb = heartbeat.value;
+    final wave = hb < 0.5 ? hb * 2.0 : (1.0 - hb) * 2.0;
+    final pulse = wave * wave * (3.0 - 2.0 * wave);
     final opacity = intensity * (0.30 + pulse * 0.008);
     final spread = (progress / 0.70).clamp(0.0, 1.0);
     final edgeEmphasis = 0.36 * (1 - spread * spread * (3 - 2 * spread));
-    Color colorAt(double x) {
-      final edge = (1 + math.cos(x * 2 * math.pi)) / 2;
-      // Even the first warning has a continuous centre. By the middle/late
-      // warning the field is uniform, rather than two approaching curtains.
-      return const Color(
-        0xFFBA2833,
-      ).withValues(alpha: opacity * (1 - edgeEmphasis + edgeEmphasis * edge));
-    }
 
-    const stops = [
-      0.0,
-      0.0625,
-      0.125,
-      0.1875,
-      0.25,
-      0.3125,
-      0.375,
-      0.4375,
-      0.5,
-      0.5625,
-      0.625,
-      0.6875,
-      0.75,
-      0.8125,
-      0.875,
-      0.9375,
-      1.0,
-    ];
+    final horizontalColors = List<Color>.generate(_stops.length, (i) {
+      final edge = _edgeWeights[i];
+      return _dangerRed.withValues(
+        alpha: opacity * (1 - edgeEmphasis + edgeEmphasis * edge),
+      );
+    }, growable: false);
+
     canvas.drawRect(
       bounds,
       Paint()
         ..shader = ui.Gradient.linear(
           Offset.zero,
           Offset(size.width, 0),
-          stops.map(colorAt).toList(growable: false),
-          stops,
+          horizontalColors,
+          _stops,
         ),
     );
+
+    // 4-sided rectangular edge falloff: top and bottom borders receive the same
+    // soft linear edge emphasis during onset and converge to 0 at full spread,
+    // avoiding a circular radial vignette while framing all four sides evenly.
+    if (edgeEmphasis > 0.001) {
+      final vAlpha = (opacity * edgeEmphasis * 0.65).clamp(0.0, 1.0);
+      final edgeCol = _dangerRed.withValues(alpha: vAlpha);
+      final midCol = _dangerRed.withValues(alpha: vAlpha * 0.42);
+      final softCol = _dangerRed.withValues(alpha: vAlpha * 0.10);
+      const clearCol = Color(0x00BA2833);
+      canvas.drawRect(
+        bounds,
+        Paint()
+          ..shader = ui.Gradient.linear(Offset.zero, Offset(0, size.height), [
+            edgeCol,
+            midCol,
+            softCol,
+            clearCol,
+            softCol,
+            midCol,
+            edgeCol,
+          ], _verticalEdgeStops),
+      );
+    }
   }
 
   @override

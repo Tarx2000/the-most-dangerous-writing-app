@@ -15,6 +15,7 @@ import '../../../data/providers.dart';
 import '../../../data/security_providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/base_modal.dart';
+import '../../core/widgets/rating_unlock.dart';
 
 /// Shows the circle picker; resolves with the selected person id (or null).
 Future<String?> showCirclePicker(BuildContext context, {String? selectedId}) {
@@ -51,32 +52,24 @@ class CirclePickerBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final persons = ref.watch(personsProvider);
-    final security = ref.watch(securityControllerProvider);
-    if (!security.isCirclesUnlocked) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Mdi.get('lockOutline'), color: AppColors.textDim, size: 36),
-            const SizedBox(height: 16),
-            const Text(
-              'Circles are locked',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () {
-                final prefs = ref.read(preferencesProvider);
-                security.unlockCircles(
-                  preferPinAuth: prefs.preferPinAuth,
-                  useBiometrics: prefs.useBiometrics,
-                  lockTimeoutMins: prefs.lockTimeoutMins,
-                );
-              },
-              child: const Text('Unlock'),
-            ),
-          ],
-        ),
+    final isUnlocked = ref.watch(
+      securityControllerProvider.select((c) => c.isCirclesUnlocked),
+    );
+    if (!isUnlocked) {
+      return VaultLockCard(
+        title: 'Circles are locked',
+        subtitle: 'Verify your identity to choose a person.',
+        buttonLabel: 'Unlock',
+        onUnlock: () {
+          final prefs = ref.read(preferencesProvider);
+          ref
+              .read(securityControllerProvider)
+              .unlockCircles(
+                preferPinAuth: prefs.preferPinAuth,
+                useBiometrics: prefs.useBiometrics,
+                lockTimeoutMins: prefs.lockTimeoutMins,
+              );
+        },
       );
     }
 

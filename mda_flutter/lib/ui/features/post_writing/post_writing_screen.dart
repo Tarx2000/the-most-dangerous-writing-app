@@ -20,6 +20,8 @@ import '../../../data/providers.dart';
 import '../../../data/services/ai_error.dart';
 import '../../../data/services/ai_service.dart';
 import '../../core/widgets/animated_scale_button.dart';
+import '../../core/widgets/confirm_dialog.dart';
+import '../../core/widgets/glass_action.dart';
 import '../../core/widgets/rich_text.dart';
 import '../../core/widgets/shimmer_line.dart';
 
@@ -132,7 +134,9 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
     );
     if (updated == note.text) return;
     ref.read(appDataProvider.notifier).updateNote(note.id, {'text': updated});
-    setState(() {});
+    setState(() {
+      _grammarSuggestions?.remove(suggestion);
+    });
   }
 
   void _toggleEdit() {
@@ -156,25 +160,15 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
   }
 
   Future<void> _deleteEntry() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surfaceRaised,
-        title: const Text('Delete this entry?'),
-        content: const Text('This permanently deletes the saved entry.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete this entry?',
+      message: 'This permanently deletes the saved entry.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     try {
       await ref.read(appDataProvider.notifier).deleteNote(widget.noteId);
       if (mounted) _closeWithFlyAway();
@@ -366,13 +360,24 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
     final suggestions = _grammarSuggestions;
     if (suggestions != null) {
       if (suggestions.isEmpty) {
-        return const Text(
-          'No issues found! ✨',
-          style: TextStyle(
-            color: AppColors.green,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Mdi.get('checkCircleOutline'),
+              color: AppColors.green,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'No issues found!',
+              style: TextStyle(
+                color: AppColors.green,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         );
       }
       return Column(
@@ -640,6 +645,7 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
             return TextField(
               controller: _editController,
               maxLines: null,
+              onChanged: (_) => setState(() {}),
               style: TextStyle(
                 color: AppColors.textInput,
                 fontFamily: fontFamily,
@@ -652,24 +658,7 @@ class _PostWritingScreenState extends ConsumerState<PostWritingScreen> {
           },
         ),
         const SizedBox(height: 24),
-        AnimatedScaleButton(
-          onPress: _saveEdit,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-            decoration: BoxDecoration(
-              color: AppColors.primaryAction,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: const Text(
-              'SAVE & CLOSE',
-              style: TextStyle(
-                color: AppColors.primaryActionText,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ),
+        GlassAction(label: 'SAVE & CLOSE', onPressed: _saveEdit),
       ],
     );
   }

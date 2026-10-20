@@ -70,7 +70,57 @@ class SettingsService {
   Future<void> setRaw(String key, String value) =>
       _repository.setSetting(key, value);
 
-  // -- Typed helpers -------------------------------------------------------
+  // -- Synchronous parsers from a prefetched settings map -------------------
+
+  static int intFromMap(Map<String, String> map, String key, int fallback) =>
+      int.tryParse(map[key] ?? '') ?? fallback;
+
+  static bool boolFromMap(Map<String, String> map, String key, bool fallback) {
+    final raw = map[key];
+    if (raw == null) return fallback;
+    return raw == 'true' || raw == '1';
+  }
+
+  static String stringFromMap(
+    Map<String, String> map,
+    String key,
+    String fallback,
+  ) {
+    final raw = map[key];
+    return (raw == null || raw.isEmpty) ? fallback : raw;
+  }
+
+  static List<dynamic> jsonListFromMap(
+    Map<String, String> map,
+    String key,
+    List<dynamic> fallback,
+  ) {
+    final raw = map[key];
+    if (raw == null || raw.isEmpty) return fallback;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is List ? decoded : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  static Map<String, dynamic> jsonMapFromMap(
+    Map<String, String> map,
+    String key,
+    Map<String, dynamic> fallback,
+  ) {
+    final raw = map[key];
+    if (raw == null || raw.isEmpty) return fallback;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  // -- Typed async helpers --------------------------------------------------
 
   Future<int> getInt(String key, int fallback) async {
     final raw = await _repository.getSetting(key);
@@ -90,13 +140,7 @@ class SettingsService {
 
   Future<List<dynamic>> getJsonList(String key, List<dynamic> fallback) async {
     final raw = await _repository.getSetting(key);
-    if (raw == null || raw.isEmpty) return fallback;
-    try {
-      final decoded = jsonDecode(raw);
-      return decoded is List ? decoded : fallback;
-    } catch (_) {
-      return fallback;
-    }
+    return jsonListFromMap(raw == null ? const {} : {key: raw}, key, fallback);
   }
 
   Future<Map<String, dynamic>> getJsonMap(
@@ -104,16 +148,10 @@ class SettingsService {
     Map<String, dynamic> fallback,
   ) async {
     final raw = await _repository.getSetting(key);
-    if (raw == null || raw.isEmpty) return fallback;
-    try {
-      final decoded = jsonDecode(raw);
-      return decoded is Map<String, dynamic> ? decoded : fallback;
-    } catch (_) {
-      return fallback;
-    }
+    return jsonMapFromMap(raw == null ? const {} : {key: raw}, key, fallback);
   }
 
-  /// All settings as a raw key/value map (used by backup export).
+  /// All settings as a raw key/value map (used by batch boot + backup export).
   Future<Map<String, String>> getAll() => _repository.getAllSettings();
 
   Future<void> delete(String key) => _repository.deleteSetting(key);

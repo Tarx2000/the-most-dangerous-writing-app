@@ -1,7 +1,7 @@
 /// FeedCard — story / tweet / check-in / circle variants (SPEC §14, port of
 /// `FeedCard.tsx`). TYPE_COLORS: journal=textSecondary, circle=danger,
 /// checkin=gold, clip=orange. Card: row, 16/20 padding, bottom border
-/// glassSurface. Avatars: bordered circle (emoji / initial / star / bird).
+/// glassSurface. Avatars: bordered circle (icon / initial / star / bird).
 library;
 
 import 'dart:io';
@@ -71,15 +71,6 @@ class FeedCard extends ConsumerWidget {
       case FeedItemType.clip:
         return AppColors.orange;
     }
-  }
-
-  static String _truncateWords(String text, int maxWords) {
-    final words = text
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .toList();
-    if (words.length <= maxWords) return text;
-    return '${words.take(maxWords).join(' ')}…';
   }
 
   @override
@@ -182,7 +173,7 @@ class FeedCard extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            _truncateWords(n?.text ?? '', 40),
+            truncateToWords(n?.text ?? '', 40, appendEllipsis: true),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -233,7 +224,11 @@ class FeedCard extends ConsumerWidget {
             ),
           const SizedBox(height: 4),
           Text(
-            _truncateWords(n?.text ?? '', storyPreviewWords),
+            truncateToWords(
+              n?.text ?? '',
+              storyPreviewWords,
+              appendEllipsis: true,
+            ),
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -280,7 +275,7 @@ class FeedCard extends ConsumerWidget {
   }
 }
 
-/// Avatar column: checkin=emoji, circle/person=initial (primaryAction border),
+/// Avatar column: checkin=target icon, circle/person=initial (primaryAction border),
 /// tweet=bird (primaryAction border), journal=star (border token).
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.item, required this.accent});

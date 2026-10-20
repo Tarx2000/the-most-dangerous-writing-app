@@ -1,5 +1,5 @@
 /// Thumbnail extraction (SPEC §11): frame at 1000 ms, JPEG quality 0.7,
-/// stored at `vlog_thumbnails/{id}.jpg` with in-flight dedup.
+/// stored at `vlog_thumbnails/{id}.jpg` with in-flight future sharing.
 library;
 
 import 'dart:io';
@@ -16,9 +16,10 @@ const int thumbnailTimeMs = 1000;
 const int thumbnailQuality = 70;
 
 class ThumbnailService {
-  final Set<String> _inFlight = {};
+  final Map<String, Future<String?>> _inFlight = {};
 
   /// Extracts (or returns the cached) thumbnail for a vlog.
+  /// Concurrent calls for the same [vlogId] share the in-flight extraction.
   /// Never throws — failures return null and are logged.
   Future<String?> getThumbnail({
     required String vlogId,
@@ -27,16 +28,31 @@ class ThumbnailService {
   }) async {
     if (existingThumbnailPath != null) {
       final existing = File(existingThumbnailPath);
-      if (existing.existsSync()) return existingThumbnailPath;
+      if (await existing.exists()) return existingThumbnailPath;
     }
-    if (_inFlight.contains(vlogId)) return null;
-    _inFlight.add(vlogId);
+    final active = _inFlight[vlogId];
+    if (active != null) return active;
 
+    final future = _extract(vlogId: vlogId, videoPath: videoPath);
+    _inFlight[vlogId] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlight.remove(vlogId);
+    }
+  }
+
+  Future<String?> _extract({
+    required String vlogId,
+    required String videoPath,
+  }) async {
     try {
       final docs = await getApplicationDocumentsDirectory();
       final thumbDir = Directory(p.join(docs.path, 'vlog_thumbnails'));
       await thumbDir.create(recursive: true);
       final outPath = p.join(thumbDir.path, '$vlogId.jpg');
+      final outFile = File(outPath);
+      if (await outFile.exists()) return outPath;
 
       final file = await VideoThumbnail.thumbnailFile(
         video: videoPath,
@@ -49,8 +65,6 @@ class ThumbnailService {
     } catch (e) {
       logVlog.warn('thumbnail extraction failed', e);
       return null;
-    } finally {
-      _inFlight.remove(vlogId);
     }
   }
 
