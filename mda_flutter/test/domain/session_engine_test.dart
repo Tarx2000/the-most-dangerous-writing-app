@@ -14,9 +14,11 @@ void main() {
   test('death triggers after the difficulty limit of idling', () async {
     final deathNotifier = Completer<void>();
     final engine = SessionEngine(
-      callbacks: SessionCallbacks(onDeath: () {
-        if (!deathNotifier.isCompleted) deathNotifier.complete();
-      }),
+      callbacks: SessionCallbacks(
+        onDeath: () {
+          if (!deathNotifier.isCompleted) deathNotifier.complete();
+        },
+      ),
     );
     engine.start(difficultyLimitMs: 8000, sessionDurationMin: 5);
 
@@ -49,7 +51,11 @@ void main() {
 
   test('quick notes have no session timer', () async {
     final engine = SessionEngine();
-    engine.start(difficultyLimitMs: 8000, sessionDurationMin: 5, quickNote: true);
+    engine.start(
+      difficultyLimitMs: 8000,
+      sessionDurationMin: 5,
+      quickNote: true,
+    );
     expect(engine.sessionSecondsRemaining.value, isNull);
     engine.dispose();
   });
@@ -73,20 +79,60 @@ void main() {
     });
   });
 
-  test('word count fast path (append-only)', () async {
+  test(
+    'once session timer completes, text is safe and idle timer never triggers death',
+    () {
+      fakeAsync((async) {
+        var ended = false;
+        var died = false;
+        var wiped = false;
+        final engine = SessionEngine(
+          callbacks: SessionCallbacks(
+            onSessionEnd: () => ended = true,
+            onDeath: () => died = true,
+            onTextWiped: () => wiped = true,
+          ),
+        );
+        engine.start(difficultyLimitMs: 5000, sessionDurationMin: 1);
+
+        // Keep typing every 2 seconds until the 1-minute session finishes.
+        for (var s = 0; s < 60; s += 2) {
+          async.elapse(const Duration(seconds: 2));
+          engine.handleTextChange('word $s');
+        }
+
+        expect(ended, isTrue);
+        expect(engine.sessionSecondsRemaining.value, 0);
+        expect(engine.idleRatio.value, 0.0);
+
+        // Now stop typing completely for 5 minutes in free time: must NOT die or wipe text.
+        async.elapse(const Duration(minutes: 5));
+        expect(died, isFalse);
+        expect(wiped, isFalse);
+        expect(engine.phase.value, SessionPhase.writing);
+        expect(engine.idleRatio.value, 0.0);
+        expect(engine.hasLost, isFalse);
+        engine.dispose();
+      });
+    },
+  );
+
+  test('word count fast path (append-only) and batch deletion', () async {
     final engine = SessionEngine();
     engine.start(difficultyLimitMs: 8000, sessionDurationMin: 5);
     engine.handleTextChange('hello ');
     engine.handleTextChange('hello world');
     engine.handleTextChange('hello world again');
     expect(engine.wordCount.value, 3);
+
+    // Batch deletion updates word count immediately.
+    engine.handleTextChange('hello', isInsertion: false);
+    expect(engine.wordCount.value, 1);
     engine.dispose();
   });
 
   test('death wipe clears the word count after 200 ms', () async {
-    final engine = SessionEngine(
-      callbacks: SessionCallbacks(),
-    );
+    final engine = SessionEngine(callbacks: SessionCallbacks());
     engine.start(difficultyLimitMs: 500, sessionDurationMin: 3);
     engine.handleTextChange('a b c d');
     expect(engine.wordCount.value, 4);
@@ -97,19 +143,22 @@ void main() {
     engine.dispose();
   });
 
-  test('resumeWritingFreely continues without death risk and saves won:false', () async {
-    final engine = SessionEngine();
-    engine.start(difficultyLimitMs: 500, sessionDurationMin: 3);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    expect(engine.phase.value, SessionPhase.death);
+  test(
+    'resumeWritingFreely continues without death risk and saves won:false',
+    () async {
+      final engine = SessionEngine();
+      engine.start(difficultyLimitMs: 500, sessionDurationMin: 3);
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      expect(engine.phase.value, SessionPhase.death);
 
-    engine.resumeWritingFreely();
-    expect(engine.phase.value, SessionPhase.continuingAfterLoss);
-    final outcome = engine.buildSaveOutcome();
-    expect(outcome.won, isFalse);
-    expect(outcome.durationMin, 3);
-    engine.dispose();
-  });
+      engine.resumeWritingFreely();
+      expect(engine.phase.value, SessionPhase.continuingAfterLoss);
+      final outcome = engine.buildSaveOutcome();
+      expect(outcome.won, isFalse);
+      expect(outcome.durationMin, 3);
+      engine.dispose();
+    },
+  );
 
   test('buildSaveOutcome: won session', () async {
     final engine = SessionEngine();

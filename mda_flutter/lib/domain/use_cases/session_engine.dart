@@ -167,7 +167,7 @@ class SessionEngine {
 
   /// Text edit entry point — resets the idle timer and updates the word count.
   void handleTextChange(String text, {bool isInsertion = true}) {
-    if (!_hasLost && !_isContinuingAfterLoss) {
+    if (!_hasLost && !_isContinuingAfterLoss && !_sessionTimedOut) {
       idleTimeMs.value = 0;
       idleRatio.value = 0.0;
       callbacks.onIdleRatioChanged?.call(0.0);
@@ -189,27 +189,20 @@ class SessionEngine {
       _lastCountedText = text;
       wordCount.value = (wordCount.value + delta).clamp(0, 999999);
     } else {
-      _scheduleFullWordCount(text);
-    }
-  }
-
-  // -- Word counting -----------------------------------------------------------
-
-  /// Debounced full recount for mid-edits/deletions (400 ms).
-  void _scheduleFullWordCount(String text) {
-    _wordCountDebounce?.cancel();
-    _wordCountDebounce = Timer(const Duration(milliseconds: 400), () {
+      _wordCountDebounce?.cancel();
       final newCount = countWords(text);
       wordCount.value = newCount;
       _lastCountedText = text;
-    });
+    }
   }
 
   // -- Timer ticks --------------------------------------------------------------
 
   void _onIdleTick(Timer _) {
-    if (_isQuickNote || phase.value != SessionPhase.writing) {
-      return; // Frozen after death or quick note
+    if (_isQuickNote ||
+        _sessionTimedOut ||
+        phase.value != SessionPhase.writing) {
+      return; // Frozen after death, session timeout, or quick note
     }
     final next = idleTimeMs.value + tickRateMs;
     idleTimeMs.value = next;
@@ -227,13 +220,22 @@ class SessionEngine {
     final current = sessionSecondsRemaining.value;
     if (current == null) return;
     if (current <= 1) {
-      sessionSecondsRemaining.value = 0;
-      _sessionTicker?.cancel();
-      _sessionTimedOut = true;
-      callbacks.onSessionEnd?.call();
+      _completeSessionTimer();
     } else {
       sessionSecondsRemaining.value = current - 1;
     }
+  }
+
+  void _completeSessionTimer() {
+    sessionSecondsRemaining.value = 0;
+    _sessionTicker?.cancel();
+    _idleTicker?.cancel();
+    _sessionTimedOut = true;
+    idleTimeMs.value = 0;
+    idleRatio.value = 0.0;
+    callbacks.onIdleRatioChanged?.call(0.0);
+    _resetHaptics();
+    callbacks.onSessionEnd?.call();
   }
 
   // -- Haptic escalation (SPEC §8: sequential levels, reset on typing) ---------
@@ -255,7 +257,9 @@ class SessionEngine {
       level = HapticLevel.none;
     }
     if (level != HapticLevel.none && level.index > _hapticLevel) {
-      _hapticLevel = level.index > _hapticLevel + 1 ? _hapticLevel + 1 : level.index;
+      _hapticLevel = level.index > _hapticLevel + 1
+          ? _hapticLevel + 1
+          : level.index;
       callbacks.onHapticLevel?.call(HapticLevel.values[_hapticLevel]);
     }
   }
@@ -267,7 +271,7 @@ class SessionEngine {
   // -- Death -----------------------------------------------------------------------
 
   void _triggerDeath() {
-    if (_hasLost) return;
+    if (_hasLost || _sessionTimedOut) return;
     _hasLost = true;
     phase.value = SessionPhase.death;
     _sessionTicker?.cancel();
@@ -299,10 +303,7 @@ class SessionEngine {
 
   /// Dev-mode helper: skips the remaining session time.
   void skipTimer() {
-    _sessionTicker?.cancel();
-    _sessionTimedOut = true;
-    sessionSecondsRemaining.value = 0;
-    callbacks.onSessionEnd?.call();
+    _completeSessionTimer();
   }
 
   /// Builds the save payload (SPEC §8).

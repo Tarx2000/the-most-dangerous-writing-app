@@ -7,7 +7,11 @@
 ///  - The danger overlay + heartbeat are painted on their own layer
 ///    (RepaintBoundary + CustomPainter), so 10 Hz idle ticks never rebuild
 ///    the text field.
-///  - Keyboard handling: the Scaffold keeps the canvas stable while typing.
+///  - Keyboard handling: the text area resizes above `viewInsets.bottom` so
+///    text is never hidden behind the keyboard, auto-scrolls as new lines are
+///    written, and supports full manual scrolling + text selection/deletion,
+///    while the SAVE button stays anchored at the bottom (visible when the
+///    keyboard is dismissed).
 library;
 
 import 'package:flutter/material.dart';
@@ -73,9 +77,10 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     ),
   );
 
-  final TextEditingController _controller = TextEditingController();
+  late final VaporizingTextEditingController _controller =
+      VaporizingTextEditingController(idleRatioListenable: _engine.idleRatio);
   final FocusNode _focusNode = FocusNode();
-  final ValueNotifier<bool> _isTextEmpty = ValueNotifier(true);
+  final ScrollController _scrollController = ScrollController();
   final ValueNotifier<bool> _canSaveNotifier = ValueNotifier(false);
 
   late final AnimationController _flyAwayController = AnimationController(
@@ -107,6 +112,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
 
   String _currentText = '';
   bool _saving = false;
+  double _lastBottomInset = 0.0;
 
   @override
   void initState() {
@@ -136,7 +142,7 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     _engine.dispose();
     _controller.dispose();
     _focusNode.dispose();
-    _isTextEmpty.dispose();
+    _scrollController.dispose();
     _canSaveNotifier.dispose();
     _flyAwayController.dispose();
     _shakeController.dispose();
@@ -154,7 +160,6 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
       selection: TextSelection.collapsed(offset: 0),
     );
     _currentText = '';
-    _isTextEmpty.value = true;
     _canSaveNotifier.value = _engine.canSave || _engine.hasLost;
     if (mounted) setState(() {});
   }
@@ -194,12 +199,29 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
       text = blocked;
     }
     final previousLength = _currentText.length;
+    final isInsertion = text.length >= previousLength;
     _currentText = text;
-    final empty = text.isEmpty;
-    if (_isTextEmpty.value != empty) {
-      _isTextEmpty.value = empty;
+    _engine.handleTextChange(text, isInsertion: isInsertion);
+
+    // When actively writing at the end of the text, keep the bottom line
+    // scrolled into view above the keyboard as new lines are added.
+    final selection = _controller.selection;
+    final atEnd =
+        !selection.isValid ||
+        (selection.isCollapsed && selection.baseOffset >= text.length);
+    if (isInsertion && atEnd) {
+      _scrollToBottomAfterFrame();
     }
-    _engine.handleTextChange(text, isInsertion: text.length >= previousLength);
+  }
+
+  void _scrollToBottomAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      if (position.maxScrollExtent > position.pixels) {
+        _scrollController.jumpTo(position.maxScrollExtent);
+      }
+    });
   }
 
   Future<void> _handleSave() async {
@@ -252,7 +274,6 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
   @override
   Widget build(BuildContext context) {
     final dead = _engine.phase.value == SessionPhase.death;
-    final diffLimit = _engine.difficultyLimitMsValue;
 
     final prefs = ref.watch(userPreferencesProvider);
     final readingSize =
@@ -261,9 +282,21 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
     final lineHeight = readingSize.lineHeight;
     final fontFamily = fontFamilyForIndex(prefs.fontIndex);
 
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final isKeyboardOpen = bottomInset > 0;
+    if (bottomInset > _lastBottomInset) {
+      final selection = _controller.selection;
+      if (!selection.isValid ||
+          (selection.isCollapsed &&
+              selection.baseOffset >= _currentText.length)) {
+        _scrollToBottomAfterFrame();
+      }
+    }
+    _lastBottomInset = bottomInset;
+
     return Scaffold(
       backgroundColor: AppColors.background,
-      resizeToAvoidBottomInset: false, // keyboard "pan" parity
+      resizeToAvoidBottomInset: false, // DangerOverlay fills full screen
       body: AnimatedBuilder(
         animation: Listenable.merge([_flyAwayAnim, _shakeAnim]),
         builder: (context, child) {
@@ -285,84 +318,69 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
         },
         child: Stack(
           children: [
-            Column(
-              children: [
-                // Header: label + countdown + word count
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      ValueListenableBuilder<int?>(
-                        valueListenable: _engine.sessionSecondsRemaining,
-                        builder: (context, seconds, _) => Text(
-                          _isTweetMode || _isQuickNoteMode
-                              ? ''
-                              : _formatTime(seconds),
-                          style: const TextStyle(
-                            color: AppColors.textBody,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      AnimatedBuilder(
-                        animation: Listenable.merge([
-                          _engine.sessionSecondsRemaining,
-                          _engine.wordCount,
-                        ]),
-                        builder: (context, _) {
-                          final wordCount = _engine.wordCount.value;
-                          return Text(
-                            '$wordCount words',
-                            style: TextStyle(
-                              color:
-                                  _isTweetMode &&
-                                      wordCount > tweetThreshold - 10
-                                  ? AppColors.primaryAction
-                                  : AppColors.textDim,
-                              fontSize: 13,
+            SafeArea(
+              bottom: !isKeyboardOpen,
+              child: Column(
+                children: [
+                  // Header: label + countdown + word count
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        ValueListenableBuilder<int?>(
+                          valueListenable: _engine.sessionSecondsRemaining,
+                          builder: (context, seconds, _) => Text(
+                            _isTweetMode || _isQuickNoteMode
+                                ? ''
+                                : _formatTime(seconds),
+                            style: const TextStyle(
+                              color: AppColors.textBody,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                              fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(color: AppColors.glassBorderSubtle, height: 1),
-                // Text area — idleRatioListenable updates text span internally without full-screen rebuilds
-                Expanded(
-                  child: Stack(
-                    children: [
-                      // Hint (only while empty) — matches placeholder styling.
-                      ValueListenableBuilder<bool>(
-                        valueListenable: _isTextEmpty,
-                        builder: (context, isEmpty, _) {
-                          if (!isEmpty) return const SizedBox.shrink();
-                          return Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
-                            child: Text(
-                              'Keep typing...',
+                          ),
+                        ),
+                        AnimatedBuilder(
+                          animation: Listenable.merge([
+                            _engine.sessionSecondsRemaining,
+                            _engine.wordCount,
+                          ]),
+                          builder: (context, _) {
+                            final wordCount = _engine.wordCount.value;
+                            return Text(
+                              '$wordCount words',
                               style: TextStyle(
-                                color: AppColors.placeholder,
-                                fontFamily: fontFamily,
-                                fontSize: fontSize,
+                                color:
+                                    _isTweetMode &&
+                                        wordCount > tweetThreshold - 10
+                                    ? AppColors.primaryAction
+                                    : AppColors.textDim,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                          );
-                        },
-                      ),
-                      // EditableText: buildTextSpan enables the inline
-                      // simultaneous vaporize effect across all visible words.
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 200),
-                        child: VaporizingEditableText(
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: AppColors.glassBorderSubtle, height: 1),
+                  // Scrollable, selectable text area padded above the keyboard.
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: bottomInset),
+                      child: TextSelectionTheme(
+                        data: const TextSelectionThemeData(
+                          cursorColor: AppColors.primaryAction,
+                          selectionColor: AppColors.dangerTint,
+                          selectionHandleColor: AppColors.primaryAction,
+                        ),
+                        child: TextField(
                           controller: _controller,
                           focusNode: _focusNode,
-                          idleRatioListenable: _engine.idleRatio,
-                          difficultyLimit: diffLimit,
+                          scrollController: _scrollController,
                           style: TextStyle(
                             color: AppColors.textInput,
                             fontFamily: fontFamily,
@@ -370,51 +388,80 @@ class _WritingScreenState extends ConsumerState<WritingScreen>
                             height: lineHeight / fontSize,
                           ),
                           cursorColor: AppColors.primaryAction,
-                          backgroundCursorColor: AppColors.textMuted,
                           maxLines: null,
                           expands: true,
+                          textAlignVertical: TextAlignVertical.top,
                           keyboardType: TextInputType.multiline,
                           autocorrect: true,
                           enableSuggestions: true,
-                          selectionColor: AppColors.dangerTint,
+                          enableInteractiveSelection: true,
+                          scrollPhysics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics(),
+                          ),
+                          scrollPadding: const EdgeInsets.only(
+                            top: 24,
+                            bottom: 48,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Keep typing...',
+                            hintStyle: TextStyle(
+                              color: AppColors.placeholder,
+                              fontFamily: fontFamily,
+                              fontSize: fontSize,
+                              height: lineHeight / fontSize,
+                            ),
+                            border: InputBorder.none,
+                            isCollapsed: true,
+                            contentPadding: const EdgeInsets.fromLTRB(
+                              20,
+                              16,
+                              20,
+                              24,
+                            ),
+                          ),
                           onChanged: _handleTextChange,
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-                // Save action (visible when allowed)
-                ValueListenableBuilder<bool>(
-                  valueListenable: _canSaveNotifier,
-                  builder: (context, canSave, _) {
-                    if (!canSave || dead) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: AnimatedScaleButton(
-                        onPress: _saving ? null : _handleSave,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 44,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryAction,
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Text(
-                            _engine.hasLost ? "SAVE WHAT'S LEFT" : 'SAVE ENTRY',
-                            style: const TextStyle(
-                              color: AppColors.primaryActionText,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                  // Save action stays anchored at the bottom of the screen
+                  // (only shown when the keyboard is dismissed).
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _canSaveNotifier,
+                    builder: (context, canSave, _) {
+                      if (!canSave || dead || isKeyboardOpen) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 16),
+                        child: AnimatedScaleButton(
+                          onPress: _saving ? null : _handleSave,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 44,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryAction,
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Text(
+                              _engine.hasLost
+                                  ? "SAVE WHAT'S LEFT"
+                                  : 'SAVE ENTRY',
+                              style: const TextStyle(
+                                color: AppColors.primaryActionText,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
             // Danger ambience (4-sided edge fog/blur/heartbeat — own layer)
             if (!dead) Positioned.fill(child: DangerOverlay(engine: _engine)),
