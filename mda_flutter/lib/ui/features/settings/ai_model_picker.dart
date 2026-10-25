@@ -86,6 +86,7 @@ class _AiModelPickerState extends ConsumerState<AiModelPicker> {
   Widget build(BuildContext context) {
     final config = ref.watch(aiConfigProvider);
     final fallback = switch (config.provider) {
+      AiProvider.chatgpt => AiDefaults.chatgptModels,
       AiProvider.neuralwatt => AiDefaults.neuralwattModels,
       AiProvider.codex => AiDefaults.codexModels,
       AiProvider.openrouter => AiDefaults.openrouterModels,

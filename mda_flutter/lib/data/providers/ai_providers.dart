@@ -13,6 +13,7 @@ import '../queues/ai_queue.dart';
 import '../services/ai_config.dart';
 import '../services/ai_logger.dart';
 import '../services/ai_service.dart';
+import '../services/chatgpt_auth_service.dart';
 import '../services/settings_service.dart';
 import 'providers.dart';
 
@@ -36,6 +37,16 @@ class AiConfigState {
     this.openrouterBaseUrl = AiDefaults.openrouterBaseUrl,
     this.openrouterModel = AiDefaults.openrouterModel,
     this.openrouterGrammarModel = '',
+    this.chatgptAccessToken = '',
+    this.chatgptRefreshToken = '',
+    this.chatgptTokenExpiresAt = '',
+    this.chatgptUserEmail = '',
+    this.chatgptUserName = '',
+    this.chatgptClientId = '',
+    this.chatgptHostId = '',
+    this.chatgptModel = AiDefaults.chatgptModel,
+    this.chatgptGrammarModel = '',
+    this.chatgptPlanEnabled = false,
     this.customPrompts = const {},
     this.favoriteModels = const [],
     this.autoGenerateSummaries = true,
@@ -58,11 +69,25 @@ class AiConfigState {
   final String openrouterBaseUrl;
   final String openrouterModel;
   final String openrouterGrammarModel;
+  final String chatgptAccessToken;
+  final String chatgptRefreshToken;
+  final String chatgptTokenExpiresAt;
+  final String chatgptUserEmail;
+  final String chatgptUserName;
+  final String chatgptClientId;
+  final String chatgptHostId;
+  final String chatgptModel;
+  final String chatgptGrammarModel;
+  final bool chatgptPlanEnabled;
   final Map<String, String> customPrompts;
   final List<String> favoriteModels;
   final bool autoGenerateSummaries;
 
+  bool get isChatGPTConnected =>
+      chatgptAccessToken.isNotEmpty && chatgptPlanEnabled;
+
   String get apiKey => switch (provider) {
+    AiProvider.chatgpt => chatgptAccessToken,
     AiProvider.neuralwatt => neuralwattApiKey,
     AiProvider.codex => codexApiKey,
     AiProvider.openrouter => openrouterApiKey,
@@ -70,6 +95,7 @@ class AiConfigState {
   };
 
   String get baseUrl => switch (provider) {
+    AiProvider.chatgpt => AiDefaults.chatgptBaseUrl,
     AiProvider.neuralwatt => neuralwattBaseUrl,
     AiProvider.codex => codexBaseUrl,
     AiProvider.openrouter => openrouterBaseUrl,
@@ -77,6 +103,7 @@ class AiConfigState {
   };
 
   String get model => switch (provider) {
+    AiProvider.chatgpt => chatgptModel,
     AiProvider.neuralwatt => neuralwattModel,
     AiProvider.codex => codexModel,
     AiProvider.openrouter => openrouterModel,
@@ -84,6 +111,7 @@ class AiConfigState {
   };
 
   String get grammarModel => switch (provider) {
+    AiProvider.chatgpt => chatgptGrammarModel,
     AiProvider.neuralwatt => neuralwattGrammarModel,
     AiProvider.codex => codexGrammarModel,
     AiProvider.openrouter => openrouterGrammarModel,
@@ -120,6 +148,16 @@ class AiConfigState {
     String? openrouterBaseUrl,
     String? openrouterModel,
     String? openrouterGrammarModel,
+    String? chatgptAccessToken,
+    String? chatgptRefreshToken,
+    String? chatgptTokenExpiresAt,
+    String? chatgptUserEmail,
+    String? chatgptUserName,
+    String? chatgptClientId,
+    String? chatgptHostId,
+    String? chatgptModel,
+    String? chatgptGrammarModel,
+    bool? chatgptPlanEnabled,
     Map<String, String>? customPrompts,
     List<String>? favoriteModels,
     bool? autoGenerateSummaries,
@@ -144,6 +182,17 @@ class AiConfigState {
       openrouterModel: openrouterModel ?? this.openrouterModel,
       openrouterGrammarModel:
           openrouterGrammarModel ?? this.openrouterGrammarModel,
+      chatgptAccessToken: chatgptAccessToken ?? this.chatgptAccessToken,
+      chatgptRefreshToken: chatgptRefreshToken ?? this.chatgptRefreshToken,
+      chatgptTokenExpiresAt:
+          chatgptTokenExpiresAt ?? this.chatgptTokenExpiresAt,
+      chatgptUserEmail: chatgptUserEmail ?? this.chatgptUserEmail,
+      chatgptUserName: chatgptUserName ?? this.chatgptUserName,
+      chatgptClientId: chatgptClientId ?? this.chatgptClientId,
+      chatgptHostId: chatgptHostId ?? this.chatgptHostId,
+      chatgptModel: chatgptModel ?? this.chatgptModel,
+      chatgptGrammarModel: chatgptGrammarModel ?? this.chatgptGrammarModel,
+      chatgptPlanEnabled: chatgptPlanEnabled ?? this.chatgptPlanEnabled,
       customPrompts: customPrompts ?? this.customPrompts,
       favoriteModels: favoriteModels ?? this.favoriteModels,
       autoGenerateSummaries:
@@ -161,6 +210,12 @@ final aiConfigProvider = NotifierProvider<AiConfigNotifier, AiConfigState>(
 final aiLoggerProvider = Provider<AiLogger>((ref) => AiLogger());
 
 final aiServiceProvider = Provider<AiService>((ref) => AiService());
+
+final chatgptAuthServiceProvider = Provider<ChatGPTAuthService>((ref) {
+  return ChatGPTAuthService(
+    settingsService: ref.watch(settingsServiceProvider),
+  );
+});
 
 /// Singleton queue manager (one per app run — parity with the RN singleton).
 final aiQueueManagerProvider = Provider<AiQueueManager>((ref) {
@@ -313,6 +368,56 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
           SettingsKeys.aiOpenRouterGrammarModel,
           '',
         ),
+        chatgptAccessToken: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTAccessToken,
+          '',
+        ),
+        chatgptRefreshToken: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTRefreshToken,
+          '',
+        ),
+        chatgptTokenExpiresAt: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTTokenExpiresAt,
+          '',
+        ),
+        chatgptUserEmail: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTUserEmail,
+          '',
+        ),
+        chatgptUserName: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTUserName,
+          '',
+        ),
+        chatgptClientId: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTClientId,
+          '',
+        ),
+        chatgptHostId: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTHostId,
+          '',
+        ),
+        chatgptModel: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTModel,
+          AiDefaults.chatgptModel,
+        ),
+        chatgptGrammarModel: SettingsService.stringFromMap(
+          map,
+          SettingsKeys.aiChatGPTGrammarModel,
+          '',
+        ),
+        chatgptPlanEnabled: SettingsService.boolFromMap(
+          map,
+          SettingsKeys.aiChatGPTPlanEnabled,
+          false,
+        ),
         customPrompts: SettingsService.jsonMapFromMap(
           map,
           SettingsKeys.aiCustomPrompts,
@@ -351,6 +456,7 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 
   Future<void> saveApiKey(String key) async {
     final settingKey = switch (state.provider) {
+      AiProvider.chatgpt => SettingsKeys.aiChatGPTAccessToken,
       AiProvider.neuralwatt => SettingsKeys.aiNeuralwattApiKey,
       AiProvider.codex => SettingsKeys.aiCodexApiKey,
       AiProvider.openrouter => SettingsKeys.aiOpenRouterApiKey,
@@ -358,6 +464,7 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
     };
     await _save(settingKey, key);
     state = switch (state.provider) {
+      AiProvider.chatgpt => state.copyWith(chatgptAccessToken: key),
       AiProvider.neuralwatt => state.copyWith(neuralwattApiKey: key),
       AiProvider.codex => state.copyWith(codexApiKey: key),
       AiProvider.openrouter => state.copyWith(openrouterApiKey: key),
@@ -385,6 +492,7 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 
   Future<void> saveModel(String model) async {
     final settingKey = switch (state.provider) {
+      AiProvider.chatgpt => SettingsKeys.aiChatGPTModel,
       AiProvider.neuralwatt => SettingsKeys.aiNeuralwattModel,
       AiProvider.codex => SettingsKeys.aiCodexModel,
       AiProvider.openrouter => SettingsKeys.aiOpenRouterModel,
@@ -392,6 +500,7 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
     };
     await _save(settingKey, model);
     state = switch (state.provider) {
+      AiProvider.chatgpt => state.copyWith(chatgptModel: model),
       AiProvider.neuralwatt => state.copyWith(neuralwattModel: model),
       AiProvider.codex => state.copyWith(codexModel: model),
       AiProvider.openrouter => state.copyWith(openrouterModel: model),
@@ -402,6 +511,7 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
 
   Future<void> saveGrammarModel(String model) async {
     final settingKey = switch (state.provider) {
+      AiProvider.chatgpt => SettingsKeys.aiChatGPTGrammarModel,
       AiProvider.neuralwatt => SettingsKeys.aiNeuralwattGrammarModel,
       AiProvider.codex => SettingsKeys.aiCodexGrammarModel,
       AiProvider.openrouter => SettingsKeys.aiOpenRouterGrammarModel,
@@ -409,6 +519,7 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
     };
     await _save(settingKey, model);
     state = switch (state.provider) {
+      AiProvider.chatgpt => state.copyWith(chatgptGrammarModel: model),
       AiProvider.neuralwatt => state.copyWith(neuralwattGrammarModel: model),
       AiProvider.codex => state.copyWith(codexGrammarModel: model),
       AiProvider.openrouter => state.copyWith(openrouterGrammarModel: model),
@@ -441,6 +552,47 @@ class AiConfigNotifier extends Notifier<AiConfigState> {
     await ref
         .read(appDataProvider.notifier)
         .setPreference(autoGenerateSummaries: enabled);
+  }
+
+  // -- ChatGPT Auth Actions ---------------------------------------------------
+
+  Future<ChatGPTAuthResult> signInWithChatGPT() async {
+    final authService = ref.read(chatgptAuthServiceProvider);
+    final result = await authService.signIn();
+    if (result.success && result.accessToken != null) {
+      state = state.copyWith(
+        provider: AiProvider.chatgpt,
+        chatgptAccessToken: result.accessToken,
+        chatgptRefreshToken: result.refreshToken,
+        chatgptTokenExpiresAt: result.expiresAt?.toIso8601String(),
+        chatgptUserEmail: result.userEmail,
+        chatgptUserName: result.userName,
+        chatgptClientId: result.clientId,
+        chatgptPlanEnabled: result.planSharingEnabled,
+      );
+      await _save(SettingsKeys.aiProvider, AiProvider.chatgpt);
+      _reconfigureQueue();
+    }
+    return result;
+  }
+
+  Future<void> signOutChatGPT() async {
+    final authService = ref.read(chatgptAuthServiceProvider);
+    await authService.signOut();
+    state = state.copyWith(
+      chatgptAccessToken: '',
+      chatgptRefreshToken: '',
+      chatgptTokenExpiresAt: '',
+      chatgptUserEmail: '',
+      chatgptUserName: '',
+      chatgptPlanEnabled: false,
+    );
+    _reconfigureQueue();
+  }
+
+  Future<void> openChatGPTManageUsage() async {
+    final authService = ref.read(chatgptAuthServiceProvider);
+    await authService.openManageUsage();
   }
 
   /// Re-initializes the queue with the new runtime config (SPEC: config

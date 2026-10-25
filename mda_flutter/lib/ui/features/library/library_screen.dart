@@ -265,6 +265,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           // fades 1→0. Instant switches look broken by comparison.
           Expanded(
             child: _LockCrossFade(
+              key: ValueKey('tab_${_tabIndex}_locked_$locked'),
               locked: locked,
               screenHeight: screenHeight,
               overlay: _LibraryLockedContent(
@@ -273,7 +274,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
               content: switch (_tabIndex) {
                 0 => LibraryNotesList(
-                  notes: journalNotes.where((n) => n.personId == null).toList(),
+                  notes: locked
+                      ? const []
+                      : journalNotes.where((n) => n.personId == null).toList(),
                   sortBy: _sortBy,
                   emptyTitle: 'No entries yet',
                   emptySubtitle:
@@ -282,7 +285,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
                 1 => LibraryNotesList(
                   header: const WellbeingHistorySection(),
-                  notes: checkins,
+                  notes: locked ? const [] : checkins,
                   sortBy: _sortBy,
                   emptyTitle: 'No check-ins yet',
                   emptySubtitle:
@@ -291,7 +294,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   onNoteTap: _openNoteViewer,
                 ),
                 2 => _CirclesTab(
-                  persons: persons,
+                  persons: locked ? const [] : persons,
                   onPersonTap: _openPersonProfile,
                 ),
                 _ => const VlogCalendarGallery(),
@@ -322,6 +325,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 /// same spring; no timing curves, no overshoot (scales ≤ 1.0).
 class _LockCrossFade extends StatefulWidget {
   const _LockCrossFade({
+    super.key,
     required this.locked,
     required this.screenHeight,
     required this.overlay,
@@ -354,16 +358,21 @@ class _LockCrossFadeState extends State<_LockCrossFade>
   void didUpdateWidget(covariant _LockCrossFade oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.locked != oldWidget.locked) {
-      // Spring to the new state (RN `withSpring(unlockProgress)` parity).
-      // `animateTo` with a spring description below replaces timing curves.
-      _controller.animateWith(
-        SpringSimulation(
-          const SpringDescription(damping: 30, stiffness: 200, mass: 0.8),
-          _controller.value,
-          widget.locked ? 0 : 1,
-          0,
-        ),
-      );
+      if (widget.locked) {
+        // Snap immediately to locked (0) — never animate or cross-fade when locking,
+        // ensuring sensitive note previews are never exposed during lock transitions.
+        _controller.value = 0.0;
+      } else {
+        // Spring smoothly to unlocked on biometric / PIN success.
+        _controller.animateWith(
+          SpringSimulation(
+            const SpringDescription(damping: 30, stiffness: 200, mass: 0.8),
+            _controller.value,
+            1.0,
+            0,
+          ),
+        );
+      }
     }
   }
 
@@ -375,28 +384,28 @@ class _LockCrossFadeState extends State<_LockCrossFade>
 
   @override
   Widget build(BuildContext context) {
-    // Cheap children: the overlay card + list are built once; animation
-    // frames only move transforms/opacity (no per-frame rebuilds).
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
         final progress = _controller.value;
         return Stack(
           children: [
-            Opacity(
-              opacity: progress,
-              child: Transform.scale(
-                scale: 0.95 + 0.05 * progress,
-                child: widget.content,
+            if (progress > 0 && !widget.locked)
+              Opacity(
+                opacity: progress.clamp(0.0, 1.0),
+                child: Transform.scale(
+                  scale: 0.95 + 0.05 * progress,
+                  child: widget.content,
+                ),
               ),
-            ),
-            Opacity(
-              opacity: 1 - progress,
-              child: Transform.translate(
-                offset: Offset(0, -widget.screenHeight * progress),
-                child: progress >= 1 ? const SizedBox.shrink() : widget.overlay,
+            if (progress < 1.0 || widget.locked)
+              Opacity(
+                opacity: (1 - progress).clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: Offset(0, -widget.screenHeight * progress),
+                  child: widget.overlay,
+                ),
               ),
-            ),
           ],
         );
       },

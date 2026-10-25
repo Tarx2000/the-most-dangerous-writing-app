@@ -12,6 +12,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/mdi.dart';
 import '../../../data/models/saved_note.dart';
 import '../../../data/providers.dart';
+import '../../../data/security_providers.dart';
 import '../../core/widgets/animated_scale_button.dart';
 
 class LibraryNotesList extends StatelessWidget {
@@ -274,20 +275,50 @@ class _NoteCardItem extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               if (note.aiTitle != null && note.aiTitle!.isNotEmpty) ...[
-                Text(
-                  note.aiTitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final isNotesUnlocked = ref.watch(isNotesUnlockedProvider);
+                    if (!isNotesUnlocked) {
+                      return const Text(
+                        '•••••••••••••••',
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                        ),
+                      );
+                    }
+                    return Text(
+                      note.aiTitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 4),
               ],
               Consumer(
                 builder: (context, ref, _) {
+                  final isNotesUnlocked = ref.watch(isNotesUnlockedProvider);
+                  if (!isNotesUnlocked) {
+                    return const Text(
+                      '••••••••••••••••••••••••••••••••••••••••••',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 14,
+                        letterSpacing: 2,
+                        height: 1.4,
+                      ),
+                    );
+                  }
                   final fontIndex = ref.watch(
                     userPreferencesProvider.select((p) => p.fontIndex),
                   );

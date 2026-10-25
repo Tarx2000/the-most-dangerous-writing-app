@@ -1,5 +1,5 @@
-/// AI service — OpenAI-compatible streaming client for Ollama Cloud and
-/// Neuralwatt (port of `src/lib/aiService.ts`, SPEC §9).
+/// AI service — OpenAI-compatible streaming client for Ollama Cloud,
+/// Neuralwatt, OpenAI/Codex, OpenRouter, and ChatGPT OAuth Token Sharing (SPEC §9).
 ///
 /// Streaming: `http.Client().send()` returns a byte stream we split into SSE
 /// lines (the Dart equivalent of the RN XHR line-buffer). Chunks are flushed
@@ -63,8 +63,8 @@ class AiService {
 
   // -- Streaming request -----------------------------------------------------
 
-  /// POSTs to `{baseUrl}/chat/completions` (trailing slash stripped) and
-  /// streams SSE `choices[0].delta.content` chunks, notifying [onChunk] with
+  /// POSTs to `{baseUrl}/chat/completions` (or `{baseUrl}/responses` for ChatGPT)
+  /// and streams SSE delta chunks, notifying [onChunk] with
   /// the full accumulated text so far.
   /// Throws [AiError] with the classified kind.
   Future<String> streamChat({
@@ -74,20 +74,34 @@ class AiService {
     required AiChunkConsumer onChunk,
     AiCancelToken? cancelToken,
   }) async {
+    final isChatGPT = config.provider == AiProvider.chatgpt;
     final baseUrl = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
-    final uri = Uri.parse('$baseUrl/chat/completions');
-    final body = <String, Object?>{
-      'model': config.model,
-      'messages': [
-        {'role': 'system', 'content': systemPrompt},
-        {'role': 'user', 'content': userMessage},
-      ],
-      'stream': true,
-      if (config.provider == AiProvider.ollama) 'options': {'num_ctx': 16384},
-    };
+    final uri = isChatGPT
+        ? Uri.parse('$baseUrl/responses')
+        : Uri.parse('$baseUrl/chat/completions');
+
+    final body = isChatGPT
+        ? <String, Object?>{
+            'model': config.model,
+            'input': userMessage,
+            'instructions': systemPrompt,
+            'stream': true,
+            'store': false,
+          }
+        : <String, Object?>{
+            'model': config.model,
+            'messages': [
+              {'role': 'system', 'content': systemPrompt},
+              {'role': 'user', 'content': userMessage},
+            ],
+            'stream': true,
+            if (config.provider == AiProvider.ollama)
+              'options': {'num_ctx': 16384},
+          };
 
     final request = http.Request('POST', uri)
       ..headers['Content-Type'] = 'application/json'
+      ..headers['Accept'] = 'text/event-stream'
       ..headers['Authorization'] = 'Bearer ${config.apiKey}';
     if (config.provider == AiProvider.openrouter) {
       request.headers['HTTP-Referer'] =
@@ -180,13 +194,22 @@ class AiService {
     }
   }
 
-  /// Extracts the content delta from an SSE JSON payload (SPEC §9 supports
-  /// three shapes: `choices[0].delta.content`, `choices[0].message.content`,
-  /// `message.content`).
+  /// Extracts the content delta from an SSE JSON payload. Supports both standard
+  /// Chat Completions formats and Responses API format (ChatGPT Token Sharing).
   static String? _extractDelta(String payload) {
     try {
       final decoded = jsonDecode(payload);
       if (decoded is! Map<String, dynamic>) return null;
+
+      // Responses API format (Sign in with ChatGPT / SIWC token sharing)
+      if (decoded['type'] == 'response.output_text.delta' &&
+          decoded['delta'] is String) {
+        return decoded['delta'] as String;
+      }
+      if (decoded['delta'] is String && decoded['type'] != null) {
+        return decoded['delta'] as String;
+      }
+
       final choices = decoded['choices'];
       if (choices is List && choices.isNotEmpty) {
         final choice = choices.first;
@@ -360,17 +383,21 @@ class AiService {
 
   // -- Server connectivity ------------------------------------------------------
 
-  /// `pingServer` — Neuralwatt or `/v1` URLs → `GET {baseUrl}/models`;
+  /// `pingServer` — Neuralwatt, Codex, OpenRouter, ChatGPT or `/v1` URLs → `GET {baseUrl}/models`;
   /// otherwise `GET {baseUrl}/api/version` (Ollama native); 5 s timeout.
   Future<bool> pingServer(AiConfig config) async {
-    final requiresKey = config.provider == AiProvider.neuralwatt ||
+    final requiresKey =
+        config.provider == AiProvider.neuralwatt ||
         config.provider == AiProvider.codex ||
-        config.provider == AiProvider.openrouter;
+        config.provider == AiProvider.openrouter ||
+        config.provider == AiProvider.chatgpt;
     if (requiresKey && config.apiKey.isEmpty) {
-      throw const AiError(
+      throw AiError(
         AiErrorKind.config,
         'no api key',
-        userMessage: 'No API key or token set. Add your key in AI Settings.',
+        userMessage: config.provider == AiProvider.chatgpt
+            ? 'Not signed in with ChatGPT. Please connect in AI Settings.'
+            : 'No API key or token set. Add your key in AI Settings.',
       );
     }
     final baseUrl = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -401,6 +428,7 @@ class AiService {
   }
 
   /// `fetchAvailableModels` — `GET {baseUrl}/models`, 10 s timeout.
+  /// Supports standard OpenAI `data: [{id}]` and ChatGPT token sharing `models: [{slug, visibility}]`.
   Future<List<String>> fetchAvailableModels(AiConfig config) async {
     final baseUrl = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
     final uri = Uri.parse('$baseUrl/models');
@@ -420,12 +448,17 @@ class AiService {
     }
     try {
       final decoded = jsonDecode(body);
-      final data = decoded['data'];
-      if (data is List) {
+      final list = decoded['models'] ?? decoded['data'];
+      if (list is List) {
         return [
-          for (final item in data)
-            if (item['id'] is String) item['id'] as String,
-        ];
+          for (final item in list)
+            if (item is Map)
+              if (item['visibility'] == null || item['visibility'] == 'list')
+                if (item['slug'] is String)
+                  item['slug'] as String
+                else if (item['id'] is String)
+                  item['id'] as String,
+        ].where((m) => m.isNotEmpty).toList();
       }
     } catch (_) {}
     return const [];

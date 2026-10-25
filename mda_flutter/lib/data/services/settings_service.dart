@@ -46,6 +46,16 @@ abstract final class SettingsKeys {
   static const aiOpenRouterBaseUrl = 'AI_OPENROUTER_BASE_URL';
   static const aiOpenRouterModel = 'AI_OPENROUTER_MODEL';
   static const aiOpenRouterGrammarModel = 'AI_OPENROUTER_GRAMMAR_MODEL';
+  static const aiChatGPTAccessToken = 'AI_CHATGPT_ACCESS_TOKEN';
+  static const aiChatGPTRefreshToken = 'AI_CHATGPT_REFRESH_TOKEN';
+  static const aiChatGPTTokenExpiresAt = 'AI_CHATGPT_TOKEN_EXPIRES_AT';
+  static const aiChatGPTUserEmail = 'AI_CHATGPT_USER_EMAIL';
+  static const aiChatGPTUserName = 'AI_CHATGPT_USER_NAME';
+  static const aiChatGPTClientId = 'AI_CHATGPT_CLIENT_ID';
+  static const aiChatGPTHostId = 'AI_CHATGPT_HOST_ID';
+  static const aiChatGPTModel = 'AI_CHATGPT_MODEL';
+  static const aiChatGPTGrammarModel = 'AI_CHATGPT_GRAMMAR_MODEL';
+  static const aiChatGPTPlanEnabled = 'AI_CHATGPT_PLAN_ENABLED';
   static const aiCustomPrompts = 'AI_CUSTOM_PROMPTS';
   static const aiFavoriteModels = 'AI_FAVORITE_MODELS';
   static const enableLiquidGlass = 'ENABLE_LIQUID_GLASS';
@@ -57,6 +67,8 @@ abstract final class SettingsKeys {
     aiNeuralwattApiKey,
     aiCodexApiKey,
     aiOpenRouterApiKey,
+    aiChatGPTAccessToken,
+    aiChatGPTRefreshToken,
   };
 }
 

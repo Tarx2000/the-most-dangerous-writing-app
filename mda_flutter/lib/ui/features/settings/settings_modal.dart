@@ -1,7 +1,6 @@
 /// SettingsModal — the full settings sheet (SPEC §15, port of `SettingsModal.tsx`).
-/// Version chip · Appearance (fonts + reading size + preview) · Security &
-/// Storage · Feed & System · Backup & Import · CompressionStatusBar ·
-/// AI panel · Developer tools.
+/// Version chip · Categorized navigation · AI Pipeline · Appearance (fonts + reading size + preview) ·
+/// Security & Storage · Feed & System · Backup & Import · CompressionStatusBar · Developer tools.
 library;
 
 import 'dart:io';
@@ -31,6 +30,18 @@ import 'developer_tools_panel.dart';
 
 const List<String> _fontLabels = fontLabels;
 
+enum _SettingsCategory {
+  all('All', 'layersTripleOutline'),
+  ai('AI Engine', 'brain'),
+  appearance('Visuals', 'formatText'),
+  security('Privacy & Storage', 'shieldLockOutline'),
+  system('System & Data', 'databaseOutline');
+
+  const _SettingsCategory(this.label, this.icon);
+  final String label;
+  final String icon;
+}
+
 class SettingsModal extends ConsumerStatefulWidget {
   const SettingsModal({super.key, required this.onClose});
 
@@ -41,6 +52,7 @@ class SettingsModal extends ConsumerStatefulWidget {
 }
 
 class _SettingsModalState extends ConsumerState<SettingsModal> {
+  _SettingsCategory _selectedCategory = _SettingsCategory.all;
   bool _backupBusy = false;
   String? _backupStatus;
 
@@ -106,7 +118,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
   Future<void> _openImport() async {
     if (_backupBusy) return;
-    // Picker/plugin failures must be handled too, before an archive is opened.
     try {
       await _pickAndImport();
     } catch (_) {
@@ -116,12 +127,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
 
   Future<void> _pickAndImport() async {
     vibrate(HapticPatterns.backupOp);
-    // RN parity: auth gate (biometrics or PIN) BEFORE the file picker opens.
-    // The picker is a native activity that backgrounds the app; authenticating
-    // after it returns races the auto-lock grace timer and can lock the app
-    // mid-restore. On a fresh install no PIN exists yet — the pad opens in
-    // setup mode and creating one counts as authentication (same as RN's
-    // first-unlock flow).
     if (!mounted) return;
     final security = ref.read(securityControllerProvider);
     final prefs = ref.read(preferencesProvider);
@@ -133,12 +138,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       if (!ok || !mounted) return;
     }
 
-    // Native SAF picker (BackupPicker): streams the document into the app
-    // cache in 4 MB chunks and returns the cache path. file_selector is NOT
-    // used here anymore — its Android implementation loads the whole file
-    // into a byte[] (1.3 GB → deterministic OOM in onActivityResult, proven
-    // by the S24 Ultra logcat). Cancel returns null (do nothing); native
-    // errors throw BackupPickerException with a user-facing message.
     String? pickedPath;
     try {
       pickedPath = await const BackupPicker().pickBackupZip(
@@ -195,32 +194,13 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
     });
 
     File? tempZipFile;
-    // WHY wakelock: a 1.3 GB restore takes minutes — if the screen sleeps
-    // mid-import, Android may stall I/O and the user returns to a seemingly
-    // dead app. Released in finally, so even a failure cannot leak it.
     var wakelockHeld = false;
     try {
       await WakelockPlus.enable();
       wakelockHeld = true;
-      // The native picker already copied the SAF document into the app cache
-      // (chunked, OOM-safe) and handed us that cache path. No Dart-side copy
-      // is needed anymore — the old file_selector + manual copy path (which
-      // OOM-killed the app in onActivityResult) is gone. The service deletes
-      // this temp ZIP right after verified media staging; the finally-block
-      // below is only the safety net for failures BEFORE that point (gates
-      // rejected, user cancelled, spawn failure) so no 1.3 GB orphan stays
-      // in the cache.
       final path = pickedPath;
       tempZipFile = File(path);
 
-      // The service never throws — failures arrive as BackupResult with a
-      // user-facing message. The outer catch is only a last-resort net so a
-      // 1 GB+ restore can never kill the app without explanation again.
-      // NOTE: the temp ZIP is deleted by the service right after verified
-      // media staging (not here) so ZIP + staging + final media never
-      // coexist — that transient 3x disk peak is what killed low-storage
-      // phones. Deleting here (before extraction) would make the workers
-      // read a ghost path.
       final result = await ref
           .read(appDataProvider.notifier)
           .importBackupZip(
@@ -289,10 +269,6 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
           await WakelockPlus.disable();
         } catch (_) {}
       }
-      // The service deletes the temp ZIP after verified media staging; this
-      // is only the safety net for failures BEFORE that point (gates
-      // rejected, user cancelled, spawn failure) so no 1.3 GB orphan stays
-      // in the cache.
       if (tempZipFile != null) {
         try {
           if (await tempZipFile.exists()) await tempZipFile.delete();
@@ -307,11 +283,20 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
     final vlogs = ref.watch(vlogsProvider);
     final totalBytes = vlogs.fold<int>(0, (sum, v) => sum + v.fileSizeBytes);
 
+    final showAi = _selectedCategory == _SettingsCategory.all ||
+        _selectedCategory == _SettingsCategory.ai;
+    final showAppearance = _selectedCategory == _SettingsCategory.all ||
+        _selectedCategory == _SettingsCategory.appearance;
+    final showSecurity = _selectedCategory == _SettingsCategory.all ||
+        _selectedCategory == _SettingsCategory.security;
+    final showSystem = _selectedCategory == _SettingsCategory.all ||
+        _selectedCategory == _SettingsCategory.system;
+
     return Column(
       children: [
         // Version chip
         AnimatedScaleButton(
-          onPress: () => _openChangelog(),
+          onPress: _openChangelog,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
@@ -329,6 +314,11 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
           ),
         ),
         const SizedBox(height: 16),
+
+        // Category Filter Navigation
+        _buildCategoryTabs(),
+        const SizedBox(height: 16),
+
         Expanded(
           child: SingleChildScrollView(
             padding: EdgeInsets.only(
@@ -337,228 +327,306 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // -- AI Engine Section -----------------------------------------
+                if (showAi) ...[
+                  const AiSettingsPanel(),
+                  const SizedBox(height: 16),
+                ],
+
                 // -- Appearance -------------------------------------------------
-                SettingsCard(
-                  children: [
-                    const _CardHeading(
-                      'Appearance',
-                      'Customize your reading and writing typography',
-                      icon: 'formatText',
-                    ),
-                    _FontPicker(prefs: prefs),
-                    const SizedBox(height: 20),
-                    const Divider(height: 1, color: AppColors.glassBorder),
-                    const SizedBox(height: 18),
-                    _ReadingSizePicker(prefs: prefs),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1, color: AppColors.glassBorder),
-                    const SizedBox(height: 8),
-                    _PrefToggleRow(
-                      title: 'Liquid Glass Design',
-                      subtitle:
-                          'Refractive controls and responsive glass. Turn off for Classic.',
-                      icon: 'blur',
-                      value: prefs.enableLiquidGlass,
-                      onChanged: (v) => ref
-                          .read(appDataProvider.notifier)
-                          .setPreference(enableLiquidGlass: v),
-                    ),
-                  ],
-                ),
-
-                const Padding(
-                  padding: EdgeInsets.only(left: 5, bottom: 12),
-                  child: Text(
-                    'Live Preview',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                _LivePreview(prefs: prefs),
-                const SizedBox(height: 20),
-
-                SettingsCard(
-                  children: [
-                    _PrefToggleRow(
-                      title: 'Masteries in Check-in',
-                      subtitle: 'Suggest due goals after your life ratings.',
-                      icon: 'pillar',
-                      value: prefs.promptMasteries,
-                      onChanged: (v) => ref
-                          .read(appDataProvider.notifier)
-                          .setPreference(promptMasteries: v),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // -- Security & Storage -----------------------------------------
-                SettingsCard(
-                  children: [
-                    const _CardHeading(
-                      'Security & Storage',
-                      'Notes and Circles are protected by biometric authentication (fingerprint / face).',
-                      icon: 'shieldLockOutline',
-                    ),
-                    _PrefToggleRow(
-                      title: 'Force PIN Auth',
-                      subtitle: 'Always ask for PIN instead of Biometrics',
-                      icon: 'dialpad',
-                      value: prefs.preferPinAuth,
-                      onChanged: (v) => ref
-                          .read(appDataProvider.notifier)
-                          .setPreference(preferPinAuth: v),
-                    ),
-                    const SettingsDivider(),
-                    SettingsRow(
-                      icon: 'timerLockOutline',
-                      title: 'Inactivity Lock',
-                      subtitle: 'Time before face/fingerprint needed',
-                      value: prefs.lockTimeoutMins == 0
-                          ? 'Immediate'
-                          : '${prefs.lockTimeoutMins} Min${prefs.lockTimeoutMins != 1 ? 's' : ''}',
-                      onTap: () => _pickLockTimeout(prefs.lockTimeoutMins),
-                    ),
-                    const SettingsDivider(),
-                    SettingsRow(
-                      icon: 'serverNetwork',
-                      title: 'Vlog Footprint',
-                      subtitle: 'Storage used by recorded videos',
-                      value: _formatBytes(totalBytes),
-                    ),
-                    const SettingsDivider(),
-                    SettingsRow(
-                      icon: 'videoOutline',
-                      title: 'Vlog Quality',
-                      subtitle: 'Recording resolution',
-                      value: prefs.vlogQuality,
-                      onTap: () => _pickVlogQuality(prefs.vlogQuality),
-                    ),
-                    const SettingsDivider(),
-                    SettingsRow(
-                      icon: 'zipBoxOutline',
-                      title: 'Compression Preset',
-                      subtitle: 'Balance size and quality after recording',
-                      value: prefs.compressionPreset.toUpperCase(),
-                      onTap: () =>
-                          _pickCompressionPreset(prefs.compressionPreset),
-                    ),
-                  ],
-                ),
-
-                // -- Feed & System ----------------------------------------------
-                SettingsCard(
-                  children: [
-                    const _CardHeading(
-                      'Feed & System',
-                      'System-wide configurations and behaviors',
-                      icon: 'newspaperVariantOutline',
-                    ),
-                    _PrefToggleRow(
-                      title: 'Haptic Feedback',
-                      subtitle: 'Subtle vibrations on interaction',
-                      icon: 'vibrate',
-                      value: prefs.enableHaptics,
-                      onChanged: (v) => ref
-                          .read(appDataProvider.notifier)
-                          .setPreference(enableHaptics: v),
-                    ),
-                    const SettingsDivider(),
-                    _PrefToggleRow(
-                      title: 'Auto-play Videos',
-                      subtitle: 'Videos play muted when visible in the feed',
-                      icon: 'playCircleOutline',
-                      value: ref.watch(feedDataProvider).autoPlayFeedVideos,
-                      onChanged: (v) => ref
-                          .read(appDataProvider.notifier)
-                          .toggleAutoPlayFeedVideos(v),
-                    ),
-                  ],
-                ),
-
-                // -- Backup & Import --------------------------------------------
-                SettingsCard(
-                  children: [
-                    const _CardHeading(
-                      'Backup & Import',
-                      'Export your journal entries, settings, Masteries, and vlog videos, or restore a previous ZIP backup.',
-                      icon: 'backupRestore',
-                    ),
-                    SettingsRow(
-                      icon: 'export',
-                      title: 'Export Backup ZIP',
-                      subtitle:
-                          'Plaintext ZIP with notes, circles, masteries, vlogs',
-                      onTap: _backupBusy ? null : _openExport,
-                    ),
-                    const SettingsDivider(),
-                    SettingsRow(
-                      icon: 'import',
-                      title: 'Import Backup ZIP',
-                      subtitle: 'Wipes current data, restores the backup',
-                      onTap: _backupBusy ? null : _openImport,
-                    ),
-                    if (_backupStatus != null) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.primaryAction,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _backupStatus!,
-                              style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            _backupFilesTotal > 0
-                                ? 'Video $_backupFilesDone of $_backupFilesTotal · ${(_backupProgress * 100).round()}%'
-                                : '${(_backupProgress * 100).round()}%',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
+                if (showAppearance) ...[
+                  SettingsCard(
+                    children: [
+                      const _CardHeading(
+                        'Appearance',
+                        'Customize your reading and writing typography',
+                        icon: 'formatText',
                       ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: _backupProgress.clamp(0.0, 1.0),
-                          minHeight: 5,
-                          backgroundColor: AppColors.glassSurface,
-                          valueColor: const AlwaysStoppedAnimation(
-                            AppColors.primaryAction,
+                      _FontPicker(prefs: prefs),
+                      const SizedBox(height: 20),
+                      const Divider(height: 1, color: AppColors.glassBorder),
+                      const SizedBox(height: 18),
+                      _ReadingSizePicker(prefs: prefs),
+                      const SizedBox(height: 18),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          'Live Preview',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
+                      _LivePreview(prefs: prefs),
+                      const SizedBox(height: 18),
+                      const Divider(height: 1, color: AppColors.glassBorder),
+                      const SizedBox(height: 8),
+                      _PrefToggleRow(
+                        title: 'Liquid Glass Design',
+                        subtitle:
+                            'Refractive controls and responsive glass. Turn off for Classic.',
+                        icon: 'blur',
+                        value: prefs.enableLiquidGlass,
+                        onChanged: (v) => ref
+                            .read(appDataProvider.notifier)
+                            .setPreference(enableLiquidGlass: v),
+                      ),
                     ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                CompressionStatusBar(),
-                AiSettingsPanel(),
-                DeveloperToolsPanel(),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // -- Security & Storage -----------------------------------------
+                if (showSecurity) ...[
+                  SettingsCard(
+                    children: [
+                      const _CardHeading(
+                        'Security & Storage',
+                        'Notes and Circles are protected by biometric authentication (fingerprint / face).',
+                        icon: 'shieldLockOutline',
+                      ),
+                      _PrefToggleRow(
+                        title: 'Force PIN Auth',
+                        subtitle: 'Always ask for PIN instead of Biometrics',
+                        icon: 'dialpad',
+                        value: prefs.preferPinAuth,
+                        onChanged: (v) => ref
+                            .read(appDataProvider.notifier)
+                            .setPreference(preferPinAuth: v),
+                      ),
+                      const SettingsDivider(),
+                      SettingsRow(
+                        icon: 'timerLockOutline',
+                        title: 'Inactivity Lock',
+                        subtitle: 'Time before face/fingerprint needed',
+                        value: prefs.lockTimeoutMins == 0
+                            ? 'Immediate'
+                            : '${prefs.lockTimeoutMins} Min${prefs.lockTimeoutMins != 1 ? 's' : ''}',
+                        onTap: () => _pickLockTimeout(prefs.lockTimeoutMins),
+                      ),
+                      const SettingsDivider(),
+                      SettingsRow(
+                        icon: 'serverNetwork',
+                        title: 'Vlog Footprint',
+                        subtitle: 'Storage used by recorded videos',
+                        value: _formatBytes(totalBytes),
+                      ),
+                      const SettingsDivider(),
+                      SettingsRow(
+                        icon: 'videoOutline',
+                        title: 'Vlog Quality',
+                        subtitle: 'Recording resolution',
+                        value: prefs.vlogQuality,
+                        onTap: () => _pickVlogQuality(prefs.vlogQuality),
+                      ),
+                      const SettingsDivider(),
+                      SettingsRow(
+                        icon: 'zipBoxOutline',
+                        title: 'Compression Preset',
+                        subtitle: 'Balance size and quality after recording',
+                        value: prefs.compressionPreset.toUpperCase(),
+                        onTap: () =>
+                            _pickCompressionPreset(prefs.compressionPreset),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const CompressionStatusBar(),
+                  const SizedBox(height: 16),
+                ],
+
+                // -- Feed & System ----------------------------------------------
+                if (showSystem) ...[
+                  SettingsCard(
+                    children: [
+                      const _CardHeading(
+                        'Feed & System',
+                        'System-wide configurations, behaviors, and check-in prompts',
+                        icon: 'newspaperVariantOutline',
+                      ),
+                      _PrefToggleRow(
+                        title: 'Masteries in Check-in',
+                        subtitle: 'Suggest due goals after your life ratings.',
+                        icon: 'pillar',
+                        value: prefs.promptMasteries,
+                        onChanged: (v) => ref
+                            .read(appDataProvider.notifier)
+                            .setPreference(promptMasteries: v),
+                      ),
+                      const SettingsDivider(),
+                      _PrefToggleRow(
+                        title: 'Haptic Feedback',
+                        subtitle: 'Subtle vibrations on interaction',
+                        icon: 'vibrate',
+                        value: prefs.enableHaptics,
+                        onChanged: (v) => ref
+                            .read(appDataProvider.notifier)
+                            .setPreference(enableHaptics: v),
+                      ),
+                      const SettingsDivider(),
+                      _PrefToggleRow(
+                        title: 'Auto-play Videos',
+                        subtitle: 'Videos play muted when visible in the feed',
+                        icon: 'playCircleOutline',
+                        value: ref.watch(feedDataProvider).autoPlayFeedVideos,
+                        onChanged: (v) => ref
+                            .read(appDataProvider.notifier)
+                            .toggleAutoPlayFeedVideos(v),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // -- Backup & Import --------------------------------------------
+                  SettingsCard(
+                    children: [
+                      const _CardHeading(
+                        'Backup & Import',
+                        'Export your journal entries, settings, Masteries, and vlog videos, or restore a previous ZIP backup.',
+                        icon: 'backupRestore',
+                      ),
+                      SettingsRow(
+                        icon: 'export',
+                        title: 'Export Backup ZIP',
+                        subtitle:
+                            'Plaintext ZIP with notes, circles, masteries, vlogs',
+                        onTap: _backupBusy ? null : _openExport,
+                      ),
+                      const SettingsDivider(),
+                      SettingsRow(
+                        icon: 'import',
+                        title: 'Import Backup ZIP',
+                        subtitle: 'Wipes current data, restores the backup',
+                        onTap: _backupBusy ? null : _openImport,
+                      ),
+                      if (_backupStatus != null) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.primaryAction,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _backupStatus!,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _backupFilesTotal > 0
+                                  ? 'Video $_backupFilesDone of $_backupFilesTotal · ${(_backupProgress * 100).round()}%'
+                                  : '${(_backupProgress * 100).round()}%',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: _backupProgress.clamp(0.0, 1.0),
+                            minHeight: 5,
+                            backgroundColor: AppColors.glassSurface,
+                            valueColor: const AlwaysStoppedAnimation(
+                              AppColors.primaryAction,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const DeveloperToolsPanel(),
+                ],
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCategoryTabs() {
+    return SizedBox(
+      height: 38,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _SettingsCategory.values.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final category = _SettingsCategory.values[index];
+          final active = _selectedCategory == category;
+          return AnimatedScaleButton(
+            onPress: () {
+              vibrate(HapticPatterns.optionSelect);
+              setState(() => _selectedCategory = category);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: active
+                    ? AppColors.primaryAction
+                    : AppColors.glassSurfaceSubtle,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: active
+                      ? Colors.transparent
+                      : AppColors.glassBorderFaint,
+                  width: 1,
+                ),
+                boxShadow: active
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primaryAction.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Mdi.get(category.icon),
+                    size: 14,
+                    color: active
+                        ? AppColors.primaryActionText
+                        : AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    category.label,
+                    style: TextStyle(
+                      color: active
+                          ? AppColors.primaryActionText
+                          : AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -913,7 +981,7 @@ class _LivePreview extends StatelessWidget {
   }
 }
 
-/// RN card hierarchy: red icon, sentence-case heading and supporting copy.
+/// RN card hierarchy: red icon with backdrop, sentence-case heading and supporting copy.
 class _CardHeading extends StatelessWidget {
   const _CardHeading(this.title, this.subtitle, {required this.icon});
   final String title;
@@ -928,8 +996,15 @@ class _CardHeading extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Mdi.get(icon), color: AppColors.primaryAction, size: 18),
-            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryAction.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Mdi.get(icon), color: AppColors.primaryAction, size: 16),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 title,
@@ -937,18 +1012,19 @@ class _CardHeading extends StatelessWidget {
                   color: AppColors.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 6),
         Text(
           subtitle,
           style: const TextStyle(
             color: AppColors.textMuted,
             fontSize: 13,
-            height: 1.5,
+            height: 1.45,
           ),
         ),
       ],

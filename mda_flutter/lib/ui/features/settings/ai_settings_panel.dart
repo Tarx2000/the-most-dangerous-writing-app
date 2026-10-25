@@ -1,7 +1,8 @@
 /// AiSettingsPanel — AI configuration panel (port of `AiSettingsPanel.tsx`).
-/// Provider switch · API key · base URL · model picker with favorite stars ·
-/// grammar model · custom prompts · batch processing with progress · test
-/// connection · AI status with per-note failure notifications + retry.
+/// Provider switch (ChatGPT, Ollama, Neuralwatt, Codex, OpenRouter) ·
+/// "Sign in with ChatGPT" OAuth PKCE token sharing · API keys · base URLs ·
+/// model pickers with favorite stars · grammar models · custom prompts ·
+/// batch processing with progress · test connection · AI status with failure notifications.
 library;
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import '../../core/widgets/action_sheet.dart';
 import '../../core/widgets/animated_scale_button.dart';
 import '../../core/widgets/animated_switch.dart';
 import '../../core/widgets/base_modal.dart';
+import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/shimmer_line.dart';
 import 'ai_model_picker.dart';
 
@@ -30,6 +32,8 @@ class AiSettingsPanel extends ConsumerStatefulWidget {
 
 class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
   bool _testing = false;
+  bool _chatgptBusy = false;
+  String? _chatgptStatus;
   bool _overwrite = false;
   final Set<String> _categories = {'journal', 'circle', 'checkin'};
   String? _testResult;
@@ -51,7 +55,6 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
     super.didChangeDependencies();
     if (!_initialized) {
       _initialized = true;
-      // Sync the controllers whenever the provider switches.
       final config = ref.read(aiConfigProvider);
       if (_apiKeyController.text != config.apiKey) {
         _apiKeyController.text = config.apiKey;
@@ -69,6 +72,84 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
     super.dispose();
   }
 
+  Future<void> _signInChatGPT() async {
+    setState(() {
+      _chatgptBusy = true;
+      _chatgptStatus = 'Opening browser for ChatGPT authorization…';
+    });
+    try {
+      final result =
+          await ref.read(aiConfigProvider.notifier).signInWithChatGPT();
+      if (!mounted) return;
+      if (result.success) {
+        vibrate(HapticPatterns.unlockSuccess);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully connected to your ChatGPT account!'),
+            backgroundColor: AppColors.green,
+          ),
+        );
+      } else {
+        vibrate(HapticPatterns.dialPress);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.errorMessage ?? 'ChatGPT authorization was not completed.',
+            ),
+            backgroundColor: AppColors.primaryAction,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sign in error: $e'),
+            backgroundColor: AppColors.primaryAction,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _chatgptBusy = false;
+          _chatgptStatus = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _signOutChatGPT() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: AppColors.overlayDark,
+      builder: (ctx) => ConfirmDialog(
+        title: 'Disconnect ChatGPT?',
+        message:
+            'This will sign you out of your ChatGPT session. Your AI features will switch back to the local or cloud provider.',
+        confirmLabel: 'Disconnect',
+        cancelLabel: 'Cancel',
+        destructive: true,
+        onConfirm: () => Navigator.of(ctx).pop(true),
+        onCancel: () => Navigator.of(ctx).pop(false),
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await ref.read(aiConfigProvider.notifier).signOutChatGPT();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Disconnected from ChatGPT.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _manageUsage() async {
+    await ref.read(aiConfigProvider.notifier).openChatGPTManageUsage();
+  }
+
   Future<void> _testConnection() async {
     setState(() {
       _testing = true;
@@ -80,7 +161,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
         setState(() {
           _testing = false;
           _testSuccess = true;
-          _testResult = 'Connected. Server is reachable.';
+          _testResult = 'Connected. Server reachable.';
         });
       }
     } on AiError catch (e) {
@@ -168,6 +249,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
     final config = ref.watch(aiConfigProvider);
     final queueState = ref.watch(aiQueueStateProvider).value;
     final notifications = ref.watch(aiFailureNotificationsProvider);
+    final isChatGPT = config.provider == AiProvider.chatgpt;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,13 +263,26 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
               child: Row(
                 children: [
                   const Expanded(
-                    child: Text(
-                      'Auto-generate summaries',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Auto-generate summaries',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Generate titles, summaries, and grammar after saves',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   AnimatedSwitch(
@@ -200,16 +295,18 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
               ),
             ),
             const _Divider(),
-            // Provider switch
+            // Provider selector
             _Row(
-              icon: 'serverNetwork',
-              title: 'Provider',
+              icon: isChatGPT ? 'creation' : 'serverNetwork',
+              title: 'AI Provider',
               value: switch (config.provider) {
+                AiProvider.chatgpt => 'ChatGPT (Plus / Pro)',
                 AiProvider.neuralwatt => 'Neuralwatt',
                 AiProvider.codex => 'Codex / OpenAI',
                 AiProvider.openrouter => 'OpenRouter',
                 _ => 'Ollama Cloud',
               },
+              valueColor: isChatGPT ? AppColors.green : null,
               onTap: () async {
                 final choice = await showActionSheet<String>(
                   context,
@@ -217,8 +314,13 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                   selected: config.provider,
                   options: const [
                     ActionSheetOption(
+                      value: 'chatgpt',
+                      label: 'ChatGPT (Plus / Pro OAuth)',
+                      icon: 'creation',
+                    ),
+                    ActionSheetOption(
                       value: 'ollama',
-                      label: 'Ollama Cloud',
+                      label: 'Ollama Cloud (Default)',
                       icon: 'cloudOutline',
                     ),
                     ActionSheetOption(
@@ -228,7 +330,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                     ),
                     ActionSheetOption(
                       value: 'codex',
-                      label: 'Codex / OpenAI',
+                      label: 'Codex / OpenAI (API Key)',
                       icon: 'codeBraces',
                     ),
                     ActionSheetOption(
@@ -245,33 +347,56 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                 }
               },
             ),
-            _Divider(),
-            // API key
-            _Row(
-              icon: 'keyVariant',
-              title: config.provider == AiProvider.codex
-                  ? 'API Key / Token'
-                  : 'API Key',
-              value: config.apiKey.isEmpty ? 'Not set' : '••••••••',
-              onTap: () => _editKey(),
-            ),
-            _Divider(),
-            // Base URL
-            _Row(
-              icon: 'web',
-              title: 'Base URL',
-              value: config.baseUrl,
-              onTap: () => _editBaseUrl(),
-            ),
-            _Divider(),
-            // Models
+
+            // ChatGPT OAuth banner / connected profile card
+            if (isChatGPT) ...[
+              const _Divider(),
+              if (!config.isChatGPTConnected) ...[
+                _ChatGPTLoginCard(
+                  busy: _chatgptBusy,
+                  statusText: _chatgptStatus,
+                  onSignIn: _signInChatGPT,
+                ),
+              ] else ...[
+                _ChatGPTConnectedProfileCard(
+                  userEmail: config.chatgptUserEmail,
+                  userName: config.chatgptUserName,
+                  onManageUsage: _manageUsage,
+                  onSignOut: _signOutChatGPT,
+                ),
+              ],
+            ],
+
+            // API key & Base URL for standard providers
+            if (!isChatGPT) ...[
+              const _Divider(),
+              _Row(
+                icon: 'keyVariant',
+                title: config.provider == AiProvider.codex
+                    ? 'API Key / Token'
+                    : 'API Key',
+                value: config.apiKey.isEmpty ? 'Not set' : '••••••••',
+                onTap: () => _editKey(),
+              ),
+              const _Divider(),
+              _Row(
+                icon: 'web',
+                title: 'Base URL',
+                value: config.baseUrl,
+                onTap: () => _editBaseUrl(),
+              ),
+            ],
+
+            const _Divider(),
+            // Model
             _Row(
               icon: 'brain',
-              title: 'Model',
+              title: isChatGPT ? 'ChatGPT Model' : 'Model',
               value: config.model,
               onTap: () => _pickModel(grammar: false),
             ),
-            _Divider(),
+            const _Divider(),
+            // Grammar model
             _Row(
               icon: 'spellcheck',
               title: 'Grammar Model',
@@ -280,7 +405,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
                   : config.grammarModel,
               onTap: () => _pickModel(grammar: true),
             ),
-            _Divider(),
+            const _Divider(),
             // Test connection
             _Row(
               icon: 'lanConnect',
@@ -293,6 +418,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
         ),
 
         const SizedBox(height: 16),
+        // Custom Prompts
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
           title: const Text(
@@ -320,6 +446,7 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
               ),
           ],
         ),
+
         // AI status + failures
         const SizedBox(height: 16),
         _SectionHeader('AI STATUS', icon: 'informationOutline'),
@@ -492,7 +619,6 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
   }
 
   Future<void> _editKey() async {
-    // Read the active provider each time; switching providers changes credentials.
     _apiKeyController.text = ref.read(aiConfigProvider).apiKey;
     final notifier = ref.read(aiConfigProvider.notifier);
     await _promptField(
@@ -518,81 +644,322 @@ class _AiSettingsPanelState extends ConsumerState<AiSettingsPanel> {
     required TextEditingController controller,
     required Future<void> Function() onSave,
     bool obscure = false,
-  }) {
-    return showBaseModal(
+  }) async {
+    await showBaseModal(
       context,
       title: title,
       heightFactor: 0.4,
       builder: (close) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: true,
-                obscureText: obscure,
-                style: const TextStyle(
-                  color: AppColors.textInput,
-                  fontSize: 15,
-                ),
-                cursorColor: AppColors.primaryAction,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  hintStyle: TextStyle(color: AppColors.placeholder),
-                ),
-                onSubmitted: (_) async {
-                  await onSave();
-                  close();
-                },
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            TextField(
+              controller: controller,
+              obscureText: obscure,
+              decoration: InputDecoration(
+                labelText: title,
+                border: const OutlineInputBorder(),
               ),
-              const SizedBox(height: 12),
-              AnimatedScaleButton(
-                onPress: () async {
-                  await onSave();
-                  close();
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryAction,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Text(
-                    'SAVE',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.primaryActionText,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(onPressed: close, child: const Text('Cancel')),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () async {
+                    await onSave();
+                    close();
+                  },
+                  child: const Text('Save'),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title, {required this.icon});
+/// Sign in with ChatGPT promo & connection card
+class _ChatGPTLoginCard extends StatelessWidget {
+  const _ChatGPTLoginCard({
+    required this.busy,
+    required this.statusText,
+    required this.onSignIn,
+  });
 
+  final bool busy;
+  final String? statusText;
+  final VoidCallback onSignIn;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10A37F).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF10A37F).withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10A37F).withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Color(0xFF10A37F),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sign in with ChatGPT',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'ChatGPT Plus & Pro Token Sharing',
+                      style: TextStyle(
+                        color: Color(0xFF10A37F),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Log in with your existing ChatGPT account to use models like GPT-4o and o3-mini for reflection, titles, and grammar without needing an OpenAI API key.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (busy) ...[
+            Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF10A37F),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    statusText ?? 'Connecting to ChatGPT…',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            AnimatedScaleButton(
+              onPress: onSignIn,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10A37F),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10A37F).withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.login_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Continue with ChatGPT',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Connected ChatGPT account details and usage card
+class _ChatGPTConnectedProfileCard extends StatelessWidget {
+  const _ChatGPTConnectedProfileCard({
+    required this.userEmail,
+    required this.userName,
+    required this.onManageUsage,
+    required this.onSignOut,
+  });
+
+  final String userEmail;
+  final String userName;
+  final VoidCallback onManageUsage;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final display = userEmail.isNotEmpty
+        ? userEmail
+        : (userName.isNotEmpty ? userName : 'Connected Account');
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.glassSurfaceMinimal,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF10A37F).withValues(alpha: 0.35),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF10A37F),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      display,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Text(
+                      'ChatGPT Plan Usage Active',
+                      style: TextStyle(
+                        color: Color(0xFF10A37F),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onManageUsage,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                  label: const Text('Manage Usage'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textPrimary,
+                    side: const BorderSide(color: AppColors.glassBorder),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: onSignOut,
+                icon: const Icon(Icons.logout_rounded, size: 14),
+                label: const Text('Disconnect'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryAction,
+                  side: const BorderSide(color: AppColors.dangerBorder),
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -- Reusable visual primitives -----------------------------------------------
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.title, {this.icon});
   final String title;
-  final String icon;
+  final String? icon;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(Mdi.get(icon), color: AppColors.textSecondary, size: 16),
-        const SizedBox(width: 8),
+        if (icon != null) ...[
+          Icon(Mdi.get(icon!), color: AppColors.textSecondary, size: 16),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 13,
@@ -606,40 +973,35 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _Divider extends StatelessWidget {
-  const _Divider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      color: AppColors.glassBorderSubtle,
-    );
-  }
-}
-
 class _SettingsCard extends StatelessWidget {
   const _SettingsCard({required this.children});
-
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.glassBackground,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.glassBorder, width: 1),
       ),
-      child: Material(
-        type: MaterialType.transparency,
-        child: Column(children: children),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
       ),
     );
   }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 8),
+    child: Divider(height: 1, color: AppColors.glassBorder),
+  );
 }
 
 class _Row extends StatelessWidget {
@@ -661,43 +1023,49 @@ class _Row extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedScaleButton(
       onPress: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+      disabled: onTap == null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.glassSurfaceMinimal,
+          borderRadius: BorderRadius.circular(10),
+        ),
         child: Row(
           children: [
             Icon(Mdi.get(icon), color: AppColors.textSecondary, size: 18),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (value.isNotEmpty)
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: valueColor ?? AppColors.textMuted,
-                        fontSize: 12,
-                      ),
-                    ),
-                ],
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-            if (onTap != null)
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: valueColor ?? AppColors.textMuted,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 6),
               Icon(
                 Mdi.get('chevronRight'),
                 color: AppColors.textMuted,
-                size: 18,
+                size: 16,
               ),
+            ],
           ],
         ),
       ),
@@ -722,8 +1090,8 @@ class _StatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(Mdi.get(icon), color: iconColor, size: 18),
-        const SizedBox(width: 12),
+        Icon(Mdi.get(icon), color: iconColor, size: 20),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -732,20 +1100,17 @@ class _StatusRow extends StatelessWidget {
                 title,
                 style: const TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (subtitle.isNotEmpty)
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                  ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
                 ),
+              ),
             ],
           ),
         ),
@@ -756,7 +1121,6 @@ class _StatusRow extends StatelessWidget {
 
 class _FailureRow extends ConsumerWidget {
   const _FailureRow({required this.notification});
-
   final AiFailureNotification notification;
 
   @override
@@ -765,58 +1129,38 @@ class _FailureRow extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Icon(
-            Mdi.get(
-              notification.isTimeout ? 'timerOffOutline' : 'alertCircleOutline',
-            ),
-            color: AppColors.primaryAction,
-            size: 16,
-          ),
-          const SizedBox(width: 10),
+          const Icon(Icons.error_outline, color: AppColors.primaryAction, size: 16),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  notification.message,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  'Note \${notification.noteId}',
                   style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  notification.message,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
                   ),
                 ),
               ],
             ),
           ),
-          AnimatedScaleButton(
-            onPress: () {
-              final manager = ref.read(aiQueueManagerProvider);
-              manager.retryNote(notification.noteId);
-              manager.dismissNotification(notification.id);
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.glassSurfaceLow,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppColors.glassBorderSubtle,
-                  width: 1,
-                ),
-              ),
-              child: const Text(
-                'Retry',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
+          TextButton(
+            onPressed: () =>
+                ref.read(aiQueueManagerProvider).retryNote(notification.noteId),
+            child: const Text('Retry'),
           ),
         ],
       ),
     );
   }
 }
+

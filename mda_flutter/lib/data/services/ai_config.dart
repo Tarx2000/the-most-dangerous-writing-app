@@ -7,6 +7,7 @@ class AiProvider {
   static const neuralwatt = 'neuralwatt';
   static const codex = 'codex';
   static const openrouter = 'openrouter';
+  static const chatgpt = 'chatgpt';
 }
 
 /// The resolved per-provider runtime configuration.
@@ -106,6 +107,17 @@ class AiDefaults {
     'openai/gpt-4o-mini',
     'meta-llama/llama-3.3-70b-instruct',
     'google/gemini-2.0-flash-001',
+  ];
+
+  /// ChatGPT OAuth Token Sharing defaults.
+  static const chatgptBaseUrl = 'https://api.openai.com/v1';
+  static const chatgptModel = 'gpt-4o';
+  static const List<String> chatgptModels = [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'o3-mini',
+    'o1',
+    'chatgpt-4o-latest',
   ];
 }
 
